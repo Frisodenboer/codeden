@@ -1,0 +1,136 @@
+import type {
+  InboxCounts,
+  InboxItem,
+  JsonValue,
+  ListInboxQuery,
+  ResolveInboxRequest,
+  RuntimeResponse,
+  Session,
+} from "@codeden/contracts";
+import { and, desc, eq, type SQL } from "drizzle-orm";
+import type { Db } from "../db/client";
+import { rowToInbox } from "../db/rows";
+import { inboxItems } from "../db/schema";
+import { runFailedInbox } from "../events/reducer/items";
+import type { EventStore } from "../events/store";
+import { badRequest, notFound } from "./errors";
+
+/** Sends an approval/answer to the agent; provided by the session service. */
+export type Responder = (
+  sessionId: string,
+  requestId: string,
+  response: RuntimeResponse,
+) => Promise<void>;
+
+/** The inbox (§11.1): everything waiting on the user. */
+export class InboxService {
+  constructor(
+    private readonly db: Db,
+    private readonly store: EventStore,
+    private readonly responder: () => Responder,
+  ) {}
+
+  list(query: ListInboxQuery = {}): InboxItem[] {
+    const conditions: SQL[] = [eq(inboxItems.status, query.status ?? "open")];
+    if (query.projectId) conditions.push(eq(inboxItems.projectId, query.projectId));
+    if (query.sessionId) conditions.push(eq(inboxItems.sessionId, query.sessionId));
+    return this.db
+      .select()
+      .from(inboxItems)
+      .where(and(...conditions))
+      .orderBy(desc(inboxItems.createdAt))
+      .limit(1000)
+      .all()
+      .map(rowToInbox);
+  }
+
+  counts(): InboxCounts {
+    const open = this.list();
+    const byProject: Record<string, number> = {};
+    const byKind: InboxCounts["byKind"] = {};
+    for (const item of open) {
+      if (item.projectId) byProject[item.projectId] = (byProject[item.projectId] ?? 0) + 1;
+      byKind[item.kind] = (byKind[item.kind] ?? 0) + 1;
+    }
+    return { open: open.length, byProject, byKind };
+  }
+
+  get(id: string): InboxItem {
+    const row = this.db.select().from(inboxItems).where(eq(inboxItems.id, id)).get();
+    if (!row) throw notFound(`No inbox item ${id}`, "inbox_not_found");
+    return rowToInbox(row);
+  }
+
+  /**
+   * Answer an item in place. Approvals and questions forward `response` to the agent (the
+   * transcript update then resolves the item too); other items are just closed.
+   */
+  async resolve(id: string, req: ResolveInboxRequest): Promise<InboxItem> {
+    const item = this.get(id);
+    if (item.status !== "open") return item;
+    const answerable = (item.kind === "approval" || item.kind === "question") && item.requestId;
+    if (answerable && req.status === "resolved") {
+      if (!req.response) throw badRequest("This item needs a response", "response_required");
+      if (!item.sessionId || !item.requestId) throw badRequest("Item has no session");
+      await this.responder()(item.sessionId, item.requestId, req.response);
+      return this.get(id);
+    }
+    return this.close(item, req.status, req.note ? { note: req.note } : null);
+  }
+
+  /** Close an open item now (eagerly, before the agent's confirmation arrives). */
+  close(item: InboxItem, status: "resolved" | "dismissed", resolution: JsonValue): InboxItem {
+    if (item.status !== "open") return item;
+    const now = new Date().toISOString();
+    const next: InboxItem = { ...item, status, resolution, resolvedAt: now, updatedAt: now };
+    this.store.append([
+      { type: "inbox.updated", sessionId: item.sessionId, payload: { item: next } },
+    ]);
+    return next;
+  }
+
+  /** Close the open item mirroring a session's request, if there is one. */
+  closeForRequest(sessionId: string, requestId: string, resolution: JsonValue): void {
+    const row = this.db
+      .select()
+      .from(inboxItems)
+      .where(
+        and(
+          eq(inboxItems.sessionId, sessionId),
+          eq(inboxItems.requestId, requestId),
+          eq(inboxItems.status, "open"),
+        ),
+      )
+      .get();
+    if (row) this.close(rowToInbox(row), "resolved", resolution);
+  }
+
+  /** Dismiss a session's open approvals and questions (session stopped). */
+  dismissRequestsForSession(sessionId: string, reason: string): void {
+    for (const item of this.list({ sessionId })) {
+      if (item.kind === "approval" || item.kind === "question") {
+        this.close(item, "dismissed", { reason });
+      }
+    }
+  }
+
+  /** Raise a `run_failed` item for a session that could not start or crashed. */
+  raiseRunFailed(session: Session, key: string, message: string): void {
+    const id = `inbox:${session.id}:${key}`;
+    const existing = this.db.select().from(inboxItems).where(eq(inboxItems.id, id)).get();
+    const item = runFailedInbox(
+      session,
+      id,
+      message,
+      session.rootThreadId,
+      new Date().toISOString(),
+    );
+    this.store.append([
+      {
+        type: existing ? "inbox.updated" : "inbox.created",
+        sessionId: session.id,
+        payload: { item },
+      },
+    ]);
+  }
+}

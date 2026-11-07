@@ -1,0 +1,212 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import {
+  type Project,
+  type Session,
+  SessionOptions,
+  type UserInput,
+  type WorkspaceRequest,
+} from "@codeden/contracts";
+import { errorMessage, ServiceError } from "../errors";
+import type { InboxService } from "../inbox-service";
+import type { ProjectService } from "../projects/project-service";
+import { type RunnerPort, runnerErrorCode } from "../runner-port";
+import { slugWords } from "./conflicts";
+import type { SessionRepo } from "./repo";
+
+export interface LauncherDeps {
+  repo: SessionRepo;
+  projects: ProjectService;
+  runner: RunnerPort;
+  inbox: InboxService;
+  /** `<home>/wt`: worktrees live in `wt/<project>/<session>` (§6). */
+  worktreesDir: string;
+  /** `<home>/orchestrator`: the orchestrator's working directory (§8.1). */
+  orchestratorDir: string;
+  log?: (message: string) => void;
+  /** How long to wait for the runner before failing a start. */
+  connectTimeoutMs?: number;
+}
+
+interface PreparedWorkspace {
+  cwd: string;
+  worktreePath: string | null;
+  branch: string | null;
+  baseBranch: string | null;
+  /** Why the requested workspace could not be used, when CodeDen fell back. */
+  fallback: string | null;
+}
+
+const PREPARE_TIMEOUT_MS = 10 * 60_000;
+const START_TIMEOUT_MS = 60_000;
+
+/**
+ * Starts sessions on the runner: prepares the workspace (`workspace.prepare`), then opens the
+ * provider session (`session.start`). Failures mark the session failed and raise a
+ * `run_failed` inbox item instead of throwing, since starts run in the background.
+ */
+export class SessionLauncher {
+  constructor(private readonly deps: LauncherDeps) {}
+
+  async launch(
+    sessionId: string,
+    opts: { input?: UserInput; workspace: WorkspaceRequest },
+  ): Promise<void> {
+    const { repo, runner } = this.deps;
+    try {
+      const session = repo.get(sessionId);
+      await this.requireRunner();
+      const project = session.projectId ? this.deps.projects.get(session.projectId) : null;
+      const ws = await this.prepareWorkspace(session, project, opts.workspace);
+      repo.update(sessionId, (s) => ({
+        ...s,
+        cwd: ws.cwd,
+        worktreePath: ws.worktreePath,
+        branch: ws.branch,
+        baseBranch: ws.baseBranch,
+      }));
+      if (ws.fallback) {
+        const fallback = ws.fallback;
+        repo.setStartMeta(sessionId, (m) => ({
+          ...defaultMeta(opts.workspace),
+          ...m,
+          workspaceFallback: fallback,
+        }));
+      }
+      const result = await runner.request(
+        {
+          name: "session.start",
+          sessionId,
+          providerId: session.provider,
+          options: this.sessionOptions({ ...session, cwd: ws.cwd }),
+          input: opts.input,
+        },
+        START_TIMEOUT_MS,
+      );
+      repo.update(sessionId, (s) => ({
+        ...s,
+        resumeToken: s.resumeToken ?? result.resumeToken,
+        runnerId: runner.runnerId(),
+        status: s.status === "starting" ? (opts.input ? "running" : "idle") : s.status,
+      }));
+    } catch (error) {
+      this.fail(sessionId, "start", error);
+    }
+  }
+
+  /**
+   * Re-open a session the runner no longer hosts (runner restart, stopped session) through the
+   * provider's resume token, optionally starting a turn. Throws on failure.
+   */
+  async resume(session: Session, input?: UserInput): Promise<void> {
+    await this.requireRunner();
+    const result = await this.deps.runner.request(
+      {
+        name: "session.start",
+        sessionId: session.id,
+        providerId: session.provider,
+        options: this.sessionOptions(session),
+        input,
+      },
+      START_TIMEOUT_MS,
+    );
+    this.deps.repo.update(session.id, (s) => ({
+      ...s,
+      resumeToken: result.resumeToken ?? s.resumeToken,
+      runnerId: this.deps.runner.runnerId(),
+    }));
+  }
+
+  /** Mark a session failed with an inbox item explaining why. */
+  fail(sessionId: string, key: string, error: unknown): void {
+    const message = errorMessage(error);
+    this.deps.log?.(`session ${sessionId}: ${message}`);
+    const found = this.deps.repo.find(sessionId);
+    if (!found) return;
+    const session = this.deps.repo.update(sessionId, (s) =>
+      s.status === "stopped" ? s : { ...s, status: "failed" },
+    );
+    this.deps.inbox.raiseRunFailed(session, key, message);
+  }
+
+  sessionOptions(session: Session): SessionOptions {
+    return SessionOptions.parse({
+      sessionId: session.id,
+      role: session.role,
+      cwd: session.cwd,
+      model: session.model ?? undefined,
+      effort: session.effort ?? undefined,
+      autonomy: session.autonomy,
+      resumeToken: session.resumeToken ?? undefined,
+    });
+  }
+
+  private async requireRunner(): Promise<void> {
+    const ok = await this.deps.runner.waitForConnection(this.deps.connectTimeoutMs ?? 15_000);
+    if (!ok) throw new ServiceError(503, "runner_unavailable", "The runner is not connected");
+  }
+
+  private async prepareWorkspace(
+    session: Session,
+    project: Project | null,
+    req: WorkspaceRequest,
+  ): Promise<PreparedWorkspace> {
+    if (!project) {
+      mkdirSync(this.deps.orchestratorDir, { recursive: true });
+      return plain(this.deps.orchestratorDir);
+    }
+    if (req.mode === "repo_root") return plain(project.path);
+    if (req.mode === "existing") {
+      if (!req.path || !existsSync(req.path)) {
+        throw new ServiceError(400, "workspace_missing", `Folder not found: ${req.path ?? ""}`);
+      }
+    }
+    const path =
+      req.mode === "existing"
+        ? (req.path as string)
+        : join(this.deps.worktreesDir, project.slug, session.id.slice(0, 8));
+    const branch =
+      req.branch ??
+      (req.mode === "worktree"
+        ? `codeden/${slugWords(session.title ?? session.purpose, 5, 40)}-${session.id.slice(0, 4)}`
+        : undefined);
+    const baseRef = req.baseRef ?? project.defaultBranch ?? undefined;
+    try {
+      const result = await this.deps.runner.request(
+        {
+          name: "workspace.prepare",
+          sessionId: session.id,
+          repoPath: project.path,
+          strategy: req.mode,
+          path,
+          branch,
+          baseRef,
+          setupCommands: req.setupCommands ?? [],
+        },
+        PREPARE_TIMEOUT_MS,
+      );
+      return {
+        cwd: result.cwd,
+        worktreePath: req.mode === "worktree" ? result.cwd : null,
+        branch: result.branch,
+        baseBranch: baseRef ?? null,
+        fallback: null,
+      };
+    } catch (error) {
+      if (runnerErrorCode(error) !== "not_implemented") throw error;
+      if (req.mode === "existing") return plain(path);
+      return {
+        ...plain(project.path),
+        fallback: "This runner cannot create worktrees yet; the session runs in the repo root.",
+      };
+    }
+  }
+}
+
+function plain(cwd: string): PreparedWorkspace {
+  return { cwd, worktreePath: null, branch: null, baseBranch: null, fallback: null };
+}
+
+function defaultMeta(workspace: WorkspaceRequest) {
+  return { workspaceMode: workspace.mode, workspaceFallback: null, forced: null, queuedBehind: [] };
+}

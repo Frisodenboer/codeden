@@ -26,6 +26,10 @@ export function homePaths(home: string) {
     worktrees: join(home, "wt"),
     artifacts: join(home, "artifacts"),
     logs: join(home, "logs"),
+    /** The orchestrator's working directory (§8.1). */
+    orchestrator: join(home, "orchestrator"),
+    /** Copies of config files taken before the editors overwrite them (§12.4). */
+    backups: join(home, "backups"),
   };
 }
 export type HomePaths = ReturnType<typeof homePaths>;

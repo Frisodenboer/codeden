@@ -5,39 +5,37 @@ import {
   type SettingsPatch,
   type Snapshot,
 } from "@codeden/contracts";
-import { asc, eq, ne } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import type { Db } from "../db/client";
-import {
-  rowToAutomation,
-  rowToInbox,
-  rowToProject,
-  rowToSession,
-  rowToThread,
-  rowToTurn,
-} from "../db/rows";
-import { automations, inboxItems, items, projects, sessions, threads, turns } from "../db/schema";
-import type { EventStore } from "../events/store";
-import type { RunnerClient } from "../runner/client";
-import type { SettingsStore } from "../settings-store";
+import { rowToAutomation, rowToItemRecord, rowToSession, rowToThread, rowToTurn } from "../db/rows";
+import { automations, items, sessions, threads, turns } from "../db/schema";
+import type { AppServices } from "../services/container";
+import { badRequest, notFound } from "../services/errors";
+import { previewRecord } from "../services/sessions/preview";
+import { inboxRoutes } from "./inbox";
+import { projectRoutes } from "./projects";
+import { sessionRoutes } from "./sessions";
+import { artifactRoutes, fileRoutes, secretRoutes, setupRoutes } from "./system";
+import { errorResponse } from "./validate";
 
 export interface ApiContext {
-  db: Db;
-  store: EventStore;
-  settings: SettingsStore;
-  runner: () => RunnerClient | undefined;
+  services: AppServices;
   runnerStatus: () => Snapshot["runner"];
   startedAt: number;
   /** Stop the server (and optionally the runner) after the response is sent. */
   shutdown: (opts: { stopRunner: boolean }) => void;
+  log?: (message: string) => void;
 }
 
 /**
  * HTTP API mounted at `/api`. Routes are chained so `AppType` carries their types for the
- * Hono RPC client used by the web app.
+ * Hono RPC client used by the web app. Request and response shapes live in
+ * `@codeden/contracts` (`api.ts`).
  */
 export function createApi(ctx: ApiContext) {
+  const s = ctx.services;
   return new Hono()
+    .onError((error, c) => errorResponse(error, c, ctx.log))
     .get("/health", (c) => {
       const body: HealthResponse = {
         ok: true,
@@ -48,25 +46,28 @@ export function createApi(ctx: ApiContext) {
       return c.json(body);
     })
     .get("/snapshot", (c) => c.json(buildSnapshot(ctx)))
-    .get("/sessions/:id/snapshot", (c) => {
-      const snapshot = buildSessionSnapshot(ctx, c.req.param("id"));
-      if (!snapshot)
-        return c.json({ error: { code: "not_found", message: "No such session" } }, 404);
-      return c.json(snapshot);
-    })
-    .get("/settings", (c) => c.json(ctx.settings.get()))
+    .get("/sessions/:id/snapshot", (c) => c.json(buildSessionSnapshot(s, c.req.param("id"))))
+    .route("/projects", projectRoutes(s))
+    .route("/sessions", sessionRoutes(s))
+    .route("/inbox", inboxRoutes(s))
+    .route("/setup", setupRoutes(s))
+    .route("/artifacts", artifactRoutes(s))
+    .route("/secrets", secretRoutes(s))
+    .route("/", fileRoutes(s))
+    .get("/settings", (c) => c.json(s.settings.get()))
     .patch("/settings", async (c) => {
       const patch = (await c.req.json().catch(() => undefined)) as SettingsPatch | undefined;
-      if (!patch || typeof patch !== "object") {
-        return c.json({ error: { code: "bad_request", message: "Expected a JSON object" } }, 400);
+      if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+        throw badRequest("Expected a JSON object");
       }
+      let settings: ReturnType<typeof s.settings.update>;
       try {
-        const settings = ctx.settings.update(patch);
-        ctx.store.append([{ type: "settings.updated", sessionId: null, payload: { settings } }]);
-        return c.json(settings);
+        settings = s.settings.update(patch);
       } catch (error) {
         return c.json({ error: { code: "invalid_settings", message: String(error) } }, 400);
       }
+      s.store.append([{ type: "settings.updated", sessionId: null, payload: { settings } }]);
+      return c.json(settings);
     })
     .post("/shutdown", async (c) => {
       const body = (await c.req.json().catch(() => ({}))) as { stopRunner?: boolean };
@@ -78,58 +79,44 @@ export function createApi(ctx: ApiContext) {
 export type ApiRoutes = ReturnType<typeof createApi>;
 
 function buildSnapshot(ctx: ApiContext): Snapshot {
-  const { db } = ctx;
+  const s = ctx.services;
   // Read the head first: anything appended later arrives through the WebSocket.
-  const seq = ctx.store.headSeq();
+  const seq = s.store.headSeq();
   return {
     seq,
     serverVersion: CODEDEN_VERSION,
     generatedAt: new Date().toISOString(),
-    settings: ctx.settings.get(),
-    projects: db.select().from(projects).orderBy(asc(projects.name)).all().map(rowToProject),
-    sessions: db.select().from(sessions).orderBy(asc(sessions.createdAt)).all().map(rowToSession),
-    inbox: db
-      .select()
-      .from(inboxItems)
-      .where(ne(inboxItems.status, "resolved"))
-      .orderBy(asc(inboxItems.createdAt))
-      .all()
-      .map(rowToInbox),
-    automations: db.select().from(automations).all().map(rowToAutomation),
+    settings: s.settings.get(),
+    projects: s.projects.list(),
+    sessions: s.db.select().from(sessions).orderBy(asc(sessions.createdAt)).all().map(rowToSession),
+    inbox: s.inbox.list({ status: "open" }),
+    automations: s.db.select().from(automations).all().map(rowToAutomation),
     scheduled: [],
     runner: ctx.runnerStatus(),
   };
 }
 
-function buildSessionSnapshot(ctx: ApiContext, sessionId: string): SessionSnapshot | undefined {
-  const { db } = ctx;
-  const seq = ctx.store.headSeq();
-  const row = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
-  if (!row) return undefined;
+/** A whole transcript in one response (prefer the paginated thread items route). */
+function buildSessionSnapshot(s: AppServices, sessionId: string): SessionSnapshot {
+  const seq = s.store.headSeq();
+  const row = s.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+  if (!row) throw notFound("No such session", "session_not_found");
   return {
     seq,
     session: rowToSession(row),
-    threads: db
+    threads: s.db
       .select()
       .from(threads)
       .where(eq(threads.sessionId, sessionId))
       .all()
       .map(rowToThread),
-    turns: db.select().from(turns).where(eq(turns.sessionId, sessionId)).all().map(rowToTurn),
-    items: db
+    turns: s.db.select().from(turns).where(eq(turns.sessionId, sessionId)).all().map(rowToTurn),
+    items: s.db
       .select()
       .from(items)
       .where(eq(items.sessionId, sessionId))
       .orderBy(asc(items.threadId), asc(items.position))
       .all()
-      .map((r) => ({
-        sessionId: r.sessionId,
-        threadId: r.threadId,
-        turnId: r.turnId,
-        position: r.position,
-        item: r.data,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
+      .map((r) => previewRecord(rowToItemRecord(r))),
   };
 }

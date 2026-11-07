@@ -8,7 +8,6 @@ import type {
   GitHubRepo,
   Item,
   JsonValue,
-  SessionStartMeta,
   StartedBy,
   Usage,
   WorkProgress,
@@ -22,6 +21,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import type { StoredStartMeta } from "../services/sessions/repo";
 
 /**
  * SQLite schema (§6). `events` is the append-only audit trail and replay source; every other
@@ -101,7 +101,7 @@ export const sessions = sqliteTable(
     /** Accumulated usage (server-side projection; not part of the `Session` entity). */
     usage: json<Usage>("usage"),
     /** How the session was started (workspace fallback, forced conflict reason, queue). */
-    startMeta: json<SessionStartMeta>("start_meta"),
+    startMeta: json<StoredStartMeta>("start_meta"),
   },
   (t) => [
     index("sessions_project").on(t.projectId),
