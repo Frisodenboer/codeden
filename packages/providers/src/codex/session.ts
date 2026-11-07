@@ -9,6 +9,7 @@ import { type ProviderSession, ProviderSessionError, type SessionConfigChange } 
 import { ApprovalBroker } from "../approvals";
 import { AsyncQueue } from "../async-queue";
 import type { ResolvedCommand } from "../util/exec";
+import { explicitModel } from "../util/model";
 import { handleServerRequest } from "./approvals";
 import { codexConfigOverrides, codexPolicy, toCodexInput } from "./config";
 import { CodexEventMapper } from "./mapper";
@@ -96,7 +97,7 @@ export class CodexSession implements ProviderSession {
       const effort = codexEffort(
         this.nextTurn.effort !== undefined ? (this.nextTurn.effort ?? undefined) : this.opts.effort,
       );
-      const model = this.nextTurn.model;
+      const model = await this.turnModel(rpc);
       const res = await rpc.request<TurnStartResponse>("turn/start", {
         threadId: this.threadId(),
         input: toCodexInput(input),
@@ -187,7 +188,8 @@ export class CodexSession implements ProviderSession {
       approvalPolicy,
       sandbox,
       config: codexConfigOverrides(this.opts),
-      ...(this.opts.model ? { model: this.opts.model } : {}),
+      // "Default" is left out so Codex uses the model from the user's config.
+      ...(explicitModel(this.opts.model) ? { model: explicitModel(this.opts.model) } : {}),
       ...(this.opts.systemPrompt ? { developerInstructions: this.opts.systemPrompt } : {}),
     };
     let res: ThreadStartResponse | ThreadResumeResponse | undefined;
@@ -232,6 +234,23 @@ export class CodexSession implements ProviderSession {
       );
     }
     return rpc;
+  }
+
+  /**
+   * The `turn/start` model override: undefined keeps the thread's model. Switching back to
+   * "Default" mid-session needs a real id, so it is resolved from Codex's model list.
+   */
+  private async turnModel(rpc: CodexRpc): Promise<string | undefined> {
+    const change = this.nextTurn.model;
+    if (change === undefined) return undefined;
+    const explicit = explicitModel(change);
+    if (explicit) return explicit;
+    try {
+      const list = await rpc.request<{ data: Model[] }>("model/list", {});
+      return list.data.find((m) => m.isDefault)?.model;
+    } catch {
+      return undefined;
+    }
   }
 
   private noticeOutsideTurn(message: string): void {

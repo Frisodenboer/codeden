@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os";
 import type { ResolvedCommand } from "../util/exec";
+import { explicitModel } from "../util/model";
 import { str } from "../util/text";
 import { type OneShotRequest, oneShotSignal, type UtilityModel } from "../utility";
 import { claudeEnv, executableOptions } from "./options";
@@ -31,7 +32,7 @@ export class ClaudeUtilityModel implements UtilityModel {
         options: {
           ...executableOptions(exe),
           cwd: tmpdir(),
-          model: request.model ?? CLAUDE_UTILITY_MODEL,
+          model: explicitModel(request.model) ?? CLAUDE_UTILITY_MODEL,
           maxTurns: 1,
           tools: [],
           mcpServers: {},

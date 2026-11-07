@@ -17,6 +17,7 @@ import { type ProviderSession, ProviderSessionError, type SessionConfigChange } 
 import { ApprovalBroker } from "../approvals";
 import { AsyncQueue } from "../async-queue";
 import type { ResolvedCommand } from "../util/exec";
+import { explicitModel } from "../util/model";
 import { str, toJson } from "../util/text";
 import { ClaudeEventMapper } from "./mapper";
 import { buildQueryOptions, claudeEffort, toSdkUserMessage } from "./options";
@@ -74,7 +75,7 @@ export class ClaudeSession implements ProviderSession {
   async configure(change: SessionConfigChange): Promise<void> {
     const q = this.q;
     if (!q) return;
-    if (change.model !== undefined) await q.setModel(change.model ?? undefined);
+    if (change.model !== undefined) await q.setModel(explicitModel(change.model));
     if (change.effort !== undefined) {
       await q.applyFlagSettings({ effortLevel: claudeEffort(change.effort ?? undefined) ?? null });
     }

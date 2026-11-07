@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os";
 import type { ResolvedCommand } from "../util/exec";
+import { explicitModel } from "../util/model";
 import { type OneShotRequest, oneShotSignal, type UtilityModel } from "../utility";
 import { startAppServer } from "./process";
 import type { ServerNotification } from "./protocol";
@@ -56,7 +57,7 @@ export class CodexUtilityModel implements UtilityModel {
       fail(signal.reason instanceof Error ? signal.reason : new Error("Aborted"));
     signal.addEventListener("abort", onAbort, { once: true });
     try {
-      const model = request.model ?? CODEX_UTILITY_MODEL;
+      const model = explicitModel(request.model ?? CODEX_UTILITY_MODEL);
       const thread = await rpc.request<ThreadStartResponse>("thread/start", {
         cwd: tmpdir(),
         ephemeral: true,

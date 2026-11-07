@@ -16,6 +16,7 @@ import {
   type UserInput,
 } from "@codeden/contracts";
 import type { ResolvedCommand } from "../util/exec";
+import { explicitModel } from "../util/model";
 import { permissionModeFor } from "./permissions";
 import { EDIT_TOOLS } from "./tools";
 
@@ -96,7 +97,7 @@ export function buildQueryOptions(input: QueryOptionsInput): Options {
     ...executableOptions(input.executable),
     cwd: session.cwd,
     additionalDirectories: session.additionalDirectories,
-    ...(session.model ? { model: session.model } : {}),
+    ...(explicitModel(session.model) ? { model: explicitModel(session.model) } : {}),
     ...(effort ? { effort } : {}),
     permissionMode,
     ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
