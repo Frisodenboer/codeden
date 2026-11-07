@@ -14,13 +14,13 @@ import type {
   UserInput,
   UserQuestion,
 } from "@codeden/contracts";
-import { type ProviderSession, ProviderSessionError } from "../adapter";
+import { type ProviderSession, ProviderSessionError, type SessionConfigChange } from "../adapter";
 import { ApprovalBroker } from "../approvals";
 import { AsyncQueue } from "../async-queue";
 import type { ResolvedCommand } from "../util/exec";
 import { str, toJson } from "../util/text";
 import { ClaudeEventMapper } from "./mapper";
-import { buildQueryOptions, toSdkUserMessage } from "./options";
+import { buildQueryOptions, claudeEffort, toSdkUserMessage } from "./options";
 import { ClaudePolicy } from "./permissions";
 import { approvalTitle, QUESTION_TOOL } from "./tools";
 
@@ -55,16 +55,27 @@ export class ClaudeSession implements ProviderSession {
     const emit = (event: AgentEvent) => this.events.push(event);
     this.mapper = new ClaudeEventMapper({ sessionId: opts.sessionId, cwd: opts.cwd, emit });
     this.broker = new ApprovalBroker(emit);
-    this.policy = new ClaudePolicy(opts.autonomy, {
-      cwd: opts.cwd,
-      extraRoots: opts.additionalDirectories,
-    });
+    this.policy = new ClaudePolicy(
+      opts.autonomy,
+      { cwd: opts.cwd, extraRoots: opts.additionalDirectories },
+      opts.readOnly,
+    );
     this.mapper.start(opts.resumeToken);
     this.ensureQuery();
   }
 
   resumeToken(): string | undefined {
     return this.mapper.resumeToken ?? this.opts.resumeToken;
+  }
+
+  /** Model/effort for the following turns, applied live through the SDK's streaming query. */
+  async configure(change: SessionConfigChange): Promise<void> {
+    const q = this.q;
+    if (!q) return;
+    if (change.model !== undefined) await q.setModel(change.model ?? undefined);
+    if (change.effort !== undefined) {
+      await q.applyFlagSettings({ effortLevel: claudeEffort(change.effort ?? undefined) ?? null });
+    }
   }
 
   async send(input: UserInput): Promise<void> {
@@ -142,6 +153,16 @@ export class ClaudeSession implements ProviderSession {
         string,
         unknown
       >;
+      const denied = this.policy.denial(name, toolInput);
+      if (denied) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: denied,
+          },
+        };
+      }
       const gate = this.policy.gate(name, toolInput);
       if (!gate.ask) return {};
       return {
@@ -207,6 +228,8 @@ export class ClaudeSession implements ProviderSession {
   private readonly canUseTool: CanUseTool = async (toolName, input, options) => {
     if (toolName === QUESTION_TOOL)
       return this.askQuestion(input, options.toolUseID, options.signal);
+    const denied = this.policy.denial(toolName, input);
+    if (denied) return { behavior: "deny", message: denied };
     const gate = this.policy.needsUser(toolName, input);
     if (!gate.ask) return { behavior: "allow", updatedInput: input };
     const ctx = this.mapper.ctxForTool(options.toolUseID);

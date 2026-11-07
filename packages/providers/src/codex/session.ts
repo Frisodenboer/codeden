@@ -5,7 +5,7 @@ import type {
   SessionOptions,
   UserInput,
 } from "@codeden/contracts";
-import { type ProviderSession, ProviderSessionError } from "../adapter";
+import { type ProviderSession, ProviderSessionError, type SessionConfigChange } from "../adapter";
 import { ApprovalBroker } from "../approvals";
 import { AsyncQueue } from "../async-queue";
 import type { ResolvedCommand } from "../util/exec";
@@ -45,6 +45,8 @@ export class CodexSession implements ProviderSession {
   private rpc: CodexRpc | undefined;
   private starting: Promise<CodexRpc> | undefined;
   private turnPending = false;
+  /** Model/effort changes from `configure`, applied on every following turn. */
+  private nextTurn: SessionConfigChange = {};
   private closed = false;
   private readonly filePaths = new Map<string, string[]>();
 
@@ -78,6 +80,11 @@ export class CodexSession implements ProviderSession {
     return this.mapper.codexThreadId;
   }
 
+  /** Model/effort applied from the next `turn/start` on (Codex takes both per turn). */
+  async configure(change: SessionConfigChange): Promise<void> {
+    this.nextTurn = { ...this.nextTurn, ...change };
+  }
+
   async send(input: UserInput): Promise<void> {
     if (this.closed) throw new ProviderSessionError("closed", "Session is closed");
     if (this.turnPending || this.mapper.currentTurnId) {
@@ -86,11 +93,15 @@ export class CodexSession implements ProviderSession {
     this.turnPending = true;
     try {
       const rpc = await this.ensureServer();
-      const effort = codexEffort(this.opts.effort);
+      const effort = codexEffort(
+        this.nextTurn.effort !== undefined ? (this.nextTurn.effort ?? undefined) : this.opts.effort,
+      );
+      const model = this.nextTurn.model;
       const res = await rpc.request<TurnStartResponse>("turn/start", {
         threadId: this.threadId(),
         input: toCodexInput(input),
         ...(effort ? { effort } : {}),
+        ...(model !== undefined ? { model } : {}),
       });
       this.mapper.beginTurn(res.turn.id);
     } catch (error) {
@@ -170,7 +181,7 @@ export class CodexSession implements ProviderSession {
       { env: this.opts.env, cwd: this.opts.cwd },
     );
     this.rpc = rpc;
-    const { approvalPolicy, sandbox } = codexPolicy(this.opts.autonomy);
+    const { approvalPolicy, sandbox } = codexPolicy(this.opts.autonomy, this.opts.readOnly);
     const common = {
       cwd: this.opts.cwd,
       approvalPolicy,

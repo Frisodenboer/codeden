@@ -6,7 +6,7 @@ import type {
   TodoStatus,
   UserInput,
 } from "@codeden/contracts";
-import { type ProviderSession, ProviderSessionError } from "../adapter";
+import { type ProviderSession, ProviderSessionError, type SessionConfigChange } from "../adapter";
 import { AsyncQueue } from "../async-queue";
 import type { FakeProviderOptions } from "./adapter";
 
@@ -41,6 +41,16 @@ export class FakeSession implements ProviderSession {
 
   resumeToken(): string | undefined {
     return this.token;
+  }
+
+  /** Changes recorded by `configure` (tests read them through `lastConfig`). */
+  lastConfig: SessionConfigChange = {};
+
+  async configure(change: SessionConfigChange): Promise<void> {
+    this.lastConfig = { ...this.lastConfig, ...change };
+    if (change.model !== undefined) {
+      this.events.push({ type: "session.updated", model: change.model ?? "fake-1" });
+    }
   }
 
   async send(input: UserInput): Promise<void> {

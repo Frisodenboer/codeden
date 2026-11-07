@@ -1,5 +1,6 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type { ApprovalAction, AutonomyLevel } from "@codeden/contracts";
+import { readOnlyCommandDenial } from "../policy/read-only";
 import type { RiskContext } from "../policy/risk";
 import { str } from "../util/text";
 import {
@@ -39,7 +40,22 @@ export class ClaudePolicy {
   constructor(
     private readonly autonomy: AutonomyLevel,
     private readonly ctx: RiskContext,
+    /** Read-only sessions (orchestrator, PMs): edits and writing commands are denied. */
+    private readonly readOnly = false,
   ) {}
+
+  /** Why a call is refused outright (read-only sessions), or undefined. */
+  denial(toolName: string, input: Record<string, unknown>): string | undefined {
+    if (!this.readOnly) return undefined;
+    if (EDIT_TOOLS.has(toolName)) {
+      return "This session is read-only: it cannot edit files. Act through CodeDen tools instead.";
+    }
+    if (COMMAND_TOOLS.has(toolName)) {
+      const reason = readOnlyCommandDenial(str(input, "command") ?? "");
+      return reason ? `This session is read-only: ${reason}.` : undefined;
+    }
+    return undefined;
+  }
 
   gate(toolName: string, input: Record<string, unknown>): Gate {
     if (toolName === QUESTION_TOOL) {
