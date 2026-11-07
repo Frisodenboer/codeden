@@ -29,6 +29,12 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.6
         version: 2.1.6(hono@4.13.17)
+      '@hono/zod-validator':
+        specifier: ^0.9.1
+        version: 0.9.1(hono@4.13.17)(zod@4.6.7)
+      '@napi-rs/keyring':
+        specifier: ^2.1.2
+        version: 2.1.2
       drizzle-orm:
         specifier: 1.0.0-rc.5
         version: 1.0.0-rc.5(zod@4.6.7)

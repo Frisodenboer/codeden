@@ -35,6 +35,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
+    "@hono/zod-validator": "^0.9.1",
+    "@napi-rs/keyring": "^2.1.2",
     "drizzle-orm": "1.0.0-rc.5",
     "hono": "^4.13.17",
     "ws": "^8.22.1",
