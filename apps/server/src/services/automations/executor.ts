@@ -91,6 +91,9 @@ export function runStatusForSession(
   }
 }
 
+/** How long a triage run waits for the PM's `report_triage` before it counts as failed. */
+export const TRIAGE_TIMEOUT_MS = 30 * 60_000;
+
 /**
  * Runs an automation once (§10): applies quiet hours and the daily cap, the §8.4 overlap policy
  * through the work-key conflict check, and the concurrency cap, then performs the action. Every
@@ -116,6 +119,7 @@ export class AutomationExecutor {
       progress: null,
       skipReason: null,
       sessionId: null,
+      issueNumber: req.issue?.number ?? null,
       startedAt: now.toISOString(),
       finishedAt: null,
       error: null,
@@ -132,9 +136,39 @@ export class AutomationExecutor {
     });
   }
 
+  /**
+   * Fail triage runs whose PM never reported (so they stop counting against the concurrency
+   * cap and the overlap check).
+   */
+  expireStaleTriage(automationId: string, projectId: string, now: Date): void {
+    const before = new Date(now.getTime() - TRIAGE_TIMEOUT_MS).toISOString();
+    for (const run of this.deps.runs.runningBefore(automationId, projectId, before)) {
+      this.deps.runs.save({
+        ...run,
+        status: "failed",
+        finishedAt: now.toISOString(),
+        error: { message: "The PM did not report a triage decision within 30 minutes" },
+      });
+    }
+  }
+
+  /** Complete the running triage runs for an issue once the PM's `report_triage` arrives. */
+  completeTriage(projectId: string, issueNumber: number, decision: string): AutomationRun[] {
+    const now = this.deps.now().toISOString();
+    return this.deps.runs.runningForIssue(projectId, issueNumber).map((run) =>
+      this.deps.runs.save({
+        ...run,
+        status: "completed",
+        finishedAt: now,
+        progress: { text: `Triaged as ${decision}`, at: now },
+      }),
+    );
+  }
+
   async fire(req: FireRequest): Promise<RunAutomationResponse> {
     const { automation, project, triggeredBy } = req;
     const now = this.deps.now();
+    if (automation.action.type === "triage") this.expireStaleTriage(automation.id, project.id, now);
     const run = this.newRun(req, now);
     const workKey = run.workKey;
     const skip = (reason: SkipReason): RunAutomationResponse => ({
@@ -181,7 +215,13 @@ export class AutomationExecutor {
         case "triage": {
           if (!req.issue) throw new Error("Triage runs need an issue (trigger it on issue.opened)");
           const pmId = await this.deps.triage.request(project, automation, run, req.issue);
-          return this.finished(run, pmId);
+          // Done when the PM's report_triage for this issue arrives, not when it got the request.
+          const waiting = this.deps.runs.save({
+            ...run,
+            sessionId: pmId,
+            progress: { text: "Waiting for the PM's triage decision", at: now.toISOString() },
+          });
+          return { status: "started", run: waiting, sessionId: pmId };
         }
       }
     } catch (error) {

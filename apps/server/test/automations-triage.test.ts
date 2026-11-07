@@ -102,11 +102,13 @@ describe("issue triage (§10)", () => {
       return runs[0];
     });
     const pm = h.server.services.orchestration.roles.find("pm", GH);
+    // Handing the issue to the PM is not the end of the run: it waits for report_triage.
     expect(run).toMatchObject({
-      status: "completed",
+      status: "running",
       triggeredBy: "event",
       workKey: "triage:42",
       sessionId: pm?.id,
+      issueNumber: 42,
       purpose: "Issue triage #42",
     });
   });
@@ -114,6 +116,15 @@ describe("issue triage (§10)", () => {
   it("asks the user about ready issues and starts a session on accept", async () => {
     const result = await report({ issueNumber: 42, decision: "ready", summary: "Clear bug." });
     expect(result).toEqual({ status: "inbox", inboxItemId: `triage:${GH}:42` });
+    const runs = AutomationRun.array().parse(
+      (await h.api("GET", `/automations/runs?automationId=${triageId}`)).body,
+    );
+    expect(runs[0]).toMatchObject({
+      status: "completed",
+      issueNumber: 42,
+      progress: { text: "Triaged as ready" },
+    });
+    expect(runs[0]?.finishedAt).not.toBeNull();
     const item = InboxItem.parse(h.server.services.inbox.get(`triage:${GH}:42`));
     expect(item).toMatchObject({
       kind: "triage",

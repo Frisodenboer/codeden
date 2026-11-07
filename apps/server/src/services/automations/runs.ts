@@ -5,7 +5,7 @@ import {
   type Session,
   type TurnStatus,
 } from "@codeden/contracts";
-import { and, desc, eq, gte, inArray, isNotNull, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { automationRuns, turns } from "../../db/schema";
 import type { EventStore } from "../../events/store";
@@ -111,6 +111,40 @@ export class RunStore {
       )
       .all()
       .filter((r) => localDay(new Date(r.startedAt), tz) === today).length;
+  }
+
+  /** Running runs of a project about one issue (`issueNumber`), oldest first. */
+  runningForIssue(projectId: string, issueNumber: number): AutomationRun[] {
+    return this.db
+      .select()
+      .from(automationRuns)
+      .where(
+        and(
+          eq(automationRuns.projectId, projectId),
+          eq(automationRuns.issueNumber, issueNumber),
+          eq(automationRuns.status, "running"),
+        ),
+      )
+      .orderBy(automationRuns.startedAt)
+      .all()
+      .map(toRun);
+  }
+
+  /** Running runs of one automation in one project started before `before` (ISO). */
+  runningBefore(automationId: string, projectId: string, before: string): AutomationRun[] {
+    return this.db
+      .select()
+      .from(automationRuns)
+      .where(
+        and(
+          eq(automationRuns.automationId, automationId),
+          eq(automationRuns.projectId, projectId),
+          eq(automationRuns.status, "running"),
+          lt(automationRuns.startedAt, before),
+        ),
+      )
+      .all()
+      .map(toRun);
   }
 
   /** Active runs that track a session (rebuilds the session -> run map after a restart). */

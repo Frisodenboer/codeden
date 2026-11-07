@@ -13,7 +13,7 @@ import {
 } from "./entities/automation";
 import { InboxItem } from "./entities/inbox";
 import { TriageDecision } from "./github";
-import { ConflictDecision, OverlapPolicy, WorkSummary } from "./work";
+import { ConflictDecision, OverlapPolicy, ScheduledRun, WorkSummary } from "./work";
 
 /**
  * Automations HTTP API (§10): definitions from built-in templates, `~/.codeden/automations/`,
@@ -164,9 +164,20 @@ export type UpdateAutomationRequest = z.infer<typeof UpdateAutomationRequest>;
 export const SetAutomationEnabledRequest = z.object({ projectId: Id.optional() });
 export type SetAutomationEnabledRequest = z.infer<typeof SetAutomationEnabledRequest>;
 
-/** `POST /api/automations/:id/pause|resume|skip-next`. */
+/** `POST /api/automations/:id/pause|resume|skip-next|unskip-next`. */
 export const AutomationProjectRequest = z.object({ projectId: Id });
 export type AutomationProjectRequest = z.infer<typeof AutomationProjectRequest>;
+
+/** `POST /api/automations/:id/skip-next`: the occurrence now skipped (null: none scheduled). */
+export const SkipNextResponse = z.object({ skipped: ScheduledRun.nullable() });
+export type SkipNextResponse = z.infer<typeof SkipNextResponse>;
+
+/**
+ * `POST /api/automations/:id/unskip-next`: undo a skip; the next occurrence, which runs again
+ * (null when nothing was skipped).
+ */
+export const UnskipNextResponse = z.object({ next: ScheduledRun.nullable() });
+export type UnskipNextResponse = z.infer<typeof UnskipNextResponse>;
 
 /** `POST /api/automations/:id/run`: run now, with the §8.4 conflict check. */
 export const RunAutomationRequest = z.object({

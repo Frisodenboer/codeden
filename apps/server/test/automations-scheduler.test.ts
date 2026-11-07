@@ -151,6 +151,22 @@ describe("cron scheduler: persisted next runs, catch-up, skips", () => {
     s.stop();
   });
 
+  it("undoes a skip so the next occurrence runs again", async () => {
+    const s = scheduler();
+    s.start();
+    expect(s.unskipNext("a1", "p1")).toBeNull();
+    s.skipNext("a1", "p1");
+    expect(s.unskipNext("a1", "p1")?.skipAt).toBeNull();
+    expect(s.upcoming("p1", 1).map((r) => [r.at, r.skipped])).toEqual([
+      ["2026-11-07T10:05:00.000Z", false],
+    ]);
+    clock = new Date("2026-11-07T10:05:02Z");
+    await s.tick();
+    expect(skipped).toEqual([]);
+    expect(fired).toEqual(["cron@2026-11-07T10:05:02.000Z"]);
+    s.stop();
+  });
+
   it("clears unscheduled pairs and recomputes changed expressions", () => {
     const store = new ScheduleStore(db.db);
     const s = scheduler(store);

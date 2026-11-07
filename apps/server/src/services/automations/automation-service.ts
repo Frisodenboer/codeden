@@ -110,6 +110,8 @@ export class AutomationService implements AutomationPort {
       projects: deps.projects,
       orchestration: deps.orchestration,
       triageAutomation: (projectId) => this.triageAutomation(projectId),
+      reported: (projectId, issueNumber, decision) =>
+        this.executor.completeTriage(projectId, issueNumber, decision),
     });
     this.executor = new AutomationExecutor({
       runs: this.runs,
@@ -136,6 +138,8 @@ export class AutomationService implements AutomationPort {
   start(): void {
     this.sources.start();
     for (const run of this.runs.activeWithSession()) {
+      // Triage runs follow report_triage, not the PM session they were sent to.
+      if (this.definitions.find(run.automationId)?.action.type === "triage") continue;
       if (run.sessionId) this.sessionRuns.set(run.sessionId, run.id);
     }
     this.unsubscribe = this.deps.store.subscribe((events) => {
@@ -236,6 +240,15 @@ export class AutomationService implements AutomationPort {
   async skipNextRun(automationId: string, projectId: string): Promise<ScheduledRun | null> {
     this.inProject(automationId, projectId);
     if (!this.scheduler.skipNext(automationId, projectId)) return null;
+    return (
+      this.scheduler.upcoming(projectId, 100).find((r) => r.automationId === automationId) ?? null
+    );
+  }
+
+  /** Undo `skipNextRun`; returns the next run (now not skipped), or null when none was skipped. */
+  async unskipNextRun(automationId: string, projectId: string): Promise<ScheduledRun | null> {
+    this.inProject(automationId, projectId);
+    if (!this.scheduler.unskipNext(automationId, projectId)) return null;
     return (
       this.scheduler.upcoming(projectId, 100).find((r) => r.automationId === automationId) ?? null
     );

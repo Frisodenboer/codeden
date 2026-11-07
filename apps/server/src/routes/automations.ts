@@ -103,6 +103,10 @@ export function automationRoutes(s: AppServices) {
     .post("/:id/skip-next", jsonBody(AutomationProjectRequest), async (c) => {
       const { projectId } = c.req.valid("json");
       return c.json({ skipped: await a.skipNextRun(c.req.param("id"), projectId) });
+    })
+    .post("/:id/unskip-next", jsonBody(AutomationProjectRequest), async (c) => {
+      const { projectId } = c.req.valid("json");
+      return c.json({ next: await a.unskipNextRun(c.req.param("id"), projectId) });
     });
 }
 

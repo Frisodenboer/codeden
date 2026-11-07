@@ -221,6 +221,8 @@ export const automationRuns = sqliteTable(
     progress: json<WorkProgress>("progress"),
     skipReason: text("skip_reason").$type<AutomationRun["skipReason"]>(),
     sessionId: text("session_id"),
+    /** The issue an issue-triggered run is about (triage waits for its report). */
+    issueNumber: integer("issue_number"),
     startedAt: text("started_at").notNull(),
     finishedAt: text("finished_at"),
     error: json<ErrorInfo>("error"),

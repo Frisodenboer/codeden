@@ -196,6 +196,11 @@ export const AutomationRun = z
       ])
       .nullable(),
     sessionId: Id.nullable(),
+    /**
+     * The issue an issue-triggered run is about. A triage run stays `running` until the PM's
+     * `report_triage` for this issue arrives.
+     */
+    issueNumber: z.int().positive().nullable().optional(),
     startedAt: Timestamp,
     finishedAt: Timestamp.nullable(),
     error: ErrorInfo.nullable(),

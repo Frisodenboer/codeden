@@ -32,6 +32,8 @@ export interface TriageDeps {
   orchestration: () => OrchestrationService;
   /** The project's enabled triage automation, if any. */
   triageAutomation: (projectId: string) => Automation | undefined;
+  /** A report arrived: complete the triage runs waiting on this issue. */
+  reported?: (projectId: string, issueNumber: number, decision: string) => void;
 }
 
 /** Inbox id of the "Should I take this on?" decision for an issue. */
@@ -99,6 +101,14 @@ export class TriageService {
 
   /** The PM's `report_triage`. */
   async report(project: Project, report: TriageReport): Promise<TriageReportResult> {
+    try {
+      return await this.act(project, report);
+    } finally {
+      this.deps.reported?.(project.id, report.issueNumber, report.decision);
+    }
+  }
+
+  private async act(project: Project, report: TriageReport): Promise<TriageReportResult> {
     if (report.decision !== "ready") return { status: "recorded" };
     const automation = this.deps.triageAutomation(project.id);
     const policy = policyOf(automation);

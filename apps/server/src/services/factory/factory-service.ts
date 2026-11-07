@@ -75,6 +75,7 @@ export class FactoryService {
   private readonly chains = new Map<string, Promise<FactoryLoop>>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private interval: NodeJS.Timeout | undefined;
+  private resumeTimer: NodeJS.Timeout | undefined;
   private unsubscribe: (() => void) | undefined;
 
   constructor(private readonly deps: FactoryServiceDeps) {
@@ -108,7 +109,11 @@ export class FactoryService {
     this.interval ??= setInterval(() => void this.tickAll(), every);
     this.interval.unref?.();
     // Resume loops persisted before a restart.
-    setTimeout(() => void this.tickAll(), 1_000).unref?.();
+    this.resumeTimer ??= setTimeout(() => {
+      this.resumeTimer = undefined;
+      void this.tickAll();
+    }, 1_000);
+    this.resumeTimer.unref?.();
   }
 
   stop(): void {
@@ -116,6 +121,8 @@ export class FactoryService {
     this.unsubscribe = undefined;
     if (this.interval) clearInterval(this.interval);
     this.interval = undefined;
+    if (this.resumeTimer) clearTimeout(this.resumeTimer);
+    this.resumeTimer = undefined;
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
   }
@@ -141,7 +148,15 @@ export class FactoryService {
 
   /** Tick every project in a factory mode (and loops that need to wind down). */
   async tickAll(): Promise<void> {
-    for (const p of this.deps.projects.list()) {
+    let projects: ReturnType<FactoryServiceDeps["projects"]["list"]>;
+    try {
+      projects = this.deps.projects.list();
+    } catch (error) {
+      // Stopping: the database may already be closed.
+      this.deps.log?.(`factory: listing projects: ${errorMessage(error)}`);
+      return;
+    }
+    for (const p of projects) {
       if (!isFactoryMode(p.autonomyMode) && !this.data.loop(p.id)) continue;
       await this.tick(p.id).catch(() => undefined);
     }

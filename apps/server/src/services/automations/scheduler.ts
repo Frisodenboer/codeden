@@ -153,6 +153,13 @@ export class CronScheduler {
     return this.deps.store.upsert(automationId, projectId, { skipAt: row.nextRunAt });
   }
 
+  /** Undo `skipNext`: the next occurrence runs again. Null when nothing was skipped. */
+  unskipNext(automationId: string, projectId: string): ScheduleRow | null {
+    const row = this.deps.store.get(automationId, projectId);
+    if (!row?.skipAt) return null;
+    return this.deps.store.upsert(automationId, projectId, { skipAt: null });
+  }
+
   private arm(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;

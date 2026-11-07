@@ -88,7 +88,7 @@ export function rowToAutomation(r: AutomationRow): Automation {
 }
 
 export function runToRow(run: AutomationRun): RunRow {
-  return { ...run };
+  return { ...run, issueNumber: run.issueNumber ?? null };
 }
 
 export function rowToThread(r: typeof threads.$inferSelect): Thread {
