@@ -47,6 +47,8 @@ export function mcpOverride(server: McpServerConfig): Record<string, JsonValue> 
         url: server.url,
         ...(server.headers ? { http_headers: server.headers } : {}),
         ...(server.toolTimeoutSec ? { tool_timeout_sec: server.toolTimeoutSec } : {}),
+        // CodeDen's own tools run without per-call approval prompts.
+        ...(server.trusted ? { default_tools_approval_mode: "approve" } : {}),
       },
     };
   }
