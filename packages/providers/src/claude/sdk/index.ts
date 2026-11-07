@@ -9,4 +9,3 @@ export {
   isClaudeSdkInstalled,
 } from "./install";
 export { claudeSdkSource, configureClaudeSdk, loadClaudeSdk } from "./load";
-export { resolveNpm } from "./npm";

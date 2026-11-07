@@ -19,4 +19,7 @@ export {
 export * from "./registry";
 export * from "./replay";
 export { type ResolvedCommand, resolveExecutable } from "./util/exec";
+export { acquireInstallLock, type InstallLockOptions } from "./util/install-lock";
+export { resolveNpm } from "./util/npm";
+export { npmFailure, type RunNpmOptions, runNpm } from "./util/npm-run";
 export type { OneShotRequest, UtilityModel } from "./utility";

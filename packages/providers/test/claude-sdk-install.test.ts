@@ -11,11 +11,11 @@ import {
   installClaudeSdk,
   installedClaudeSdkVersion,
   isClaudeSdkInstalled,
-  resolveNpm,
 } from "../src/claude/sdk";
-import { npmFailure } from "../src/claude/sdk/install";
-import { acquireInstallLock } from "../src/claude/sdk/lock";
 import type { ResolvedCommand } from "../src/util/exec";
+import { acquireInstallLock } from "../src/util/install-lock";
+import { resolveNpm } from "../src/util/npm";
+import { npmFailure } from "../src/util/npm-run";
 
 const fakeNpm: ResolvedCommand = {
   kind: "node-script",

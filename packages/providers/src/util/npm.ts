@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { type ResolvedCommand, resolveExecutable } from "../../util/exec";
+import { type ResolvedCommand, resolveExecutable } from "./exec";
 
 /**
  * How to run npm for on-demand installs. Prefers the npm that started us (`npm_execpath`,
