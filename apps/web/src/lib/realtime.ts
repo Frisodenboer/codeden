@@ -1,57 +1,85 @@
-import { ServerToClientMessage } from "@codeden/contracts";
+import {
+  type EventEnvelope,
+  EventEnvelope as EventEnvelopeSchema,
+  isAgentEnvelope,
+} from "@codeden/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { useConnectionStore } from "@/stores/connection";
-import { serverOrigin } from "./api";
+import { useTranscriptsStore } from "@/stores/transcripts";
+import type { CodeDenClient } from "./api/client";
+import { snapshotKey } from "./queries";
+import { applyDomainEvent } from "./snapshot-reducer";
+
+type EnvelopeListener = (env: EventEnvelope) => void;
+const listeners = new Set<EnvelopeListener>();
+
+/** Subscribe to every parsed live event (toasts, notifications, read-aloud). */
+export function onLiveEvent(listener: EnvelopeListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 /**
- * Realtime connection (§6): subscribe from the last applied seq, apply event batches,
- * reload the snapshot on `resync`, and reconnect with backoff.
+ * Realtime (§6): load the snapshot, subscribe from its seq, route agent events into the
+ * transcript store and domain events into the snapshot cache; reload on `resync`.
  */
-export function connectRealtime(queryClient: QueryClient): () => void {
-  let ws: WebSocket | undefined;
+export function startRealtime(client: CodeDenClient, queryClient: QueryClient): () => void {
+  const conn = useConnectionStore.getState;
+  let unsubscribe: (() => void) | undefined;
   let stopped = false;
-  let delay = 500;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const store = useConnectionStore.getState;
+  conn().setSocket("connecting");
 
-  const open = () => {
-    store().setSocket("connecting");
-    ws = new WebSocket(`${serverOrigin.replace(/^http/, "ws")}/ws`);
-    ws.onopen = () => {
-      delay = 500;
-      store().setSocket("open");
-      ws?.send(JSON.stringify({ type: "subscribe", fromSeq: store().seq }));
-    };
-    ws.onmessage = (event) => {
-      const parsed = ServerToClientMessage.safeParse(JSON.parse(String(event.data)));
-      if (!parsed.success) return;
-      const msg = parsed.data;
-      if (msg.type === "runner") store().setRunner(msg.runner);
-      if (msg.type === "events" && msg.events.length > 0) {
-        store().setSeq(msg.events.at(-1)?.seq ?? store().seq);
-        // M0: refresh the snapshot on domain changes; transcripts arrive in M1.
-        if (msg.events.some((e) => !e.type.startsWith("agent."))) {
-          void queryClient.invalidateQueries({ queryKey: ["snapshot"] });
-        }
-      }
-      if (msg.type === "resync") {
-        store().setSeq(msg.seq);
-        void queryClient.invalidateQueries();
-        ws?.send(JSON.stringify({ type: "subscribe", fromSeq: msg.seq }));
-      }
-    };
-    ws.onclose = () => {
-      store().setSocket("closed");
-      if (stopped) return;
-      timer = setTimeout(open, delay);
-      delay = Math.min(delay * 2, 10_000);
-    };
+  const apply = (raw: unknown) => {
+    const parsed = EventEnvelopeSchema.safeParse(raw);
+    if (!parsed.success) return; // Unknown event types are skipped (newer server).
+    const env = parsed.data;
+    if (isAgentEnvelope(env)) {
+      useTranscriptsStore.getState().apply(env.sessionId, env.payload, env.seq, env.ts);
+    } else {
+      queryClient.setQueryData(
+        snapshotKey,
+        (s: Parameters<typeof applyDomainEvent>[0] | undefined) =>
+          s ? applyDomainEvent(s, env) : s,
+      );
+    }
+    conn().setSeq(env.seq);
+    for (const l of listeners) l(env);
   };
 
-  open();
+  const connect = (fromSeq: number) => {
+    unsubscribe = client.subscribe(fromSeq, (msg) => {
+      switch (msg.type) {
+        case "hello":
+          conn().setSocket("open");
+          break;
+        case "runner":
+          conn().setRunner(msg.runner);
+          break;
+        case "events":
+          for (const e of msg.events) apply(e);
+          break;
+        case "resync":
+          void queryClient.invalidateQueries();
+          conn().setSeq(msg.seq);
+          break;
+        default:
+          break;
+      }
+    });
+  };
+
+  queryClient
+    .fetchQuery({ queryKey: snapshotKey, queryFn: () => client.getSnapshot() })
+    .then((snap) => {
+      if (stopped) return;
+      conn().setSeq(snap.seq);
+      conn().setRunner(snap.runner);
+      connect(snap.seq);
+    })
+    .catch(() => conn().setSocket("closed"));
+
   return () => {
     stopped = true;
-    if (timer) clearTimeout(timer);
-    ws?.close();
+    unsubscribe?.();
   };
 }
