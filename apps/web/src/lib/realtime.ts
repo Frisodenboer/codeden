@@ -9,6 +9,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useConnectionStore } from "@/stores/connection";
 import { useTranscriptsStore } from "@/stores/transcripts";
 import type { CodeDenClient } from "./api/client";
+import { invalidateAutomations } from "./automations";
 import { snapshotKey } from "./queries";
 import { applyDomainEvent } from "./snapshot-reducer";
 
@@ -71,6 +72,7 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
         s ? applyDomainEvent(s, env) : s,
       );
       invalidateWorkbench(queryClient, env);
+      invalidateAutomations(queryClient, env);
     }
     if (env.seq > conn().seq) conn().setSeq(env.seq);
     for (const l of listeners) l(env);

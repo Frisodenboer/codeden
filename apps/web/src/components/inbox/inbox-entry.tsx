@@ -9,6 +9,7 @@ import { ago } from "@/lib/format";
 import { platform } from "@/lib/platform";
 import { useProject, useTranscript } from "@/lib/queries";
 import { InboxActions, PrReviewStatus } from "./inbox-actions";
+import { TriageCard } from "./triage-card";
 
 /** The mirrored approval or question, answered with the same card as the transcript. */
 function MirroredRequest({ item }: { item: InboxItem }) {
@@ -77,6 +78,8 @@ export function InboxEntry({ item }: { item: InboxItem }) {
       </div>
       {mirrors && !resolved ? (
         <MirroredRequest item={item} />
+      ) : item.kind === "triage" ? (
+        <TriageCard item={item} />
       ) : (
         <div className="rounded-xl border border-border bg-card px-4 py-3">
           <h3 className="text-[14px] font-medium">{item.title}</h3>

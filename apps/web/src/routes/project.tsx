@@ -1,9 +1,10 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bot, FileText, FolderGit2, GitBranch, MessageSquarePlus } from "lucide-react";
+import { AutomationsPanel } from "@/components/automations/automations-panel";
 import { SectionLabel } from "@/components/common/bits";
 import { ProjectGithub } from "@/components/github/project-github";
 import { FactoryPanel } from "@/components/project/factory-panel";
-import { AutomationsList, SessionsList } from "@/components/project/lists";
+import { SessionsList } from "@/components/project/lists";
 import { NewSessionDialog } from "@/components/project/new-session-dialog";
 import { NowNext } from "@/components/project/now-next";
 import { ProjectTile } from "@/components/shell/sidebar/project-group";
@@ -35,16 +36,10 @@ export function ProjectPage({
 }) {
   const { data } = useSnapshot();
   const navigate = useNavigate();
-  const { work, status } = useProjectStatus(projectId);
+  const { work } = useProjectStatus(projectId);
   const project = data?.projects.find((p) => p.id === projectId);
   if (!data || !project) return null;
   const agents = data.sessions.filter((s) => s.projectId === projectId && s.role === "agent");
-  const automations = data.automations.filter(
-    (a) => a.target.type === "project" && a.target.projectId === projectId,
-  );
-  const scheduled = (status?.scheduled ?? data.scheduled.filter((r) => r.projectId === projectId))
-    .slice()
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const factory = project.autonomyMode === "autopilot" || project.autonomyMode === "dark_factory";
   const titleOf = (id: string | null) => data.sessions.find((s) => s.id === id)?.title ?? null;
   const go = (search: { newSession?: boolean; tab?: ProjectTab }) =>
@@ -116,7 +111,7 @@ export function ProjectPage({
             <ProjectGithub project={project} />
           ) : (
             <>
-              <NowNext work={work} scheduled={scheduled} titleOf={titleOf} />
+              <NowNext work={work} projectId={projectId} titleOf={titleOf} />
               {factory && <FactoryPanel projectId={projectId} />}
               <ProjectSpendCard projectId={projectId} />
               <section>
@@ -128,10 +123,17 @@ export function ProjectPage({
                 />
               </section>
               <section id="automations">
-                <SectionLabel className="mb-2">
-                  Automations · {automations.filter((a) => a.enabled).length} on
-                </SectionLabel>
-                <AutomationsList automations={automations} scheduled={scheduled} />
+                <div className="mb-2 flex items-center gap-2">
+                  <SectionLabel>Automations</SectionLabel>
+                  <Link
+                    to="/projects/$projectId/automations"
+                    params={{ projectId }}
+                    className="ml-auto text-2xs text-muted-foreground hover:text-foreground"
+                  >
+                    Manage, runs and templates →
+                  </Link>
+                </div>
+                <AutomationsPanel projectId={projectId} compact />
               </section>
             </>
           )}

@@ -19,6 +19,7 @@ import {
   SpeechSummaryResponse,
   StartSessionResponse,
 } from "@codeden/contracts";
+import { httpAutomationsApi } from "./automations-api";
 import type { CodeDenClient, SendMode } from "./client";
 import { createFetcher } from "./http";
 import {
@@ -88,12 +89,7 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
       post(`/inbox/${enc(id)}/resolve`, resolution, (v) => InboxItem.parse(v)),
 
     createProject: (input) => post("/projects", input, (v) => CreateProjectResponse.parse(v)),
-    async setAutomationEnabled(id, enabled) {
-      await call("PATCH", `/automations/${enc(id)}`, { enabled });
-    },
-    async skipNextRun(id) {
-      await post(`/automations/${enc(id)}/skip-next`);
-    },
+    automations: httpAutomationsApi(http),
     getFactoryStatus: (id) => get(`/projects/${enc(id)}/factory`),
     async setKillSwitch(scope, on) {
       if (scope === "global") await post("/factory/kill-switch", { on });

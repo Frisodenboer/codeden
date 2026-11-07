@@ -1,6 +1,7 @@
 import { type Project, Settings, type SettingsPatch } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { startAmbient } from "./ambient";
+import { mockAutomationsApi } from "./automations";
 import { mockFeatureApis } from "./feature-apis";
 import { makeSession } from "./fixtures/helpers";
 import { defaultFactoryLimits, factoryFor, visionDoc } from "./fixtures/ops";
@@ -238,20 +239,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
         400,
       );
     },
-    async setAutomationEnabled(id, enabled) {
-      const a = world.snapshot.automations.find((x) => x.id === id);
-      if (a)
-        world.emitDomain({
-          type: "automation.saved",
-          sessionId: null,
-          payload: { automation: { ...a, enabled } },
-        });
-    },
-    async skipNextRun(automationId) {
-      world.snapshot.scheduled = world.snapshot.scheduled.map((r) =>
-        r.automationId === automationId ? { ...r, skipped: !r.skipped } : r,
-      );
-    },
+    automations: mockAutomationsApi(world),
     getFactoryStatus(projectId) {
       const project = world.snapshot.projects.find((p) => p.id === projectId);
       const cached = world.factory.get(projectId);

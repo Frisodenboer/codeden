@@ -1,6 +1,6 @@
-import type { Automation, Project, Session } from "@codeden/contracts";
+import type { Project, Session } from "@codeden/contracts";
 import { Link } from "@tanstack/react-router";
-import { Bot, ChevronRight, House, Plus, Workflow } from "lucide-react";
+import { Bot, ChevronRight, House, Plus } from "lucide-react";
 import { useState } from "react";
 import { IssueBadge, PrBadge } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
@@ -8,6 +8,7 @@ import { ageShort, statusTone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
 import { NavRow, rowBase, useIsActive } from "./nav-row";
+import { ProjectAutomations } from "./project-automations";
 
 const order: Record<string, number> = { waiting: 0, running: 1, starting: 1, failed: 2, queued: 3 };
 const LIMIT = 5;
@@ -69,15 +70,7 @@ function SessionRow({ session }: { session: Session }) {
 }
 
 /** One project in the sidebar: header, PM, sessions and automations. */
-export function ProjectGroup({
-  project,
-  sessions,
-  automations,
-}: {
-  project: Project;
-  sessions: Session[];
-  automations: Automation[];
-}) {
+export function ProjectGroup({ project, sessions }: { project: Project; sessions: Session[] }) {
   const open = useLayoutStore((s) => s.expandedProjects[project.id] ?? false);
   const toggle = useLayoutStore((s) => s.toggleProject);
   const [showAll, setShowAll] = useState(false);
@@ -89,7 +82,6 @@ export function ProjectGroup({
   const visible = showAll ? agents : agents.slice(0, LIMIT);
   const attention = agents.some((s) => s.status === "waiting");
   const running = agents.filter((s) => statusTone[s.status] === "running").length;
-  const enabled = automations.filter((a) => a.enabled).length;
 
   return (
     <div className="flex flex-col gap-px">
@@ -166,19 +158,7 @@ export function ProjectGroup({
               {showAll ? "Show less" : `Show ${agents.length - LIMIT} more`}
             </button>
           )}
-          <NavRow
-            href={`/projects/${project.id}#automations`}
-            link={{
-              to: "/projects/$projectId",
-              params: { projectId: project.id },
-              hash: "automations",
-            }}
-            className="h-7 pl-7 text-xs text-muted-foreground"
-          >
-            <Workflow className="size-3.5 shrink-0" />
-            <span className="flex-1 truncate">Automations</span>
-            <span className="text-3xs tabular-nums">{enabled} on</span>
-          </NavRow>
+          <ProjectAutomations projectId={project.id} />
         </div>
       )}
     </div>

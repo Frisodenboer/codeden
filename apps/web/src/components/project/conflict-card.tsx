@@ -43,16 +43,25 @@ async function decide(
   return client.startSession({ ...start, conflict: decision });
 }
 
+/** What a resolved conflict led to: a session start, an automation run, or nothing. */
+export interface ConflictOutcome {
+  status: string;
+  sessionId?: string | null;
+}
+
 /**
  * A start request that matched running work (§8.4). The same four choices the agents get:
  * wait (queue behind), skip, join (send as a follow-up) or force (with a recorded reason).
+ * `decideWith` retries something other than a session start (an automation's run now).
  */
 export function ConflictCard({
   conflict,
   onResolved,
+  decideWith,
 }: {
   conflict: ConflictRecord;
-  onResolved?: (result: StartSessionResponse) => void;
+  onResolved?: (result: ConflictOutcome) => void;
+  decideWith?: (decision: ConflictDecision) => Promise<ConflictOutcome>;
 }) {
   const client = useClient();
   const queryClient = useQueryClient();
@@ -61,12 +70,14 @@ export function ConflictCard({
   const [reason, setReason] = useState("");
   const existing = conflict.existing[0];
   const resolve = useMutation({
-    mutationFn: (decision: ConflictDecision) => decide(client, conflict, decision),
+    mutationFn: (decision: ConflictDecision): Promise<ConflictOutcome> =>
+      decideWith ? decideWith(decision) : decide(client, conflict, decision),
     onSuccess: (result, decision) => {
       toast.success(doneText[decision.resolution]);
       void queryClient.invalidateQueries({ queryKey: ["conflicts"] });
       onResolved?.(result);
-      if (result.status === "started" || result.status === "joined" || result.status === "queued")
+      const moved = ["started", "joined", "queued"].includes(result.status);
+      if (moved && result.sessionId)
         void navigate({ to: "/sessions/$sessionId", params: { sessionId: result.sessionId } });
     },
     onError: (e) => toast.error("Couldn't resolve the conflict", { description: e.message }),

@@ -236,6 +236,9 @@ importers:
       cn:
         specifier: ^0.5.2
         version: 0.5.2
+      croner:
+        specifier: ^11.0.0
+        version: 11.0.0
       hono:
         specifier: ^4.13.17
         version: 4.13.17
