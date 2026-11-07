@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type { AgentEvent, ErrorInfo, Item } from "@codeden/contracts";
+import type { AgentEvent, ErrorInfo, Item, Usage } from "@codeden/contracts";
 import { str } from "../util/text";
 import { StreamAssembler } from "./stream";
 import { SubagentTracker, type ThreadCtx } from "./subagents";
 import { ToolTracker } from "./tool-tracker";
-import { contextTokensFromMessageUsage, usageFromRateLimit, usageFromResult } from "./usage";
+import {
+  contextTokensFromMessageUsage,
+  turnDelta,
+  usageFromRateLimit,
+  usageFromResult,
+} from "./usage";
 
 type Raw = Record<string, unknown>;
 type Block = Raw & { type?: string };
@@ -39,6 +44,10 @@ export class ClaudeEventMapper {
   private interruptRequested = false;
   private claudeSessionId: string | undefined;
   private model: string | undefined;
+  /** Running usage total of this query (process), from the latest `result`. */
+  private queryTotal: Usage | undefined;
+  /** `queryTotal` when the current root turn began. */
+  private turnBaseline: Usage | undefined;
 
   constructor(opts: MapperOptions) {
     this.rootThreadId = `${opts.sessionId}:thread-root`;
@@ -84,6 +93,7 @@ export class ClaudeEventMapper {
     if (this.rootTurnId) return this.rootTurnId;
     const turnId = this.newId();
     this.rootTurnId = turnId;
+    this.turnBaseline = this.queryTotal;
     this.emit({ type: "turn.started", threadId: this.rootThreadId, turnId });
     return turnId;
   }
@@ -280,11 +290,14 @@ export class ClaudeEventMapper {
 
   private onResult(msg: Raw): void {
     if (!this.rootTurnId) return;
+    // `result` carries running totals for the whole query; report this turn's own share.
+    const total = usageFromResult(msg, this.contextTokens);
+    this.queryTotal = total;
     this.emit({
       type: "usage.updated",
       threadId: this.rootThreadId,
       turnId: this.rootTurnId,
-      usage: usageFromResult(msg, this.contextTokens),
+      usage: turnDelta(total, this.turnBaseline),
     });
     if (this.interruptRequested) {
       this.endTurn({ type: "interrupted", reason: "user" });

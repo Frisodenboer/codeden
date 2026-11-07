@@ -7,6 +7,7 @@ import { NewSessionDialog } from "@/components/project/new-session-dialog";
 import { NowNext } from "@/components/project/now-next";
 import { ProjectTile } from "@/components/shell/sidebar/project-group";
 import { Button } from "@/components/ui/button";
+import { ProjectSpendCard } from "@/components/usage/project-spend-card";
 import { isActive } from "@/lib/format";
 import { useSnapshot } from "@/lib/queries";
 import { PageHeader } from "./page-header";
@@ -87,6 +88,7 @@ export function ProjectPage({ projectId, newSession }: { projectId: string; newS
         <div className="mx-auto w-full max-w-6xl space-y-8 px-6 py-6">
           <NowNext running={agents.filter((s) => isActive(s.status))} scheduled={scheduled} />
           {factory && <FactoryPanel projectId={projectId} />}
+          <ProjectSpendCard projectId={projectId} />
           <section>
             <SectionLabel className="mb-2">Sessions · {agents.length}</SectionLabel>
             <SessionsList

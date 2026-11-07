@@ -17,6 +17,7 @@ export class CodexEventMapper {
   private turnId: string | undefined;
   private readonly open = new Map<string, Item>();
   private plan: { id: string; todos: Todo[] } | undefined;
+  private readonly turnUsage = new CodexTurnUsage();
 
   constructor(
     sessionId: string,
@@ -86,7 +87,7 @@ export class CodexEventMapper {
         this.emit({
           type: "usage.updated",
           ...this.ctx(n.params.turnId),
-          usage: tokenUsage(n.params.tokenUsage),
+          usage: this.turnUsage.add(n.params.turnId, n.params.tokenUsage),
         });
         return;
       case "account/rateLimits/updated":
@@ -241,10 +242,58 @@ export class CodexEventMapper {
   }
 }
 
-/** Codex token usage (cumulative `total`, context from `last`). */
+type Breakdown = ThreadTokenUsage["total"];
+const BREAKDOWN_KEYS = [
+  "totalTokens",
+  "inputTokens",
+  "cachedInputTokens",
+  "cacheWriteInputTokens",
+  "outputTokens",
+  "reasoningOutputTokens",
+] as const;
+
+function addBreakdown(a: Breakdown, b: Breakdown, sign = 1): Breakdown {
+  const out = { ...a };
+  for (const k of BREAKDOWN_KEYS) out[k] = Math.max(0, (a[k] ?? 0) + sign * (b[k] ?? 0));
+  return out;
+}
+
+const ZERO: Breakdown = {
+  totalTokens: 0,
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  cacheWriteInputTokens: 0,
+  outputTokens: 0,
+  reasoningOutputTokens: 0,
+};
+
+/**
+ * Per-turn token accounting for one thread. Codex reports the thread's running `total` (which
+ * survives resumes) and the `last` request. A turn's usage is the growth of `total` since the
+ * previous report in this process; the first report after a (re)start counts only `last`, so
+ * history from before a resume is never charged again. Repeated reports add nothing.
+ */
+export class CodexTurnUsage {
+  private previousTotal: Breakdown | undefined;
+  private readonly turns = new Map<string, Breakdown>();
+
+  /** Fold a report into its turn and return the turn's usage so far. */
+  add(turnId: string, u: ThreadTokenUsage): Usage {
+    const step = this.previousTotal ? addBreakdown(u.total, this.previousTotal, -1) : u.last;
+    this.previousTotal = u.total;
+    const turn = addBreakdown(this.turns.get(turnId) ?? ZERO, step);
+    this.turns.set(turnId, turn);
+    return tokenUsage({ ...u, total: turn });
+  }
+}
+
+/**
+ * Codex token usage in CodeDen's terms, from `u.total` (context from `last`). OpenAI counts
+ * cached input inside `inputTokens`; CodeDen's `inputTokens` is the uncached part.
+ */
 export function tokenUsage(u: ThreadTokenUsage): Usage {
   const usage: Usage = {
-    inputTokens: count(u.total.inputTokens),
+    inputTokens: count(Math.max(0, u.total.inputTokens - u.total.cachedInputTokens)),
     outputTokens: count(u.total.outputTokens),
     cachedInputTokens: count(u.total.cachedInputTokens),
     cacheWriteTokens: count(u.total.cacheWriteInputTokens),

@@ -160,6 +160,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.lifecycle.start();
   services.orchestration.start();
   services.github.start({ sync: opts.github?.sync ?? process.env.CODEDEN_GITHUB_SYNC !== "0" });
+  services.usage.start();
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -275,6 +276,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.lifecycle.stop();
       services.orchestration.stop();
       services.github.stop();
+      services.usage.stop();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();

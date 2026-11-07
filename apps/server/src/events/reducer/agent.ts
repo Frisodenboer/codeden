@@ -20,7 +20,7 @@ import {
   runFailedInbox,
 } from "./items";
 import type { Mutation, ProjectionReader } from "./types";
-import { accumulateUsage, mergeLatestUsage } from "./usage";
+import { accumulateUsage, hasTokenCounts, mergeLatestUsage } from "./usage";
 
 /** Statuses that agent events never move a session out of. */
 const TERMINAL: ReadonlySet<SessionStatus> = new Set(["completed", "stopped"]);
@@ -220,7 +220,8 @@ function syncRequest(d: Draft, record: ItemRecord & { item: RequestItem }, ts: s
 function onUsage(d: Draft, sessionId: string, event: AgentEventOf<"usage.updated">): void {
   const sessionRecord = d.getSession(sessionId);
   if (!sessionRecord) return;
-  if (!event.turnId) {
+  // Reports without token counts (rate limits, context size) never replace a turn's usage.
+  if (!event.turnId || !hasTokenCounts(event.usage)) {
     d.putSession(sessionRecord.session, mergeLatestUsage(sessionRecord.usage, event.usage), false);
     return;
   }

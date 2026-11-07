@@ -12,6 +12,7 @@ import { AgentsPage, type AgentTab } from "@/routes/agents";
 import { HomePage } from "@/routes/home";
 import { InboxPage } from "@/routes/inbox";
 import { ProjectPage } from "@/routes/project";
+import { ReportsPage } from "@/routes/reports";
 import { SessionPage } from "@/routes/session";
 import { SettingsPage } from "@/routes/settings";
 import { SetupPage } from "@/routes/setup";
@@ -86,10 +87,22 @@ const agentsRoute = createRoute({
   },
 });
 
+const reportsRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/reports",
+  validateSearch: (s: Record<string, unknown>): { project?: string } =>
+    typeof s.project === "string" ? { project: s.project } : {},
+  component: function Reports() {
+    const { project } = reportsRoute.useSearch();
+    return <ReportsPage key={project ?? "all"} projectId={project} />;
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   shell.addChildren([
     createRoute({ getParentRoute: () => shell, path: "/", component: HomePage }),
     createRoute({ getParentRoute: () => shell, path: "/inbox", component: InboxPage }),
+    reportsRoute,
     sessionRoute,
     projectRoute,
     visionRoute,

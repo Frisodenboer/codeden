@@ -11,6 +11,7 @@ import {
 } from "../db/schema";
 import { applyGithubProjection } from "../services/github/projection";
 import { applyOrchestrationProjection } from "../services/orchestration/projection";
+import { applyUsageReport } from "../services/usage/ledger";
 import { applyMutations, DbProjectionReader, derivedEvents, type Tx } from "./projection-db";
 import { reduceAgentEvent } from "./reducer/agent";
 import { applyWorkbenchProjection } from "./workbench-projection";
@@ -110,6 +111,10 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
     default: {
       const mutations = reduceAgentEvent(new DbProjectionReader(tx), e.sessionId, e.payload, e.ts);
       applyMutations(tx, mutations);
+      if (e.payload.type === "usage.updated") {
+        const { threadId, turnId, usage } = e.payload;
+        applyUsageReport(tx, { sessionId: e.sessionId, threadId, turnId, usage, ts: e.ts });
+      }
       return derivedEvents(mutations);
     }
   }

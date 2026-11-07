@@ -1,5 +1,6 @@
 import { CircleSlash, OctagonX } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTurnCostText } from "@/components/usage/session-cost";
 import { duration, plural } from "@/lib/format";
 import type { TimelineRow as Row } from "@/lib/transcript/timeline";
 import { ApprovalCard } from "./cards/approval-card";
@@ -33,12 +34,20 @@ function Working({ startedAt }: { startedAt: string }) {
   );
 }
 
-function TurnFooter({ row }: { row: Extract<Row, { type: "turn-end" }> }) {
+function TurnFooter({
+  row,
+  sessionId,
+}: {
+  row: Extract<Row, { type: "turn-end" }>;
+  sessionId: string;
+}) {
   const { turn } = row;
+  const cost = useTurnCostText(sessionId, turn.id);
   const parts: string[] = [];
   if (row.durationMs !== null && row.durationMs > 0)
     parts.push(`Worked for ${duration(row.durationMs)}`);
   if (row.filesChanged > 0) parts.push(`${plural(row.filesChanged, "file")} changed`);
+  if (cost) parts.push(cost);
   return (
     <div className="flex items-center gap-3 py-1 text-3xs text-muted-foreground/70">
       <div className="h-px flex-1 bg-border/70" />
@@ -70,7 +79,7 @@ export function TimelineRowView({ row, sessionId }: { row: Row; sessionId: strin
     case "working":
       return <Working startedAt={row.turn.startedAt} />;
     case "turn-end":
-      return <TurnFooter row={row} />;
+      return <TurnFooter row={row} sessionId={sessionId} />;
     case "card": {
       const item = row.item;
       switch (item.kind) {

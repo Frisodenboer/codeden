@@ -10,6 +10,11 @@ const ADDITIVE = [
   "costUsd",
 ] as const;
 
+/** True when a report carries token counts or cost (not only rate limits or context size). */
+export function hasTokenCounts(usage: Usage): boolean {
+  return ADDITIVE.some((field) => usage[field] !== undefined);
+}
+
 /** Fields where only the latest report matters. */
 const LATEST = ["contextTokens", "contextWindow", "rateLimits"] as const;
 

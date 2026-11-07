@@ -36,7 +36,15 @@ function expectFullSchema(file: string): void {
         name: string;
       }[]
     ).map((t) => t.name);
-    expect(tables).toEqual(expect.arrayContaining(["github_sync_state", "notices", "conflicts"]));
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        "github_sync_state",
+        "notices",
+        "conflicts",
+        "usage_ledger",
+        "rate_limit_windows",
+      ]),
+    );
     expect(columns(database.client, "github_prs")).toEqual(
       expect.arrayContaining(["review_decision", "linked_issues", "merged_at"]),
     );
@@ -54,10 +62,12 @@ afterEach(() => {
 });
 
 describe("migrations", () => {
-  it("are named in timestamp order with the GitHub and orchestration migrations both present", () => {
+  it("chain in timestamp order: GitHub sync, orchestration, usage ledger", () => {
     expect(names).toEqual([...names].sort());
-    expect(names.some((n) => n.endsWith("_github_sync"))).toBe(true);
-    expect(names.some((n) => n.endsWith("_orchestration"))).toBe(true);
+    const at = (suffix: string) => names.findIndex((n) => n.endsWith(suffix));
+    expect(at("_github_sync")).toBeGreaterThan(-1);
+    expect(at("_orchestration")).toBeGreaterThan(at("_github_sync"));
+    expect(at("_usage_ledger")).toBeGreaterThan(at("_orchestration"));
   });
 
   it("create the full schema on a fresh database", () => {
@@ -65,8 +75,10 @@ describe("migrations", () => {
   });
 
   it.each([
-    ["orchestration only", (n: string) => !n.endsWith("_github_sync")],
-    ["GitHub sync only", (n: string) => !n.endsWith("_orchestration")],
+    ["orchestration only", (n: string) => !/_(github_sync|usage_ledger)$/.test(n)],
+    ["GitHub sync only", (n: string) => !/_(orchestration|usage_ledger)$/.test(n)],
+    ["usage ledger only", (n: string) => !/_(github_sync|orchestration)$/.test(n)],
+    ["everything before the usage ledger", (n: string) => !n.endsWith("_usage_ledger")],
   ])("upgrade a database that applied %s", (_label, keep) => {
     const file = join(tempDir(), "old.db");
     openDatabase(file, partialMigrations(keep)).close();
