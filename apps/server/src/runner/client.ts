@@ -23,7 +23,7 @@ import type { Db } from "../db/client";
 import { runnerState } from "../db/schema";
 import type { EventStore } from "../events/store";
 import { type RunnerLaunchConfig, spawnRunner } from "./launcher";
-import { probeRunnerLock, readLiveRunnerLock } from "./lock";
+import { isProcessAlive, probeRunnerLock, readLiveRunnerLock } from "./lock";
 
 export interface RunnerClientOptions {
   home: string;
@@ -66,6 +66,16 @@ export class RunnerCommandError extends Error {
   }
 }
 
+/** True when `lock` belongs to the runner we spawned (or, without a pid, is not the stale one). */
+function isFreshLock(
+  lock: RunnerLock,
+  spawnedPid: number | undefined,
+  stale: RunnerLock | undefined,
+): boolean {
+  if (spawnedPid !== undefined) return lock.pid === spawnedPid;
+  return !stale || lock.pid !== stale.pid || lock.startedAt !== stale.startedAt;
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -81,6 +91,7 @@ export class RunnerClient {
   private runnerId: string | undefined;
   private lastAckedSeq = 0;
   private proxyUrl: string | null = null;
+  private runnerPid: number | undefined;
   private current: RunnerConnectionStatus = {
     state: "starting",
     runnerId: null,
@@ -152,11 +163,15 @@ export class RunnerClient {
   }
 
   /** Ask the runner process to exit, then disconnect. */
-  async shutdownRunner(): Promise<void> {
+  async shutdownRunner(timeoutMs = 10_000): Promise<void> {
+    const pid = this.runnerPid;
     if (this.current.state === "connected") {
       await this.request({ name: "runner.shutdown" }, 5_000).catch(() => undefined);
     }
     await this.stop();
+    // Resolve only once the process is gone, so callers can remove the home directory.
+    const deadline = Date.now() + timeoutMs;
+    while (pid !== undefined && isProcessAlive(pid) && Date.now() < deadline) await sleep(50);
   }
 
   // ---------------------------------------------------------------- connection
@@ -186,17 +201,28 @@ export class RunnerClient {
     }
     if (!this.opts.launch) throw new Error("No live runner and launching is disabled");
     this.opts.log?.("runner: starting a new runner process");
-    spawnRunner(this.opts.launch, this.opts.home);
+    const pid = spawnRunner(this.opts.launch, this.opts.home);
     const deadline = Date.now() + (this.opts.startTimeoutMs ?? 20_000);
     while (Date.now() < deadline) {
       await sleep(100);
       const lock = readLiveRunnerLock(this.opts.lockFile);
-      if (lock) return lock;
+      // Only accept the lock written by the runner just spawned. A stale lock whose pid happens
+      // to be alive would otherwise be returned at once, fail to connect, and the retry would
+      // spawn a second runner that is never stopped.
+      if (lock && isFreshLock(lock, pid, existing)) return lock;
+    }
+    if (pid !== undefined && isProcessAlive(pid)) {
+      try {
+        process.kill(pid);
+      } catch {
+        // already gone
+      }
     }
     throw new Error("Runner did not start in time (see logs/runner.log)");
   }
 
   private connect(lock: RunnerLock): Promise<void> {
+    this.runnerPid = lock.pid;
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(`ws://127.0.0.1:${lock.port}/runner`, {
         headers: { authorization: `Bearer ${lock.token}` },

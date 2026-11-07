@@ -155,10 +155,20 @@ describe("runner lifecycle (real processes)", () => {
         startedAt: new Date().toISOString(),
       }),
     );
-    server = await startServer({ port: 0, dataDir: home, token: TOKEN, waitForRunner: true });
+    const logs: string[] = [];
+    server = await startServer({
+      port: 0,
+      dataDir: home,
+      token: TOKEN,
+      waitForRunner: true,
+      log: (m) => logs.push(m),
+    });
     const lock = readLiveRunnerLock(join(home, "runner", "runner.json"));
     expect(lock?.pid).not.toBe(process.pid);
     expect(server.runner?.status.state).toBe("connected");
+    // Exactly one runner was spawned: the stale lock must not be mistaken for the new
+    // runner's lock (which used to spawn a second, orphaned runner holding the home dir).
+    expect(logs.filter((l) => l.includes("starting a new runner process"))).toHaveLength(1);
   }, 60_000);
 
   it("stops a detached runner without a server (codeden stop)", async () => {
