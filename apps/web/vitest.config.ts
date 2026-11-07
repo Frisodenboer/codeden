@@ -3,5 +3,8 @@ import { defineProject } from "vitest/config";
 
 export default defineProject({
   resolve: { alias: { "@": resolve(import.meta.dirname, "src") } },
-  test: { environment: "node" },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./test/setup.ts"],
+  },
 });

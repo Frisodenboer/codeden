@@ -20,6 +20,12 @@ export function applyTheme(preference: ThemePreference): void {
   document.documentElement.classList.toggle("dark", resolveTheme(preference) === "dark");
 }
 
+/** The theme actually applied right now (`system` resolved). */
+export function useResolvedTheme(): "dark" | "light" {
+  const preference = useThemeStore((s) => s.preference);
+  return resolveTheme(preference);
+}
+
 /** Theme preference, persisted per browser (dark-first). */
 export const useThemeStore = create<ThemeState>()(
   persist(
