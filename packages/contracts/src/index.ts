@@ -2,6 +2,7 @@
  * @codeden/contracts: the shared, zod-typed language of CodeDen.
  * Everything that crosses a process or network boundary is defined here first.
  */
+export * from "./agent-config";
 export * from "./agent-events";
 export * from "./api";
 export * from "./browser-api";
