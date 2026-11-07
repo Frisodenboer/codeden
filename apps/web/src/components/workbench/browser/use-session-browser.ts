@@ -54,6 +54,14 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
         setOpen(msg.open);
         setTabs(msg.tabs);
       } else if (msg.type === "tabs") {
+        if (msg.tabs.length === 0) {
+          // The browser closed (agent, session stop or another viewer): start a fresh viewer
+          // that waits for the next open instead of a stale screencast registration.
+          setOpen(false);
+          setTabs([]);
+          setGeneration((g) => g + 1);
+          return;
+        }
         setOpen(true);
         setTabs(msg.tabs);
       } else if (msg.type === "frame") {
