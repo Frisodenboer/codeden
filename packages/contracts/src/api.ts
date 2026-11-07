@@ -400,6 +400,8 @@ export const SecretKey = z.enum([
   "openai.apiKey",
   "gemini.apiKey",
   "anthropic.apiKey",
+  /** Fallback GitHub token when `gh auth token` is unavailable (§9). */
+  "github.token",
 ]);
 export type SecretKey = z.infer<typeof SecretKey>;
 
