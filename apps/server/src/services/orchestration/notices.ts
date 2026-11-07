@@ -1,0 +1,233 @@
+import type {
+  AgentEventOf,
+  AutomationRun,
+  InboxItem,
+  ListNoticesQuery,
+  Notice,
+  NoticeTarget,
+  RawEventEnvelope,
+  Session,
+} from "@codeden/contracts";
+import { and, desc, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
+import type { Db } from "../../db/client";
+import { notices } from "../../db/schema-orchestration";
+import type { EventStore } from "../../events/store";
+
+/** A notice before it is stored (`deliveredAt` is set by delivery). */
+export type NoticeDraft = Notice extends infer N
+  ? N extends Notice
+    ? Omit<N, "createdAt" | "deliveredAt">
+    : never
+  : never;
+
+/** Notices and whether each should wake its target. */
+export interface DerivedNotice {
+  notice: NoticeDraft;
+  wake: boolean;
+}
+
+/** What `deriveNotices` needs to look up while reading events. */
+export interface NoticeLookup {
+  session(id: string): Session | undefined;
+  /** Text of the final assistant message of a turn. */
+  finalMessage(sessionId: string, turnId: string): string | null;
+}
+
+const clip = (text: string, max = 300) =>
+  text.length > max ? `${text.slice(0, max - 3)}...` : text;
+
+/**
+ * Work started by the PM, the orchestrator or an automation wakes the PM; sessions the user
+ * started (and is watching) only produce notices that show up in the PM's next digest.
+ */
+export function wakesPm(session: Session): boolean {
+  return session.startedBy.kind !== "user" || session.parentSessionId !== null;
+}
+
+function workRef(s: Session) {
+  return { sessionId: s.id, workKey: s.workKey, purpose: s.purpose, startedBy: s.startedBy };
+}
+
+/**
+ * Typed notices for a batch of committed events (§8.2 step 4). Pure apart from the lookups.
+ * Only agent sessions inside a project produce notices; ids are derived from the source so
+ * replays and repeats never create duplicates.
+ */
+export function deriveNotices(events: RawEventEnvelope[], lookup: NoticeLookup): DerivedNotice[] {
+  const out: DerivedNotice[] = [];
+  const agentSession = (id: string | null | undefined) => {
+    const s = id ? lookup.session(id) : undefined;
+    return s && s.role === "agent" && s.projectId ? s : undefined;
+  };
+  for (const e of events) {
+    if (e.type === "agent.turn.completed") {
+      const event = e.payload as AgentEventOf<"turn.completed">;
+      const s = agentSession(e.sessionId);
+      if (!s || s.rootThreadId !== event.threadId) continue;
+      const final = lookup.finalMessage(s.id, event.turnId);
+      out.push({
+        wake: wakesPm(s),
+        notice: {
+          id: `session.finished:${s.id}:${event.turnId}`,
+          type: "session.finished",
+          projectId: s.projectId,
+          target: "pm",
+          sessionId: s.id,
+          title: `Finished: ${s.title ?? s.purpose}`,
+          data: {
+            ...workRef(s),
+            summary: s.result?.summary ?? (final ? clip(final) : null),
+            outcome: s.result?.outcome ?? null,
+          },
+        },
+      });
+    } else if (e.type === "inbox.created") {
+      const { item } = e.payload as { item: InboxItem };
+      const s = agentSession(item.sessionId);
+      if (!s) continue;
+      if (item.kind === "question" || item.kind === "approval") {
+        out.push({
+          wake: wakesPm(s),
+          notice: {
+            id: `session.needs_input:${item.id}`,
+            type: "session.needs_input",
+            projectId: s.projectId,
+            target: "pm",
+            sessionId: s.id,
+            title: `Needs input: ${s.title ?? s.purpose}`,
+            data: { ...workRef(s), inboxItemId: item.id, kind: item.kind, question: item.title },
+          },
+        });
+      } else if (item.kind === "run_failed") {
+        out.push({
+          wake: wakesPm(s),
+          notice: {
+            id: `session.failed:${item.id}`,
+            type: "session.failed",
+            projectId: s.projectId,
+            target: "pm",
+            sessionId: s.id,
+            title: `Failed: ${s.title ?? s.purpose}`,
+            data: { ...workRef(s), error: clip(item.body ?? item.title) },
+          },
+        });
+      }
+    } else if (e.type === "session.updated") {
+      const { session } = e.payload as { session: Session };
+      if (session.role !== "agent" || !session.projectId || !session.pr) continue;
+      out.push({
+        wake: wakesPm(session),
+        notice: {
+          id: `pr.opened:${session.id}:${session.pr.number}`,
+          type: "pr.opened",
+          projectId: session.projectId,
+          target: "pm",
+          sessionId: session.id,
+          title: `PR #${session.pr.number} opened: ${session.pr.title ?? session.purpose}`,
+          data: { sessionId: session.id, pr: session.pr },
+        },
+      });
+    } else if (e.type === "automation_run.updated") {
+      const { run } = e.payload as { run: AutomationRun };
+      if (run.status !== "skipped" || !run.projectId) continue;
+      out.push({
+        wake: true,
+        notice: {
+          id: `automation.skipped:${run.id}`,
+          type: "automation.skipped",
+          projectId: run.projectId,
+          target: "pm",
+          sessionId: run.sessionId,
+          title: `Automation skipped: ${run.purpose}`,
+          data: {
+            automationRunId: run.id,
+            automationId: run.automationId,
+            workKey: run.workKey,
+            purpose: run.purpose,
+            reason: run.skipReason ?? "skipped",
+          },
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/** Stored notices (§8.2): created through `notice.created`, delivered through `notice.delivered`. */
+export class NoticeStore {
+  constructor(
+    private readonly db: Db,
+    private readonly store: EventStore,
+  ) {}
+
+  /** Store a notice unless one with the same id exists. Returns the stored notice, if new. */
+  create(draft: NoticeDraft): Notice | undefined {
+    if (this.db.select({ id: notices.id }).from(notices).where(eq(notices.id, draft.id)).get()) {
+      return undefined;
+    }
+    const notice = { ...draft, createdAt: new Date().toISOString(), deliveredAt: null } as Notice;
+    this.store.append([{ type: "notice.created", sessionId: null, payload: { notice } }]);
+    return notice;
+  }
+
+  list(query: Partial<ListNoticesQuery> = {}): Notice[] {
+    const conditions: SQL[] = [];
+    if (query.projectId) conditions.push(eq(notices.projectId, query.projectId));
+    if (query.target) conditions.push(eq(notices.target, query.target));
+    return this.db
+      .select()
+      .from(notices)
+      .where(and(...conditions))
+      .orderBy(desc(notices.createdAt))
+      .limit(query.limit ?? 100)
+      .all()
+      .map((r) => r.notice);
+  }
+
+  /** Undelivered notices for a target, oldest first. `projectId` null = the orchestrator. */
+  undelivered(target: NoticeTarget, projectId: string | null): Notice[] {
+    return this.db
+      .select()
+      .from(notices)
+      .where(
+        and(
+          eq(notices.target, target),
+          isNull(notices.deliveredAt),
+          projectId === null ? undefined : eq(notices.projectId, projectId),
+        ),
+      )
+      .orderBy(notices.createdAt)
+      .limit(50)
+      .all()
+      .map((r) => r.notice);
+  }
+
+  /** Notices of the given types for a project since `since`, newest first. */
+  recent(projectId: string, types: Notice["type"][], since: string, limit = 5): Notice[] {
+    return this.db
+      .select()
+      .from(notices)
+      .where(
+        and(
+          eq(notices.projectId, projectId),
+          inArray(notices.type, types),
+          gte(notices.createdAt, since),
+        ),
+      )
+      .orderBy(desc(notices.createdAt))
+      .limit(limit)
+      .all()
+      .map((r) => r.notice);
+  }
+
+  markDelivered(ids: string[]): void {
+    if (ids.length === 0) return;
+    this.store.append([
+      {
+        type: "notice.delivered",
+        sessionId: null,
+        payload: { noticeIds: ids, at: new Date().toISOString() },
+      },
+    ]);
+  }
+}

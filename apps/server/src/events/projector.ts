@@ -9,6 +9,7 @@ import {
   projects,
   sessions,
 } from "../db/schema";
+import { applyOrchestrationProjection } from "../services/orchestration/projection";
 import { applyMutations, DbProjectionReader, derivedEvents, type Tx } from "./projection-db";
 import { reduceAgentEvent } from "./reducer/agent";
 import { applyWorkbenchProjection } from "./workbench-projection";
@@ -80,6 +81,11 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
     case "message.queued":
     case "message.dequeued":
       applyWorkbenchProjection(tx, e);
+      return [];
+    case "notice.created":
+    case "notice.delivered":
+    case "conflict.created":
+      applyOrchestrationProjection(tx, e);
       return [];
     case "settings.updated":
     case "runner.connected":

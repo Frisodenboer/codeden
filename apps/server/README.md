@@ -32,6 +32,30 @@ Browser tools always act on the caller's own session (from its token); no tool t
 
 The question becomes a `user_question` item (`deferred: true`) in the current turn, which the projection mirrors into the inbox. The tool call waits up to 4 minutes (`askUserWaitMs`): an answer within that time is the tool's result. Otherwise it returns `pending`, the agent is told to finish what it can and end its turn, and the deferred question stays open after the turn ends. When the user answers later, the answer is sent to the session as a new user message (queued if a turn is running). This avoids depending on each provider's MCP tool timeout and on long-held HTTP requests.
 
+## Orchestration (§8)
+
+`OrchestrationService` (`src/services/orchestration/`) owns the role sessions, digests, notices and conflicts. Shapes: `@codeden/contracts` `orchestration.ts`, `orchestration-api.ts`.
+
+- **Role sessions.** One orchestrator (cwd `<home>/orchestrator/`) and one PM per project (cwd: the project root), created lazily and reused (resumed through the provider resume token). Provider/model/effort from `settings.providers.orchestrator|pm`. Both run with `SessionOptions.readOnly`: Claude gets no edit tools and a deny policy for writing commands, Codex a `read-only` sandbox. System prompts: `prompts.ts`.
+- **Status digest.** Every message to a role session (user, wake, `message_pm`, `ask_pm`, queued) gets a fresh `<codeden_status>` block and any undelivered notices prepended at send time (`SessionService.setInputDecorator`).
+- **Notices.** Session/inbox/automation events become typed `Notice` records (`notice.created`, table `notices`). Work started by a PM, the orchestrator or an automation wakes the PM after a 5 s debounce (30 s max wait), at most 6 wakes per 10 minutes per target (`WakeScheduler`). Delivered notices show as a `notice` item with `code: "orchestration_notices"` at the start of the wake turn. Other services call `orchestration.notify(...)` (e.g. `pr.checks_failed`).
+- **PM <-> orchestrator.** `ask_pm` waits (default 3 min) for the final message of the PM turn that handled the question; later answers arrive as a message. `message_orchestrator` with `informational: true` never wakes the orchestrator.
+- **Conflicts.** A user start that matches running work is persisted (`conflict.created`, table `conflicts`, inbox item kind `conflict`); `POST /api/sessions` answers 409 with `conflictId`.
+- **Ports.** `GithubPort` and `AutomationPort` (`ports.ts`) are stubs until the GitHub and automation services provide them (`createServices({ orchestration: { github, automation } })`).
+
+| Route | Body / response |
+|---|---|
+| `GET\|POST /api/orchestration/orchestrator` | -> `RoleSessionResponse` (POST creates it) |
+| `POST /api/orchestration/orchestrator/messages` | `RoleMessageRequest` -> `RoleMessageResponse` |
+| `GET\|POST /api/orchestration/projects/:id/pm`, `POST .../pm/messages` | same, for the project's PM |
+| `GET /api/orchestration/projects/:id/status`, `GET /api/orchestration/overview` | -> `ProjectStatus`, `Overview` |
+| `GET /api/orchestration/roles`, `GET /api/orchestration/notices?projectId=&target=&limit=` | -> `RoleSessionsRef`, `Notice[]` |
+| `GET /api/conflicts?status=&projectId=`, `GET /api/conflicts/:id` | -> `ConflictRecord[]`, `ConflictRecord` |
+| `POST /api/conflicts/:id/resolve` | `ConflictDecision` -> `ResolveConflictResponse` |
+| `PATCH /api/sessions/:id` | `UpdateSessionRequest` (model, effort, title) -> `Session`; model/effort apply on the next turn (`session.configure`) |
+
+Tools: orchestrator `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox`; PM `get_project_status`, `list_sessions`, `start_session`, `message_session`, `stop_session`, `list_scheduled_runs`, `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run`, `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `list_issues`, `get_issue`, `triage_issue`, `create_issue`, `get_pr_status`, plus `ask_user`. Awareness and core tools are always loaded.
+
 ## Session browser (§12.2)
 
 The runner owns one Chromium with a context per session (`apps/runner/src/browser`). The server exposes it to the panel and to the agent tools above; shapes are in `@codeden/contracts` (`browser-api.ts`).

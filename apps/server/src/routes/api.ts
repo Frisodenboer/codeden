@@ -16,6 +16,7 @@ import { agentConfigRoutes, sessionAgentConfigRoutes } from "./agent-config";
 import { browserRoutes, sessionBrowserRoutes } from "./browser";
 import { imageRoutes } from "./images";
 import { inboxRoutes } from "./inbox";
+import { conflictRoutes, orchestrationRoutes } from "./orchestration";
 import { projectRoutes } from "./projects";
 import { sessionFileRoutes } from "./session-files";
 import { sessionRoutes } from "./sessions";
@@ -66,6 +67,8 @@ export function createApi(ctx: ApiContext) {
     .route("/sessions", sessionFileRoutes(s))
     .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))
+    .route("/orchestration", orchestrationRoutes(s))
+    .route("/conflicts", conflictRoutes(s))
     .route("/setup", setupRoutes(s))
     .route("/artifacts", artifactRoutes(s))
     .route("/secrets", secretRoutes(s))
@@ -108,7 +111,8 @@ function buildSnapshot(ctx: ApiContext): Snapshot {
     sessions: s.db.select().from(sessions).orderBy(asc(sessions.createdAt)).all().map(rowToSession),
     inbox: s.inbox.list({ status: "open" }),
     automations: s.db.select().from(automations).all().map(rowToAutomation),
-    scheduled: [],
+    scheduled: s.orchestration.automation.listScheduledRuns(null, 20),
+    roleSessions: s.orchestration.roles.refs(),
     runner: ctx.runnerStatus(),
   };
 }

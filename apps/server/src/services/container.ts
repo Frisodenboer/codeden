@@ -15,6 +15,11 @@ import { type Exec, runTool } from "./exec";
 import { ConfigFiles } from "./files/config-files";
 import { ImageService } from "./images/image-service";
 import { InboxService } from "./inbox-service";
+import {
+  type OrchestrationOptions,
+  OrchestrationService,
+} from "./orchestration/orchestration-service";
+import type { AutomationPort, GithubPort } from "./orchestration/ports";
 import { ProjectService } from "./projects/project-service";
 import type { RunnerPort } from "./runner-port";
 import type { SecretStore } from "./secrets";
@@ -49,6 +54,8 @@ export interface ServicesOptions {
   imageEngines?: ImageEngineRegistry;
   /** Cloud voice API base URLs (tests point them at a local stub). */
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
+  /** Orchestration seams and timings (§8): GitHub and automation ports, wake debounce. */
+  orchestration?: OrchestrationOptions & { github?: GithubPort; automation?: AutomationPort };
   log?: (message: string) => void;
 }
 
@@ -83,6 +90,8 @@ export interface AppServices {
   configFiles: ConfigFiles;
   /** Provider memory, skills, subagents and MCP servers (§12.4). */
   agentConfig: AgentConfigService;
+  /** Orchestrator and PM sessions, digests, notices, conflicts (§8). */
+  orchestration: OrchestrationService;
   userHome: string;
 }
 
@@ -194,6 +203,18 @@ export function createServices(opts: ServicesOptions): AppServices {
       repo: sessionRepo,
       backupDir: join(opts.paths.backups, "agent-config"),
       mcpProxyUrl: () => opts.runner.mcpProxyUrl(),
+    }),
+    orchestration: new OrchestrationService({
+      db: opts.db,
+      store: opts.store,
+      repo: sessionRepo,
+      sessions,
+      projects,
+      inbox,
+      github: opts.orchestration?.github,
+      automation: opts.orchestration?.automation,
+      options: opts.orchestration,
+      log: opts.log,
     }),
     userHome,
     questions,
