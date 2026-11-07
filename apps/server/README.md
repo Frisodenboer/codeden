@@ -67,6 +67,30 @@ Commands on a session without an open browser fail with `409 browser_not_open`.
 | `GET /api/images/engines?projectId=` | -> `ImageEnginesResponse` (engines, active engine, today's usage, effective cap) |
 | `POST /api/images/test` | `ImageTestRequest` -> `ImageTestResponse` (generates one small image into an artifact unless `generate: false`) |
 
+## Agent configuration (§12.4)
+
+`AgentConfigService` (`src/services/agent-config/`) reads and edits each provider's native files in place. Shapes: `@codeden/contracts` `agent-config.ts`.
+
+- **Discovery.** Claude: `~/.claude/CLAUDE.md`, `~/.claude/rules/**.md`, `~/.claude/skills/<name>/SKILL.md`, `~/.claude/agents/**.md`; per project `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, nested `CLAUDE.md` (`onDemand`), `.claude/rules`, `.claude/skills`, `.claude/agents`, and the auto-memory folder. Codex: `~/.codex/AGENTS.md` (and `AGENTS.override.md`), `~/.codex/skills`, `~/.agents/skills`, `~/.codex/agents/*.toml`; per project `AGENTS.md` files (nested too), `.agents/skills`, `.codex/agents`. Nested scans skip dot folders and build output.
+- **Auto memory.** `~/.claude/projects/<slug>/memory/` where the slug is the main repo root with every non-alphanumeric character replaced by `-` (`C:\Projects\codeden` -> `C--Projects-codeden`, checked against real folders on Windows); all worktrees share it. `autoMemoryDirectory` in `~/.claude/settings.json` wins when set.
+- **Safety.** Files are addressed by `AgentConfigLocator` (`root`: `home` | `project` | `auto_memory`, plus `path`) and must match a known agent-config location (anything else, `.git`, credentials or `..` is a 403). Writes are atomic; every overwrite or delete copies the old file (or skill folder) to `<home>/backups/agent-config/` first; `expectedSha256` gives optimistic concurrency.
+- **MCP servers.** Claude `user` (`~/.claude.json` `mcpServers`), `local` (`~/.claude.json` `projects["C:/path"].mcpServers`, forward slashes on Windows) and `project` (`.mcp.json`); Codex `user` (`~/.codex/config.toml` `[mcp_servers.<name>]`). JSON files are rewritten with their indentation. `config.toml` edits replace only the server's own `[mcp_servers.<name>]` blocks (verified by re-parsing; the TOML library's structural `patch()` is the fallback for inline or dotted definitions), so comments and other settings stay byte for byte. Unknown native fields are kept (`spec.extra`).
+- **What's loaded.** Computed from each provider's rules from the session's working directory: Claude walks every ancestor for `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` and `.claude/rules`, adds `MEMORY.md`, and project skills/subagents up to the repo root; Codex takes `AGENTS.override.md` or `AGENTS.md` in `~/.codex` and in each folder from the repo root down. MCP servers include CodeDen's own.
+
+| Route | Body / response |
+|---|---|
+| `GET /api/agent-config/files?projectId=&provider=&kind=` | -> `AgentConfigListResponse` |
+| `GET /api/agent-config/file?root=&projectId=&path=` | -> `AgentConfigFileContent` (missing files read as empty) |
+| `PUT /api/agent-config/file` | `AgentConfigWriteRequest` -> `AgentConfigWriteResponse` (create or overwrite) |
+| `POST /api/agent-config/file` | `AgentConfigWriteRequest` -> `AgentConfigWriteResponse` (create only, 409 `file_exists`) |
+| `DELETE /api/agent-config/file?root=&projectId=&path=[&folder=1]` | -> `AgentConfigDeleteResponse` |
+| `POST /api/agent-config/diff` | `AgentConfigDiffRequest` -> `AgentConfigDiff` |
+| `GET /api/agent-config/mcp?projectId=` | -> `McpServerListResponse` |
+| `PUT /api/agent-config/mcp` | `McpServerUpsertRequest` -> `McpServerWriteResponse` |
+| `DELETE /api/agent-config/mcp?provider=&scope=&projectId=&name=` | -> `McpServerWriteResponse` |
+| `POST /api/agent-config/mcp/diff` | `McpServerDiffRequest` -> `AgentConfigDiff` (no `spec` = removal) |
+| `GET /api/sessions/:id/agent-config/loaded` | -> `LoadedAgentConfig` |
+
 ## Tests
 
 ```sh

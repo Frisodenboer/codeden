@@ -8,6 +8,7 @@ import { McpTokenStore } from "../mcp/tokens";
 import { allTools } from "../mcp/tools";
 import type { HomePaths } from "../paths";
 import type { SettingsStore } from "../settings-store";
+import { AgentConfigService } from "./agent-config/agent-config-service";
 import { ArtifactService } from "./artifacts";
 import { BrowserService } from "./browser/browser-service";
 import { type Exec, runTool } from "./exec";
@@ -75,6 +76,8 @@ export interface AppServices {
   images: ImageService;
   setup: SetupService;
   configFiles: ConfigFiles;
+  /** Provider memory, skills, subagents and MCP servers (§12.4). */
+  agentConfig: AgentConfigService;
   userHome: string;
 }
 
@@ -178,6 +181,13 @@ export function createServices(opts: ServicesOptions): AppServices {
       projects,
       home: userHome,
       backupDir: join(opts.paths.backups, "files"),
+    }),
+    agentConfig: new AgentConfigService({
+      home: userHome,
+      projects,
+      repo: sessionRepo,
+      backupDir: join(opts.paths.backups, "agent-config"),
+      mcpProxyUrl: () => opts.runner.mcpProxyUrl(),
     }),
     userHome,
     questions,

@@ -12,6 +12,7 @@ import { automations, items, sessions, threads, turns } from "../db/schema";
 import type { AppServices } from "../services/container";
 import { badRequest, notFound } from "../services/errors";
 import { previewRecord } from "../services/sessions/preview";
+import { agentConfigRoutes, sessionAgentConfigRoutes } from "./agent-config";
 import { browserRoutes, sessionBrowserRoutes } from "./browser";
 import { imageRoutes } from "./images";
 import { inboxRoutes } from "./inbox";
@@ -56,6 +57,8 @@ export function createApi(ctx: ApiContext) {
     .route("/sessions", sessionBrowserRoutes(s))
     .route("/browser", browserRoutes(s))
     .route("/images", imageRoutes(s))
+    .route("/agent-config", agentConfigRoutes(s))
+    .route("/sessions", sessionAgentConfigRoutes(s))
     .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))
     .route("/setup", setupRoutes(s))
