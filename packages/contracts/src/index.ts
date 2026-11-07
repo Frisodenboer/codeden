@@ -10,6 +10,7 @@ export * from "./entities/inbox";
 export * from "./entities/project";
 export * from "./entities/session";
 export * from "./events";
+export * from "./factory";
 export * from "./input";
 export * from "./items";
 export * from "./provider";

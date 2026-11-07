@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AutonomyLevel, Id, ProviderId, Timestamp } from "../common";
+import { AutonomyMode, DEFAULT_VISION_PATH, FactoryLimits } from "../factory";
 
 const projectBase = {
   id: Id,
@@ -11,8 +12,15 @@ const projectBase = {
   defaultBranch: z.string().nullable(),
   /** Overrides the global default provider for new agent sessions. */
   defaultProvider: ProviderId.nullable(),
-  /** Overrides the global default autonomy level. */
+  /** Overrides the global default per-session autonomy level (§11.2). */
   autonomy: AutonomyLevel.nullable(),
+  /** Project autonomy mode (§10.1). */
+  autonomyMode: AutonomyMode.default("assisted"),
+  /** Vision file, relative to the repo root; required for autopilot and dark factory. */
+  visionPath: z.string().min(1).default(DEFAULT_VISION_PATH),
+  factoryLimits: FactoryLimits.prefault({}),
+  /** Stops this project's factory loop and all its sessions. */
+  killSwitch: z.boolean().default(false),
   /** IANA timezone for cron automations; machine timezone when null. */
   timezone: z.string().nullable(),
   createdAt: Timestamp,

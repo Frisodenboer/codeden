@@ -98,6 +98,13 @@ export const Settings = z.object({
       browser: z.boolean().default(false),
     })
     .prefault({}),
+  /** Global factory controls (§10.1). */
+  factory: z
+    .object({
+      /** Stops every project's factory loop and all factory sessions. */
+      killSwitch: z.boolean().default(false),
+    })
+    .prefault({}),
   /** Master switch; individual automations are still off by default (§10). */
   automations: z
     .object({

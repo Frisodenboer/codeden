@@ -334,6 +334,49 @@ The orchestrator must always know what's happening across all projects, and each
 - **Issue triage.** The PM reads new issues and classifies them as ready, needs info, unsafe, out of scope or duplicate. It applies labels and comments according to project policy, and either starts a session or puts a decision in your inbox when unsure ("Should I take this on?").
 - **Visibility.** Every automation run is a normal session (or PM turn) with a full transcript, so background work stays visible.
 
+### 10.1 Project autonomy modes and dark-factory mode
+
+Each project has an **autonomy mode**, a ladder you can climb one step at a time:
+
+| Mode | Who finds work | Who merges | You |
+|---|---|---|---|
+| **Manual** | You | You | Drive every session |
+| **Assisted** (default) | You, the PM (triage) and automations | You | Review PRs and answer the inbox |
+| **Autopilot** | The PM, from issues, automations and the vision | CodeDen, automatically, when every merge check passes; anything else comes to you | Check the daily digest and handle exceptions |
+| **Dark factory** | The PM continuously, from the vision | CodeDen, automatically | Set the vision and the limits, then step away |
+
+**Vision.** Autopilot and dark-factory modes require a project vision in `.codeden/VISION.md`, edited in the UI. It covers:
+- goals, target users and principles
+- what is out of scope
+- quality bar
+- **protected areas** (paths or topics that always need a human: auth, payments, data migrations, infrastructure, licensing)
+
+**The factory loop.** The PM runs it continuously, paced by a budget:
+1. **Discover.** Improvement-finder automations (feature ideas grounded in the vision, UX review, performance, tech debt, test gaps, security), incoming issues and failed checks become candidate work items, each checked against the vision.
+2. **Prioritise and plan.** The PM scores candidates against the vision and creates a GitHub issue for each accepted item, with a work key and acceptance criteria. That keeps the factory's backlog visible and editable by you.
+3. **Build.** Agent sessions implement the issues in worktrees, with duplicate checks (§8.4) applied.
+4. **Verify (merge checks).** All checks must pass before an automatic merge:
+   - CI green, and the tests the change needs exist and pass
+   - a **review by a separate agent session**, ideally on a different provider from the one that wrote the code, against the acceptance criteria and the vision
+   - security and dependency scans clean
+   - UI changes: browser screenshots as evidence, plus an end-to-end check
+   - the change is under a size limit and touches no protected area
+5. **Merge.** Squash-merge, then link the result back to the issue.
+6. **Watch.** After merging, CI on main is watched. A regression triggers an **automatic revert PR**, which goes through the same merge checks, plus a pause of the factory loop and an inbox item.
+7. **Report.** A daily digest lists what shipped, what was rejected and why, spend, and anything waiting on you.
+
+**Limits** (required, enforced by the server, not left to agent judgement):
+- maximum concurrent sessions, maximum PRs merged per day
+- a token or cost budget per day
+- **Pause on repeated failures:** the loop pauses after N failed merge checks or reverts in a row.
+- **Protected areas** always escalate to you.
+- **No deploys or releases** unless they're explicitly enabled as a separate automation.
+- **A kill switch** on the project and globally: one click stops the loop and all its sessions.
+
+**Visibility.** Factory work is ordinary sessions, issues and PRs, so it all stays traceable. The project shows a **factory panel**: loop state, backlog, items in progress, merge-check results, spend against budget, and recent merges and reverts.
+
+**Delivery.** Autopilot and dark-factory modes ship in v1 marked **experimental** (milestone M3b). Assisted remains the default for new projects.
+
 ## 11. Human in the loop
 
 ### 11.1 Inbox
@@ -527,6 +570,7 @@ Known gap: browser speech recognition doesn't work inside Electron, so the speec
 | M1 | Daily driver (private use starts here) | Projects (GitHub and local), sessions on Claude and Codex, worktrees and setup scripts, transcript with tool calls and subagent threads, approvals and autonomy levels, checkpoints and diffs, terminal, browser with agent tools and screenshot sharing, memory/skills/subagents/MCP editors, voice, notifications, image generation tool, utility model and follow-up prompts |
 | M2 | Orchestration | Orchestrator and PMs, the MCP tool registry by role, typed notices and wake-ups, inbox, GitHub issue and PR flow, evidence branch, PR and check sync |
 | M3 | Automations | Scheduler, event triggers, guards, the template library, issue triage, per-project toggles, custom automations |
+| M3b | Autonomy modes (experimental) | Project autonomy modes, the vision editor, the factory loop, merge checks with cross-provider review, automatic merge and revert, limits and kill switch, factory panel and daily digest (§10.1) |
 | v1.0 | Public launch | Polish, docs, `npx codeden` release |
 | Later | | OpenCode, ACP adapter, Electron app, remote runners (Upstash Box, SSH/VPS, Docker), webhooks, GitLab and other forges, remote/mobile access |
 
