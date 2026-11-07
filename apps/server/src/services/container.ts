@@ -27,6 +27,7 @@ import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
 import { SetupService } from "./setup/setup-service";
 import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
+import { VoiceService } from "./voice/voice-service";
 import { WorkbenchService } from "./workbench/workbench-service";
 
 export interface ServicesOptions {
@@ -46,6 +47,8 @@ export interface ServicesOptions {
   askUserWaitMs?: number;
   /** Image engines (§12.5); Codex, Gemini and OpenAI with keychain API keys by default. */
   imageEngines?: ImageEngineRegistry;
+  /** Cloud voice API base URLs (tests point them at a local stub). */
+  voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
   log?: (message: string) => void;
 }
 
@@ -74,6 +77,8 @@ export interface AppServices {
   browser: BrowserService;
   /** `generate_image` engines, caps and the settings test (§12.5). */
   images: ImageService;
+  /** Optional cloud text to speech and transcription (§11.3). */
+  voice: VoiceService;
   setup: SetupService;
   configFiles: ConfigFiles;
   /** Provider memory, skills, subagents and MCP servers (§12.4). */
@@ -176,6 +181,7 @@ export function createServices(opts: ServicesOptions): AppServices {
       generatedDir: join(opts.paths.home, "generated"),
       log: opts.log,
     }),
+    voice: new VoiceService({ secrets: opts.secrets, settings: opts.settings, ...opts.voice }),
     setup: new SetupService({ exec, settings: opts.settings }),
     configFiles: new ConfigFiles({
       projects,

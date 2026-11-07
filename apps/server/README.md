@@ -91,6 +91,16 @@ Commands on a session without an open browser fail with `409 browser_not_open`.
 | `POST /api/agent-config/mcp/diff` | `McpServerDiffRequest` -> `AgentConfigDiff` (no `spec` = removal) |
 | `GET /api/sessions/:id/agent-config/loaded` | -> `LoadedAgentConfig` |
 
+## Cloud voice (§11.3)
+
+Opt-in proxies next to the browser's speech APIs (which stay the default). Keys come from the keychain (`elevenlabs.apiKey`, `openai.apiKey`) and never reach the browser; a missing key is `409 missing_api_key`, a provider error is `502` with the provider's message. Shapes: `@codeden/contracts` `voice-api.ts`.
+
+| Route | Body / response |
+|---|---|
+| `GET /api/voice/voices` | -> `VoiceListResponse` (ElevenLabs `GET /v2/voices`) |
+| `POST /api/tts` | `TtsRequest` -> streamed `audio/mpeg` (ElevenLabs `POST /v1/text-to-speech/{voice}/stream`; voice from the request, then `settings.voice.readAloud.voice`, then a stock voice; model `eleven_flash_v2_5`) |
+| `POST /api/stt?engine=&language=` | raw audio body (`audio/webm`, `audio/ogg`, ...) or multipart `file`, up to 25 MB -> `SttResponse`. ElevenLabs Scribe (`scribe_v2`) or OpenAI (`gpt-4o-mini-transcribe`); default from `settings.voice.dictation.engine` |
+
 ## Tests
 
 ```sh

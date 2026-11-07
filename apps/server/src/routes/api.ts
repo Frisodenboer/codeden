@@ -20,6 +20,7 @@ import { projectRoutes } from "./projects";
 import { sessionRoutes } from "./sessions";
 import { artifactRoutes, fileRoutes, secretRoutes, setupRoutes } from "./system";
 import { errorResponse } from "./validate";
+import { speechRoutes, voiceRoutes } from "./voice";
 import { utilityRoutes, workbenchRoutes } from "./workbench";
 
 export interface ApiContext {
@@ -58,6 +59,8 @@ export function createApi(ctx: ApiContext) {
     .route("/browser", browserRoutes(s))
     .route("/images", imageRoutes(s))
     .route("/agent-config", agentConfigRoutes(s))
+    .route("/voice", voiceRoutes(s))
+    .route("/", speechRoutes(s))
     .route("/sessions", sessionAgentConfigRoutes(s))
     .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))

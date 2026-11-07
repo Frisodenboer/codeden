@@ -79,6 +79,8 @@ export interface StartServerOptions {
    * when built-in providers are off (`CODEDEN_BUILTIN_PROVIDERS=0`, the server test suite).
    */
   imageEngines?: ImageEngineRegistry;
+  /** Cloud voice API base URLs (tests). */
+  voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
   log?: (message: string) => void;
@@ -141,6 +143,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     projectsDir: opts.projectsDir,
     askUserWaitMs: opts.askUserWaitMs,
     imageEngines: opts.imageEngines ?? (builtin ? undefined : new ImageEngineRegistry([])),
+    voice: opts.voice,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
