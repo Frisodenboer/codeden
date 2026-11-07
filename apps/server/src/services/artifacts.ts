@@ -65,6 +65,11 @@ export class ArtifactService {
     return artifact;
   }
 
+  /** The artifacts folder (`<home>/artifacts`). */
+  get rootDir(): string {
+    return this.dir;
+  }
+
   get(id: string): Artifact {
     const row = this.db.select().from(artifacts).where(eq(artifacts.id, id)).get();
     if (!row) throw notFound(`No artifact ${id}`, "artifact_not_found");

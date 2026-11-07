@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createImageEngineRegistry, type ImageEngineRegistry } from "@codeden/providers";
 import type { Db } from "../db/client";
 import type { EventStore } from "../events/store";
 import { ToolRegistry } from "../mcp/registry";
@@ -11,6 +12,7 @@ import { ArtifactService } from "./artifacts";
 import { BrowserService } from "./browser/browser-service";
 import { type Exec, runTool } from "./exec";
 import { ConfigFiles } from "./files/config-files";
+import { ImageService } from "./images/image-service";
 import { InboxService } from "./inbox-service";
 import { ProjectService } from "./projects/project-service";
 import type { RunnerPort } from "./runner-port";
@@ -41,6 +43,8 @@ export interface ServicesOptions {
   userHome?: string;
   /** How long `ask_user` waits before returning "pending" (default 4 minutes). */
   askUserWaitMs?: number;
+  /** Image engines (§12.5); Codex, Gemini and OpenAI with keychain API keys by default. */
+  imageEngines?: ImageEngineRegistry;
   log?: (message: string) => void;
 }
 
@@ -67,6 +71,8 @@ export interface AppServices {
   artifacts: ArtifactService;
   /** Session browsers in the runner (§12.2), for the panel and the agent tools. */
   browser: BrowserService;
+  /** `generate_image` engines, caps and the settings test (§12.5). */
+  images: ImageService;
   setup: SetupService;
   configFiles: ConfigFiles;
   userHome: string;
@@ -158,6 +164,15 @@ export function createServices(opts: ServicesOptions): AppServices {
     inbox,
     artifacts,
     browser: new BrowserService({ runner: opts.runner, repo: sessionRepo }),
+    images: new ImageService({
+      registry: opts.imageEngines ?? defaultImageEngines(opts.secrets),
+      settings: opts.settings,
+      artifacts,
+      repo: sessionRepo,
+      usageFile: join(opts.paths.home, "image-usage.json"),
+      generatedDir: join(opts.paths.home, "generated"),
+      log: opts.log,
+    }),
     setup: new SetupService({ exec, settings: opts.settings }),
     configFiles: new ConfigFiles({
       projects,
@@ -172,4 +187,14 @@ export function createServices(opts: ServicesOptions): AppServices {
   };
   services.tools = new ToolRegistry(allTools, services, opts.log);
   return services;
+}
+
+/** The built-in image engines, reading Gemini and OpenAI keys from the OS keychain. */
+function defaultImageEngines(secrets: SecretStore): ImageEngineRegistry {
+  const key = (name: "gemini.apiKey" | "openai.apiKey") => async () =>
+    (await secrets.get(name)) ?? undefined;
+  return createImageEngineRegistry({
+    gemini: { apiKey: key("gemini.apiKey") },
+    openai: { apiKey: key("openai.apiKey") },
+  });
 }

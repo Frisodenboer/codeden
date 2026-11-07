@@ -92,10 +92,12 @@ export function secretRoutes(s: AppServices) {
     })
     .put("/:key", jsonBody(SetSecretRequest), async (c) => {
       await s.secrets.set(keyParam(c.req.param("key")), c.req.valid("json").value);
+      s.images.invalidate();
       return c.json({ ok: true as const });
     })
     .delete("/:key", async (c) => {
       await s.secrets.delete(keyParam(c.req.param("key")));
+      s.images.invalidate();
       return c.json({ ok: true as const });
     });
 }

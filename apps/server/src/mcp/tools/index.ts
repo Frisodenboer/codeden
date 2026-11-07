@@ -13,6 +13,7 @@ import {
 } from "./browser";
 import { browserScreenshot } from "./browser-screenshot";
 import { finish } from "./finish";
+import { generateImage } from "./generate-image";
 import { reportProgress } from "./report-progress";
 import { shareToChat } from "./share-to-chat";
 import { suggestFollowups } from "./suggest-followups";
@@ -34,4 +35,5 @@ export const allTools: AnyServerTool[] = [
   browserWait,
   browserEvaluate,
   browserOpenDevServer,
+  generateImage,
 ];

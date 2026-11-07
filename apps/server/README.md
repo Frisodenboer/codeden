@@ -24,6 +24,7 @@ The long-lived CodeDen server (design §4.1): Hono HTTP API and UI WebSocket, th
 | `browser_wait` | agent | Selector, text or network idle |
 | `browser_evaluate` | agent | Guarded JS evaluation (5 s timeout, result size cap, can be disabled in the runner) |
 | `browser_open_dev_server` | agent | Open `localhost:<port>`; without a port, the only running dev server or a list |
+| `generate_image` | all | Images from the Settings engine into the worktree (see below); hidden when no engine is available |
 
 Browser tools always act on the caller's own session (from its token); no tool takes a session id. A handler can return `new ToolOutput(text, images)` to add MCP `image` content.
 
@@ -51,6 +52,20 @@ The runner owns one Chromium with a context per session (`apps/runner/src/browse
 Commands on a session without an open browser fail with `409 browser_not_open`.
 
 **`/ws/browser?sessionId=...`** (`BrowserWsQuery`; optional `open=1`, `quality`, `maxWidth`, `maxHeight`, `maxFps`): one socket is one viewer. The server sends `state` (viewer id, open, watching, tabs) on connect and whenever the browser opens or closes, then `frame` (base64 JPEG + metadata) and `tabs` messages (`BrowserServerMessage`). The client sends `input` (mouse/keyboard/text in displayed-frame coordinates), `watch` (optionally with new screencast settings), `unwatch` and `open` (`BrowserClientMessage`). Each socket registers as a screencast viewer in the runner, so the screencast runs only while someone watches; a viewer that connects before the browser exists starts watching as soon as the agent opens it. Frames are skipped for sockets with more than 4 MB unsent.
+
+## Image generation (§12.5)
+
+`ImageService` (`src/services/images/`) wraps the engines from `@codeden/providers` (`ImageEngineRegistry`: Codex, Gemini, OpenAI Images). Gemini and OpenAI keys are read from the keychain (`gemini.apiKey`, `openai.apiKey`) on every call.
+
+- **Engine:** `settings.imageGeneration.engine` (`auto` = Codex when logged in, then the first engine with a key; `none` hides the tool), overridable per project in `settings.imageGeneration.projects[projectId]` (`engine`, `defaultSize`, `quality`, `dailyCap`). Remove an override with `PATCH /api/settings { imageGeneration: { projects: { <id>: null } } }`.
+- **Visibility:** availability is detected at startup and cached for 5 minutes (re-checked after settings or secrets change). `generate_image` is listed only while an engine is available.
+- **Output:** agents write into their worktree (`outputPath`, default `generated-images/`), refused outside it, in `.git`, or through a symlink that escapes; PMs and the orchestrator write to `<home>/generated/<sessionId>/`. Every image is also an `image` artifact and, unless `share: false`, a `shared_artifact` notice in the chat.
+- **Daily caps:** `dailyCap` (all projects) and the project's `dailyCap`, counted per local day in `<home>/image-usage.json`. Images are reserved before the engine runs and released if it fails.
+
+| Route | Body / response |
+|---|---|
+| `GET /api/images/engines?projectId=` | -> `ImageEnginesResponse` (engines, active engine, today's usage, effective cap) |
+| `POST /api/images/test` | `ImageTestRequest` -> `ImageTestResponse` (generates one small image into an artifact unless `generate: false`) |
 
 ## Tests
 

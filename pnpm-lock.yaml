@@ -109,6 +109,9 @@ importers:
       '@codeden/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@codeden/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@hono/node-server':
         specifier: ^2.1.6
         version: 2.1.6(hono@4.13.17)
@@ -134,9 +137,6 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@codeden/providers':
-        specifier: workspace:*
-        version: link:../../packages/providers
       '@codeden/runner':
         specifier: workspace:*
         version: link:../runner

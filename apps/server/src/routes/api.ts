@@ -13,6 +13,7 @@ import type { AppServices } from "../services/container";
 import { badRequest, notFound } from "../services/errors";
 import { previewRecord } from "../services/sessions/preview";
 import { browserRoutes, sessionBrowserRoutes } from "./browser";
+import { imageRoutes } from "./images";
 import { inboxRoutes } from "./inbox";
 import { projectRoutes } from "./projects";
 import { sessionRoutes } from "./sessions";
@@ -54,6 +55,7 @@ export function createApi(ctx: ApiContext) {
     .route("/sessions", workbenchRoutes(s))
     .route("/sessions", sessionBrowserRoutes(s))
     .route("/browser", browserRoutes(s))
+    .route("/images", imageRoutes(s))
     .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))
     .route("/setup", setupRoutes(s))
@@ -73,6 +75,7 @@ export function createApi(ctx: ApiContext) {
         return c.json({ error: { code: "invalid_settings", message: String(error) } }, 400);
       }
       s.store.append([{ type: "settings.updated", sessionId: null, payload: { settings } }]);
+      if (patch.imageGeneration) s.images.invalidate();
       return c.json(settings);
     })
     .post("/shutdown", async (c) => {

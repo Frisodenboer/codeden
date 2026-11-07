@@ -7,6 +7,7 @@ import {
   type ServerLock,
   TerminalQuery,
 } from "@codeden/contracts";
+import { ImageEngineRegistry } from "@codeden/providers";
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
@@ -73,6 +74,11 @@ export interface StartServerOptions {
   askUserWaitMs?: number;
   /** Batching window for live UI updates (default 40ms). */
   realtimeFlushMs?: number;
+  /**
+   * Image engines for `generate_image` (§12.5). Default: Codex, Gemini and OpenAI, or none
+   * when built-in providers are off (`CODEDEN_BUILTIN_PROVIDERS=0`, the server test suite).
+   */
+  imageEngines?: ImageEngineRegistry;
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
   log?: (message: string) => void;
@@ -121,6 +127,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     opts.secrets === "memory"
       ? new MemorySecretStore()
       : (opts.secrets ?? (await createSecretStore(log)));
+  const builtin = opts.builtinProviders ?? process.env.CODEDEN_BUILTIN_PROVIDERS !== "0";
   const services = createServices({
     db: database.db,
     store,
@@ -133,8 +140,11 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     userHome: opts.userHome,
     projectsDir: opts.projectsDir,
     askUserWaitMs: opts.askUserWaitMs,
+    imageEngines: opts.imageEngines ?? (builtin ? undefined : new ImageEngineRegistry([])),
     log,
   });
+  // Find out early whether `generate_image` can be offered to agents.
+  void services.images.refresh();
   services.lifecycle.start();
 
   let origins = new Set<string>();
@@ -221,7 +231,6 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   }
 
   if (opts.runner !== false) {
-    const builtin = opts.builtinProviders ?? process.env.CODEDEN_BUILTIN_PROVIDERS !== "0";
     const args = [
       ...(opts.enableFakeProvider ? ["--fake"] : []),
       ...(builtin ? [] : ["--no-builtin"]),
