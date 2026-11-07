@@ -35,7 +35,8 @@ jobs:
           cd apps/cli
           npm pack --pack-destination "$RUNNER_TEMP"
           # The Claude Agent SDK is never shipped in the tarball (it is installed on demand).
-          mkdir "$RUNNER_TEMP/tarball" && tar xzf "$RUNNER_TEMP"/codeden-*.tgz -C "$RUNNER_TEMP/tarball"
+          # Relative paths: Windows GNU tar reads "D:..." as a remote host.
+          mkdir "$RUNNER_TEMP/tarball" && (cd "$RUNNER_TEMP/tarball" && tar xzf ../codeden-*.tgz)
           if grep -rlE "Anthropic PBC|Native CLI binary for" "$RUNNER_TEMP/tarball"; then
             echo "::error::the tarball contains Claude Agent SDK code"; exit 1
           fi
