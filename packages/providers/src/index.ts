@@ -6,6 +6,7 @@ export * from "./claude";
 export * from "./codex";
 export { FakeProvider, type FakeProviderOptions } from "./fake/adapter";
 export { FakeSession } from "./fake/session";
+export * from "./image";
 export { isInWorkspace, isSecretPath, type PathContext } from "./policy/paths";
 export {
   classifyCommand,

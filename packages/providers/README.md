@@ -51,3 +51,29 @@ Fixtures replace the recording cwd with `<CWD>`, the session id with `<SESSION>`
 - The npm `codex.cmd` shim runs a Node wrapper that spawns the vendored `codex.exe`; the adapter runs `node <codex.js> app-server` and kills the process tree with `taskkill /T`.
 - Unknown keys in the user's `~/.codex/config.toml` produce `configWarning` notifications on every start; they are ignored.
 - Collab subagents and plan mode are experimental in app-server and not surfaced, so `subagents` and `planMode` are `false` for Codex.
+
+## Image generation (`src/image/`, §12.5)
+
+`ImageEngine` (`id`, `detect()`, `generate()`) with three engines. Each writes the files itself and throws only `ImageGenerationError` (`code`: `unavailable`, `invalid_request`, `auth`, `rate_limited`, `content_policy`, `timeout`, `aborted`, `no_image`, `provider_error`, `io`; plus `retryable` and `details.retryAfter`). Every call takes an `AbortSignal` and a `timeoutMs`.
+
+| Engine | How | Default model | References |
+|---|---|---|---|
+| `codex` | Ephemeral, tool-restricted `codex app-server` turn under the user's own Codex login (no API key) | the user's configured Codex model | `localImage` input parts |
+| `gemini` | REST `POST /v1/models/{model}:generateContent` with `x-goog-api-key`, `responseModalities: [TEXT, IMAGE]`, `imageConfig.{aspectRatio,imageSize}`; one request per image; `thought` parts skipped | `gemini-nano-banana-2.1` | `inlineData` parts |
+| `openai` | `POST /v1/images/generations`, or `/v1/images/edits` (JSON `images: [{ image_url: <data URL> }]`) when references are given; reads `b64_json` and `revised_prompt` | `gpt-image-2` | yes |
+
+`ImageEngineRegistry.pickDefault(settings.imageGeneration)`: `none` hides the tool; an explicit engine is used only when available (never silently swapped); `auto` takes a keyless engine first (Codex when logged in), then the first key engine. `resolveImageOutput(worktree, outputPath)` turns the tool's `outputPath` into `{ outputDir, fileStem }` and refuses paths outside the worktree, inside `.git`, or with NUL bytes. Extensions follow the actual bytes (`hero.png`, `hero-2.png`, ...).
+
+Live check (one real image on the user's subscription): `CODEDEN_LIVE=1 pnpm --filter @codeden/providers exec vitest run test/image/codex.live.test.ts`.
+
+### Spike 7: Codex image generation (Codex 0.160.1, ChatGPT login)
+
+- **Use `app-server`, not `exec`.** In app-server the built-in tool shows up as a `ThreadItem` of type `imageGeneration` (`status`, `revisedPrompt`, `result`, `failure`, `savedPath`). `result` is the **base64 PNG**, so CodeDen decodes it and writes the requested path itself. Codex never needs write access, and the turn runs in a `read-only` sandbox. `codex exec --json` emits no item for the image at all (only the agent's text; the file lands only in Codex's cache), and on a default config it loaded the image skill and spent ~99k input tokens for one image.
+- **Detection.** `modelProvider/capabilities/read` returns `{ imageGeneration: true }` under the ChatGPT login; `detect()` checks it after `codex login status`. The `image_generation` feature flag is stable and on by default; the turn forces it on anyway.
+- **Restricting the turn.** `mcp_servers: {}` in `thread/start.config` does not remove the user's servers (it merges). What works: read `config/read` and set `mcp_servers.<name>.enabled = false` for each, plus `features.{plugins,remote_plugin,apps,tool_suggest,skill_search,browser_use,computer_use,code_mode_host,multi_agent,goals,hooks} = false` and `web_search = "disabled"`. With that no MCP server starts and input drops from ~21k to ~15k tokens. Approvals are `never` and every server request is declined.
+- **Shape.** The tool follows the prompt: "landscape (1536x1024)" gives 1536x1024, "portrait (1024x1536)" gives 1024x1536, and square gives **1254x1254** (not 1024). Sizes are not exact, so `capabilities.exactSize` is false for Codex.
+- **Count.** Asking for N images makes the model call the tool N times in one turn. CodeDen resolves as soon as N items arrived and closes the server, which skips the closing message (~3 s).
+- **References.** `localImage` parts work for edits and variations (the revised prompt starts "Edit the reference...").
+- **Latency.** ~2 s to start the app-server and thread, then ~10-20 s per image: 17-38 s end to end for one image, ~44 s for two.
+- **Side effect.** Codex keeps a copy in `~/.codex/generated_images/<thread>/<item>.png`, even for ephemeral threads. The engine deletes those copies (only under `$CODEX_HOME/generated_images`) unless `removeCodexCopies: false`.
+- **Failure modes.** `item.failure = { type: "usageLimitExceeded", resetsAt }` becomes `rate_limited` with `retryAfter`. Turn errors map through `codexErrorInfo` (`usageLimitExceeded`/`rateLimitExceeded` to `rate_limited`, `unauthorized` to `auth`, policy blocks to `content_policy`). A turn that ends without an image is `no_image` with the model's last message; an app-server exit is `provider_error`.
