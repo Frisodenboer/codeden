@@ -188,8 +188,19 @@ export class GithubSync {
       listed.filter((i) => i.pull_request).map((i) => i.number),
     );
     const prs = prNodes.map((node) => this.prOf(projectId, node, undefined));
+    // The import itself is silent, but a PR that already belongs to a session (one started
+    // on its head branch before the import) gets a `pr.updated`, so the session's PR link
+    // and its review inbox item follow as they would for a PR opened later.
+    const linked: NewEvent[] = prs
+      .filter((pr) => pr.sessionId !== null)
+      .map((pr) => ({
+        type: "pr.updated",
+        sessionId: pr.sessionId,
+        payload: { pr, changes: ["sessionId"] },
+      }));
     this.deps.events.append([
       { type: "github.synced", sessionId: null, payload: { projectId, issues, prs } },
+      ...linked,
     ]);
     state.since = maxUpdated(listed, state.since);
     // On GitHub's clock when possible: items created after this are new, not imported.
@@ -237,9 +248,12 @@ export class GithubSync {
 
     const open = this.deps.store.prs(projectId, "open");
     const refresh = new Set(changedPrs);
+    const sessionBranches = this.sessionBranches(projectId);
     for (const pr of open) {
       const unsettled = pr.checks.state === "pending" || pr.mergeable === "unknown";
-      if (unsettled || pr.sessionId !== null || tick % 4 === 0) refresh.add(pr.number);
+      // An unlinked PR whose head branch a session now works on is linked on this poll.
+      const linkable = pr.sessionId === null && sessionBranches.has(pr.headBranch);
+      if (unsettled || linkable || pr.sessionId !== null || tick % 4 === 0) refresh.add(pr.number);
     }
     if (refresh.size > 0) {
       const nodes = await fetchPullRequests(this.deps.client, repo.owner, repo.repo, [...refresh]);
@@ -269,6 +283,24 @@ export class GithubSync {
       sessionId = owner?.id ?? null;
     }
     return GithubPr.parse(toGithubPr(projectId, node, sessionId));
+  }
+
+  /** Branches of the project's sessions (to link PRs opened on them). */
+  private sessionBranches(projectId: string): Set<string> {
+    const branches = new Set<string>();
+    for (const s of this.deps.store.projectSessions(projectId))
+      if (s.branch) branches.add(s.branch);
+    return branches;
+  }
+
+  /**
+   * True when an open, unlinked PR's head branch is `branch`: a session just started on it
+   * and the next poll should link them.
+   */
+  hasUnlinkedPr(projectId: string, branch: string): boolean {
+    return this.deps.store
+      .prs(projectId, "open")
+      .some((pr) => pr.sessionId === null && pr.headBranch === branch);
   }
 
   private hasActiveSessionPr(projectId: string): boolean {

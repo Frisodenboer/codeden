@@ -30,6 +30,7 @@ export interface GithubEnv {
   service: GithubService;
   repo: SessionRepo;
   artifacts: ArtifactService;
+  inbox: InboxService;
   secrets: MemorySecretStore;
   /** Tokens `gh auth token` prints, in order (the last one repeats). */
   ghTokens: string[];
@@ -164,6 +165,7 @@ export function createGithubEnv(): GithubEnv {
     service,
     repo,
     artifacts,
+    inbox,
     secrets,
     events,
     githubProject,

@@ -13,6 +13,8 @@ import {
   type MergePrResponse,
   type Project,
   parseGithubPrId,
+  type RawEventEnvelope,
+  type Session,
   type SessionGithubResponse,
   type TriageIssueRequest,
   type TriageIssueResult,
@@ -108,6 +110,7 @@ export class GithubService {
   start(opts: { sync?: boolean } = {}): void {
     this.unsubscribe ??= this.deps.store.subscribe((events) => {
       this.followUp.onEvents(events);
+      this.linkSoon(events);
       if (!events.some((e) => e.type.startsWith("pr."))) return;
       // After commit, never inside the store's notification.
       setImmediate(() => {
@@ -119,6 +122,21 @@ export class GithubService {
       });
     });
     if (opts.sync !== false) this.sync.start();
+  }
+
+  /**
+   * A session that starts on (or moves to) the head branch of an open PR nobody owns yet gets
+   * that PR at the next scheduler tick instead of waiting for the next poll.
+   */
+  private linkSoon(events: RawEventEnvelope[]): void {
+    for (const e of events) {
+      if (e.type !== "session.created" && e.type !== "session.updated") continue;
+      const { session } = e.payload as { session?: Session };
+      if (!session?.projectId || !session.branch || session.pr) continue;
+      if (this.sync.hasUnlinkedPr(session.projectId, session.branch)) {
+        this.sync.soon(session.projectId);
+      }
+    }
   }
 
   stop(): void {

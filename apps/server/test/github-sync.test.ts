@@ -152,6 +152,36 @@ describe("github sync", () => {
     expect(env.gh.issues.get(1)?.comments.at(-1)?.body).toContain("Resolved by #2");
   });
 
+  it("links a session started on a PR's branch before the first import", async () => {
+    const session = env.addSession({ branch: "codeden/early" });
+    env.gh.addPr("codeden/early");
+    env.service.start({ sync: false });
+    await env.service.syncNow(P);
+    expect(types()).toEqual(expect.arrayContaining(["github.synced", "pr.updated"]));
+    for (let i = 0; i < 50 && !env.repo.get(session.id).pr; i++) await waitTick();
+    expect(env.repo.get(session.id).pr).toMatchObject({ number: 1, state: "open" });
+    await waitTick();
+    expect(env.inbox.find(`inbox:pr_review:${P}:1`)).toMatchObject({
+      kind: "pr_review",
+      sessionId: session.id,
+      status: "open",
+    });
+  });
+
+  it("links an open PR on the next poll once a session starts on its branch", async () => {
+    env.gh.addPr("feature/late");
+    await env.service.syncNow(P);
+    expect(env.service.listPrs(P)[0]?.sessionId).toBeNull();
+    env.service.start({ sync: false });
+    const session = env.addSession({ branch: "feature/late" });
+    const mark = env.events.length;
+    await env.service.syncNow(P); // poll 1: not one of the every-4th full refreshes
+    expect(env.service.listPrs(P)[0]?.sessionId).toBe(session.id);
+    expect(types(mark)).toContain("pr.updated");
+    for (let i = 0; i < 50 && !env.repo.get(session.id).pr; i++) await waitTick();
+    expect(env.repo.get(session.id).pr).toMatchObject({ number: 1 });
+  });
+
   it("backs off on rate limits", async () => {
     env.gh.rateLimited = true;
     await expect(env.service.syncNow(P)).rejects.toBeInstanceOf(GithubRateLimitError);
