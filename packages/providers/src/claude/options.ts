@@ -17,6 +17,7 @@ import {
 } from "@codeden/contracts";
 import type { ResolvedCommand } from "../util/exec";
 import { permissionModeFor } from "./permissions";
+import { EDIT_TOOLS } from "./tools";
 
 /** Map a CodeDen effort to Claude's effort levels (`minimal` has no Claude equivalent). */
 export function claudeEffort(effort: ReasoningEffort | undefined): EffortLevel | undefined {
@@ -102,6 +103,8 @@ export function buildQueryOptions(input: QueryOptionsInput): Options {
     includePartialMessages: true,
     forwardSubagentText: true,
     ...(input.resume ? { resume: input.resume } : {}),
+    // Read-only sessions (orchestrator, PMs) never get the edit tools (§11.2).
+    ...(session.readOnly ? { disallowedTools: [...EDIT_TOOLS] } : {}),
     mcpServers: claudeMcpServers(session.mcpServers),
     ...trustedMcpTools(session.mcpServers),
     systemPrompt: {

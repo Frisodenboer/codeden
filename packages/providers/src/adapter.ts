@@ -4,6 +4,7 @@ import type {
   ProviderCapabilities,
   ProviderInfo,
   ProviderStatus,
+  ReasoningEffort,
   RuntimeResponse,
   SessionOptions,
   UserInput,
@@ -42,10 +43,21 @@ export interface ProviderSession {
   interrupt(): Promise<void>;
   /** Answer an `approval_request` or `user_question` by its `requestId`. */
   respond(requestId: string, response: RuntimeResponse): Promise<void>;
+  /**
+   * Change model and/or effort for the next turn (`null` = provider default). Optional:
+   * without it, CodeDen applies the change by reopening the session through its resume token.
+   */
+  configure?(change: SessionConfigChange): Promise<void>;
   /** Close the session and end `events`. Idempotent. */
   close(): Promise<void>;
   /** Provider session/thread id for resume, once known. */
   resumeToken(): string | undefined;
+}
+
+/** A mid-session model/effort change (`session.configure`). Absent keys stay unchanged. */
+export interface SessionConfigChange {
+  model?: string | null;
+  effort?: ReasoningEffort | null;
 }
 
 /** Static description of an adapter, as sent in the runner handshake. */

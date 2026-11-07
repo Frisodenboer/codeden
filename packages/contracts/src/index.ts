@@ -17,6 +17,8 @@ export * from "./factory";
 export * from "./images-api";
 export * from "./input";
 export * from "./items";
+export * from "./orchestration";
+export * from "./orchestration-api";
 export * from "./project-config";
 export * from "./provider";
 export * from "./runner/browser";

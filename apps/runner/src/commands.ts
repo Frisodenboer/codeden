@@ -111,6 +111,9 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
     case "session.respond":
       await host.respond(command);
       return {};
+    case "session.configure":
+      await host.configure(command);
+      return {};
     case "session.stop":
       await host.stop(command.sessionId);
       // The session's browser context (cookies, tabs) ends with the session.

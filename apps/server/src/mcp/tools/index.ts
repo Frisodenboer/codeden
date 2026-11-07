@@ -14,6 +14,8 @@ import {
 import { browserScreenshot } from "./browser-screenshot";
 import { finish } from "./finish";
 import { generateImage } from "./generate-image";
+import { orchestratorTools } from "./orchestrator";
+import { pmTools } from "./pm";
 import { reportProgress } from "./report-progress";
 import { shareToChat } from "./share-to-chat";
 import { suggestFollowups } from "./suggest-followups";
@@ -36,4 +38,6 @@ export const allTools: AnyServerTool[] = [
   browserEvaluate,
   browserOpenDevServer,
   generateImage,
+  ...orchestratorTools,
+  ...pmTools,
 ];

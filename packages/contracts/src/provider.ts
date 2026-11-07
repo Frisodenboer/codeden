@@ -133,6 +133,11 @@ export const SessionOptions = z.object({
   additionalDirectories: z.array(z.string()).default([]),
   /** Start in plan mode where supported. */
   planMode: z.boolean().default(false),
+  /**
+   * No writes to the workspace (orchestrator and PMs, §11.2): file edits and writing commands
+   * are denied natively (Claude permission policy, Codex read-only sandbox).
+   */
+  readOnly: z.boolean().optional(),
 });
 export type SessionOptions = z.infer<typeof SessionOptions>;
 export type SessionOptionsInit = z.input<typeof SessionOptions>;

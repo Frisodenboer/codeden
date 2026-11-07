@@ -128,6 +128,18 @@ export class SessionHost {
     await this.get(sessionId).session.interrupt();
   }
 
+  /** Model/effort for the next turn, when the provider can change them live. */
+  async configure(cmd: RunnerCommandOf<"session.configure">): Promise<void> {
+    const { session } = this.get(cmd.sessionId);
+    if (!session.configure) {
+      throw new CommandError("unsupported", "This provider cannot change model or effort live");
+    }
+    const change: { model?: string | null; effort?: typeof cmd.effort } = {};
+    if (cmd.model !== undefined) change.model = cmd.model;
+    if (cmd.effort !== undefined) change.effort = cmd.effort;
+    await session.configure(change);
+  }
+
   async respond(cmd: RunnerCommandOf<"session.respond">): Promise<void> {
     await this.get(cmd.sessionId).session.respond(cmd.requestId, cmd.response);
   }

@@ -6,6 +6,7 @@ import {
   SteerRequest,
   ThreadItemsQuery,
   type ToolOutputResponse,
+  UpdateSessionRequest,
 } from "@codeden/contracts";
 import { Hono } from "hono";
 import type { AppServices } from "../services/container";
@@ -18,10 +19,17 @@ export function sessionRoutes(s: AppServices) {
   return new Hono()
     .get("/", queryOf(ListSessionsQuery), (c) => c.json(s.sessionRepo.list(c.req.valid("query"))))
     .post("/", jsonBody(StartSessionRequest), async (c) => {
-      const result = await s.sessions.start(c.req.valid("json"));
-      return c.json(result, result.status === "conflict" ? 409 : 200);
+      const req = c.req.valid("json");
+      const result = await s.sessions.start(req);
+      if (result.status !== "conflict") return c.json(result, 200);
+      // Persist the conflict (inbox item) so it can be resolved later (§8.4).
+      const record = s.orchestration.conflicts.record(req, result.existing);
+      return c.json({ ...result, conflictId: record.id }, 409);
     })
     .get("/:id", (c) => c.json(s.sessions.detail(c.req.param("id"))))
+    .patch("/:id", jsonBody(UpdateSessionRequest), (c) =>
+      c.json(s.sessions.update(c.req.param("id"), c.req.valid("json"))),
+    )
     .post("/:id/messages", jsonBody(SendMessageRequest), async (c) =>
       c.json(await s.sessions.send(c.req.param("id"), c.req.valid("json"))),
     )

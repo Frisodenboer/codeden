@@ -80,6 +80,8 @@ export const StartWorkResult = z.discriminatedUnion("status", [
     status: z.literal("conflict"),
     /** Running or queued work with the same `workKey` or an overlapping scope. */
     existing: z.array(WorkSummary).min(1),
+    /** Inbox conflict item persisted for this attempt (user starts), resolvable later. */
+    conflictId: Id.optional(),
   }),
 ]);
 export type StartWorkResult = z.infer<typeof StartWorkResult>;

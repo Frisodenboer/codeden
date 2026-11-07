@@ -1,4 +1,5 @@
 import type { Role } from "@codeden/contracts";
+import { rolePrompt } from "../services/orchestration/prompts";
 
 /** Name of CodeDen's MCP server inside agent sessions (tools appear as `codeden` tools). */
 export const MCP_SERVER_NAME = "codeden";
@@ -17,5 +18,5 @@ You are an agent session in CodeDen, a local harness that shows your work to the
 
 /** The CodeDen section appended to a session's system prompt, by role (§7.5, §8.3). */
 export function codedenSystemPrompt(role: Role): string | undefined {
-  return role === "agent" ? AGENT_PROMPT : undefined;
+  return role === "agent" ? AGENT_PROMPT : rolePrompt(role);
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Id, ProviderId } from "../common";
+import { Id, ProviderId, ReasoningEffort } from "../common";
 import { UserInput } from "../input";
 import { ProjectConfigFile } from "../project-config";
 import { ProviderStatus, RuntimeResponse, SessionOptions } from "../provider";
@@ -113,6 +113,13 @@ export const RunnerCommand = z.discriminatedUnion("name", [
   }),
   /** Close the provider session (resumable later via its resume token). */
   z.object({ name: z.literal("session.stop"), sessionId: Id }),
+  /** Change model/effort for the next turn (`unsupported` when the provider cannot). */
+  z.object({
+    name: z.literal("session.configure"),
+    sessionId: Id,
+    model: z.string().nullable().optional(),
+    effort: ReasoningEffort.nullable().optional(),
+  }),
   z.object({
     name: z.literal("pty.open"),
     ptyId: PtyId,
@@ -243,6 +250,7 @@ export const RunnerCommandResults = {
   "session.interrupt": Empty,
   "session.respond": Empty,
   "session.stop": Empty,
+  "session.configure": Empty,
   "pty.open": z.object({ pid: z.int() }),
   "pty.input": Empty,
   "pty.resize": Empty,

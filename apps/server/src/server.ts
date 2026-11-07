@@ -24,7 +24,7 @@ import { findWebDir, mountWeb } from "./routes/static";
 import { RunnerClient } from "./runner/client";
 import { defaultRunnerLaunch, type RunnerLaunchConfig } from "./runner/launcher";
 import { loopbackOrigins, securityMiddleware } from "./security";
-import { type AppServices, createServices } from "./services/container";
+import { type AppServices, createServices, type ServicesOptions } from "./services/container";
 import type { Exec } from "./services/exec";
 import { runnerPort } from "./services/runner-port";
 import { createSecretStore, MemorySecretStore, type SecretStore } from "./services/secrets";
@@ -81,6 +81,8 @@ export interface StartServerOptions {
   imageEngines?: ImageEngineRegistry;
   /** Cloud voice API base URLs (tests). */
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
+  /** Orchestration seams and timings (§8): GitHub/automation ports, wake debounce, ask_pm wait. */
+  orchestration?: ServicesOptions["orchestration"];
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
   log?: (message: string) => void;
@@ -144,11 +146,13 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     askUserWaitMs: opts.askUserWaitMs,
     imageEngines: opts.imageEngines ?? (builtin ? undefined : new ImageEngineRegistry([])),
     voice: opts.voice,
+    orchestration: opts.orchestration,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
   void services.images.refresh();
   services.lifecycle.start();
+  services.orchestration.start();
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -262,6 +266,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   async function close(closeOpts: { stopRunner?: boolean } = {}): Promise<void> {
     closing ??= (async () => {
       services.lifecycle.stop();
+      services.orchestration.stop();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();

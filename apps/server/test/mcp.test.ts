@@ -95,7 +95,29 @@ describe("CodeDen MCP endpoint", () => {
       projectId: h.projectId,
     });
     const pm = await connect(pmToken);
-    expect((await pm.listTools()).tools.map((t) => t.name)).toEqual(["ask_user", "share_to_chat"]);
+    const pmTools = (await pm.listTools()).tools;
+    expect(pmTools.map((t) => t.name)).toEqual([
+      "ask_user",
+      "share_to_chat",
+      "get_project_status",
+      "list_sessions",
+      "start_session",
+      "message_session",
+      "stop_session",
+      "list_scheduled_runs",
+      "skip_next_run",
+      "pause_automation",
+      "resume_automation",
+      "cancel_queued_run",
+      "message_orchestrator",
+      "read_project_notes",
+      "update_project_notes",
+      "list_issues",
+      "get_issue",
+      "triage_issue",
+      "create_issue",
+      "get_pr_status",
+    ]);
     await pm.close();
   });
 

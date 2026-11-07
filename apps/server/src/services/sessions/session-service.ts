@@ -9,6 +9,7 @@ import type {
   SessionDetail,
   StartSessionRequest,
   StartSessionResponse,
+  UpdateSessionRequest,
   UserInput,
 } from "@codeden/contracts";
 import type { SettingsStore } from "../../settings-store";
@@ -21,6 +22,7 @@ import { derivePurpose, deriveWorkKey, findConflicts } from "./conflicts";
 import type { SessionLauncher } from "./launcher";
 import type { Outbox } from "./outbox";
 import type { QuestionBroker } from "./questions";
+import { applyPendingConfig, updateSession } from "./reconfigure";
 import type { SessionRepo, StoredStartMeta } from "./repo";
 
 export interface SessionServiceDeps {
@@ -49,8 +51,19 @@ const NOT_STARTED = new Set(["created", "queued", "starting"]);
 export class SessionService {
   /** Background launches, so tests and shutdown can await them. */
   readonly launching = new Map<string, Promise<void>>();
+  /** Rewrites a turn's input at send time (the orchestration status digest, §8.4). */
+  private inputDecorator: ((session: Session, input: UserInput) => UserInput) | undefined;
 
   constructor(private readonly deps: SessionServiceDeps) {}
+
+  setInputDecorator(fn: (session: Session, input: UserInput) => UserInput): void {
+    this.inputDecorator = fn;
+  }
+
+  /** Model, effort (applied on the next turn) or title. */
+  update(id: string, req: UpdateSessionRequest): Session {
+    return updateSession(this.deps.repo, id, req);
+  }
 
   detail(id: string): SessionDetail {
     const found = this.deps.repo.find(id);
@@ -250,7 +263,8 @@ export class SessionService {
   // ---------------------------------------------------------------- internals
 
   private async sendNow(session: Session, raw: UserInput): Promise<void> {
-    const input = this.externalize(session, raw);
+    const input = this.externalize(session, this.inputDecorator?.(session, raw) ?? raw);
+    await applyPendingConfig(this.deps.repo, this.deps.runner, session);
     const previous = session.status;
     this.deps.repo.update(session.id, (s) => ({ ...s, status: "running", endedAt: null }));
     try {
