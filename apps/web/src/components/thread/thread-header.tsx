@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SessionCostChip } from "@/components/usage/session-cost";
 import { useClient } from "@/lib/api";
 import { statusLabel } from "@/lib/format";
 import { platform } from "@/lib/platform";
@@ -135,6 +136,7 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
             {session.worktreePath.split(/[\\/]/).at(-1)}
           </Chip>
         )}
+        <SessionCostChip sessionId={session.id} className="hidden @[40rem]:inline-flex" />
         <AutonomyBadge level={session.autonomy} />
         {session.issue && (
           <IssueBadge issue={session.issue} className="hidden h-6 @[44rem]:inline-flex" />

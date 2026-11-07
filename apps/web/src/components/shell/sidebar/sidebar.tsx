@@ -1,6 +1,6 @@
 import type { Session } from "@codeden/contracts";
 import { Link } from "@tanstack/react-router";
-import { Bot, FolderPlus, Inbox, PanelLeftClose, Plus, Search } from "lucide-react";
+import { Bot, ChartColumnBig, FolderPlus, Inbox, PanelLeftClose, Plus, Search } from "lucide-react";
 import { Hotkey, SectionLabel } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import { Button } from "@/components/ui/button";
@@ -126,6 +126,10 @@ export function Sidebar({ width }: { width: number }) {
               {inbox.length}
             </span>
           )}
+        </NavRow>
+        <NavRow href="/reports" link={{ to: "/reports" }}>
+          <ChartColumnBig className="size-4 text-muted-foreground" />
+          <span className="flex-1">Usage</span>
         </NavRow>
       </nav>
 
