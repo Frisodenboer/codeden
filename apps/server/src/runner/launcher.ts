@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { RunnerLock } from "@codeden/contracts";
+import { isProcessAlive, readLiveRunnerLock } from "./lock";
 
 /** How to start the runner process. */
 export interface RunnerLaunchConfig {
@@ -44,4 +46,43 @@ export function spawnRunner(config: RunnerLaunchConfig, home: string): number | 
   });
   child.unref();
   return child.pid;
+}
+
+/** True when `lock` belongs to the runner we spawned (or, without a pid, is not the stale one). */
+function isFreshLock(
+  lock: RunnerLock,
+  spawnedPid: number | undefined,
+  stale?: RunnerLock,
+): boolean {
+  if (spawnedPid !== undefined) return lock.pid === spawnedPid;
+  return !stale || lock.pid !== stale.pid || lock.startedAt !== stale.startedAt;
+}
+
+/**
+ * Spawn a runner and wait for the lock file it writes. Only the lock of the runner just
+ * spawned is accepted: a stale lock whose pid happens to be alive would otherwise be returned
+ * at once, fail to connect, and the retry would spawn a second runner that is never stopped.
+ */
+export async function startRunnerProcess(opts: {
+  launch: RunnerLaunchConfig;
+  home: string;
+  lockFile: string;
+  stale?: RunnerLock;
+  timeoutMs: number;
+}): Promise<RunnerLock> {
+  const pid = spawnRunner(opts.launch, opts.home);
+  const deadline = Date.now() + opts.timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+    const lock = readLiveRunnerLock(opts.lockFile);
+    if (lock && isFreshLock(lock, pid, opts.stale)) return lock;
+  }
+  if (pid !== undefined && isProcessAlive(pid)) {
+    try {
+      process.kill(pid);
+    } catch {
+      // already gone
+    }
+  }
+  throw new Error("Runner did not start in time (see logs/runner.log)");
 }

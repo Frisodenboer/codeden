@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import {
   CODEDEN_VERSION,
   RUNNER_PROTOCOL_VERSION,
@@ -75,5 +76,7 @@ export async function stopRunner(
   if ((await requestShutdown(lock)) && (await waitForExit(lock.pid, timeoutMs))) return lock.pid;
   await killTree(lock.pid);
   await waitForExit(lock.pid, 5_000);
+  // A killed runner cannot remove its own lock file.
+  if (readLock(lockFile)?.pid === lock.pid) rmSync(lockFile, { force: true });
   return lock.pid;
 }

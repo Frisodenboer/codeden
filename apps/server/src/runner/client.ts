@@ -21,7 +21,7 @@ import type { Db } from "../db/client";
 import { runnerState } from "../db/schema";
 import { ingestRunnerEvent } from "../events/ingest";
 import type { EventStore } from "../events/store";
-import { type RunnerLaunchConfig, spawnRunner } from "./launcher";
+import { type RunnerLaunchConfig, startRunnerProcess } from "./launcher";
 import { isProcessAlive, probeRunnerLock, readLiveRunnerLock } from "./lock";
 
 export interface RunnerClientOptions {
@@ -68,16 +68,6 @@ export class RunnerCommandError extends Error {
     super(message);
     this.name = "RunnerCommandError";
   }
-}
-
-/** True when `lock` belongs to the runner we spawned (or, without a pid, is not the stale one). */
-function isFreshLock(
-  lock: RunnerLock,
-  spawnedPid: number | undefined,
-  stale: RunnerLock | undefined,
-): boolean {
-  if (spawnedPid !== undefined) return lock.pid === spawnedPid;
-  return !stale || lock.pid !== stale.pid || lock.startedAt !== stale.startedAt;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -205,24 +195,13 @@ export class RunnerClient {
     }
     if (!this.opts.launch) throw new Error("No live runner and launching is disabled");
     this.opts.log?.("runner: starting a new runner process");
-    const pid = spawnRunner(this.opts.launch, this.opts.home);
-    const deadline = Date.now() + (this.opts.startTimeoutMs ?? 20_000);
-    while (Date.now() < deadline) {
-      await sleep(100);
-      const lock = readLiveRunnerLock(this.opts.lockFile);
-      // Only accept the lock written by the runner just spawned. A stale lock whose pid happens
-      // to be alive would otherwise be returned at once, fail to connect, and the retry would
-      // spawn a second runner that is never stopped.
-      if (lock && isFreshLock(lock, pid, existing)) return lock;
-    }
-    if (pid !== undefined && isProcessAlive(pid)) {
-      try {
-        process.kill(pid);
-      } catch {
-        // already gone
-      }
-    }
-    throw new Error("Runner did not start in time (see logs/runner.log)");
+    return startRunnerProcess({
+      launch: this.opts.launch,
+      home: this.opts.home,
+      lockFile: this.opts.lockFile,
+      stale: existing,
+      timeoutMs: this.opts.startTimeoutMs ?? 20_000,
+    });
   }
 
   private connect(lock: RunnerLock): Promise<void> {
