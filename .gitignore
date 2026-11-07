@@ -10,3 +10,4 @@ test-results/
 .codeden-dev/
 *.log
 .DS_Store
+.screenshots/
