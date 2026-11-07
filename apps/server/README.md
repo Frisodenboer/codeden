@@ -156,6 +156,32 @@ Opt-in proxies next to the browser's speech APIs (which stay the default). Keys 
 | `POST /api/prs/:id/merge` | `MergePrRequest` (squash by default) -> `MergePrResponse` |
 | `GET /api/sessions/:id/github` | -> `SessionGithubResponse` |
 
+## Autonomy modes and the factory loop (§10.1, experimental)
+
+`FactoryService` (`src/services/factory/`) owns autonomy modes, the vision, kill switches, the factory loop, merge checks, digests and the factory panel status. Shapes: `@codeden/contracts` `factory.ts`, `factory-api.ts`. Mode, limits and the project kill switch live on the project row; the global kill switch is `settings.factory.killSwitch`; the loop, items (with merge-check results) and digests are event-sourced (`factory.loop.updated`, `factory.item.updated`, `factory.digest.created` -> `factory_loops`, `factory_items`, `factory_digests`), so a restart resumes the loop.
+
+- **Modes.** `manual`, `assisted` (default), `autopilot`, `dark_factory`. The last two need a GitHub project, `.codeden/VISION.md` and limits with a daily budget (`usd` or `tokens`), and report `experimental: true`.
+- **Vision.** `##` sections (goals, target users, principles, out of scope, quality bar, protected areas). Protected-area bullets in backticks (or path-like) are globs; plain words are topics (searched in PR title/body; known topics such as payments or migrations also add path globs). The file is written in the main checkout; prompts carry its text to agents.
+- **Loop.** A server-side state machine ticked every 30 s and after factory session or PR changes (serialized per project). Each tick: watch merges, advance builds, run merge checks, enforce the budget, take in new issues (opened after the mode was enabled or labelled `codeden-factory`) and failed checks on the default branch, start improvement finders (dark factory, `factory:discover:<area>`, round-robin, when the backlog is low), wake the PM with a `factory.update` notice (`triage_needed`) for new candidates, and start builders (`issue:<n>`) for the best-scored backlog items. Factory sessions are ordinary agent sessions started by `{ kind: "pm", id: "factory" }`, with the §8.4 conflict check.
+- **Merge checks** (all recorded per item): `protected_paths` (limits, vision, deploy files unless `allowDeploys`; escalates to a `pr_review` inbox item), `size` (`tuning.maxChangedLines/maxChangedFiles`), `ci` (PR checks; missing CI fails after a grace period unless `requireCi: false`), `review` (an independent reviewer session `factory:review:<pr>` on another provider than the builder, else the same one with a note; verdict through `factory_submit_review`), `tests` (test files changed, or nothing but docs/config, plus the reviewer's judgement), `security` (`tuning.auditCommand` in the builder's worktree, plus the reviewer's concerns), `ui_evidence` (UI files changed need screenshots attached with `attach_evidence`). A failure gets `maxFixAttempts` fix rounds with the builder, then the item fails and is counted.
+- **Merge and watch.** Squash merge via `GithubService.mergePr` within `maxMergesPerDay`, a comment on the issue, then CI on the merge commit is watched. A failure opens a revert PR (Git Data API when main has not moved, else a revert agent session), which goes through the same checks and may merge while the loop is paused; the loop pauses and a high-priority inbox item is raised.
+- **Limits** enforced by the server: `maxConcurrentSessions` (sessions holding a slot), `maxMergesPerDay` (also caps builds in flight), the daily budget (`UsageService.spendSince`; pauses until the next day), `pauseAfterConsecutiveFailures`, protected paths, no deploy files unless allowed, and the kill switches (one call stops the loop and every factory session; building items go back to the backlog).
+- **Digest.** Once per local day (and on demand): shipped, rejected/failed with reasons, spend against the budget, waiting on you; stored, raised as an `automation_result` inbox item and sent to the orchestrator as a `factory.update` notice.
+
+| Route | Body / response |
+|---|---|
+| `GET /api/projects/:id/factory` | -> `FactoryStatus` (loop state, backlog, in progress, merge checks, spend vs budget, recent merges/reverts, kill switches) |
+| `PUT /api/projects/:id/autonomy` | `SetAutonomyModeRequest` -> `SetAutonomyModeResponse` (`409 vision_required`, `400 limits_required` / `budget_required`, `409 not_a_github_project`) |
+| `GET\|PUT /api/projects/:id/vision` | `PutVisionRequest` -> `VisionResponse` (the template when the file is missing) |
+| `POST /api/projects/:id/kill-switch`, `POST /api/factory/kill-switch` | `KillSwitchRequest` -> `KillSwitchResponse` |
+| `POST /api/projects/:id/factory/resume` | -> `FactoryLoop` (clears a pause and the failure count) |
+| `POST /api/projects/:id/factory/tick` | -> `FactoryStatus` (run one step now) |
+| `POST /api/projects/:id/factory/digest` | -> `FactoryDigest` (today's digest now) |
+| `POST /api/projects/:id/factory/triage` | `FactoryTriageRequest` -> `FactoryItemResponse` |
+| `GET /api/projects/:id/factory/items/:itemId` | -> `FactoryItemResponse` |
+
+Tools: agent `factory_report_candidates` (listed only for `factory:discover:*` sessions), `factory_submit_review` (only for `factory:review:*` sessions); PM `factory_status`, `factory_triage` (only in factory-mode projects). Prompts: `src/services/factory/prompts.ts`.
+
 ## Tests
 
 ```sh

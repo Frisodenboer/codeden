@@ -1,0 +1,261 @@
+import {
+  type ChecksState,
+  type GitHubIssueRef,
+  type GitHubPrRef,
+  type GithubIssue,
+  githubPrId,
+} from "@codeden/contracts";
+import { errorMessage } from "../errors";
+import type { GithubService } from "../github/github-service";
+
+/** A pull request as the merge checks read it. */
+export interface FactoryPr {
+  ref: GitHubPrRef;
+  title: string;
+  body: string;
+  headSha: string | null;
+  headBranch: string;
+  /** Combined state of CI on the head commit. */
+  checks: ChecksState;
+  failedChecks: string[];
+  additions: number;
+  deletions: number;
+  files: string[];
+}
+
+/** Commit-level CI state, for watching main after a merge. */
+export type CommitChecks = ChecksState;
+
+/**
+ * What the factory needs from GitHub (§9), as a port so tests can run the loop against a
+ * scripted GitHub. `GithubFactoryPort` implements it over `GithubService`.
+ */
+export interface FactoryGithub {
+  isGithubProject(projectId: string): boolean;
+  createIssue(
+    projectId: string,
+    req: { title: string; body: string; labels: string[] },
+  ): Promise<GitHubIssueRef>;
+  labelIssue(projectId: string, number: number, labels: string[]): Promise<void>;
+  comment(projectId: string, number: number, body: string): Promise<void>;
+  /** Open issues (projection), for intake. */
+  openIssues(projectId: string): GithubIssue[];
+  /** The PR a session opened (or whose head is its branch), if known. */
+  prForSession(projectId: string, sessionId: string, branch: string | null): GitHubPrRef | null;
+  prDetails(projectId: string, number: number): Promise<FactoryPr>;
+  /** Whether screenshots were attached to the PR (or its issue) through `attach_evidence`. */
+  hasScreenshotEvidence(
+    projectId: string,
+    prNumber: number,
+    issueNumber: number | null,
+  ): Promise<boolean>;
+  merge(
+    projectId: string,
+    number: number,
+    opts: { sha: string | null; title: string },
+  ): Promise<{ merged: boolean; sha: string | null }>;
+  commitChecks(projectId: string, sha: string): Promise<CommitChecks>;
+  /** Head of the default branch and its CI state. */
+  mainHead(projectId: string): Promise<{ sha: string; checks: CommitChecks; failed: string[] }>;
+  /**
+   * Open a PR reverting a squash merge when it is still the head of the default branch;
+   * null when main moved on (the loop then asks an agent to write the revert).
+   */
+  revertMerge(
+    projectId: string,
+    merge: { sha: string; prNumber: number; title: string },
+  ): Promise<GitHubPrRef | null>;
+}
+
+const IMAGE_LINK = /\.(png|jpe?g|gif|webp)\?raw=true/i;
+
+/** `FactoryGithub` over the real `GithubService` (Octokit, the PR/issue projections). */
+export class GithubFactoryPort implements FactoryGithub {
+  constructor(private readonly github: GithubService) {}
+
+  isGithubProject(projectId: string): boolean {
+    try {
+      this.github.githubRepo(projectId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async createIssue(projectId: string, req: { title: string; body: string; labels: string[] }) {
+    const issue = await this.github.createIssue(projectId, req);
+    return { number: issue.number, url: issue.url, title: issue.title };
+  }
+
+  async labelIssue(projectId: string, number: number, labels: string[]): Promise<void> {
+    await this.github.labelIssue(projectId, number, { add: labels, remove: [] });
+  }
+
+  async comment(projectId: string, number: number, body: string): Promise<void> {
+    await this.github.commentOnIssue(projectId, number, body);
+  }
+
+  openIssues(projectId: string): GithubIssue[] {
+    return this.github.data.issues(projectId, "open", 200);
+  }
+
+  prForSession(projectId: string, sessionId: string, branch: string | null): GitHubPrRef | null {
+    const pr = this.github.data
+      .prs(projectId, "all", 200)
+      .find((p) => p.sessionId === sessionId || (branch !== null && p.headBranch === branch));
+    return pr ? { number: pr.number, url: pr.url, state: pr.state, title: pr.title } : null;
+  }
+
+  async prDetails(projectId: string, number: number): Promise<FactoryPr> {
+    const pr = await this.github.getPrDetails(githubPrId(projectId, number));
+    return {
+      ref: { number: pr.number, url: pr.url, state: pr.state, title: pr.title },
+      title: pr.title,
+      body: pr.body,
+      headSha: pr.headSha,
+      headBranch: pr.headBranch,
+      checks: pr.checks.state,
+      failedChecks: pr.checks.checks
+        .filter((c) => c.conclusion && !["success", "neutral", "skipped"].includes(c.conclusion))
+        .map((c) => c.name),
+      additions: pr.additions,
+      deletions: pr.deletions,
+      files: pr.files.map((f) => f.path),
+    };
+  }
+
+  async hasScreenshotEvidence(
+    projectId: string,
+    prNumber: number,
+    issueNumber: number | null,
+  ): Promise<boolean> {
+    const repo = this.github.githubRepo(projectId);
+    for (const number of [prNumber, ...(issueNumber ? [issueNumber] : [])]) {
+      const comments = await this.github.client.run(async (o) =>
+        o.paginate(o.rest.issues.listComments, {
+          owner: repo.owner,
+          repo: repo.repo,
+          issue_number: number,
+          per_page: 100,
+        }),
+      );
+      if (comments.some((c) => IMAGE_LINK.test(c.body ?? ""))) return true;
+    }
+    return false;
+  }
+
+  async merge(projectId: string, number: number, opts: { sha: string | null; title: string }) {
+    return this.github.mergePr(githubPrId(projectId, number), {
+      method: "squash",
+      ...(opts.sha ? { sha: opts.sha } : {}),
+      commitTitle: opts.title,
+    });
+  }
+
+  async commitChecks(projectId: string, sha: string): Promise<CommitChecks> {
+    return (await this.checksFor(projectId, sha)).state;
+  }
+
+  async mainHead(projectId: string) {
+    const repo = this.github.githubRepo(projectId);
+    const branch = await this.github.client.run(
+      async (o) =>
+        (
+          await o.rest.repos.getBranch({
+            owner: repo.owner,
+            repo: repo.repo,
+            branch: repo.defaultBranch,
+          })
+        ).data,
+    );
+    const { state, failed } = await this.checksFor(projectId, branch.commit.sha);
+    return { sha: branch.commit.sha, checks: state, failed };
+  }
+
+  async revertMerge(projectId: string, merge: { sha: string; prNumber: number; title: string }) {
+    const repo = this.github.githubRepo(projectId);
+    const { owner, repo: name, defaultBranch } = repo;
+    return this.github.client.run(async (o) => {
+      const head = (await o.rest.git.getRef({ owner, repo: name, ref: `heads/${defaultBranch}` }))
+        .data.object.sha;
+      if (head !== merge.sha) return null;
+      const commit = (await o.rest.git.getCommit({ owner, repo: name, commit_sha: merge.sha }))
+        .data;
+      const parent = commit.parents[0]?.sha;
+      if (!parent || commit.parents.length !== 1) return null;
+      const parentTree = (await o.rest.git.getCommit({ owner, repo: name, commit_sha: parent }))
+        .data.tree.sha;
+      const revert = await o.rest.git.createCommit({
+        owner,
+        repo: name,
+        message: `Revert "${merge.title}" (#${merge.prNumber})\n\nAutomatic revert by the CodeDen factory: CI on ${defaultBranch} failed after the merge.`,
+        tree: parentTree,
+        parents: [merge.sha],
+      });
+      const branch = `codeden/revert-${merge.prNumber}-${merge.sha.slice(0, 7)}`;
+      await o.rest.git.createRef({
+        owner,
+        repo: name,
+        ref: `refs/heads/${branch}`,
+        sha: revert.data.sha,
+      });
+      const pr = await o.rest.pulls.create({
+        owner,
+        repo: name,
+        head: branch,
+        base: defaultBranch,
+        title: `Revert "${merge.title}"`,
+        body: `Reverts #${merge.prNumber} (${merge.sha}).\n\nCI on \`${defaultBranch}\` failed after the merge, so the CodeDen factory opened this revert and paused its loop. It goes through the same merge checks.`,
+      });
+      this.github.sync.soon(projectId);
+      return {
+        number: pr.data.number,
+        url: pr.data.html_url,
+        state: "open" as const,
+        title: pr.data.title,
+      };
+    });
+  }
+
+  private async checksFor(
+    projectId: string,
+    sha: string,
+  ): Promise<{ state: CommitChecks; failed: string[] }> {
+    const repo = this.github.githubRepo(projectId);
+    try {
+      return await this.github.client.run(async (o) => {
+        const [combined, runs] = await Promise.all([
+          o.rest.repos.getCombinedStatusForRef({ owner: repo.owner, repo: repo.repo, ref: sha }),
+          o.rest.checks.listForRef({ owner: repo.owner, repo: repo.repo, ref: sha, per_page: 100 }),
+        ]);
+        const states: Array<{ name: string; state: "success" | "failure" | "pending" }> = [
+          ...combined.data.statuses.map((s) => ({
+            name: s.context,
+            state:
+              s.state === "success"
+                ? ("success" as const)
+                : s.state === "pending"
+                  ? ("pending" as const)
+                  : ("failure" as const),
+          })),
+          ...runs.data.check_runs.map((r) => ({
+            name: r.name,
+            state:
+              r.status !== "completed"
+                ? ("pending" as const)
+                : ["success", "neutral", "skipped"].includes(r.conclusion ?? "")
+                  ? ("success" as const)
+                  : ("failure" as const),
+          })),
+        ];
+        const failed = states.filter((s) => s.state === "failure").map((s) => s.name);
+        if (states.length === 0) return { state: "none" as const, failed };
+        if (failed.length > 0) return { state: "failure" as const, failed };
+        if (states.some((s) => s.state === "pending")) return { state: "pending" as const, failed };
+        return { state: "success" as const, failed };
+      });
+    } catch (error) {
+      throw new Error(`checks for ${sha.slice(0, 7)}: ${errorMessage(error)}`);
+    }
+  }
+}

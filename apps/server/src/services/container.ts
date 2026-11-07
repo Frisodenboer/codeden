@@ -12,6 +12,8 @@ import { AgentConfigService } from "./agent-config/agent-config-service";
 import { ArtifactService } from "./artifacts";
 import { BrowserService } from "./browser/browser-service";
 import { type Exec, runTool } from "./exec";
+import { type FactoryOptions, FactoryService } from "./factory/factory-service";
+import { type FactoryGithub, GithubFactoryPort } from "./factory/github-port";
 import { ConfigFiles } from "./files/config-files";
 import { GithubService, type GithubServiceDeps } from "./github/github-service";
 import { ImageService } from "./images/image-service";
@@ -62,6 +64,8 @@ export interface ServicesOptions {
   orchestration?: OrchestrationOptions & { github?: GithubPort; automation?: AutomationPort };
   /** GitHub API transport and poll intervals (tests point them at a fake GitHub). */
   github?: Pick<GithubServiceDeps, "fetch" | "baseUrl" | "idleIntervalMs" | "activeIntervalMs">;
+  /** Factory loop timings and its GitHub port (§10.1; tests pass a scripted GitHub). */
+  factory?: FactoryOptions & { github?: FactoryGithub };
   log?: (message: string) => void;
 }
 
@@ -102,6 +106,8 @@ export interface AppServices {
   github: GithubService;
   /** Usage and cost reports, budgets and rate limits (§12.6). */
   usage: UsageService;
+  /** Autonomy modes and the dark-factory loop (§10.1). */
+  factory: FactoryService;
   userHome: string;
 }
 
@@ -183,6 +189,41 @@ export function createServices(opts: ServicesOptions): AppServices {
     log: opts.log,
   });
   const setup = new SetupService({ exec, settings: opts.settings });
+  const usage = new UsageService({
+    db: opts.db,
+    store: opts.store,
+    settingsFile: join(opts.paths.home, "usage-settings.json"),
+    billing: async () => (setup.lastStatus ? billingFromSetup(setup.lastStatus) : {}),
+    log: opts.log,
+  });
+  const orchestration = new OrchestrationService({
+    db: opts.db,
+    store: opts.store,
+    repo: sessionRepo,
+    sessions,
+    projects,
+    inbox,
+    github: opts.orchestration?.github ?? new GithubServicePort(github),
+    automation: opts.orchestration?.automation,
+    options: opts.orchestration,
+    log: opts.log,
+  });
+  const factory = new FactoryService({
+    db: opts.db,
+    store: opts.store,
+    projects,
+    repo: sessionRepo,
+    sessions,
+    runner: opts.runner,
+    usage,
+    inbox,
+    notify: (draft, wake) => orchestration.notify(draft, wake),
+    settings: opts.settings,
+    exec,
+    github: opts.factory?.github ?? new GithubFactoryPort(github),
+    options: opts.factory,
+    log: opts.log,
+  });
   const services: AppServices = {
     db: opts.db,
     store: opts.store,
@@ -216,13 +257,8 @@ export function createServices(opts: ServicesOptions): AppServices {
     }),
     voice: new VoiceService({ secrets: opts.secrets, settings: opts.settings, ...opts.voice }),
     setup,
-    usage: new UsageService({
-      db: opts.db,
-      store: opts.store,
-      settingsFile: join(opts.paths.home, "usage-settings.json"),
-      billing: async () => (setup.lastStatus ? billingFromSetup(setup.lastStatus) : {}),
-      log: opts.log,
-    }),
+    usage,
+    factory,
     configFiles: new ConfigFiles({
       projects,
       home: userHome,
@@ -236,18 +272,7 @@ export function createServices(opts: ServicesOptions): AppServices {
       mcpProxyUrl: () => opts.runner.mcpProxyUrl(),
     }),
     github,
-    orchestration: new OrchestrationService({
-      db: opts.db,
-      store: opts.store,
-      repo: sessionRepo,
-      sessions,
-      projects,
-      inbox,
-      github: opts.orchestration?.github ?? new GithubServicePort(github),
-      automation: opts.orchestration?.automation,
-      options: opts.orchestration,
-      log: opts.log,
-    }),
+    orchestration,
     userHome,
     questions,
     mcpTokens,
