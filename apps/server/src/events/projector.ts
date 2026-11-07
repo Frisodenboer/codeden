@@ -9,6 +9,7 @@ import {
   projects,
   sessions,
 } from "../db/schema";
+import { applyFactoryProjection } from "../services/factory/projection";
 import { applyGithubProjection } from "../services/github/projection";
 import { applyOrchestrationProjection } from "../services/orchestration/projection";
 import { applyUsageReport } from "../services/usage/ledger";
@@ -101,6 +102,11 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
     case "pr.closed":
     case "review.submitted":
       applyGithubProjection(tx, e);
+      return [];
+    case "factory.loop.updated":
+    case "factory.item.updated":
+    case "factory.digest.created":
+      applyFactoryProjection(tx, e);
       return [];
     case "settings.updated":
     case "runner.connected":

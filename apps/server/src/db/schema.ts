@@ -302,6 +302,7 @@ export const mcpTokens = sqliteTable(
   ],
 );
 
+export * from "./schema-factory";
 // GitHub projections and sync state (§9) live in their own file.
 export * from "./schema-github";
 export * from "./schema-usage";
