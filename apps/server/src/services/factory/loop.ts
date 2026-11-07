@@ -131,7 +131,8 @@ function intakeIssues(ctx: FactoryContext, project: Project, loop: FactoryLoop):
   const known = new Set(
     ctx.store.items(project.id).flatMap((i) => (i.issue ? [i.issue.number] : [])),
   );
-  const since = loop.enabledAt ? Date.parse(loop.enabledAt) : Number.POSITIVE_INFINITY;
+  // GitHub timestamps have second precision and clocks drift: allow a minute of slack.
+  const since = loop.enabledAt ? Date.parse(loop.enabledAt) - 60_000 : Number.POSITIVE_INFINITY;
   for (const issue of ctx.github.openIssues(project.id)) {
     if (known.has(issue.number)) continue;
     const opened = issue.createdAt ? Date.parse(issue.createdAt) : 0;

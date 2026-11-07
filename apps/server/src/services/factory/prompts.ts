@@ -72,8 +72,17 @@ export function builderPrompt(item: FactoryItem, vision: string): string {
 }
 
 /** The independent reviewer of one pull request. */
-export function reviewerPrompt(item: FactoryItem, vision: string, note: string | null): string {
+export function reviewerPrompt(
+  item: FactoryItem,
+  vision: string,
+  note: string | null,
+  /** Base branch when the reviewer runs in the author's worktree (the change is local). */
+  localBase: string | null,
+): string {
   const pr = item.pr ? `#${item.pr.number} (${item.pr.url})` : "the pull request";
+  const read = localBase
+    ? `You are in the author's worktree, on the PR branch. Read the change locally and offline: \`git diff ${localBase}...HEAD\`, \`git log --oneline ${localBase}..HEAD\`, and the code around it; run the tests if useful. Do not use the network (no \`gh\`, no fetch). Do not modify files, commit or push.`
+    : `Read the change (for example \`gh pr diff ${item.pr?.number ?? ""}\` and \`gh pr view ${item.pr?.number ?? ""}\`), and the code around it. Do not modify files, commit, push or comment on GitHub.`;
   return [
     `You are the independent reviewer of pull request ${pr}: **${item.title}**. Another agent wrote it; CodeDen merges it automatically only if you approve and every other merge check passes.`,
     note ? `Note: ${note}` : "",
@@ -83,7 +92,7 @@ export function reviewerPrompt(item: FactoryItem, vision: string, note: string |
     "",
     visionBlock(vision),
     "",
-    `Read the change (for example \`gh pr diff ${item.pr?.number ?? ""}\` and \`gh pr view ${item.pr?.number ?? ""}\`), and the code around it. Do not modify files, commit, push or comment on GitHub.`,
+    read,
     "Judge: does it meet every criterion? Does it fit the vision and stay out of its out-of-scope list and protected areas? Are there tests that prove the behaviour (or are none needed)? Any security problems (injection, secrets, unsafe input, risky dependencies)?",
     "",
     "Then call `factory_submit_review` exactly once with your verdict: `approve` only when everything holds, `request_changes` for fixable problems, `reject` when the change should not exist. Be specific in the summary.",

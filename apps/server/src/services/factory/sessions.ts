@@ -99,7 +99,10 @@ export class FactorySessions {
       title: `Review: ${item.title}`.slice(0, 200),
       issue: item.issue ?? undefined,
       workspace: worktree ? { mode: "existing", path: worktree } : { mode: "worktree" },
-      input: { text: reviewerPrompt(item, vision, note), attachments: [] },
+      input: {
+        text: reviewerPrompt(item, vision, note, worktree ? (builder?.baseBranch ?? "main") : null),
+        attachments: [],
+      },
     });
   }
 

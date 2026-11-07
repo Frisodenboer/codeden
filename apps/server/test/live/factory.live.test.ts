@@ -54,7 +54,12 @@ const APP_FILES: Record<string, string> = {
 };
 
 describe.skipIf(!LIVE)("live factory", () => {
-  const name = `codeden-factory-sandbox-${randomBytes(3).toString("hex")}`;
+  // Reuse a leftover sandbox (`CODEDEN_LIVE_FACTORY_REPO=codeden-factory-sandbox-xxxxxx`).
+  const reuse = process.env.CODEDEN_LIVE_FACTORY_REPO;
+  if (reuse && !/^codeden-factory-sandbox-[a-z0-9]+$/.test(reuse)) {
+    throw new Error("CODEDEN_LIVE_FACTORY_REPO must name a codeden-factory-sandbox-* repository");
+  }
+  const name = reuse ?? `codeden-factory-sandbox-${randomBytes(3).toString("hex")}`;
   let owner = "";
   let home = "";
   let server: RunningServer;
@@ -70,33 +75,46 @@ describe.skipIf(!LIVE)("live factory", () => {
 
   beforeAll(async () => {
     owner = gh("api", "user", "--jq", ".login");
-    gh(
-      "repo",
-      "create",
-      `${owner}/${name}`,
-      "--private",
-      "--description",
-      "CodeDen factory live sandbox (safe to delete)",
-    );
-    console.log(`[live] created private repo ${owner}/${name}`);
     home = mkdtempSync(join(tmpdir(), "codeden-factory-live-"));
     const repo = join(home, "repo");
-    mkdirSync(repo);
     const git = (...args: string[]) =>
       execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
-    git("init", "-q", "-b", "main");
-    git("config", "user.email", "codeden-live@example.com");
-    git("config", "user.name", "CodeDen Live");
-    git("config", "--local", "--add", "credential.helper", "");
-    git("config", "--local", "--add", "credential.helper", "!gh auth git-credential");
-    for (const [path, contents] of Object.entries(APP_FILES)) {
-      mkdirSync(dirname(join(repo, path)), { recursive: true });
-      writeFileSync(join(repo, path), contents);
+    const credentials = () => {
+      git("config", "user.email", "codeden-live@example.com");
+      git("config", "user.name", "CodeDen Live");
+      // Push with the gh login, for this throwaway clone only.
+      git("config", "--local", "--add", "credential.helper", "");
+      git("config", "--local", "--add", "credential.helper", "!gh auth git-credential");
+    };
+    if (reuse) {
+      expect(
+        gh("repo", "view", `${owner}/${name}`, "--json", "visibility", "--jq", ".visibility"),
+      ).toBe("PRIVATE");
+      gh("repo", "clone", `${owner}/${name}`, repo);
+      credentials();
+      console.log(`[live] reusing private repo ${owner}/${name}`);
+    } else {
+      gh(
+        "repo",
+        "create",
+        `${owner}/${name}`,
+        "--private",
+        "--description",
+        "CodeDen factory live sandbox (safe to delete)",
+      );
+      console.log(`[live] created private repo ${owner}/${name}`);
+      mkdirSync(repo);
+      git("init", "-q", "-b", "main");
+      credentials();
+      for (const [path, contents] of Object.entries(APP_FILES)) {
+        mkdirSync(dirname(join(repo, path)), { recursive: true });
+        writeFileSync(join(repo, path), contents);
+      }
+      git("add", ".");
+      git("commit", "-q", "-m", "chore: tiny app, CI and vision");
+      git("remote", "add", "origin", `https://github.com/${owner}/${name}.git`);
+      git("push", "-q", "-u", "origin", "main");
     }
-    git("add", ".");
-    git("commit", "-q", "-m", "chore: tiny app, CI and vision");
-    git("remote", "add", "origin", `https://github.com/${owner}/${name}.git`);
-    git("push", "-q", "-u", "origin", "main");
 
     server = await startServer({
       port: 0,
@@ -150,8 +168,8 @@ describe.skipIf(!LIVE)("live factory", () => {
       const issue = GithubIssue.parse(
         (
           await api("POST", `/projects/${projectId}/github/issues`, {
-            title: "Add a multiply function",
-            body: "Add `multiply(a, b)` to src/math.js next to `add`, with tests.",
+            title: "Add a clamp function",
+            body: "Add `clamp(value, min, max)` to src/math.js next to `add`, with tests.",
           })
         ).body,
       );
@@ -160,10 +178,10 @@ describe.skipIf(!LIVE)("live factory", () => {
       const tick = async () =>
         FactoryStatus.parse((await api("POST", `/projects/${projectId}/factory/tick`)).body);
       await tick();
-      const candidate = await waitUntil(
-        () => factory.data.items(projectId).find((i) => i.issue?.number === issue.number),
-        30_000,
-      );
+      const candidate = await waitUntil(async () => {
+        await tick();
+        return factory.data.items(projectId).find((i) => i.issue?.number === issue.number);
+      }, 60_000);
 
       // The PM is woken to triage; if it has not decided after a few minutes, decide via the API.
       const triaged = await waitUntil(async () => {
@@ -179,8 +197,8 @@ describe.skipIf(!LIVE)("live factory", () => {
           decision: "accept",
           score: 0.8,
           acceptanceCriteria: [
-            "src/math.js exports multiply(a, b) returning the product",
-            "test/math.test.js covers multiply, including zero and negative numbers",
+            "src/math.js exports clamp(value, min, max) bounding value to [min, max]",
+            "test/math.test.js covers clamp below, inside and above the range",
             "npm test passes",
           ],
         });
