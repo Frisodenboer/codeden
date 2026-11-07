@@ -14,6 +14,7 @@ import { resolveInside } from "./path-guard";
 
 const MAX_ENTRIES = 5000;
 const MAX_READ_BYTES = 1024 * 1024;
+/** Skipped wherever they appear (a worktree has a `.git` file, not a folder). */
 const SKIP = new Set([".git", "node_modules"]);
 
 /**
@@ -40,7 +41,7 @@ export function listSessionFiles(root: string): SessionFileList {
         truncated = true;
         return;
       }
-      if (d.isDirectory() && SKIP.has(d.name)) continue;
+      if (SKIP.has(d.name)) continue;
       const path = prefix ? `${prefix}/${d.name}` : d.name;
       if (d.isDirectory()) {
         entries.push({ path, kind: "dir" });

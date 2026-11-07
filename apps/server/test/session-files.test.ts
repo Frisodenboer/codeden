@@ -11,6 +11,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "codeden-session-files-"));
   mkdirSync(join(dir, "src"));
   mkdirSync(join(dir, ".git"));
+  writeFileSync(join(dir, "src", ".git"), "gitdir: elsewhere\n");
   mkdirSync(join(dir, "node_modules", "x"), { recursive: true });
   writeFileSync(join(dir, "README.md"), "# hi\n");
   writeFileSync(join(dir, "src", "index.ts"), "export {};\n");
