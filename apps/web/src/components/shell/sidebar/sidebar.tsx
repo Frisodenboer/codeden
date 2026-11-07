@@ -1,0 +1,187 @@
+import type { Session } from "@codeden/contracts";
+import { Link } from "@tanstack/react-router";
+import { Bot, FolderPlus, Inbox, PanelLeftClose, Plus, Search } from "lucide-react";
+import { Hotkey, SectionLabel } from "@/components/common/bits";
+import { StatusDot } from "@/components/common/status-dot";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useSnapshot } from "@/lib/queries";
+import { cn } from "@/lib/utils";
+import { useLayoutStore } from "@/stores/layout";
+import { useUiStore } from "@/stores/ui";
+import { Logo } from "../logo";
+import { NavRow, rowBase } from "./nav-row";
+import { ProjectGroup } from "./project-group";
+import { SidebarFooter } from "./sidebar-footer";
+
+/** Waiting sessions in a soft amber box; hidden when nothing waits (§11.1). */
+function WaitingOnYou({
+  sessions,
+  projectName,
+}: {
+  sessions: Session[];
+  projectName: (id: string | null) => string;
+}) {
+  if (sessions.length === 0) return null;
+  return (
+    <div className="mx-3 mt-2 rounded-lg border border-status-waiting/15 bg-status-waiting/[0.04] p-1">
+      <div className="flex items-center gap-2 px-2 pt-1 pb-0.5">
+        <span className="text-3xs font-semibold tracking-[0.08em] text-status-waiting/90 uppercase">
+          Waiting on you
+        </span>
+        <span className="ml-auto text-3xs font-semibold text-status-waiting tabular-nums">
+          {sessions.length}
+        </span>
+      </div>
+      {sessions.slice(0, 4).map((s) => (
+        <NavRow
+          key={s.id}
+          href={`/sessions/${s.id}`}
+          link={{ to: "/sessions/$sessionId", params: { sessionId: s.id } }}
+          className="h-auto py-1"
+        >
+          <StatusDot status={s.status} className="mt-0.5 self-start" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{s.title ?? s.purpose}</span>
+            <span className="block truncate text-3xs text-muted-foreground">
+              {projectName(s.projectId)}
+            </span>
+          </span>
+        </NavRow>
+      ))}
+    </div>
+  );
+}
+
+/** Left sidebar (§13): orchestrator, inbox, waiting work, projects, runner status. */
+export function Sidebar({ width }: { width: number }) {
+  const { data } = useSnapshot();
+  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
+  const openPalette = useUiStore((s) => s.setPaletteOpen);
+  const openAddProject = useUiStore((s) => s.setAddProjectOpen);
+
+  const inbox = data?.inbox.filter((i) => i.status === "open") ?? [];
+  const urgent = inbox.some((i) => i.kind === "approval" || i.kind === "question");
+  const orchestrator = data?.sessions.find((s) => s.role === "orchestrator");
+  const waiting = data?.sessions.filter((s) => s.status === "waiting" && s.role === "agent") ?? [];
+  const projectName = (id: string | null) => data?.projects.find((p) => p.id === id)?.name ?? "";
+
+  return (
+    <aside
+      style={{ width }}
+      className="flex h-full shrink-0 flex-col bg-sidebar text-sidebar-foreground"
+    >
+      <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
+        <Logo className="size-[22px]" />
+        <span className="text-[15px] font-semibold tracking-tight">CodeDen</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto text-muted-foreground"
+              onClick={toggleSidebar}
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeftClose />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Collapse sidebar · Ctrl B</TooltipContent>
+        </Tooltip>
+      </div>
+
+      <div className="px-3 pb-2">
+        <button
+          type="button"
+          onClick={() => openPalette(true)}
+          className="flex h-8 w-full items-center gap-2 rounded-md border border-sidebar-border bg-background/40 px-2.5 text-[13px] text-muted-foreground shadow-xs transition-colors hover:border-input hover:text-foreground"
+        >
+          <Search className="size-3.5" />
+          <span>Search or run…</span>
+          <Hotkey keys="Ctrl K" className="ml-auto" />
+        </button>
+      </div>
+
+      <nav className="flex flex-col gap-px px-3">
+        <NavRow href="/" link={{ to: "/" }}>
+          <span className="flex size-4 items-center justify-center rounded-[5px] bg-primary/15 text-primary">
+            <Bot className="size-3" />
+          </span>
+          <span className="flex-1 font-medium">Orchestrator</span>
+          {orchestrator && <StatusDot status={orchestrator.status} />}
+        </NavRow>
+        <NavRow href="/inbox" link={{ to: "/inbox" }}>
+          <Inbox className="size-4 text-muted-foreground" />
+          <span className="flex-1">Inbox</span>
+          {inbox.length > 0 && (
+            <span
+              className={cn(
+                "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-3xs font-semibold tabular-nums",
+                urgent
+                  ? "bg-status-waiting text-black/80"
+                  : "bg-sidebar-accent text-sidebar-foreground",
+              )}
+            >
+              {inbox.length}
+            </span>
+          )}
+        </NavRow>
+      </nav>
+
+      <WaitingOnYou sessions={waiting} projectName={projectName} />
+
+      <div className="mt-4 flex items-center pr-2 pb-1 pl-5">
+        <SectionLabel>Projects</SectionLabel>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="ml-auto text-muted-foreground"
+              aria-label="Add project"
+              onClick={() => openAddProject(true)}
+            >
+              <Plus />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Add a project</TooltipContent>
+        </Tooltip>
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="flex flex-col gap-1 px-3 pb-3">
+          {data?.projects.map((project) => (
+            <ProjectGroup
+              key={project.id}
+              project={project}
+              sessions={data.sessions.filter((s) => s.projectId === project.id)}
+              automations={data.automations.filter(
+                (a) => a.target.type === "project" && a.target.projectId === project.id,
+              )}
+            />
+          ))}
+          {data && data.projects.length === 0 && (
+            <button
+              type="button"
+              onClick={() => openAddProject(true)}
+              className={cn(rowBase, "text-muted-foreground")}
+            >
+              <FolderPlus className="size-4" /> Add your first project
+            </button>
+          )}
+          {data && (
+            <Link
+              to="/setup"
+              className="mt-2 px-2 text-3xs text-muted-foreground/60 hover:text-muted-foreground"
+            >
+              Run first-time setup again
+            </Link>
+          )}
+        </div>
+      </ScrollArea>
+
+      <SidebarFooter />
+    </aside>
+  );
+}
