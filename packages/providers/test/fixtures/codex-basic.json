@@ -1,0 +1,838 @@
+{
+ "version": 1,
+ "provider": "codex",
+ "scenario": "basic",
+ "recordedAt": "2026-11-07T09:45:52.339Z",
+ "cliVersion": "0.160.1",
+ "autonomy": "auto",
+ "model": null,
+ "capabilities": {
+  "resume": true,
+  "steer": true,
+  "interrupt": true,
+  "approvals": true,
+  "userQuestions": true,
+  "subagents": false,
+  "rollback": false,
+  "fork": false,
+  "images": true,
+  "planMode": false,
+  "reasoningEffort": true,
+  "mcp": true,
+  "skills": true
+ },
+ "preamble": [],
+ "turns": [
+  {
+   "input": {
+    "text": "Create hello.txt containing hi, then tell me you're done.",
+    "attachments": []
+   },
+   "events": [
+    {
+     "type": "thread.started",
+     "thread": {
+      "id": "<SESSION>:thread-root"
+     }
+    },
+    {
+     "type": "session.updated",
+     "resumeToken": "01a1b566-2c59-75a3-9358-ede1b429a55e",
+     "model": "gpt-6-astra"
+    },
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "item": {
+      "id": "01a1b566-4189-74e1-8eed-9951be265b9f",
+      "kind": "user_message",
+      "status": "completed",
+      "input": {
+       "text": "Create hello.txt containing hi, then tell me you're done.",
+       "attachments": []
+      }
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": "I"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": "’ll"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": " create"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": " hello"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": ".txt"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": " containing"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": " `"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": "hi"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+     "delta": {
+      "type": "text",
+      "text": "`.\n"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef3448a3487d290e6314889a849c8",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "I’ll create hello.txt containing `hi`.\n"
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "item": {
+      "id": "exec-03411d4c-b536-4215-8bc4-faf3a27b2a1f",
+      "kind": "tool_call",
+      "toolKind": "file_edit",
+      "status": "in_progress",
+      "toolName": "apply_patch",
+      "title": "Edit hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "diff": "hi\n",
+        "additions": 1,
+        "deletions": 0,
+        "change": "add"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "item": {
+      "id": "exec-03411d4c-b536-4215-8bc4-faf3a27b2a1f",
+      "kind": "tool_call",
+      "toolKind": "file_edit",
+      "status": "completed",
+      "toolName": "apply_patch",
+      "title": "Edit hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "diff": "hi\n",
+        "additions": 1,
+        "deletions": 0,
+        "change": "add"
+       }
+      ]
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "usage": {
+      "inputTokens": 24068,
+      "outputTokens": 70,
+      "cachedInputTokens": 13568,
+      "cacheWriteTokens": 0,
+      "reasoningTokens": 0,
+      "contextTokens": 24138,
+      "contextWindow": 258400
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "usedPercent": 0,
+        "resetsAt": "2026-11-12T06:35:15.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": "Done"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": "."
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": " Created"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": " hello"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": ".txt"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": " containing"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": " `"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": "hi"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "itemId": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+     "delta": {
+      "type": "text",
+      "text": "`."
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef347d07887d2b9ea5aa4036e1ac0",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "Done. Created hello.txt containing `hi`."
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "usage": {
+      "inputTokens": 48230,
+      "outputTokens": 83,
+      "cachedInputTokens": 37504,
+      "cacheWriteTokens": 0,
+      "reasoningTokens": 0,
+      "contextTokens": 24175,
+      "contextWindow": 258400
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "usedPercent": 0,
+        "resetsAt": "2026-11-12T06:35:15.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-34bf-7d60-a90a-81060806c7e0",
+     "stopReason": "end_turn"
+    }
+   ],
+   "responses": {}
+  },
+  {
+   "input": {
+    "text": "Append a second line containing bye to hello.txt, then tell me you're done.",
+    "attachments": []
+   },
+   "events": [
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "item": {
+      "id": "01a1b566-57c6-7702-ac20-99d9f812b7a1",
+      "kind": "user_message",
+      "status": "completed",
+      "input": {
+       "text": "Append a second line containing bye to hello.txt, then tell me you're done.",
+       "attachments": []
+      }
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": "I"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": "’ll"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": " append"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": " `"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": "bye"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": "`"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": " as"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": " the"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": " second"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": " line"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+     "delta": {
+      "type": "text",
+      "text": ".\n"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef349a23087d2ab9b2d763ce54ce8",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "I’ll append `bye` as the second line.\n"
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "item": {
+      "id": "exec-04ca96cb-71fc-4568-b446-59fa4816f69d",
+      "kind": "tool_call",
+      "toolKind": "file_edit",
+      "status": "in_progress",
+      "toolName": "apply_patch",
+      "title": "Edit hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "diff": "@@ -1 +1,2 @@\n hi\n+bye\n",
+        "additions": 1,
+        "deletions": 0,
+        "change": "modify"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "item": {
+      "id": "exec-04ca96cb-71fc-4568-b446-59fa4816f69d",
+      "kind": "tool_call",
+      "toolKind": "file_edit",
+      "status": "completed",
+      "toolName": "apply_patch",
+      "title": "Edit hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "diff": "@@ -1 +1,2 @@\n hi\n+bye\n",
+        "additions": 1,
+        "deletions": 0,
+        "change": "modify"
+       }
+      ]
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "usage": {
+      "inputTokens": 72427,
+      "outputTokens": 160,
+      "cachedInputTokens": 61440,
+      "cacheWriteTokens": 0,
+      "reasoningTokens": 0,
+      "contextTokens": 24274,
+      "contextWindow": 258400
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "usedPercent": 0,
+        "resetsAt": "2026-11-12T06:35:15.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": "Done"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": "."
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " App"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": "ended"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " `"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": "bye"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": "`"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " as"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " the"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " second"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " line"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " of"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": " hello"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": ".txt"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "itemId": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+     "delta": {
+      "type": "text",
+      "text": "."
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "item": {
+      "id": "msg_03275a505e5a2a02016aeef34cdb4c87d28cfd5afbea152619",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "Done. Appended `bye` as the second line of hello.txt."
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "usage": {
+      "inputTokens": 96725,
+      "outputTokens": 179,
+      "cachedInputTokens": 85504,
+      "cacheWriteTokens": 0,
+      "reasoningTokens": 0,
+      "contextTokens": 24317,
+      "contextWindow": 258400
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "usedPercent": 0,
+        "resetsAt": "2026-11-12T06:35:15.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-5744-7081-8a7a-620be69c812a",
+     "stopReason": "end_turn"
+    }
+   ],
+   "responses": {}
+  }
+ ]
+}

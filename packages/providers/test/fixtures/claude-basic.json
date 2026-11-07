@@ -1,0 +1,868 @@
+{
+ "version": 1,
+ "provider": "claude",
+ "scenario": "basic",
+ "recordedAt": "2026-11-07T09:44:42.021Z",
+ "cliVersion": "2.1.318",
+ "autonomy": "auto",
+ "model": "haiku",
+ "capabilities": {
+  "resume": true,
+  "steer": true,
+  "interrupt": true,
+  "approvals": true,
+  "userQuestions": true,
+  "subagents": true,
+  "rollback": false,
+  "fork": false,
+  "images": true,
+  "planMode": true,
+  "reasoningEffort": true,
+  "mcp": true,
+  "skills": true
+ },
+ "preamble": [],
+ "turns": [
+  {
+   "input": {
+    "text": "Create hello.txt containing hi, then tell me you're done.",
+    "attachments": []
+   },
+   "events": [
+    {
+     "type": "thread.started",
+     "thread": {
+      "id": "<SESSION>:thread-root"
+     }
+    },
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "user-0fc00923-3c2a-45c5-b5e3-eab42cb2937e-mw67vex4",
+      "kind": "user_message",
+      "status": "completed",
+      "input": {
+       "text": "Create hello.txt containing hi, then tell me you're done.",
+       "attachments": []
+      }
+     }
+    },
+    {
+     "type": "session.updated",
+     "resumeToken": "f797db7a-1931-4858-aa6c-32a78819c371",
+     "model": "claude-haiku-5-5"
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "toolu_01PqseHVvCL36gnty1WYNYy5",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Write",
+      "input": {},
+      "toolKind": "file_edit",
+      "title": "Write",
+      "changes": []
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "{\"file_path\": \"C:\\\\Users"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\\\\user\\\\AppData\\\\"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "Local\\\\Temp\\\\c"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "d-rec-mb0"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "ANy\\\\hello.tx"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "t"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\", \"content\": \"hi"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\\n"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "toolu_01PqseHVvCL36gnty1WYNYy5",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\"}"
+     }
+    },
+    {
+     "type": "item.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "toolu_01PqseHVvCL36gnty1WYNYy5",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Write",
+      "input": {
+       "file_path": "<CWD>\\hello.txt",
+       "content": "hi\n"
+      },
+      "toolKind": "file_edit",
+      "title": "Write hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "change": "modify"
+       }
+      ]
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "resetsAt": "2026-11-10T04:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "toolu_01PqseHVvCL36gnty1WYNYy5",
+      "kind": "tool_call",
+      "status": "completed",
+      "toolName": "Write",
+      "input": {
+       "file_path": "<CWD>\\hello.txt",
+       "content": "hi\n"
+      },
+      "toolKind": "file_edit",
+      "title": "Write hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "change": "add",
+        "additions": 2,
+        "diff": "--- /dev/null\n+++ b/<CWD>\\hello.txt\n@@ -0,0 +1,2 @@\n+hi\n+"
+       }
+      ],
+      "output": {
+       "text": "File created successfully at: <CWD>\\hello.txt (file state is current in your context — no need to Read it back)",
+       "truncated": false,
+       "totalBytes": 154
+      },
+      "durationMs": 461
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "msg_011CgoMNvUMFELuAiYSXZaVc:0",
+      "kind": "reasoning",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "msg_011CgoMNvUMFELuAiYSXZaVc:0",
+      "kind": "reasoning",
+      "status": "completed",
+      "text": "",
+      "redacted": true
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": "Done"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": ". I"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": " created `C"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": ":\\Users\\user\\"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": "AppData\\Local\\"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": "Temp\\cd-rec"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": "-mb0AN"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": "y\\hello.txt`"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": " containing `"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "itemId": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+     "delta": {
+      "type": "text",
+      "text": "hi`."
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "item": {
+      "id": "msg_011CgoMNvUMFELuAiYSXZaVc:1",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "Done. I created `<CWD>\\hello.txt` containing `hi`."
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "usage": {
+      "inputTokens": 4,
+      "outputTokens": 232,
+      "cachedInputTokens": 77232,
+      "cacheWriteTokens": 21297,
+      "reasoningTokens": 70,
+      "contextTokens": 51636,
+      "contextWindow": 1000000,
+      "costUsd": 0.005148120000000001
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0fc00923-3c2a-45c5-b5e3-eab42cb2937e",
+     "stopReason": "end_turn"
+    }
+   ],
+   "responses": {}
+  },
+  {
+   "input": {
+    "text": "Append a second line containing bye to hello.txt, then tell me you're done.",
+    "attachments": []
+   },
+   "events": [
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "user-1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c-mw67vkoa",
+      "kind": "user_message",
+      "status": "completed",
+      "input": {
+       "text": "Append a second line containing bye to hello.txt, then tell me you're done.",
+       "attachments": []
+      }
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Read",
+      "input": {},
+      "toolKind": "file_read",
+      "path": "",
+      "title": "Read "
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "{\"file_path\": \"C:\\\\"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "Users\\\\user\\\\AppData"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\\\\Local\\\\Temp\\\\"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "cd-rec-mb"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "0AN"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "y"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\\\\hello.txt"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\"}"
+     }
+    },
+    {
+     "type": "item.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Read",
+      "input": {
+       "file_path": "<CWD>\\hello.txt"
+      },
+      "toolKind": "file_read",
+      "path": "<CWD>\\hello.txt",
+      "title": "Read hello.txt"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "toolu_015gwXaXBGh3aHSF7xnVuw9U",
+      "kind": "tool_call",
+      "status": "completed",
+      "toolName": "Read",
+      "input": {
+       "file_path": "<CWD>\\hello.txt"
+      },
+      "toolKind": "file_read",
+      "path": "<CWD>\\hello.txt",
+      "title": "Read hello.txt",
+      "output": {
+       "text": "1\thi\n2\t",
+       "truncated": false,
+       "totalBytes": 7
+      },
+      "durationMs": 1167
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "msg_011CgoMPRufCBZ3icAkgKD7U:0",
+      "kind": "reasoning",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "msg_011CgoMPRufCBZ3icAkgKD7U:0",
+      "kind": "reasoning",
+      "status": "completed",
+      "text": "",
+      "redacted": true
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Edit",
+      "input": {},
+      "toolKind": "file_edit",
+      "title": "Edit",
+      "changes": []
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "{\"file_path\": \"C:\\\\Users"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\\\\user\\\\AppData\\\\"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "Local\\\\Temp\\\\c"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "d-rec-mb0"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "AN"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "y"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\\\\hello.txt"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\", \"old_string\": \"hi\\n"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\", \"new_string\": \"hi"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\\nbye\\n"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\"}"
+     }
+    },
+    {
+     "type": "item.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Edit",
+      "input": {
+       "replace_all": false,
+       "file_path": "<CWD>\\hello.txt",
+       "old_string": "hi\n",
+       "new_string": "hi\nbye\n"
+      },
+      "toolKind": "file_edit",
+      "title": "Edit hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "change": "modify"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "toolu_01LThrXTBRfp8JD8iQe8qTa6",
+      "kind": "tool_call",
+      "status": "completed",
+      "toolName": "Edit",
+      "input": {
+       "replace_all": false,
+       "file_path": "<CWD>\\hello.txt",
+       "old_string": "hi\n",
+       "new_string": "hi\nbye\n"
+      },
+      "toolKind": "file_edit",
+      "title": "Edit hello.txt",
+      "changes": [
+       {
+        "path": "<CWD>\\hello.txt",
+        "change": "modify",
+        "diff": "--- a/<CWD>\\hello.txt\n+++ b/<CWD>\\hello.txt\n@@ -1,1 +1,2 @@\n hi\n+bye",
+        "additions": 1,
+        "deletions": 0
+       }
+      ],
+      "output": {
+       "text": "The file <CWD>\\hello.txt has been updated successfully. (file state is current in your context — no need to Read it back)",
+       "truncated": false,
+       "totalBytes": 164
+      },
+      "durationMs": 383
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "msg_011CgoMPdf6vT5Utawmgrjdg:0",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "msg_011CgoMPdf6vT5Utawmgrjdg:0",
+     "delta": {
+      "type": "text",
+      "text": "Done. `hello.tx"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "msg_011CgoMPdf6vT5Utawmgrjdg:0",
+     "delta": {
+      "type": "text",
+      "text": "t` now re"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "msg_011CgoMPdf6vT5Utawmgrjdg:0",
+     "delta": {
+      "type": "text",
+      "text": "ads `hi` on"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "msg_011CgoMPdf6vT5Utawmgrjdg:0",
+     "delta": {
+      "type": "text",
+      "text": " line 1 and `bye"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "itemId": "msg_011CgoMPdf6vT5Utawmgrjdg:0",
+     "delta": {
+      "type": "text",
+      "text": "` on line 2."
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "item": {
+      "id": "msg_011CgoMPdf6vT5Utawmgrjdg:0",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "Done. `hello.txt` now reads `hi` on line 1 and `bye` on line 2."
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "usage": {
+      "inputTokens": 10,
+      "outputTokens": 703,
+      "cachedInputTokens": 242745,
+      "cacheWriteTokens": 29745,
+      "reasoningTokens": 282,
+      "contextTokens": 60084,
+      "contextWindow": 1000000,
+      "costUsd": 0.008728950000000001
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "1d8a8c8e-6d36-4b32-a1ab-6e3aca21cf7c",
+     "stopReason": "end_turn"
+    }
+   ],
+   "responses": {}
+  }
+ ]
+}
