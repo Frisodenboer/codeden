@@ -1,0 +1,478 @@
+import { z } from "zod";
+import { Usage } from "./agent-events";
+import {
+  AutonomyLevel,
+  ErrorInfo,
+  GitHubIssueRef,
+  Id,
+  ProviderId,
+  ReasoningEffort,
+  Role,
+  Timestamp,
+} from "./common";
+import { InboxItemKind, InboxItemStatus } from "./entities/inbox";
+import { GitHubRepo, Project } from "./entities/project";
+import { ItemRecord, Session, SessionStatus, Thread, Turn } from "./entities/session";
+import { UserInput } from "./input";
+import { FollowupsItem } from "./items";
+import { RuntimeResponse } from "./provider";
+import { ConflictDecision, StartedBy, StartWorkResult, WorkKey } from "./work";
+import { ClientSubscribe, ClientToServerMessage, ServerToClientMessage } from "./ws";
+
+/**
+ * HTTP API request/response shapes (`/api/*`) and the UI WebSocket extensions for live
+ * transcripts. The server validates every request body and query with these schemas; the web
+ * app types against them (and the Hono RPC `AppType`).
+ */
+
+/** Error body returned by every failing API route. */
+export const ApiError = z.object({ error: ErrorInfo });
+export type ApiError = z.infer<typeof ApiError>;
+
+// ---------------------------------------------------------------- projects
+
+/** Package managers CodeDen recognises when adding a project (§14 step 5). */
+export const PackageManager = z.enum(["pnpm", "npm", "yarn", "bun"]);
+export type PackageManager = z.infer<typeof PackageManager>;
+
+/** Where a new project comes from: an existing folder, or a git URL to clone. */
+export const ProjectSource = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("local"), path: z.string().min(1) }),
+  z.object({
+    type: z.literal("clone"),
+    /** `https://github.com/owner/repo(.git)`, `git@github.com:owner/repo.git`, or `owner/repo`. */
+    url: z.string().min(1),
+    /**
+     * Exact target folder. When omitted the repo is cloned into `<parentDir>/<repo>`, with
+     * `parentDir` defaulting to `~/codeden-projects`.
+     */
+    path: z.string().min(1).optional(),
+    parentDir: z.string().min(1).optional(),
+  }),
+]);
+export type ProjectSource = z.infer<typeof ProjectSource>;
+
+/** `POST /api/projects`. */
+export const CreateProjectRequest = z.object({
+  source: ProjectSource,
+  /** Display name; defaults to the folder name. */
+  name: z.string().trim().min(1).max(100).optional(),
+  defaultProvider: ProviderId.nullable().optional(),
+  autonomy: AutonomyLevel.nullable().optional(),
+});
+export type CreateProjectRequest = z.infer<typeof CreateProjectRequest>;
+
+/** What CodeDen found in a project folder. */
+export const ProjectDetection = z.object({
+  isGitRepo: z.boolean(),
+  /** Top level of the git checkout (may differ from the chosen folder). */
+  gitRoot: z.string().nullable(),
+  remoteUrl: z.string().nullable(),
+  github: GitHubRepo.nullable(),
+  defaultBranch: z.string().nullable(),
+  currentBranch: z.string().nullable(),
+  packageManager: PackageManager.nullable(),
+  /** Suggested worktree setup commands, e.g. `pnpm install`. */
+  suggestedSetupCommands: z.array(z.string()),
+});
+export type ProjectDetection = z.infer<typeof ProjectDetection>;
+
+/** `POST /api/projects` response. */
+export const CreateProjectResponse = z.object({
+  project: Project,
+  detected: ProjectDetection,
+});
+export type CreateProjectResponse = z.infer<typeof CreateProjectResponse>;
+
+/** `PATCH /api/projects/:id`. */
+export const UpdateProjectRequest = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  defaultProvider: ProviderId.nullable().optional(),
+  autonomy: AutonomyLevel.nullable().optional(),
+  timezone: z.string().nullable().optional(),
+  defaultBranch: z.string().nullable().optional(),
+});
+export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequest>;
+
+// ---------------------------------------------------------------- sessions
+
+/**
+ * Where a session runs (§9): a fresh worktree (default for agents), the repo root, or an
+ * existing directory (`path`).
+ */
+export const WorkspaceRequest = z.object({
+  mode: z.enum(["worktree", "repo_root", "existing"]).default("worktree"),
+  path: z.string().min(1).optional(),
+  branch: z.string().min(1).optional(),
+  baseRef: z.string().min(1).optional(),
+  setupCommands: z.array(z.string()).optional(),
+});
+export type WorkspaceRequest = z.infer<typeof WorkspaceRequest>;
+
+/** `POST /api/sessions`: start agent work, with the §8.4 conflict check built in. */
+export const StartSessionRequest = z.object({
+  /** Null only for the orchestrator. */
+  projectId: Id.nullable(),
+  role: Role.default("agent"),
+  /** Provider id; omitted or `auto` picks the role default / first ready provider. */
+  provider: z.union([z.literal("auto"), ProviderId]).optional(),
+  model: z.string().min(1).optional(),
+  effort: ReasoningEffort.optional(),
+  autonomy: AutonomyLevel.optional(),
+  workspace: WorkspaceRequest.prefault({}),
+  /** One line describing the work; defaults to the first line of the input. */
+  purpose: z.string().trim().min(1).max(300).optional(),
+  /** Stable identifier of the work; derived from the issue or purpose when omitted. */
+  workKey: WorkKey.optional(),
+  /** Narrows the work for overlap detection (§8.4). */
+  scope: z
+    .object({ paths: z.array(z.string()).optional(), area: z.string().optional() })
+    .optional(),
+  startedBy: StartedBy.prefault({ kind: "user" }),
+  title: z.string().trim().min(1).max(200).optional(),
+  parentSessionId: Id.optional(),
+  issue: GitHubIssueRef.optional(),
+  /** First message; the session starts idle when omitted. */
+  input: UserInput.optional(),
+  /** The caller's decision when a previous attempt returned `conflict`. */
+  conflict: ConflictDecision.optional(),
+});
+export type StartSessionRequest = z.infer<typeof StartSessionRequest>;
+export type StartSessionRequestInit = z.input<typeof StartSessionRequest>;
+
+/**
+ * `POST /api/sessions` response: `StartWorkResult` (`started` / `conflict`) plus the outcomes
+ * of a `ConflictDecision`: `queued` (wait), `skipped` (skip) and `joined` (join).
+ */
+export const StartSessionResponse = z.discriminatedUnion("status", [
+  ...StartWorkResult.options,
+  z.object({
+    status: z.literal("queued"),
+    sessionId: Id,
+    /** Work this session waits for. */
+    behind: z.array(Id),
+  }),
+  z.object({ status: z.literal("skipped") }),
+  z.object({ status: z.literal("joined"), sessionId: Id }),
+]);
+export type StartSessionResponse = z.infer<typeof StartSessionResponse>;
+
+/** Recorded with a session about how it was started (forced starts keep their reason). */
+export const SessionStartMeta = z.object({
+  workspaceMode: WorkspaceRequest.shape.mode,
+  /** Set when the runner could not prepare the requested workspace and CodeDen fell back. */
+  workspaceFallback: z.string().nullable(),
+  forced: z.object({ reason: z.string(), conflictsWith: z.array(Id) }).nullable(),
+  queuedBehind: z.array(Id),
+});
+export type SessionStartMeta = z.infer<typeof SessionStartMeta>;
+
+/** `GET /api/sessions` query. */
+export const ListSessionsQuery = z.object({
+  projectId: Id.optional(),
+  status: z
+    .string()
+    .transform((s) => s.split(","))
+    .pipe(z.array(SessionStatus))
+    .optional(),
+  workKey: z.string().optional(),
+  role: Role.optional(),
+});
+export type ListSessionsQuery = z.infer<typeof ListSessionsQuery>;
+
+/** `GET /api/sessions/:id`. */
+export const SessionDetail = z.object({
+  session: Session,
+  /** Accumulated usage across turns (token counts and cost summed; context/rate limits latest). */
+  usage: Usage.nullable(),
+  /** Follow-up suggestions of the latest completed root turn (§7.5). */
+  followups: FollowupsItem.nullable(),
+  startMeta: SessionStartMeta.nullable(),
+  /** Messages waiting to be sent when the current turn ends. */
+  queuedMessages: z.int().nonnegative(),
+});
+export type SessionDetail = z.infer<typeof SessionDetail>;
+
+/** `POST /api/sessions/:id/messages`. */
+export const SendMessageRequest = z.object({
+  input: UserInput,
+  /** What to do while a turn is running: queue (default), steer into it, or reject. */
+  whenBusy: z.enum(["queue", "steer", "reject"]).default("queue"),
+});
+export type SendMessageRequest = z.infer<typeof SendMessageRequest>;
+export type SendMessageRequestInit = z.input<typeof SendMessageRequest>;
+
+export const SendMessageResponse = z.object({
+  status: z.enum(["sent", "queued", "steered"]),
+});
+export type SendMessageResponse = z.infer<typeof SendMessageResponse>;
+
+/** `POST /api/sessions/:id/steer`. */
+export const SteerRequest = z.object({ input: UserInput });
+export type SteerRequest = z.infer<typeof SteerRequest>;
+
+/** `POST /api/sessions/:id/respond`: answer an approval request or question. */
+export const RespondRequest = z.object({ requestId: Id, response: RuntimeResponse });
+export type RespondRequest = z.infer<typeof RespondRequest>;
+
+/** `GET /api/sessions/:id/threads/:threadId/items` query (positions are per thread). */
+export const ThreadItemsQuery = z.object({
+  /** Items with `position < before` (older page). */
+  before: z.coerce.number().int().nonnegative().optional(),
+  /** Items with `position > after` (newer page). */
+  after: z.coerce.number().int().min(-1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+});
+export type ThreadItemsQuery = z.infer<typeof ThreadItemsQuery>;
+
+/** A page of transcript items. Large tool outputs are previews (`output.truncated`). */
+export const ThreadItemsPage = z.object({
+  threadId: Id,
+  items: z.array(ItemRecord),
+  hasMoreBefore: z.boolean(),
+  hasMoreAfter: z.boolean(),
+});
+export type ThreadItemsPage = z.infer<typeof ThreadItemsPage>;
+
+/** `GET /api/sessions/:id/items/:itemId/output`: the full output of a tool call. */
+export const ToolOutputResponse = z.object({
+  itemId: Id,
+  text: z.string(),
+  totalBytes: z.int().nonnegative(),
+});
+export type ToolOutputResponse = z.infer<typeof ToolOutputResponse>;
+
+// ---------------------------------------------------------------- inbox
+
+/** `GET /api/inbox` query. Defaults to open items. */
+export const ListInboxQuery = z.object({
+  status: InboxItemStatus.optional(),
+  projectId: Id.optional(),
+  sessionId: Id.optional(),
+});
+export type ListInboxQuery = z.infer<typeof ListInboxQuery>;
+
+/**
+ * `POST /api/inbox/:id/resolve`. Approvals and questions pass the `response`, which is sent
+ * to the agent; other items are just marked resolved or dismissed.
+ */
+export const ResolveInboxRequest = z.object({
+  response: RuntimeResponse.optional(),
+  status: z.enum(["resolved", "dismissed"]).default("resolved"),
+  note: z.string().max(2000).optional(),
+});
+export type ResolveInboxRequest = z.infer<typeof ResolveInboxRequest>;
+
+/** `GET /api/inbox/counts`: the sidebar badge numbers. */
+export const InboxCounts = z.object({
+  open: z.int().nonnegative(),
+  byProject: z.record(z.string(), z.int().nonnegative()),
+  byKind: z.partialRecord(InboxItemKind, z.int().nonnegative()),
+});
+export type InboxCounts = z.infer<typeof InboxCounts>;
+
+// ---------------------------------------------------------------- first-run setup
+
+export const SetupToolId = z.enum(["claude", "codex", "gh", "git", "browser", "node"]);
+export type SetupToolId = z.infer<typeof SetupToolId>;
+
+/** A command the UI runs in its embedded terminal to fix a check (§14 step 3). */
+export const SetupCommand = z.object({
+  kind: z.enum(["install", "login", "upgrade", "configure"]),
+  /** Shown to the user and typed into the terminal. */
+  command: z.string(),
+  /** Docs link for manual installs. */
+  url: z.string().optional(),
+});
+export type SetupCommand = z.infer<typeof SetupCommand>;
+
+/** Result of one detection check. Never contains tokens. */
+export const SetupCheck = z.object({
+  id: SetupToolId,
+  label: z.string(),
+  /** `ok`: ready; `warning`: usable but needs attention; `missing`: not usable. */
+  state: z.enum(["ok", "warning", "missing", "error"]),
+  installed: z.boolean(),
+  version: z.string().nullable(),
+  executablePath: z.string().nullable(),
+  /** Null when not applicable or unknown. */
+  loggedIn: z.boolean().nullable(),
+  authMethod: z.string().nullable(),
+  account: z.string().nullable(),
+  loginExpiresAt: Timestamp.nullable(),
+  /** Human-readable summary of the state. */
+  message: z.string(),
+  fix: SetupCommand.nullable(),
+  durationMs: z.int().nonnegative(),
+});
+export type SetupCheck = z.infer<typeof SetupCheck>;
+
+/** `GET /api/setup/status`. */
+export const SetupStatus = z.object({
+  checkedAt: Timestamp,
+  /** Persisted in settings once the user finishes the checklist. */
+  setupCompleted: z.boolean(),
+  /** At least one agent provider is installed and logged in. */
+  ready: z.boolean(),
+  checks: z.array(SetupCheck),
+  /** Changes worth a warning (expiring login, logged-out CLI). */
+  warnings: z.array(z.object({ id: SetupToolId, message: z.string() })),
+});
+export type SetupStatus = z.infer<typeof SetupStatus>;
+
+/** `POST /api/setup/login/:tool` response: what to run in a terminal. */
+export const LoginCommandResponse = z.object({
+  tool: z.enum(["claude", "codex", "gh"]),
+  command: z.string(),
+  args: z.array(z.string()),
+});
+export type LoginCommandResponse = z.infer<typeof LoginCommandResponse>;
+
+// ---------------------------------------------------------------- folder picker and files
+
+/** `GET /api/fs/list?path=`: directories only, read-only (§13 server-side folder picker). */
+export const FsListResponse = z.object({
+  /** The listed directory (absolute), or null for the roots view. */
+  path: z.string().nullable(),
+  parent: z.string().nullable(),
+  home: z.string(),
+  /** Drives on Windows, `/` elsewhere. */
+  roots: z.array(z.object({ name: z.string(), path: z.string() })),
+  entries: z.array(
+    z.object({
+      name: z.string(),
+      path: z.string(),
+      hidden: z.boolean(),
+      /** True when the folder looks like a git checkout. */
+      isGitRepo: z.boolean(),
+    }),
+  ),
+  truncated: z.boolean(),
+});
+export type FsListResponse = z.infer<typeof FsListResponse>;
+
+/** Roots the config-file API may touch (§12.4): a project checkout or a provider's home. */
+export const FileRoot = z.enum(["project", "claude", "codex"]);
+export type FileRoot = z.infer<typeof FileRoot>;
+
+/** `GET /api/files` query. `path` is relative to the root. */
+export const FileReadQuery = z.object({
+  root: FileRoot,
+  projectId: Id.optional(),
+  path: z.string().min(1),
+});
+export type FileReadQuery = z.infer<typeof FileReadQuery>;
+
+export const FileContent = z.object({
+  root: FileRoot,
+  path: z.string(),
+  absolutePath: z.string(),
+  exists: z.boolean(),
+  content: z.string(),
+  /** Null when the file does not exist. */
+  sha256: z.string().nullable(),
+  sizeBytes: z.int().nonnegative(),
+});
+export type FileContent = z.infer<typeof FileContent>;
+
+/** `PUT /api/files`. A backup is written before overwriting. */
+export const FileWriteRequest = z.object({
+  root: FileRoot,
+  projectId: Id.optional(),
+  path: z.string().min(1),
+  content: z.string().max(2_000_000),
+  /**
+   * Optimistic concurrency: the sha256 the editor loaded (null = the file must not exist).
+   * Omit to overwrite unconditionally.
+   */
+  expectedSha256: z.string().nullable().optional(),
+});
+export type FileWriteRequest = z.infer<typeof FileWriteRequest>;
+
+// ---------------------------------------------------------------- secrets
+
+/** Secrets CodeDen may keep in the OS keychain (§6). Values are never returned. */
+export const SecretKey = z.enum([
+  "elevenlabs.apiKey",
+  "openai.apiKey",
+  "gemini.apiKey",
+  "anthropic.apiKey",
+]);
+export type SecretKey = z.infer<typeof SecretKey>;
+
+export const SecretsStatus = z.object({
+  backend: z.enum(["keyring", "memory"]),
+  keys: z.array(z.object({ key: SecretKey, set: z.boolean() })),
+});
+export type SecretsStatus = z.infer<typeof SecretsStatus>;
+
+export const SetSecretRequest = z.object({ value: z.string().min(1).max(10_000) });
+export type SetSecretRequest = z.infer<typeof SetSecretRequest>;
+
+// ---------------------------------------------------------------- UI WebSocket extensions
+
+/**
+ * `subscribe` with an extra switch: `agentEvents: false` delivers only domain events
+ * (projects, sessions, inbox, settings, runner), leaving transcripts to `watch_session`.
+ * Live events are batched (~40ms) and consecutive text deltas of one item are merged, so seqs
+ * in a batch may skip; track the highest seq seen.
+ */
+export const UiSubscribe = ClientSubscribe.extend({
+  agentEvents: z.boolean().default(true),
+});
+
+/**
+ * Watch one session's transcript. The server sends the latest state of every thread, turn and
+ * item changed after `fromSeq` (load pages over HTTP first, then watch from their `seq`),
+ * then live `transcript` updates. `threadIds` limits items/turns to those threads (child
+ * threads they spawn are still announced).
+ */
+export const WatchSession = z.object({
+  type: z.literal("watch_session"),
+  sessionId: Id,
+  fromSeq: z.int().nonnegative(),
+  threadIds: z.array(Id).optional(),
+});
+
+export const UnwatchSession = z.object({ type: z.literal("unwatch_session"), sessionId: Id });
+
+/** Everything the UI may send over `/ws`. */
+export const UiClientMessage = z.discriminatedUnion("type", [
+  UiSubscribe,
+  ...ClientToServerMessage.options.filter(
+    (o): o is Exclude<(typeof ClientToServerMessage.options)[number], typeof ClientSubscribe> =>
+      o !== ClientSubscribe,
+  ),
+  WatchSession,
+  UnwatchSession,
+]);
+export type UiClientMessage = z.infer<typeof UiClientMessage>;
+
+/** Latest state of transcript rows that changed (replace by id). Outputs are previews. */
+export const TranscriptMessage = z.object({
+  type: z.literal("transcript"),
+  sessionId: Id,
+  /** Highest event seq reflected in this message. */
+  seq: z.int().nonnegative(),
+  threads: z.array(Thread),
+  turns: z.array(Turn),
+  items: z.array(ItemRecord),
+  /** Present when the session's accumulated usage changed. */
+  usage: Usage.optional(),
+});
+export type TranscriptMessage = z.infer<typeof TranscriptMessage>;
+
+/** The server cannot replay this session's changes; reload its transcript over HTTP. */
+export const TranscriptResyncMessage = z.object({
+  type: z.literal("transcript_resync"),
+  sessionId: Id,
+  seq: z.int().nonnegative(),
+});
+
+/** Everything the server may send over `/ws`. */
+export const UiServerMessage = z.discriminatedUnion("type", [
+  ...ServerToClientMessage.options,
+  TranscriptMessage,
+  TranscriptResyncMessage,
+]);
+export type UiServerMessage = z.infer<typeof UiServerMessage>;
