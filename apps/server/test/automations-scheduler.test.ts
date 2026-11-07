@@ -164,4 +164,20 @@ describe("cron scheduler: persisted next runs, catch-up, skips", () => {
     expect(s.upcoming(null, 10)).toEqual([]);
     s.stop();
   });
+
+  it("reports changes to visible schedule state, not bookkeeping", () => {
+    const changes: string[] = [];
+    const store = new ScheduleStore(db.db, (c) => changes.push(`${c.automationId}/${c.projectId}`));
+    const s = scheduler(store);
+    s.start();
+    expect(changes).toEqual(["a1/p1"]); // first next run
+    s.refresh();
+    expect(changes).toHaveLength(1);
+    s.skipNext("a1", "p1");
+    store.upsert("a1", "p1", { lastFiredAt: ts });
+    store.upsert("a1", "p1", { paused: true });
+    store.setProjectEnabled("p1", false);
+    expect(changes).toEqual(["a1/p1", "a1/p1", "a1/p1", "null/p1"]);
+    s.stop();
+  });
 });

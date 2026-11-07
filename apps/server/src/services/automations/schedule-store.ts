@@ -6,9 +6,21 @@ import { automationProjects, automationSchedules } from "../../db/schema-automat
 export type ScheduleRow = typeof automationSchedules.$inferSelect;
 export type SchedulePatch = Partial<Omit<ScheduleRow, "automationId" | "projectId" | "updatedAt">>;
 
-/** Persisted scheduler state per automation and project, and each project's automation switch. */
+/** A change to state the UI shows; `automationId` is null for a project's automation switch. */
+export type ScheduleChange = { automationId: string | null; projectId: string };
+
+/** Fields of a schedule row that the UI shows (`AutomationState`, upcoming runs). */
+const VISIBLE = ["nextRunAt", "skipAt", "paused", "enabledOverride"] as const;
+
+/**
+ * Persisted scheduler state per automation and project, and each project's automation switch.
+ * `onChange` hears about changes to visible state (not bookkeeping like `lastFiredAt`).
+ */
 export class ScheduleStore {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly onChange?: (change: ScheduleChange) => void,
+  ) {}
 
   get(automationId: string, projectId: string): ScheduleRow | undefined {
     return this.db
@@ -60,6 +72,9 @@ export class ScheduleStore {
         set: row,
       })
       .run();
+    const visible = (r: ScheduleRow | undefined) => VISIBLE.map((k) => r?.[k] ?? null);
+    const before = visible(current);
+    if (visible(row).some((v, i) => v !== before[i])) this.onChange?.({ automationId, projectId });
     return row;
   }
 
@@ -98,6 +113,7 @@ export class ScheduleStore {
       .values(row)
       .onConflictDoUpdate({ target: automationProjects.projectId, set: row })
       .run();
+    this.onChange?.({ automationId: null, projectId });
     return row;
   }
 }

@@ -103,6 +103,7 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
       applyGithubProjection(tx, e);
       return [];
     case "settings.updated":
+    case "automation.updated":
     case "runner.connected":
     case "runner.disconnected":
     case "runner.draining":

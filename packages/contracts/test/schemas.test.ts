@@ -117,6 +117,11 @@ describe("persisted events", () => {
       { type: "session.created", sessionId: "s1", payload: { session: sampleSession } },
       { type: "inbox.created", sessionId: "s1", payload: { item: sampleInboxItem } },
       { type: "automation.saved", sessionId: null, payload: { automation: sampleAutomation } },
+      {
+        type: "automation.updated",
+        sessionId: null,
+        payload: { automationId: sampleAutomation.id, projectId: null },
+      },
       { type: "settings.updated", sessionId: null, payload: { settings: defaultSettings() } },
       {
         type: "runner.connected",

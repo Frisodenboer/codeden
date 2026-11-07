@@ -81,7 +81,10 @@ export class AutomationService implements AutomationPort {
   constructor(private readonly deps: AutomationServiceDeps) {
     this.now = deps.now ?? (() => new Date());
     this.runs = new RunStore(deps.db, deps.store);
-    this.schedules = new ScheduleStore(deps.db);
+    // Scheduler state is operational, but live views still need to hear about changes.
+    this.schedules = new ScheduleStore(deps.db, (change) =>
+      deps.store.append([{ type: "automation.updated", sessionId: null, payload: change }]),
+    );
     this.sources = new AutomationSources({
       db: deps.db,
       store: deps.store,
