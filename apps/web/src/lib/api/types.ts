@@ -1,6 +1,7 @@
 /**
- * Types the web client needs that are not (yet) in `@codeden/contracts`.
- * Each one is a candidate for adoption into the shared contracts (see the M1 UI report).
+ * Types the web client needs that are not in `@codeden/contracts`: UI-only shapes (file tree
+ * nodes, live channels) and data for screens whose server APIs are not wired yet (factory,
+ * conflicts list, agent configuration, PR details). Server shapes come from contracts.
  */
 import type {
   AutonomyMode,
@@ -9,55 +10,10 @@ import type {
   GitHubIssueRef,
   GitHubPrRef,
   ProviderId,
+  StartSessionRequestInit,
   WorkKey,
   WorkSummary,
 } from "@codeden/contracts";
-
-// ------------------------------------------------------------------ first-run setup (§14)
-
-export type SetupCheckId = "claude" | "codex" | "github" | "git" | "browser";
-export type SetupCheckState = "checking" | "ok" | "warning" | "missing";
-
-/** One row of the first-run checklist. */
-export interface SetupCheck {
-  id: SetupCheckId;
-  label: string;
-  state: SetupCheckState;
-  /** One-line result, e.g. `v2.1.4 · signed in as leon@…`. */
-  detail: string | null;
-  required: boolean;
-  /** The single action that fixes a failed check. */
-  fix: { kind: "install" | "login" | "configure"; label: string; command: string } | null;
-}
-
-export interface SetupStatus {
-  checks: SetupCheck[];
-  /** True once at least one agent provider is ready. */
-  ready: boolean;
-  completed: boolean;
-}
-
-// ------------------------------------------------------------------ server-side folder picker
-
-export interface DirEntry {
-  name: string;
-  path: string;
-  kind: "dir" | "file";
-  isGitRepo?: boolean;
-  hidden?: boolean;
-}
-
-export interface DirListing {
-  path: string;
-  parent: string | null;
-  entries: DirEntry[];
-  /** Quick-jump locations (home, drives, recent). */
-  places: { label: string; path: string }[];
-}
-
-export type CreateProjectInput =
-  | { source: "folder"; path: string; name?: string }
-  | { source: "clone"; url: string; directory?: string };
 
 // ------------------------------------------------------------------ factory panel (§10.1)
 
@@ -108,53 +64,20 @@ export interface ConflictCase {
   request: { purpose: string; workKey: WorkKey; requestedBy: string };
   existing: WorkSummary[];
   createdAt: string;
-}
-
-export interface StartSessionInput {
-  projectId: string;
-  prompt: string;
-  provider?: ProviderId;
-  model?: string;
-  workKey?: string;
+  /** The original start request, retried with the decision (real server). */
+  start?: StartSessionRequestInit;
 }
 
 // ------------------------------------------------------------------ workbench (§12)
 
-export type DiffScope =
-  | { kind: "session" }
-  | { kind: "turn"; turnId: string }
-  | { kind: "uncommitted" };
-
-export interface DiffFile {
-  path: string;
-  previousPath?: string;
-  change: "add" | "modify" | "delete" | "rename";
-  additions: number;
-  deletions: number;
-  /** Unified patch for this file. */
-  patch: string;
-}
-
-export interface DiffResult {
-  scope: DiffScope;
-  files: DiffFile[];
-  /** Turns that have checkpoints, newest last. */
-  turns: { id: string; index: number; label: string; at: string }[];
-}
-
+/** A node of the files panel tree, built from `SessionFileList` entries. */
 export interface FileNode {
   name: string;
   path: string;
   kind: "dir" | "file";
   children?: FileNode[];
-  /** Git status relative to the base branch. */
+  /** Git status in the worktree. */
   status?: "added" | "modified" | "deleted";
-}
-
-export interface FileContent {
-  path: string;
-  contents: string;
-  language?: string;
 }
 
 export interface PrDetails {
@@ -238,11 +161,29 @@ export interface McpServerEntry {
 
 // ------------------------------------------------------------------ live workbench channels
 
+/** Lifecycle of a terminal channel (`/ws/pty` control frames). */
+export type TerminalEvent =
+  | { type: "opened"; ptyId: string; attached: boolean }
+  | { type: "exited"; exitCode: number | null }
+  | { type: "error"; message: string };
+
 export interface TerminalChannel {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   onData(listener: (data: string) => void): () => void;
+  onEvent(listener: (event: TerminalEvent) => void): () => void;
+  /** Detach (the terminal keeps running in the runner). */
   close(): void;
+  /** End the terminal process. */
+  kill(): void;
+}
+
+export interface OpenTerminalOptions {
+  sessionId: string | null;
+  /** Typed into the shell once it starts (e.g. `claude auth login`). */
+  command?: string;
+  /** Re-attach to a terminal opened earlier instead of starting a new one. */
+  ptyId?: string;
 }
 
 export interface BrowserFrame {
@@ -256,6 +197,8 @@ export interface BrowserFrame {
 
 export interface BrowserChannel {
   onFrame(listener: (frame: BrowserFrame) => void): () => void;
+  /** Called when the server has no browser for this session (not wired yet, or failed). */
+  onUnavailable(listener: () => void): () => void;
   navigate(url: string): void;
   back(): void;
   forward(): void;

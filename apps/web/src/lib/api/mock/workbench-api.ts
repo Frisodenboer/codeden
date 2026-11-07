@@ -1,5 +1,5 @@
+import type { DiffResult, SetupStatus } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
-import type { DiffResult, SetupStatus } from "../types";
 import { mockBrowser, mockTerminal } from "./channels";
 import { configContents, mcpServers, memoryFiles, skills, subagents } from "./fixtures/config";
 import { ciFailureShot, contrastComparison, generatedIllustration } from "./fixtures/images";
@@ -26,10 +26,15 @@ const artifacts: Record<string, () => string> = {
 type WorkbenchApi = Pick<
   CodeDenClient,
   | "getSetupStatus"
-  | "recheckSetup"
+  | "loginCommand"
   | "completeSetup"
   | "listDirectory"
   | "getDiff"
+  | "restoreFiles"
+  | "gitStatus"
+  | "gitCommit"
+  | "gitPush"
+  | "speechSummary"
   | "listFiles"
   | "readFile"
   | "getPrDetails"
@@ -51,37 +56,43 @@ type WorkbenchApi = Pick<
 
 /** Setup, workbench and agent-configuration parts of the mock client. */
 export function workbenchApi(world: MockWorld): WorkbenchApi {
-  let setupStarted = 0;
   let codexFixed = false;
   const skillState = new Map(skills.map((s) => [s.id, s.enabled]));
 
-  /** Checks resolve one by one over ~2.5s, like parallel detection finishing. */
   const setupStatus = (): SetupStatus => {
-    if (!setupStarted) setupStarted = Date.now();
-    const elapsed = Date.now() - setupStarted;
-    const checks = setupChecks.map((check, i) => {
-      if (elapsed < 500 + i * 450) return { ...check, state: "checking" as const, detail: null };
-      if (check.id === "codex" && codexFixed)
-        return {
-          ...check,
-          state: "ok" as const,
-          detail: "v0.58.0 · signed in with ChatGPT",
-          fix: null,
-        };
-      return check;
-    });
+    const checks = setupChecks.map((check) =>
+      check.id === "codex" && codexFixed
+        ? {
+            ...check,
+            state: "ok" as const,
+            loggedIn: true,
+            message: "v0.58.0 · signed in with ChatGPT",
+            fix: null,
+          }
+        : check,
+    );
     const ready = checks.some((c) => (c.id === "claude" || c.id === "codex") && c.state === "ok");
-    return { checks, ready, completed: false };
+    return {
+      checkedAt: new Date().toISOString(),
+      setupCompleted: false,
+      ready,
+      checks,
+      warnings: [],
+    };
   };
 
   return {
-    getSetupStatus: () => delay(setupStatus(), 60),
-    recheckSetup: (id) => {
-      if (id === "codex") codexFixed = true;
-      return delay(setupStatus(), 600);
+    getSetupStatus: (opts) => delay(setupStatus(), opts?.refresh ? 900 : 400),
+    loginCommand: (tool) => {
+      if (tool === "codex") codexFixed = true;
+      const command = { claude: "claude auth login", codex: "codex login", gh: "gh auth login" }[
+        tool
+      ];
+      const [bin = tool, ...args] = command.split(" ");
+      return delay({ tool, command: bin, args });
     },
     completeSetup: () => delay(undefined),
-    listDirectory: (path) => delay(listDir(path), 90),
+    listDirectory: (path, opts) => delay(listDir(path, opts?.showHidden), 90),
 
     getDiff: (sessionId, scope) => {
       const files = sessionDiffs[sessionId] ?? [];
@@ -97,15 +108,35 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
       };
       return delay(result, 150);
     },
-    listFiles: () => delay(fileTree),
-    readFile: (_sessionId, path) =>
+    restoreFiles: (_sessionId, req) =>
+      delay({ index: req.index ?? 0, restored: req.paths ?? [], deleted: [] }, 300),
+    gitStatus: () =>
       delay({
-        path,
-        contents:
-          world.files.get(path) ??
-          fileContents[path] ??
-          `// ${path}\n// (mock) File contents are loaded from the session worktree.\n\nexport {};\n`,
+        branch: "codeden/fix-checkout-flake",
+        baseBranch: "main",
+        ahead: 2,
+        behind: 0,
+        files: [
+          { path: "src/checkout/useCart.ts", status: "M" },
+          { path: "tests/e2e/checkout.spec.ts", status: "M" },
+        ],
       }),
+    gitCommit: () => delay({ commit: "4f2a91c" }, 400),
+    gitPush: () => delay({ remote: "origin", branch: "codeden/fix-checkout-flake" }, 600),
+    speechSummary: (text) => delay({ text: text.slice(0, 200), source: "plain" as const }),
+    listFiles: () =>
+      delay({
+        root: "~/.codeden/wt/storefront/fix-checkout-flake",
+        entries: allPaths(fileTree),
+        truncated: false,
+      }),
+    readFile: (_sessionId, path) => {
+      const content =
+        world.files.get(path) ??
+        fileContents[path] ??
+        `// ${path}\n// (mock) File contents are loaded from the session worktree.\n\nexport {};\n`;
+      return delay({ path, content, sizeBytes: content.length, binary: false, truncated: false });
+    },
     getPrDetails: (sessionId) => delay(prDetails[sessionId] ?? { issue: null, pr: null }),
     getLoadedContext: () =>
       delay({

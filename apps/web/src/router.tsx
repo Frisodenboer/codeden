@@ -6,6 +6,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/shell/app-shell";
+import { UnauthorizedScreen } from "@/components/shell/unauthorized";
 import { Toaster } from "@/components/ui/sonner";
 import { AgentsPage, type AgentTab } from "@/routes/agents";
 import { HomePage } from "@/routes/home";
@@ -15,15 +16,20 @@ import { SessionPage } from "@/routes/session";
 import { SettingsPage } from "@/routes/settings";
 import { SetupPage } from "@/routes/setup";
 import { VisionPage } from "@/routes/vision";
+import { useConnectionStore } from "@/stores/connection";
 
-const rootRoute = createRootRoute({
-  component: () => (
+function Root() {
+  const auth = useConnectionStore((s) => s.auth);
+  if (auth === "unauthorized") return <UnauthorizedScreen />;
+  return (
     <>
       <Outlet />
       <Toaster position="bottom-right" />
     </>
-  ),
-});
+  );
+}
+
+const rootRoute = createRootRoute({ component: Root });
 
 const shell = createRoute({ getParentRoute: () => rootRoute, id: "shell", component: AppShell });
 

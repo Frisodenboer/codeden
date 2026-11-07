@@ -1,5 +1,5 @@
-import { FactoryLimits } from "@codeden/contracts";
-import type { DirListing, FactoryStatus, SetupCheck } from "../../types";
+import { FactoryLimits, type FsListResponse, type SetupCheck } from "@codeden/contracts";
+import type { FactoryStatus } from "../../types";
 import { gh } from "./helpers";
 
 const sf = gh("hearth-co/storefront");
@@ -168,47 +168,49 @@ export function factoryFor(
 
 export const defaultFactoryLimits = FactoryLimits.parse({});
 
+const check = (
+  c: Partial<SetupCheck> & Pick<SetupCheck, "id" | "label" | "message">,
+): SetupCheck => ({
+  state: "ok",
+  installed: true,
+  version: null,
+  executablePath: null,
+  loggedIn: null,
+  authMethod: null,
+  account: null,
+  loginExpiresAt: null,
+  fix: null,
+  durationMs: 120,
+  ...c,
+});
+
 export const setupChecks: SetupCheck[] = [
-  {
+  check({
     id: "claude",
     label: "Claude Code",
-    state: "ok",
-    detail: "v2.1.4 · signed in (Max plan)",
-    required: false,
-    fix: null,
-  },
-  {
+    version: "2.1.4",
+    loggedIn: true,
+    authMethod: "claude.ai",
+    message: "v2.1.4 · signed in (Max plan)",
+  }),
+  check({
     id: "codex",
     label: "Codex",
     state: "missing",
-    detail: "Installed (0.58.0) but not signed in",
-    required: false,
-    fix: { kind: "login", label: "Sign in", command: "codex login" },
-  },
-  {
-    id: "github",
-    label: "GitHub",
-    state: "ok",
-    detail: "Signed in as leon · repo, workflow scopes",
-    required: false,
-    fix: null,
-  },
-  {
-    id: "git",
-    label: "git identity",
-    state: "ok",
-    detail: "Leon van Zyl <leon@example.com>",
-    required: true,
-    fix: null,
-  },
-  {
-    id: "browser",
-    label: "Browser for agents",
-    state: "ok",
-    detail: "Microsoft Edge 142",
-    required: false,
-    fix: null,
-  },
+    version: "0.58.0",
+    loggedIn: false,
+    message: "Installed (0.58.0) but not signed in",
+    fix: { kind: "login", command: "codex login" },
+  }),
+  check({
+    id: "gh",
+    label: "GitHub CLI",
+    loggedIn: true,
+    account: "leon",
+    message: "Signed in as leon · repo, workflow scopes",
+  }),
+  check({ id: "git", label: "git identity", message: "Leon van Zyl <leon@example.com>" }),
+  check({ id: "browser", label: "Browser for agents", message: "Microsoft Edge 142" }),
 ];
 
 type Tree = Record<string, { dirs: string[]; files?: string[]; repos?: string[] }>;
@@ -227,7 +229,7 @@ const tree: Tree = {
   "C:\\Users\\leon\\Documents": { dirs: ["Notes", "Talks"] },
 };
 
-export function listDir(path: string | null): DirListing {
+export function listDir(path: string | null, showHidden = false): FsListResponse {
   const p = path ?? "C:\\Users\\leon\\Code";
   const node = tree[p] ?? { dirs: [] };
   const parent =
@@ -235,21 +237,17 @@ export function listDir(path: string | null): DirListing {
   return {
     path: p,
     parent,
-    entries: [
-      ...node.dirs.map((name) => ({
+    home: "C:\\Users\\leon",
+    roots: [{ name: "C:", path: "C:\\" }],
+    entries: node.dirs
+      .filter((name) => showHidden || !name.startsWith("."))
+      .map((name) => ({
         name,
         path: `${p}\\${name}`,
-        kind: "dir" as const,
         isGitRepo: node.repos?.includes(name) ?? false,
         hidden: name.startsWith("."),
       })),
-      ...(node.files ?? []).map((name) => ({ name, path: `${p}\\${name}`, kind: "file" as const })),
-    ],
-    places: [
-      { label: "Home", path: "C:\\Users\\leon" },
-      { label: "Code", path: "C:\\Users\\leon\\Code" },
-      { label: "Documents", path: "C:\\Users\\leon\\Documents" },
-    ],
+    truncated: false,
   };
 }
 

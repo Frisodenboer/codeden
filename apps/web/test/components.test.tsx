@@ -141,7 +141,7 @@ describe("ConflictCard", () => {
     renderWithClient(<ConflictCard conflict={conflict} />, client, { withRouter: true });
     fireEvent.click(await screen.findByRole("button", { name: /Join/ }));
     await waitFor(() =>
-      expect(resolve).toHaveBeenCalledWith("cf-audit", {
+      expect(resolve).toHaveBeenCalledWith(conflict, {
         resolution: "join",
         sessionId: "s-audit",
       }),

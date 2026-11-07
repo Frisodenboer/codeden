@@ -66,6 +66,23 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     getSnapshot: () => delay(world.snapshot, 150),
     getSessionSnapshot: (id) => delay(world.sessionSnapshot(id), 120),
     subscribe: (fromSeq, onMessage) => world.subscribe(fromSeq, onMessage),
+    // Agent events arrive on the global stream in the mock, so watches have nothing to add.
+    watchSession: () => () => {},
+    onConnectionChange(listener) {
+      listener("open");
+      return () => {};
+    },
+    getSessionDetail: (id) =>
+      delay(
+        {
+          session: world.sessionSnapshot(id).session,
+          usage: null,
+          followups: null,
+          startMeta: null,
+          queuedMessages: queued.get(id)?.length ?? 0,
+        },
+        60,
+      ),
 
     async sendMessage(sessionId, input, mode) {
       const active = running.get(sessionId);
@@ -113,10 +130,12 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       if (script) running.set(sessionId, script.start());
     },
     async startSession(input) {
+      const prompt = input.input?.text ?? "";
+      const projectId = input.projectId ?? "";
       const workKey = input.workKey ?? `request:${uid("w")}`;
       const clash = world.snapshot.sessions.find(
         (s) =>
-          s.projectId === input.projectId &&
+          s.projectId === projectId &&
           s.workKey === workKey &&
           ["running", "waiting", "starting", "queued"].includes(s.status),
       );
@@ -142,7 +161,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       }
       return {
         status: "started",
-        sessionId: createSession(input.projectId, input.prompt, workKey),
+        sessionId: createSession(projectId, prompt, workKey),
       };
     },
     async stopSession(sessionId) {
@@ -151,10 +170,8 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     },
 
     listConflicts: () => delay(world.conflicts),
-    async resolveConflict(conflictId, decision) {
-      const conflict = world.conflicts.find((c) => c.id === conflictId);
-      world.conflicts = world.conflicts.filter((c) => c.id !== conflictId);
-      if (!conflict) return;
+    async resolveConflict(conflict, decision) {
+      world.conflicts = world.conflicts.filter((c) => c.id !== conflict.id);
       if (decision.resolution === "join") runTurn(decision.sessionId, conflict.request.purpose);
       if (decision.resolution === "force" && conflict.projectId)
         createSession(conflict.projectId, conflict.request.purpose, conflict.request.workKey);
@@ -166,27 +183,25 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       const now = new Date().toISOString();
       const next = {
         ...item,
-        status: "resolved" as const,
         resolvedAt: now,
         updatedAt: now,
-        resolution,
+        status: resolution.status ?? ("resolved" as const),
+        resolution: resolution.note ? { note: resolution.note } : null,
       };
       world.emitDomain({ type: "inbox.updated", sessionId: null, payload: { item: next } });
       return next;
     },
 
     async createProject(input) {
+      const { source } = input;
       const path =
-        input.source === "folder"
-          ? input.path
-          : `C:\\Users\\leon\\Code\\${input.url
+        source.type === "local"
+          ? source.path
+          : `C:\\Users\\leon\\Code\\${source.url
               .split("/")
               .at(-1)
               ?.replace(/\.git$/, "")}`;
-      const name =
-        (input.source === "folder" ? input.name : undefined) ??
-        path.split("\\").at(-1) ??
-        "project";
+      const name = input.name ?? path.split("\\").at(-1) ?? "project";
       const slug =
         name
           .toLowerCase()
@@ -212,7 +227,22 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
         archivedAt: null,
       };
       world.emitDomain({ type: "project.created", sessionId: null, payload: { project } });
-      return delay(project, 400);
+      return delay(
+        {
+          project,
+          detected: {
+            isGitRepo: true,
+            gitRoot: path,
+            remoteUrl: null,
+            github: null,
+            defaultBranch: "main",
+            currentBranch: "main",
+            packageManager: "pnpm" as const,
+            suggestedSetupCommands: ["pnpm install"],
+          },
+        },
+        400,
+      );
     },
     async setAutomationEnabled(id, enabled) {
       const a = world.snapshot.automations.find((x) => x.id === id);

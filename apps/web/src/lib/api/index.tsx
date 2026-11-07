@@ -1,23 +1,26 @@
 import { createContext, type ReactNode, useContext } from "react";
+import { useConnectionStore } from "@/stores/connection";
 import type { CodeDenClient } from "./client";
 import { createHttpClient } from "./http-client";
 import { createMockClient } from "./mock";
 
-export type { CodeDenClient, SendMode } from "./client";
+export type { CodeDenClient, InboxResolution, SendMode } from "./client";
+export { ApiRequestError, isNotAvailable } from "./http";
 
 /**
- * Mock mode: `VITE_CODEDEN_MOCK=1` forces it, `0` disables it. When unset, dev builds use the
- * mock (so the UI is explorable without a server) and production builds use the real server.
+ * Mock mode only when `VITE_CODEDEN_MOCK=1` is set explicitly (UI work without a server).
+ * Everything else, and every production build, talks to the real server.
  */
-export const isMockMode: boolean =
-  import.meta.env.VITE_CODEDEN_MOCK === "1" ||
-  (import.meta.env.VITE_CODEDEN_MOCK === undefined && import.meta.env.DEV);
+export const isMockMode: boolean = import.meta.env.VITE_CODEDEN_MOCK === "1" && import.meta.env.DEV;
 
 /** Base URL of the CodeDen server (same origin by default; configurable for a desktop shell). */
 export const serverOrigin: string = import.meta.env.VITE_CODEDEN_SERVER ?? window.location.origin;
 
 export function createClient(): CodeDenClient {
-  return isMockMode ? createMockClient({ ambient: true }) : createHttpClient(serverOrigin);
+  if (isMockMode) return createMockClient({ ambient: true });
+  return createHttpClient(serverOrigin, {
+    onUnauthorized: () => useConnectionStore.getState().setAuth("unauthorized"),
+  });
 }
 
 const ClientContext = createContext<CodeDenClient | null>(null);

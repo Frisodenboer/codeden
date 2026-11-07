@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, ChevronRight, File, Folder, FolderGit2, Home } from "lucide-react";
+import { ArrowUp, ChevronRight, Folder, FolderGit2, Home } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,13 +20,22 @@ export function FolderBrowser({
   const client = useClient();
   const [path, setPath] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
-  const { data, isLoading } = useQuery({
-    queryKey: ["fs", path],
-    queryFn: () => client.listDirectory(path),
+  const [typed, setTyped] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["fs", path, showHidden],
+    queryFn: () => client.listDirectory(path, { showHidden }),
+    placeholderData: (prev) => prev,
   });
-  const crumbs = data?.path.split(/[\\/]/).filter(Boolean) ?? [];
-  const sep = data?.path.includes("\\") ? "\\" : "/";
+  const current = data?.path ?? "";
+  const crumbs = current.split(/[\\/]/).filter(Boolean);
+  const sep = current.includes("\\") || /^[A-Za-z]:/.test(current) ? "\\" : "/";
   const entries = (data?.entries ?? []).filter((e) => showHidden || !e.hidden);
+  const places = data
+    ? [
+        { label: "Home", path: data.home },
+        ...data.roots.map((r) => ({ label: r.name, path: r.path })),
+      ]
+    : [];
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -71,14 +80,14 @@ export function FolderBrowser({
       </div>
       <div className="flex">
         <div className="w-32 shrink-0 space-y-0.5 border-r border-border p-1.5">
-          {data?.places.map((p) => (
+          {places.map((p) => (
             <button
               key={p.path}
               type="button"
               onClick={() => setPath(p.path)}
               className={cn(
                 "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
-                data.path === p.path && "bg-accent text-foreground",
+                current === p.path && "bg-accent text-foreground",
               )}
             >
               <Home className="size-3" /> {p.label}
@@ -93,56 +102,69 @@ export function FolderBrowser({
               ))}
             </div>
           )}
-          {entries.map((e) =>
-            e.kind === "dir" ? (
-              <div
-                key={e.path}
-                className={cn(
-                  "group flex h-8 w-full items-center rounded-md text-[13px] hover:bg-accent/70",
-                  value === e.path && "bg-primary/10 ring-1 ring-primary/40",
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => onChange(e.path)}
-                  onDoubleClick={() => setPath(e.path)}
-                  className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left"
-                >
-                  {e.isGitRepo ? (
-                    <FolderGit2 className="size-4 shrink-0 text-primary" />
-                  ) : (
-                    <Folder className="size-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="flex-1 truncate">{e.name}</span>
-                  {e.isGitRepo && (
-                    <span className="rounded bg-muted px-1.5 text-3xs text-muted-foreground">
-                      git
-                    </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPath(e.path)}
-                  className="mr-1 flex size-6 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-background focus-visible:opacity-100"
-                  aria-label={`Open ${e.name}`}
-                >
-                  <ChevronRight className="size-3.5" />
-                </button>
-              </div>
-            ) : (
-              <div
-                key={e.path}
-                className="flex h-7 items-center gap-2 px-2 text-xs text-muted-foreground/60"
-              >
-                <File className="size-3.5" /> {e.name}
-              </div>
-            ),
+          {error && (
+            <div className="p-3 text-xs text-status-failed">{(error as Error).message}</div>
           )}
+          {!isLoading && !error && entries.length === 0 && (
+            <div className="p-3 text-xs text-muted-foreground">No folders here.</div>
+          )}
+          {entries.map((e) => (
+            <div
+              key={e.path}
+              className={cn(
+                "group flex h-8 w-full items-center rounded-md text-[13px] hover:bg-accent/70",
+                value === e.path && "bg-primary/10 ring-1 ring-primary/40",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => onChange(e.path)}
+                onDoubleClick={() => setPath(e.path)}
+                className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left"
+              >
+                {e.isGitRepo ? (
+                  <FolderGit2 className="size-4 shrink-0 text-primary" />
+                ) : (
+                  <Folder className="size-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="flex-1 truncate">{e.name}</span>
+                {e.isGitRepo && (
+                  <span className="rounded bg-muted px-1.5 text-3xs text-muted-foreground">
+                    git
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPath(e.path)}
+                className="mr-1 flex size-6 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-background focus-visible:opacity-100"
+                aria-label={`Open ${e.name}`}
+              >
+                <ChevronRight className="size-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
-      <div className="border-t border-border bg-muted/30 px-3 py-1.5 font-mono text-2xs text-muted-foreground">
-        {value ?? "Select a folder · double-click to open"}
-      </div>
+      <form
+        className="border-t border-border bg-muted/30"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const next = typed?.trim();
+          if (!next) return;
+          setPath(next);
+          onChange(next);
+          setTyped(null);
+        }}
+      >
+        <input
+          value={typed ?? value ?? ""}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder="Select a folder · double-click to open · or paste a path and press Enter"
+          aria-label="Folder path"
+          className="w-full bg-transparent px-3 py-1.5 font-mono text-2xs text-muted-foreground outline-none placeholder:text-muted-foreground/70 focus:text-foreground"
+        />
+      </form>
     </div>
   );
 }

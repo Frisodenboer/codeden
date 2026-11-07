@@ -33,7 +33,8 @@ export class TerminalBridge {
     let ptyId: string | undefined;
     return {
       onOpen: (_event, ws) => {
-        void this.open(ws, query).then((id) => {
+        // Set before `opened` is sent, so input the client sends right away is not dropped.
+        void this.open(ws, query, (id) => {
           ptyId = id;
         });
       },
@@ -71,18 +72,23 @@ export class TerminalBridge {
     }
   }
 
-  private async open(ws: WSContext, query: TerminalQuery): Promise<string | undefined> {
+  private async open(
+    ws: WSContext,
+    query: TerminalQuery,
+    onReady: (ptyId: string) => void,
+  ): Promise<void> {
     const { runner } = this.deps;
     try {
       if (query.ptyId) {
         const attached = await runner.request({ name: "pty.attach", ptyId: query.ptyId });
         this.attach(query.ptyId, ws);
+        onReady(query.ptyId);
         control(ws, { type: "opened", ptyId: query.ptyId, pid: attached.pid, attached: true });
         if (attached.scrollback) ws.send(attached.scrollback);
         if (attached.exited) {
           control(ws, { type: "exited", ptyId: query.ptyId, exitCode: attached.exitCode });
         }
-        return query.ptyId;
+        return;
       }
       const ptyId = `pty-${randomUUID()}`;
       this.attach(ptyId, ws);
@@ -94,14 +100,13 @@ export class TerminalBridge {
         rows: query.rows,
         ...(query.sessionId ? { sessionId: query.sessionId } : {}),
       });
+      onReady(ptyId);
       control(ws, { type: "opened", ptyId, pid: opened.pid, attached: false });
       if (query.command)
         await runner.request({ name: "pty.input", ptyId, data: `${query.command}\r` });
-      return ptyId;
     } catch (error) {
       control(ws, { type: "error", message: errorMessage(error) });
       ws.close(1011, "terminal unavailable");
-      return undefined;
     }
   }
 

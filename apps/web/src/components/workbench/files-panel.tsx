@@ -1,11 +1,12 @@
 import { File as FileView } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, File, Files, Folder, FolderOpen } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/common/bits";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClient } from "@/lib/api";
 import type { FileNode } from "@/lib/api/types";
+import { buildFileTree } from "@/lib/file-tree";
 import { cn } from "@/lib/utils";
 import { useResolvedTheme } from "@/stores/theme";
 
@@ -26,12 +27,7 @@ function TreeNode({
   selected: string | null;
   onSelect: (p: string) => void;
 }) {
-  const [open, setOpen] = useState(
-    depth < 1 ||
-      node.path === "src" ||
-      node.path.startsWith("src/checkout") ||
-      node.path.startsWith("tests"),
-  );
+  const [open, setOpen] = useState(depth < 1 && (node.children?.length ?? 0) < 40);
   const isDir = node.kind === "dir";
   return (
     <>
@@ -89,28 +85,40 @@ function TreeNode({
 export function FilesPanel({ sessionId }: { sessionId: string }) {
   const client = useClient();
   const theme = useResolvedTheme();
-  const [selected, setSelected] = useState<string | null>("src/checkout/useCart.ts");
-  const tree = useQuery({
+  const [selected, setSelected] = useState<string | null>(null);
+  const list = useQuery({
     queryKey: ["files", sessionId],
     queryFn: () => client.listFiles(sessionId),
   });
+  const git = useQuery({
+    queryKey: ["git-status", sessionId],
+    queryFn: () => client.gitStatus(sessionId),
+    retry: false,
+  });
+  const tree = useMemo(
+    () => (list.data ? buildFileTree(list.data.entries, git.data?.files) : []),
+    [list.data, git.data],
+  );
   const file = useQuery({
     queryKey: ["file", sessionId, selected],
     queryFn: () => client.readFile(sessionId, selected ?? ""),
     enabled: Boolean(selected),
+    retry: false,
   });
 
   return (
     <div className="flex h-full flex-col">
       <div className="max-h-[42%] shrink-0 overflow-y-auto border-b border-border p-1.5 scroll-thin">
-        {tree.isLoading ? (
+        {list.error ? (
+          <div className="p-2 text-xs text-status-failed">{list.error.message}</div>
+        ) : list.isLoading ? (
           <div className="space-y-1.5 p-2">
             {[0, 1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-4 w-3/4" />
             ))}
           </div>
         ) : (
-          tree.data?.map((n) => (
+          tree.map((n) => (
             <TreeNode key={n.path} node={n} depth={0} selected={selected} onSelect={setSelected} />
           ))
         )}
@@ -120,9 +128,17 @@ export function FilesPanel({ sessionId }: { sessionId: string }) {
           <EmptyState icon={<Files />} title="Pick a file" className="h-full">
             Browse the session's worktree.
           </EmptyState>
+        ) : file.error ? (
+          <EmptyState icon={<Files />} title="Can't show this file" className="h-full">
+            {file.error.message}
+          </EmptyState>
+        ) : file.data?.binary ? (
+          <EmptyState icon={<Files />} title="Binary file" className="h-full">
+            {file.data.path} isn't shown as text.
+          </EmptyState>
         ) : file.data ? (
           <FileView
-            file={{ name: file.data.path, contents: file.data.contents }}
+            file={{ name: file.data.path, contents: file.data.content }}
             options={{
               theme: { dark: "pierre-dark", light: "pierre-light" },
               themeType: theme,

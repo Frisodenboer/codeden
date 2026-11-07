@@ -35,7 +35,7 @@ export function ConflictCard({
   const [reason, setReason] = useState("");
   const existing = conflict.existing[0];
   const resolve = useMutation({
-    mutationFn: (decision: ConflictDecision) => client.resolveConflict(conflict.id, decision),
+    mutationFn: (decision: ConflictDecision) => client.resolveConflict(conflict, decision),
     onSuccess: (_d, decision) => {
       toast.success(
         {

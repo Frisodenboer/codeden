@@ -1,6 +1,6 @@
 import { Bot, GitPullRequest, ListChecks, ShieldAlert, Sparkles } from "lucide-react";
+import { HomeOverview } from "@/components/project/home-overview";
 import { ThreadView } from "@/components/thread/thread-view";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useOrchestratorSession } from "@/lib/queries";
 import { useComposerStore } from "@/stores/composer";
 
@@ -51,14 +51,7 @@ function OrchestratorEmpty({ sessionId }: { sessionId: string }) {
 /** The orchestrator chat, pinned at the top of the sidebar (§8.1). */
 export function HomePage() {
   const orchestrator = useOrchestratorSession();
-  if (!orchestrator) {
-    return (
-      <div className="space-y-3 p-6">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-24 w-full max-w-2xl" />
-      </div>
-    );
-  }
+  if (!orchestrator) return <HomeOverview />;
   return (
     <ThreadView
       sessionId={orchestrator.id}

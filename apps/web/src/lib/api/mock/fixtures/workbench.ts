@@ -1,4 +1,5 @@
-import type { DiffFile, FileNode, PrDetails, SlashCommand } from "../../types";
+import type { DiffFile } from "@codeden/contracts";
+import type { FileNode, PrDetails, SlashCommand } from "../../types";
 import { cartPatch, countLines, indexPatch, searchPatch, specPatch, tokensPatch } from "./patches";
 
 const diffFile = (

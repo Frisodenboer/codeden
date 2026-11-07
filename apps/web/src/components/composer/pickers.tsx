@@ -31,14 +31,15 @@ export function ModelPicker({
 }) {
   const current = providers.find((p) => p.id === provider);
   const modelInfo =
-    current?.models.find((m) => m.id === model) ?? current?.models.find((m) => m.isDefault);
+    current?.models.find((m) => m.id === model) ??
+    (model ? undefined : current?.models.find((m) => m.isDefault));
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <Button variant="ghost" size="sm" className={trigger} aria-label="Provider and model">
           <ProviderMark provider={provider} className="size-3.5 text-[8px]" />
           <span className="text-foreground/85">
-            {modelInfo?.label ?? current?.displayName ?? provider}
+            {modelInfo?.label ?? model ?? current?.displayName ?? provider}
           </span>
           <ChevronDown className="size-3 opacity-50" />
         </Button>

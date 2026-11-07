@@ -3,14 +3,23 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ClientProvider, createClient } from "@/lib/api";
+import { ApiRequestError, ClientProvider, createClient } from "@/lib/api";
 import { startRealtime } from "@/lib/realtime";
 import { router } from "@/router";
 import { applyTheme, useThemeStore } from "@/stores/theme";
 import "./index.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      staleTime: 10_000,
+      refetchOnWindowFocus: false,
+      // Client errors (missing route, bad request, no checkpoints yet) won't fix themselves.
+      retry: (count, error) =>
+        !(error instanceof ApiRequestError && error.status >= 400 && error.status < 500) &&
+        count < 2,
+    },
+  },
 });
 const client = createClient();
 

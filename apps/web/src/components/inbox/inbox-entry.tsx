@@ -31,13 +31,23 @@ function MirroredRequest({ item }: { item: InboxItem }) {
     return <ApprovalCard item={mirrored} sessionId={item.sessionId} compact />;
   if (mirrored?.kind === "user_question")
     return <QuestionCard item={mirrored} sessionId={item.sessionId} />;
-  return null;
+  return (
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
+      <h3 className="text-[14px] font-medium">{item.title}</h3>
+      {item.body && <p className="mt-1 text-[13px] text-muted-foreground">{item.body}</p>}
+    </div>
+  );
 }
 
 function Actions({ item }: { item: InboxItem }) {
   const client = useClient();
   const resolve = useMutation({
-    mutationFn: (action: string) => client.resolveInbox(item.id, { action }),
+    mutationFn: (action: string) =>
+      client.resolveInbox(
+        item.id,
+        action === "dismiss" ? { status: "dismissed" } : { status: "resolved", note: action },
+      ),
+    onError: (e) => toast.error("Couldn't update the item", { description: e.message }),
     onSuccess: (_d, action) =>
       toast.success(
         {
@@ -53,12 +63,8 @@ function Actions({ item }: { item: InboxItem }) {
   const retry = useMutation({
     mutationFn: async () => {
       if (item.sessionId)
-        await client.sendMessage(
-          item.sessionId,
-          { text: "Retry the failed step. Pin React to 19.2 first if the peer conflict remains." },
-          "send",
-        );
-      await client.resolveInbox(item.id, { action: "retry" });
+        await client.sendMessage(item.sessionId, { text: "Retry the failed step." }, "send");
+      await client.resolveInbox(item.id, { status: "resolved", note: "retry" });
     },
     onSuccess: () => toast.success("Retrying"),
   });

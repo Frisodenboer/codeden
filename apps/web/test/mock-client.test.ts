@@ -1,4 +1,4 @@
-import type { ServerToClientMessage } from "@codeden/contracts";
+import type { UiServerMessage } from "@codeden/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockClient } from "@/lib/api/mock";
 import { transcriptFromSnapshot } from "@/lib/transcript/reducer";
@@ -9,7 +9,7 @@ describe("mock client", () => {
 
   it("plays an approval continuation and resolves the inbox item", async () => {
     const client = createMockClient();
-    const messages: ServerToClientMessage[] = [];
+    const messages: UiServerMessage[] = [];
     client.subscribe(0, (m) => messages.push(m));
     await client.respond("s-checkout", "req-push", { kind: "approval", decision: "allow_once" });
     await vi.advanceTimersByTimeAsync(20_000);
@@ -34,7 +34,7 @@ describe("mock client", () => {
     const client = createMockClient();
     const result = await client.startSession({
       projectId: "p-storefront",
-      prompt: "Audit",
+      input: { text: "Audit" },
       workKey: "automation:security-audit",
     });
     expect(result.status).toBe("conflict");
@@ -45,7 +45,7 @@ describe("mock client", () => {
     const client = createMockClient();
     const result = await client.startSession({
       projectId: "p-notes",
-      prompt: "Add a search command",
+      input: { text: "Add a search command" },
       workKey: "request:search",
     });
     expect(result.status).toBe("started");

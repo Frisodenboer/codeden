@@ -1,0 +1,115 @@
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+export interface E2eServer {
+  url: string;
+  launchUrl: string;
+  token: string;
+  home: string;
+  /** A fresh git repo the tests add as a project. */
+  repo: string;
+  stop(): Promise<void>;
+}
+
+const here = import.meta.dirname;
+const repoRoot = resolve(here, "../../../..");
+
+/** A small committed git repo in a temp folder. */
+export function makeTempRepo(parent: string): string {
+  const repo = join(parent, "demo-repo");
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["init", "-q", "-b", "main", repo], { stdio: "ignore" });
+  git("config", "user.email", "e2e@codeden.test");
+  git("config", "user.name", "CodeDen E2E");
+  git("config", "core.autocrlf", "false");
+  writeFileSync(join(repo, "README.md"), "# Demo repo\n\nUsed by the CodeDen end-to-end tests.\n");
+  writeFileSync(join(repo, "package.json"), '{ "name": "demo-repo", "version": "1.0.0" }\n');
+  git("add", ".");
+  git("commit", "-q", "-m", "Initial commit");
+  return repo;
+}
+
+/**
+ * Start a real server + runner on a free port with an isolated `CODEDEN_HOME`, the Fake
+ * provider on and the real adapters off (unless `builtin`). Resolves once it is listening.
+ */
+export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<E2eServer> {
+  const base = mkdtempSync(join(tmpdir(), "codeden-e2e-"));
+  const home = join(base, "home");
+  const repo = makeTempRepo(base);
+  const child: ChildProcess = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      join(here, "start-server.ts"),
+      "--home",
+      home,
+      "--port",
+      "0",
+      "--exit-with-stdin",
+      ...(opts.builtin ? ["--builtin"] : []),
+    ],
+    {
+      cwd: repoRoot,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, CODEDEN_HOME: home },
+    },
+  );
+  let log = "";
+  const ready = await new Promise<{ url: string; launchUrl: string; token: string }>(
+    (resolveReady, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`server did not start in time:\n${log}`)),
+        90_000,
+      );
+      const onData = (chunk: Buffer) => {
+        log += chunk.toString();
+        const line = log.split(/\r?\n/).find((l) => l.startsWith("CODEDEN_E2E_READY "));
+        if (!line) return;
+        clearTimeout(timer);
+        resolveReady(JSON.parse(line.slice("CODEDEN_E2E_READY ".length)));
+      };
+      child.stdout?.on("data", onData);
+      child.stderr?.on("data", (c: Buffer) => {
+        log += c.toString();
+      });
+      child.once("exit", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`server exited early (${code}):\n${log}`));
+      });
+    },
+  );
+  if (process.env.CODEDEN_E2E_LOG) child.stdout?.pipe(process.stdout);
+
+  return {
+    ...ready,
+    home,
+    repo,
+    async stop() {
+      await fetch(`${ready.url}/api/shutdown`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ready.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ stopRunner: true }),
+      }).catch(() => undefined);
+      await new Promise<void>((done) => {
+        if (child.exitCode !== null) return done();
+        const timer = setTimeout(() => {
+          child.kill();
+          done();
+        }, 15_000);
+        child.once("exit", () => {
+          clearTimeout(timer);
+          done();
+        });
+      });
+      try {
+        rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+      } catch {
+        // Windows may still hold a handle on the worktree; the temp folder is cleaned later.
+      }
+    },
+  };
+}

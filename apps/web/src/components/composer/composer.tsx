@@ -243,7 +243,7 @@ export function Composer({ session, running }: { session: Session; running: bool
             <ModelPicker
               providers={providers}
               provider={options.provider}
-              model={model?.id ?? null}
+              model={options.model ?? model?.id ?? null}
               onChange={(p, m) => setOptions(session.id, { provider: p, model: m }, fallback)}
             />
             {provider?.capabilities.reasoningEffort && (
