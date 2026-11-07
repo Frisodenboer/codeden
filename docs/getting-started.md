@@ -70,12 +70,14 @@ Commit this file to tell CodeDen how to prepare a fresh worktree:
 ```json
 {
   "setup": ["pnpm install"],
-  "devServer": { "command": "pnpm dev", "port": 5173 }
+  "devServer": { "command": "pnpm dev", "port": 5173 },
+  "defaultProvider": "codex"
 }
 ```
 
 - `setup` runs, in order, in every new worktree; the output streams into the session.
 - `devServer` (a command string or `{ command, port, cwd }`) records how to start your app, so agents (and the UI review automation) know what to run and where to point the browser. Running dev servers are also discovered automatically.
+- `defaultProvider` (`claude` or `codex`) is the provider new sessions in this project use unless you pick one (a provider chosen in the project's settings wins).
 
 ## 5. Start your first session
 

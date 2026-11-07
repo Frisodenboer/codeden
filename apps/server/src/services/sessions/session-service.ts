@@ -16,6 +16,7 @@ import type { SettingsStore } from "../../settings-store";
 import type { ArtifactService } from "../artifacts";
 import { badRequest, conflict, ServiceError } from "../errors";
 import type { InboxService } from "../inbox-service";
+import { projectDefaultProvider } from "../projects/project-config";
 import type { ProjectService } from "../projects/project-service";
 import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port";
 import { derivePurpose, deriveWorkKey, findConflicts } from "./conflicts";
@@ -349,7 +350,7 @@ export class SessionService {
       scope: work.scope,
       progress: null,
       title: req.title ?? null,
-      provider: this.resolveProvider(req, project?.defaultProvider ?? null),
+      provider: this.resolveProvider(req, project ? projectDefaultProvider(project) : null),
       model: req.model ?? roleDefaults.model,
       effort: req.effort ?? roleDefaults.effort,
       autonomy: req.autonomy ?? project?.autonomy ?? settings.autonomy.default,
