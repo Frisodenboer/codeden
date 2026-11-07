@@ -25,7 +25,14 @@ export function setupRoutes(s: AppServices) {
       if (!tool.success) throw badRequest("Unknown tool", "unknown_tool");
       return c.json(s.setup.loginCommand(tool.data));
     })
-    .post("/complete", (c) => c.json({ setupCompleted: s.setup.complete() }));
+    .post("/complete", (c) => {
+      const setupCompleted = s.setup.complete();
+      // Other tabs and fresh snapshots learn about it like any other settings change.
+      s.store.append([
+        { type: "settings.updated", sessionId: null, payload: { settings: s.settings.get() } },
+      ]);
+      return c.json({ setupCompleted });
+    });
 }
 
 /** `/api/fs` (folder picker) and `/api/files` (config editors). */

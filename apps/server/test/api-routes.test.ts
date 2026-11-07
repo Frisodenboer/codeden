@@ -115,7 +115,13 @@ describe("api routes", () => {
       command: "codex login",
     });
     expect((await call("POST", "/setup/login/rm")).status).toBe(400);
+    const seen: string[] = [];
+    const off = server.services.store.subscribe((events) =>
+      seen.push(...events.map((e) => e.type)),
+    );
     await call("POST", "/setup/complete");
+    off();
+    expect(seen).toContain("settings.updated");
     expect(SetupStatus.parse((await call("GET", "/setup/status")).json()).setupCompleted).toBe(
       true,
     );
