@@ -39,3 +39,30 @@ jobs:
           npm install "$RUNNER_TEMP"/codeden-*.tgz
           npx codeden --version
           npx codeden doctor --home "$RUNNER_TEMP/codeden-home" || true
+
+  e2e:
+    name: e2e (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # The browser e2e suite runs a real server, runner and PTY; macOS is covered by `check`.
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm --filter @codeden/web exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: apps/web/playwright-report
+          retention-days: 7
