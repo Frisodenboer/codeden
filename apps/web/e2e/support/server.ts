@@ -1,5 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -8,12 +8,20 @@ export interface E2eServer {
   launchUrl: string;
   token: string;
   home: string;
+  /**
+   * The folder the server treats as `~` for agent config (`~/.claude`, `~/.codex`): a temp
+   * folder, so tests never touch the real user's files. Seeded with `~/.claude/CLAUDE.md`.
+   */
+  userHome: string;
   /** A fresh git repo the tests add as a project. */
   repo: string;
   stop(): Promise<void>;
 }
 
 const here = import.meta.dirname;
+
+/** The seeded global Claude memory file in the temp user home. */
+export const E2E_CLAUDE_MD = "# Global rules\n\n- Keep answers short.\n";
 const repoRoot = resolve(here, "../../../..");
 
 /** A small committed git repo in a temp folder. */
@@ -39,6 +47,10 @@ export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<
   const base = mkdtempSync(join(tmpdir(), "codeden-e2e-"));
   const home = join(base, "home");
   const repo = makeTempRepo(base);
+  const userHome = join(base, "user-home");
+  mkdirSync(join(userHome, ".claude"), { recursive: true });
+  mkdirSync(join(userHome, ".codex"), { recursive: true });
+  writeFileSync(join(userHome, ".claude", "CLAUDE.md"), E2E_CLAUDE_MD);
   const child: ChildProcess = spawn(
     process.execPath,
     [
@@ -47,6 +59,8 @@ export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<
       join(here, "start-server.ts"),
       "--home",
       home,
+      "--user-home",
+      userHome,
       "--port",
       "0",
       "--exit-with-stdin",
@@ -87,6 +101,7 @@ export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<
   return {
     ...ready,
     home,
+    userHome,
     repo,
     async stop() {
       await fetch(`${ready.url}/api/shutdown`, {
