@@ -1,0 +1,150 @@
+import type {
+  Checkpoint,
+  DiffResult,
+  DiffScope,
+  GitCommitRequest,
+  GitCommitResponse,
+  GitPushRequest,
+  GitPushResponse,
+  GitStatusResponse,
+  RestoreFilesRequest,
+  RestoreFilesResponse,
+  Session,
+} from "@codeden/contracts";
+import { asc, eq } from "drizzle-orm";
+import type { Db } from "../../db/client";
+import { checkpoints } from "../../db/schema";
+import { badRequest, conflict, notFound } from "../errors";
+import { type RunnerPort, toServiceError } from "../runner-port";
+import type { SessionRepo } from "../sessions/repo";
+import { statsFromPatch, toDiffFiles } from "./diff-files";
+
+const GIT_TIMEOUT_MS = 120_000;
+
+function rethrow(error: unknown): never {
+  throw toServiceError(error);
+}
+
+/**
+ * Checkpoints, diffs and git for a session's worktree (§9, §12.3), backed by the runner's
+ * `checkpoint.*` and `git.*` commands. Turn diffs compare consecutive checkpoints; the
+ * session diff compares the baseline with the live working tree.
+ */
+export class WorkbenchService {
+  constructor(private readonly deps: { db: Db; repo: SessionRepo; runner: RunnerPort }) {}
+
+  checkpoints(sessionId: string): Checkpoint[] {
+    this.deps.repo.get(sessionId);
+    return this.deps.db
+      .select()
+      .from(checkpoints)
+      .where(eq(checkpoints.sessionId, sessionId))
+      .orderBy(asc(checkpoints.index))
+      .all();
+  }
+
+  async diff(sessionId: string, scope: DiffScope): Promise<DiffResult> {
+    const session = this.deps.repo.get(sessionId);
+    const cwd = workdir(session);
+    const all = this.checkpoints(sessionId);
+    const turns = all
+      .filter((c) => c.turnId !== null)
+      .map((c) => ({
+        id: c.turnId as string,
+        index: c.index,
+        label: `Turn ${c.index}`,
+        at: c.createdAt,
+      }));
+
+    if (scope.kind === "uncommitted") {
+      const result = await this.deps.runner
+        .request({ name: "git.diff", cwd, fromRef: "HEAD" }, GIT_TIMEOUT_MS)
+        .catch(rethrow);
+      return {
+        scope,
+        turns,
+        files: toDiffFiles(result.diff, result.files ?? statsFromPatch(result.diff)),
+      };
+    }
+    if (all.length === 0) {
+      throw conflict("This session has no checkpoints yet", "no_checkpoints");
+    }
+    let from: number;
+    let to: number | undefined;
+    if (scope.kind === "session") {
+      from = all[0]?.index ?? 0;
+    } else {
+      const target = all.find((c) => c.turnId === scope.turnId);
+      if (!target) throw notFound("No checkpoint for that turn", "checkpoint_not_found");
+      const previous = all.filter((c) => c.index < target.index).at(-1);
+      from = previous?.index ?? target.index;
+      to = target.index;
+    }
+    const result = await this.deps.runner
+      .request({ name: "checkpoint.diff", cwd, sessionId, from, to }, GIT_TIMEOUT_MS)
+      .catch(rethrow);
+    return { scope, turns, files: toDiffFiles(result.diff, result.files) };
+  }
+
+  /** Restore files to a checkpoint; `turnId` means the state before that turn. */
+  async restore(sessionId: string, req: RestoreFilesRequest): Promise<RestoreFilesResponse> {
+    const session = this.deps.repo.get(sessionId);
+    let index = req.index;
+    if (req.turnId !== undefined) {
+      const all = this.checkpoints(sessionId);
+      const target = all.find((c) => c.turnId === req.turnId);
+      if (!target) throw notFound("No checkpoint for that turn", "checkpoint_not_found");
+      index = all.filter((c) => c.index < target.index).at(-1)?.index;
+      if (index === undefined) throw badRequest("No checkpoint before that turn", "no_baseline");
+    }
+    if (index === undefined) throw badRequest("Pass turnId or index");
+    const result = await this.deps.runner
+      .request(
+        {
+          name: "checkpoint.restoreFiles",
+          cwd: workdir(session),
+          sessionId,
+          index,
+          paths: req.paths,
+        },
+        GIT_TIMEOUT_MS,
+      )
+      .catch(rethrow);
+    return { index, ...result };
+  }
+
+  async status(sessionId: string): Promise<GitStatusResponse> {
+    const session = this.deps.repo.get(sessionId);
+    const result = await this.deps.runner
+      .request({ name: "git.status", cwd: workdir(session) }, GIT_TIMEOUT_MS)
+      .catch(rethrow);
+    return { ...result, baseBranch: session.baseBranch };
+  }
+
+  async commit(sessionId: string, req: GitCommitRequest): Promise<GitCommitResponse> {
+    const session = this.deps.repo.get(sessionId);
+    return this.deps.runner
+      .request({ name: "git.commit", cwd: workdir(session), ...req }, GIT_TIMEOUT_MS)
+      .catch(rethrow);
+  }
+
+  async push(sessionId: string, req: GitPushRequest): Promise<GitPushResponse> {
+    const session = this.deps.repo.get(sessionId);
+    return this.deps.runner
+      .request(
+        {
+          name: "git.push",
+          cwd: workdir(session),
+          remote: req.remote,
+          forceWithLease: req.forceWithLease,
+        },
+        GIT_TIMEOUT_MS,
+      )
+      .catch(rethrow);
+  }
+}
+
+/** Directory git commands run in: the session's worktree, else its cwd. */
+export function workdir(session: Session): string {
+  return session.worktreePath ?? session.cwd;
+}

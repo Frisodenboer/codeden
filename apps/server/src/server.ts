@@ -1,6 +1,11 @@
 import { rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { CODEDEN_VERSION, type RunnerConnectionStatus, type ServerLock } from "@codeden/contracts";
+import {
+  CODEDEN_VERSION,
+  type RunnerConnectionStatus,
+  type ServerLock,
+  TerminalQuery,
+} from "@codeden/contracts";
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
@@ -10,6 +15,7 @@ import { writeJsonFile } from "./json-file";
 import { createMcpHandler } from "./mcp/endpoint";
 import { ensureHome, type HomePaths } from "./paths";
 import { WsHub } from "./realtime/hub";
+import { TerminalBridge } from "./realtime/terminals";
 import { createApi } from "./routes/api";
 import { findWebDir, mountWeb } from "./routes/static";
 import { RunnerClient } from "./runner/client";
@@ -36,6 +42,11 @@ export interface StartServerOptions {
   runner?: RunnerLaunchConfig | false;
   /** Load the scripted Fake provider in the runner (development and tests). */
   enableFakeProvider?: boolean;
+  /**
+   * Load the real Claude Code and Codex adapters in a runner this server starts. Default true,
+   * unless `CODEDEN_BUILTIN_PROVIDERS=0` (the server test suite sets it).
+   */
+  builtinProviders?: boolean;
   /** Built web assets to serve; auto-detected when omitted. */
   webDir?: string;
   /** Extra allowed origins, e.g. the Vite dev server. */
@@ -48,7 +59,7 @@ export interface StartServerOptions {
   onShutdownRequest?: () => void;
   /** Secret storage: the OS keychain by default; `"memory"` for tests. */
   secrets?: SecretStore | "memory";
-  /** Utility-model jobs (§7.4); a no-op by default. */
+  /** Utility-model jobs (§7.4); one-shots through the runner's providers by default. */
   utility?: UtilityService;
   /** Runs CLI tools (detection, git); injectable for tests. */
   exec?: Exec;
@@ -154,6 +165,21 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     "/ws",
     upgradeWebSocket(() => hub.handlers()),
   );
+  const terminals = new TerminalBridge({
+    runner: services.runner,
+    cwdFor: (sessionId) => {
+      const session = sessionId ? services.sessionRepo.find(sessionId)?.session : undefined;
+      return session ? (session.worktreePath ?? session.cwd) : paths.home;
+    },
+    log,
+  });
+  const stopTerminalEvents = store.subscribe((events) => terminals.onEvents(events));
+  app.get("/ws/pty", async (c, next) => {
+    const query = TerminalQuery.safeParse(c.req.query());
+    if (!query.success)
+      return c.json({ error: { code: "bad_request", message: "Invalid terminal query" } }, 400);
+    return upgradeWebSocket(() => terminals.handlers(query.data))(c, next);
+  });
   mountWeb(app, findWebDir(opts.webDir));
 
   const wss = new WebSocketServer({ noServer: true });
@@ -184,8 +210,12 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   }
 
   if (opts.runner !== false) {
-    const launch =
-      opts.runner ?? defaultRunnerLaunch(opts.enableFakeProvider ? ["--fake"] : []) ?? null;
+    const builtin = opts.builtinProviders ?? process.env.CODEDEN_BUILTIN_PROVIDERS !== "0";
+    const args = [
+      ...(opts.enableFakeProvider ? ["--fake"] : []),
+      ...(builtin ? [] : ["--no-builtin"]),
+    ];
+    const launch = opts.runner ?? defaultRunnerLaunch(args) ?? null;
     runner = new RunnerClient({
       home: paths.home,
       lockFile: paths.runnerLock,
@@ -194,6 +224,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       launch,
       mcpUpstreamUrl: `${url}/mcp`,
       onStatus: (status) => hub.broadcastRunner(status),
+      onStream: (stream) => terminals.onStream(stream),
       onReady: () => void services.recovery.onRunnerReady(),
       log,
     });
@@ -205,6 +236,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   async function close(closeOpts: { stopRunner?: boolean } = {}): Promise<void> {
     closing ??= (async () => {
       services.lifecycle.stop();
+      stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();
         else await runner.stop();

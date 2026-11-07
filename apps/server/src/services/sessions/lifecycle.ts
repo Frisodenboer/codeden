@@ -38,6 +38,8 @@ const ENDED = new Set(["stopped", "completed", "failed"]);
  */
 export class SessionLifecycle {
   private drainScheduled = false;
+  /** Sessions whose title is being generated. */
+  private readonly titling = new Set<string>();
   private unsubscribe: (() => void) | undefined;
 
   constructor(private readonly deps: LifecycleDeps) {}
@@ -74,6 +76,13 @@ export class SessionLifecycle {
         if (session.status === "idle" && this.deps.sessions.hasOutbox(session.id)) {
           setImmediate(() => void this.deps.sessions.flushOutbox(session.id));
         }
+      } else if (e.type === "agent.item.started" && e.sessionId) {
+        const { item } = e.payload as AgentEventOf<"item.started">;
+        if (item.kind === "user_message" && item.input.text.trim()) {
+          const sessionId = e.sessionId;
+          const text = item.input.text;
+          setImmediate(() => void this.titleFromFirstMessage(sessionId, text));
+        }
       } else if (e.type === "agent.turn.completed" && e.sessionId) {
         const sessionId = e.sessionId;
         const event = e.payload as AgentEventOf<"turn.completed">;
@@ -81,6 +90,26 @@ export class SessionLifecycle {
       }
     }
     if (sessionsChanged) this.scheduleDrain();
+  }
+
+  /** Name an untitled session after its first user message (§7.4). Never throws. */
+  private async titleFromFirstMessage(sessionId: string, text: string): Promise<void> {
+    if (this.titling.has(sessionId)) return;
+    const session = this.deps.repo.find(sessionId)?.session;
+    if (!session || session.title) return;
+    this.titling.add(sessionId);
+    try {
+      const title = await this.deps.utility.sessionTitle({
+        session,
+        finalMessage: null,
+        firstMessage: text,
+      });
+      if (title) this.deps.repo.update(sessionId, (s) => (s.title ? s : { ...s, title }));
+    } catch (error) {
+      this.deps.log?.(`utility title: ${errorMessage(error)}`);
+    } finally {
+      this.titling.delete(sessionId);
+    }
   }
 
   private scheduleDrain(): void {
@@ -110,12 +139,22 @@ export class SessionLifecycle {
         .all()
         .map(rowToItemRecord);
       const final = turnItems.find((r) => r.item.kind === "assistant_message")?.item;
+      const changedFiles = turnItems.flatMap((r) =>
+        r.item.kind === "tool_call" && r.item.toolKind === "file_edit"
+          ? r.item.changes.map((c) => c.path)
+          : [],
+      );
       const ctx = {
         session,
         finalMessage: final?.kind === "assistant_message" ? final.text : null,
+        changedFiles: [...new Set(changedFiles)],
       };
 
-      if (!session.title && settings.utilityModel.jobs.sessionTitles) {
+      if (
+        !session.title &&
+        !this.titling.has(sessionId) &&
+        settings.utilityModel.jobs.sessionTitles
+      ) {
         const title = await this.deps.utility.sessionTitle(ctx);
         if (title) this.deps.repo.update(sessionId, (s) => (s.title ? s : { ...s, title }));
       }

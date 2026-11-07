@@ -17,6 +17,7 @@ import { projectRoutes } from "./projects";
 import { sessionRoutes } from "./sessions";
 import { artifactRoutes, fileRoutes, secretRoutes, setupRoutes } from "./system";
 import { errorResponse } from "./validate";
+import { utilityRoutes, workbenchRoutes } from "./workbench";
 
 export interface ApiContext {
   services: AppServices;
@@ -49,6 +50,8 @@ export function createApi(ctx: ApiContext) {
     .get("/sessions/:id/snapshot", (c) => c.json(buildSessionSnapshot(s, c.req.param("id"))))
     .route("/projects", projectRoutes(s))
     .route("/sessions", sessionRoutes(s))
+    .route("/sessions", workbenchRoutes(s))
+    .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))
     .route("/setup", setupRoutes(s))
     .route("/artifacts", artifactRoutes(s))

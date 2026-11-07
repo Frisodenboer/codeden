@@ -22,7 +22,8 @@ import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
 import { SetupService } from "./setup/setup-service";
-import { NoopUtilityService, type UtilityService } from "./utility";
+import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
+import { WorkbenchService } from "./workbench/workbench-service";
 
 export interface ServicesOptions {
   db: Db;
@@ -60,6 +61,7 @@ export interface AppServices {
   mcpTokens: McpTokenStore;
   /** CodeDen's tool registry (§8.3), exposed over MCP and to API handlers. */
   tools: ToolRegistry;
+  workbench: WorkbenchService;
   inbox: InboxService;
   artifacts: ArtifactService;
   setup: SetupService;
@@ -70,7 +72,13 @@ export interface AppServices {
 export function createServices(opts: ServicesOptions): AppServices {
   const exec = opts.exec ?? runTool;
   const userHome = opts.userHome ?? homedir();
-  const utility = opts.utility ?? new NoopUtilityService();
+  const utility =
+    opts.utility ??
+    new ProviderUtilityService({
+      settings: () => opts.settings.get(),
+      oneShot: runnerOneShot(opts.runner),
+      log: opts.log,
+    });
   const projects = new ProjectService({
     db: opts.db,
     store: opts.store,
@@ -155,6 +163,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     userHome,
     questions,
     mcpTokens,
+    workbench: new WorkbenchService({ db: opts.db, repo: sessionRepo, runner: opts.runner }),
     tools: undefined as unknown as ToolRegistry,
   };
   services.tools = new ToolRegistry(allTools, services, opts.log);
