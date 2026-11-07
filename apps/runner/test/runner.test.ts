@@ -117,6 +117,20 @@ describe("runner", () => {
     expect(lock.providers).toEqual(["fake"]);
     const res = await fetch(`http://127.0.0.1:${runner.port}/health`);
     expect(res.status).toBe(401);
+    // Browser pages (any Origin) and rebinding hosts are refused, even with the token.
+    const bearer = { authorization: `Bearer ${runner.token}` };
+    const ok = await fetch(`http://127.0.0.1:${runner.port}/health`, { headers: bearer });
+    expect(ok.status).toBe(200);
+    const fromPage = await fetch(`http://127.0.0.1:${runner.port}/health`, {
+      headers: { ...bearer, origin: `http://127.0.0.1:${runner.port}` },
+    });
+    expect(fromPage.status).toBe(403);
+    const mcpFromPage = await fetch(`http://127.0.0.1:${runner.port}/mcp`, {
+      method: "POST",
+      headers: { authorization: "Bearer cdm_x", origin: "http://evil.example" },
+      body: "{}",
+    });
+    expect(mcpFromPage.status).toBe(403);
     await expect(startRunner({ home })).rejects.toThrow(/already running/);
     await runner.close();
     expect(() => readFileSync(runner.lockFile)).toThrow();

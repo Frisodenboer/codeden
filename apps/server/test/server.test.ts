@@ -193,6 +193,55 @@ describe("ui websocket", () => {
     });
     expect(status).toBe(401);
   });
+
+  const upgradeStatus = (path: string, headers: Record<string, string>) =>
+    new Promise<number>((resolve) => {
+      const ws = new WebSocket(`${server.url.replace("http", "ws")}${path}`, { headers });
+      ws.on("unexpected-response", (_req, res) => resolve(res.statusCode ?? 0));
+      ws.on("open", () => {
+        ws.close();
+        resolve(101);
+      });
+      ws.on("error", () => {});
+    });
+
+  it("checks Origin and Host on every websocket endpoint, even with the token", async () => {
+    for (const path of ["/ws", "/ws/pty", "/ws/browser?sessionId=s1"]) {
+      expect([path, await upgradeStatus(path, { ...auth, origin: "http://evil.example" })]).toEqual(
+        [path, 403],
+      );
+      expect([path, await upgradeStatus(path, { ...auth, origin: "null" })]).toEqual([path, 403]);
+      expect([path, await upgradeStatus(path, { ...auth, host: "evil.example" })]).toEqual([
+        path,
+        403,
+      ]);
+      expect([path, await upgradeStatus(path, {})]).toEqual([path, 401]);
+    }
+    // A cookie set for this server is not enough from another origin.
+    expect(
+      await upgradeStatus("/ws", {
+        cookie: `codeden_token_${new URL(server.url).port}=${TOKEN}`,
+        origin: "http://localhost:1",
+      }),
+    ).toBe(403);
+  });
+
+  it("guards /mcp with Origin/Host checks and per-session tokens, never the install token", async () => {
+    const call = (headers: Record<string, string>) =>
+      fetch(`${server.url}/mcp`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          ...headers,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+    expect((await call({ origin: "http://evil.example" })).status).toBe(403);
+    expect((await call({})).status).toBe(401);
+    expect((await call(auth)).status).toBe(401);
+    expect((await call({ authorization: "Bearer cdm_not-a-real-token" })).status).toBe(401);
+  });
 });
 
 it("keeps agent event persistence helpers consistent", () => {

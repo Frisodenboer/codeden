@@ -37,6 +37,30 @@ describe("path guard", () => {
     );
   });
 
+  it("rejects backslash traversal, other drives, UNC and device paths", () => {
+    // On POSIX a backslash is an ordinary file-name character, so those names stay inside.
+    const cases = ["//server/share/x", "a/../../x"];
+    if (process.platform === "win32") {
+      const other = dir.slice(0, 1).toUpperCase() === "Z" ? "Y" : "Z";
+      cases.push(
+        "..\\x",
+        "a\\..\\..\\x",
+        "a/..\\../x",
+        "\\\\server\\share\\x",
+        `${other}:\\x`,
+        `${other}:x`,
+        "\\\\.\\pipe\\codeden",
+        "\\\\?\\C:\\Windows",
+      );
+    } else {
+      cases.push("/etc/passwd");
+    }
+    for (const p of cases)
+      expect([p, code(() => resolveInside(dir, p))]).toEqual([p, "path_outside_root"]);
+    // A name that merely starts with dots stays inside.
+    expect(resolveInside(dir, "..notes.md")).toBe(join(dir, "..notes.md"));
+  });
+
   it("follows symlinks out of the root", () => {
     const root = join(dir, "root");
     const outside = join(dir, "outside");

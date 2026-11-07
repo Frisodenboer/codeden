@@ -157,6 +157,8 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   const app = new Hono();
   app.use("*", async (c, next) => {
     if (!LOOPBACK.test(c.req.header("host") ?? "")) return c.text("Forbidden host", 403);
+    // Only the server and agents' MCP clients call the runner; a browser page never may.
+    if (c.req.header("origin") !== undefined) return c.text("Forbidden origin", 403);
     return next();
   });
   // Agents authenticate with their session-scoped token, validated by the server.
