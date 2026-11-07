@@ -59,5 +59,5 @@ The published package is `apps/cli` (`codeden` on npm). `.github/workflows/relea
 
 1. Bump the version in `apps/cli/package.json` **and** `CODEDEN_VERSION` in `packages/contracts/src/version.ts` (a test keeps them in sync). Commit.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag must match the package version or the workflow fails.
-3. The workflow publishes with `npm publish --provenance --access public` using the `NPM_TOKEN` repository secret (Settings > Secrets and variables > Actions). If the secret is missing it warns, skips publishing, and still creates the GitHub Release with the packed `.tgz`. npm provenance requires a public repository.
+3. The workflow publishes with `npm publish --provenance --access public` using **npm Trusted Publishing** (OIDC): the `codeden` package on npmjs.com trusts `leonvanzyl/codeden` + `release.yml`, so no token secret is needed. It then creates the GitHub Release with the packed `.tgz`. Provenance requires a public repository.
 4. To rehearse, run the workflow manually (Actions > Release > Run workflow) with **dry run** on: it builds and packs and uploads the tarball as an artifact, without publishing.

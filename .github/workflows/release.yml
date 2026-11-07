@@ -58,16 +58,14 @@ jobs:
           npm pack --pack-destination "$RUNNER_TEMP"
           echo "tarball=$RUNNER_TEMP/codeden-${{ steps.version.outputs.version }}.tgz" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm
+      # Authenticates with npm Trusted Publishing (OIDC): the package's npm settings trust
+      # leonvanzyl/codeden + release.yml, so no token secret is needed. Requires npm >= 11.5.1.
+      - name: Publish to npm (trusted publishing)
         if: env.DRY_RUN != 'true'
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning::NPM_TOKEN secret is not set; skipping npm publish. Add it under Settings > Secrets and variables > Actions."
-            exit 0
-          fi
+          npm install -g npm@latest
+          npm --version
           npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public
 
       - name: Create GitHub Release
