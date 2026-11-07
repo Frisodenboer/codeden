@@ -1,5 +1,6 @@
 import type {
   ConflictDecision,
+  ConflictRecord,
   CreateProjectRequest,
   CreateProjectResponse,
   DiffResult,
@@ -12,9 +13,11 @@ import type {
   GitStatusResponse,
   InboxItem,
   LoginCommandResponse,
+  ResolveConflictResponse,
   RestoreFilesRequest,
   RestoreFilesResponse,
   RuntimeResponse,
+  Session,
   SessionDetail,
   SessionFileContent,
   SessionFileList,
@@ -28,15 +31,22 @@ import type {
   StartSessionResponse,
   TranscriptMessage,
   UiServerMessage,
+  UpdateSessionRequest,
   UserInputInit,
 } from "@codeden/contracts";
-import type { AgentConfigApi, BrowserApi, ImagesApi, SecretsApi, VoiceApi } from "./feature-apis";
 import type {
-  ConflictCase,
+  AgentConfigApi,
+  BrowserApi,
+  GithubApi,
+  ImagesApi,
+  OrchestrationApi,
+  SecretsApi,
+  VoiceApi,
+} from "./feature-apis";
+import type {
   FactoryStatus,
   MentionCandidate,
   OpenTerminalOptions,
-  PrDetails,
   SlashCommand,
   TerminalChannel,
 } from "./types";
@@ -89,10 +99,12 @@ export interface CodeDenClient {
   respond(sessionId: string, requestId: string, response: RuntimeResponse): Promise<void>;
   startSession(input: StartSessionRequestInit): Promise<StartSessionResponse>;
   stopSession(sessionId: string): Promise<void>;
+  /** Change model, effort or title; model and effort apply from the next turn. */
+  updateSession(sessionId: string, patch: UpdateSessionRequest): Promise<Session>;
 
-  // Conflicts (§8.4).
-  listConflicts(): Promise<ConflictCase[]>;
-  resolveConflict(conflict: ConflictCase, decision: ConflictDecision): Promise<void>;
+  // Conflicts (§8.4): persisted start requests that matched running work.
+  listConflicts(query?: { projectId?: string }): Promise<ConflictRecord[]>;
+  resolveConflict(conflictId: string, decision: ConflictDecision): Promise<ResolveConflictResponse>;
 
   // Inbox (§11.1).
   resolveInbox(itemId: string, resolution: InboxResolution): Promise<InboxItem>;
@@ -126,7 +138,6 @@ export interface CodeDenClient {
   gitPush(sessionId: string, req: GitPushRequest): Promise<GitPushResponse>;
   listFiles(sessionId: string): Promise<SessionFileList>;
   readFile(sessionId: string, path: string): Promise<SessionFileContent>;
-  getPrDetails(sessionId: string): Promise<PrDetails>;
   searchMentions(sessionId: string, query: string): Promise<MentionCandidate[]>;
   listSlashCommands(sessionId: string): Promise<SlashCommand[]>;
   openTerminal(opts: OpenTerminalOptions): TerminalChannel;
@@ -141,4 +152,8 @@ export interface CodeDenClient {
   readonly agentConfig: AgentConfigApi;
   readonly images: ImagesApi;
   readonly voice: VoiceApi;
+
+  // Orchestration (§8) and GitHub (§9).
+  readonly orchestration: OrchestrationApi;
+  readonly github: GithubApi;
 }

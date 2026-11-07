@@ -5,6 +5,7 @@ import { mockFeatureApis } from "./feature-apis";
 import { makeSession } from "./fixtures/helpers";
 import { defaultFactoryLimits, factoryFor, visionDoc } from "./fixtures/ops";
 import { type Script, scriptedTurn, uid } from "./live";
+import { mockOrchestration } from "./orchestration";
 import { respond } from "./responses";
 import { workbenchApi } from "./workbench-api";
 import { MockWorld } from "./world";
@@ -62,7 +63,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     return id;
   };
 
-  return {
+  const client: CodeDenClient = {
     kind: "mock",
     getSnapshot: () => delay(world.snapshot, 150),
     getSessionSnapshot: (id) => delay(world.sessionSnapshot(id), 120),
@@ -168,14 +169,6 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     async stopSession(sessionId) {
       running.get(sessionId)?.cancel();
       world.updateSession(sessionId, { status: "stopped", endedAt: new Date().toISOString() });
-    },
-
-    listConflicts: () => delay(world.conflicts),
-    async resolveConflict(conflict, decision) {
-      world.conflicts = world.conflicts.filter((c) => c.id !== conflict.id);
-      if (decision.resolution === "join") runTurn(decision.sessionId, conflict.request.purpose);
-      if (decision.resolution === "force" && conflict.projectId)
-        createSession(conflict.projectId, conflict.request.purpose, conflict.request.workKey);
     },
 
     async resolveInbox(itemId, resolution) {
@@ -305,5 +298,10 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     },
     ...workbenchApi(world),
     ...mockFeatureApis(world),
+    ...mockOrchestration(world, {
+      sendMessage: (id, input, mode) => client.sendMessage(id, input, mode),
+      createSession,
+    }),
   };
+  return client;
 }
