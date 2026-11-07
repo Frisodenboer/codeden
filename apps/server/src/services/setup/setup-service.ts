@@ -36,6 +36,11 @@ export class SetupService {
 
   constructor(private readonly deps: SetupServiceDeps) {}
 
+  /** The last detection result, without re-checking (undefined before the first check). */
+  get lastStatus(): SetupStatus | undefined {
+    return this.cached;
+  }
+
   /** Cached status, re-checked when stale or when `refresh` is set. */
   async status(opts: { refresh?: boolean } = {}): Promise<SetupStatus> {
     const now = this.now();

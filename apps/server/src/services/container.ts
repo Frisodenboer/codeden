@@ -26,6 +26,8 @@ import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
 import { SetupService } from "./setup/setup-service";
+import { billingFromSetup } from "./usage/billing";
+import { UsageService } from "./usage/usage-service";
 import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
 import { VoiceService } from "./voice/voice-service";
 import { WorkbenchService } from "./workbench/workbench-service";
@@ -83,6 +85,8 @@ export interface AppServices {
   configFiles: ConfigFiles;
   /** Provider memory, skills, subagents and MCP servers (§12.4). */
   agentConfig: AgentConfigService;
+  /** Usage and cost reports, budgets and rate limits (§12.6). */
+  usage: UsageService;
   userHome: string;
 }
 
@@ -150,6 +154,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     tokens: mcpTokens,
     log: opts.log,
   });
+  const setup = new SetupService({ exec, settings: opts.settings });
   const services: AppServices = {
     db: opts.db,
     store: opts.store,
@@ -182,7 +187,14 @@ export function createServices(opts: ServicesOptions): AppServices {
       log: opts.log,
     }),
     voice: new VoiceService({ secrets: opts.secrets, settings: opts.settings, ...opts.voice }),
-    setup: new SetupService({ exec, settings: opts.settings }),
+    setup,
+    usage: new UsageService({
+      db: opts.db,
+      store: opts.store,
+      settingsFile: join(opts.paths.home, "usage-settings.json"),
+      billing: async () => (setup.lastStatus ? billingFromSetup(setup.lastStatus) : {}),
+      log: opts.log,
+    }),
     configFiles: new ConfigFiles({
       projects,
       home: userHome,

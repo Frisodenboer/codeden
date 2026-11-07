@@ -337,3 +337,5 @@ export const mcpTokens = sqliteTable(
     index("mcp_tokens_session").on(t.sessionId),
   ],
 );
+
+export * from "./schema-usage";

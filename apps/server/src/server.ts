@@ -149,6 +149,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   // Find out early whether `generate_image` can be offered to agents.
   void services.images.refresh();
   services.lifecycle.start();
+  services.usage.start();
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -262,6 +263,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   async function close(closeOpts: { stopRunner?: boolean } = {}): Promise<void> {
     closing ??= (async () => {
       services.lifecycle.stop();
+      services.usage.stop();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();
