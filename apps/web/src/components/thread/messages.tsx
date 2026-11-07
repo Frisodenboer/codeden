@@ -1,8 +1,11 @@
 import type { Attachment, ItemOf } from "@codeden/contracts";
 import { Copy, FileText } from "lucide-react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { useClient } from "@/lib/api";
+import { foldDigest } from "@/lib/orchestration";
 import { platform } from "@/lib/platform";
+import { DigestDisclosure, WakeLine } from "./digest-fold";
 import { Markdown } from "./markdown";
 
 function AttachmentView({ attachment }: { attachment: Attachment }) {
@@ -37,11 +40,18 @@ function AttachmentView({ attachment }: { attachment: Attachment }) {
   );
 }
 
-/** User message: a soft right-aligned bubble with attachments above the text. */
+/**
+ * User message: a soft right-aligned bubble with attachments above the text. The status digest
+ * CodeDen adds for role sessions is folded away; automatic wake-ups become a quiet divider.
+ */
 export function UserMessage({ item }: { item: ItemOf<"user_message"> }) {
-  const { text, attachments } = item.input;
+  const { attachments } = item.input;
+  const folded = useMemo(() => foldDigest(item.input.text), [item.input.text]);
+  if (folded.wake && attachments.length === 0) return <WakeLine folded={folded} />;
+  const text = folded.text;
   return (
     <div className="group flex flex-col items-end gap-1.5 animate-rise">
+      <DigestDisclosure folded={folded} />
       {attachments.length > 0 && (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
           {attachments.map((a, i) => (

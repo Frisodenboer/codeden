@@ -1,5 +1,5 @@
 import type { DiffFile } from "@codeden/contracts";
-import type { FileNode, PrDetails, SlashCommand } from "../../types";
+import type { FileNode, SlashCommand } from "../../types";
 import { cartPatch, countLines, indexPatch, searchPatch, specPatch, tokensPatch } from "./patches";
 
 const diffFile = (
@@ -101,64 +101,6 @@ export function useCart() {
   }
 }
 `,
-};
-
-export const prDetails: Record<string, PrDetails> = {
-  "s-checkout": {
-    issue: {
-      number: 142,
-      title: "Checkout e2e test is flaky on CI",
-      url: "https://github.com/hearth-co/storefront/issues/142",
-      state: "open",
-      labels: ["bug", "tests", "ci"],
-      body: "`checkout › totals update after quantity change` fails roughly 1 in 5 runs on CI.\n\n**Acceptance criteria**\n- Root cause identified (no blanket retries)\n- 50 consecutive green runs locally",
-    },
-    pr: null,
-  },
-  "s-search": {
-    issue: {
-      number: 139,
-      title: "Product search with category and price filters",
-      url: "https://github.com/hearth-co/storefront/issues/139",
-      state: "open",
-      labels: ["enhancement", "search"],
-      body: "Shoppers can filter search results by category and maximum price. Filters live in the URL.",
-    },
-    pr: {
-      number: 57,
-      title: "Product search with filters",
-      url: "https://github.com/hearth-co/storefront/pull/57",
-      state: "draft",
-      body: "Fixes #139.\n\n- Category chips and max-price filter\n- URL is the source of truth",
-      checks: [
-        { name: "ci / typecheck", state: "pass" },
-        { name: "ci / unit", state: "pass" },
-        { name: "ci / e2e", state: "pending" },
-      ],
-      reviews: [],
-      additions: 61,
-      deletions: 3,
-    },
-  },
-  "s-a11y": {
-    issue: null,
-    pr: {
-      number: 58,
-      title: "Accessibility fixes on the product page",
-      url: "https://github.com/hearth-co/storefront/pull/58",
-      state: "open",
-      body: "Raises contrast to AA, restores focus rings and adds alt text to 14 images.",
-      checks: [
-        { name: "ci / typecheck", state: "pass" },
-        { name: "ci / unit", state: "pass" },
-        { name: "ci / e2e", state: "pass" },
-        { name: "codeden / review", state: "pass" },
-      ],
-      reviews: [{ author: "codeden-reviewer", state: "approved" }],
-      additions: 18,
-      deletions: 9,
-    },
-  },
 };
 
 export const slashCommands: SlashCommand[] = [

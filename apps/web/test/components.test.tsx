@@ -135,13 +135,15 @@ describe("WorkGroup", () => {
 describe("ConflictCard", () => {
   it("offers wait, join, skip and force", async () => {
     const client = createMockClient();
-    const resolve = vi.spyOn(client, "resolveConflict").mockResolvedValue();
     const conflict = conflicts[0];
     if (!conflict) throw new Error("fixture missing");
+    const resolve = vi
+      .spyOn(client, "resolveConflict")
+      .mockResolvedValue({ conflict, result: { status: "skipped" } });
     renderWithClient(<ConflictCard conflict={conflict} />, client, { withRouter: true });
     fireEvent.click(await screen.findByRole("button", { name: /Join/ }));
     await waitFor(() =>
-      expect(resolve).toHaveBeenCalledWith(conflict, {
+      expect(resolve).toHaveBeenCalledWith("cf-audit", {
         resolution: "join",
         sessionId: "s-audit",
       }),

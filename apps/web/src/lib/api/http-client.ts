@@ -1,5 +1,4 @@
 import {
-  type ConflictDecision,
   CreateProjectResponse,
   DiffResult,
   FsListResponse,
@@ -29,10 +28,11 @@ import {
   httpSecretsApi,
   httpVoiceApi,
 } from "./http-features";
+import { httpGithubApi, httpOrchestrationApi, httpSessionConflictApi } from "./http-orchestration";
 import { configApi } from "./http-unwired";
 import { RealtimeSocket } from "./realtime-socket";
 import { openTerminalSocket } from "./terminal-channel";
-import type { ConflictCase, MentionCandidate } from "./types";
+import type { MentionCandidate } from "./types";
 
 const whenBusy: Record<SendMode, SendMessageRequestInit["whenBusy"]> = {
   send: "queue",
@@ -55,7 +55,6 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
   const wsBase = origin.replace(/^http/, "ws");
   const socket = new RealtimeSocket(`${wsBase}/ws`);
   const enc = encodeURIComponent;
-  const conflicts = new Map<string, ConflictCase>();
   const fileCache = new Map<string, { at: number; list: SessionFileList }>();
 
   return {
@@ -78,37 +77,13 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     async respond(id, requestId, response) {
       await post(`/sessions/${enc(id)}/respond`, { requestId, response });
     },
-    async startSession(input) {
-      const res = await fetchStart(origin, input);
-      if (res.status === "conflict") {
-        const id = `conflict-${Date.now()}`;
-        conflicts.set(id, {
-          id,
-          projectId: input.projectId,
-          request: {
-            purpose: input.purpose ?? input.input?.text.split("\n")[0] ?? "New session",
-            workKey: input.workKey ?? "",
-            requestedBy: "You",
-          },
-          existing: res.existing,
-          createdAt: new Date().toISOString(),
-          start: input,
-        });
-      }
-      return res;
-    },
+    // A 409 conflict is persisted by the server (`conflictId`) and listed by `listConflicts`.
+    startSession: (input) => fetchStart(origin, input),
     async stopSession(id) {
       await post(`/sessions/${enc(id)}/stop`);
     },
 
-    listConflicts: async () => [...conflicts.values()],
-    async resolveConflict(conflict: ConflictCase, decision: ConflictDecision) {
-      conflicts.delete(conflict.id);
-      if (!conflict.start) return;
-      await post("/sessions", { ...conflict.start, conflict: decision }, (v) =>
-        StartSessionResponse.parse(v),
-      );
-    },
+    ...httpSessionConflictApi(http),
     resolveInbox: (id, resolution) =>
       post(`/inbox/${enc(id)}/resolve`, resolution, (v) => InboxItem.parse(v)),
 
@@ -178,6 +153,8 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     agentConfig: httpAgentConfigApi(http),
     images: httpImagesApi(http),
     voice: httpVoiceApi(http),
+    orchestration: httpOrchestrationApi(http),
+    github: httpGithubApi(http),
     ...configApi(http),
   };
 }

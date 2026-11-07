@@ -1,5 +1,4 @@
-import type { InboxItem, Session } from "@codeden/contracts";
-import type { ConflictCase } from "../../types";
+import type { ConflictRecord, InboxItem, Session } from "@codeden/contracts";
 import { ago, gh, makeSession } from "./helpers";
 
 const sf = gh("hearth-co/storefront");
@@ -291,14 +290,14 @@ export const inboxItems: InboxItem[] = [
   }),
 ];
 
-export const conflicts: ConflictCase[] = [
+export const conflicts: ConflictRecord[] = [
   {
     id: "cf-audit",
     projectId: "p-storefront",
     request: {
       purpose: "Run a security audit on Storefront",
       workKey: "automation:security-audit",
-      requestedBy: "Orchestrator",
+      startedBy: { kind: "orchestrator" },
     },
     existing: [
       {
@@ -315,6 +314,11 @@ export const conflicts: ConflictCase[] = [
         startedAt: ago(18),
       },
     ],
+    start: { projectId: "p-storefront", purpose: "Run a security audit on Storefront" },
+    status: "open",
+    resolution: null,
+    outcome: null,
     createdAt: ago(3),
+    resolvedAt: null,
   },
 ];

@@ -4,6 +4,7 @@ import { useTurnCostText } from "@/components/usage/session-cost";
 import { duration, plural } from "@/lib/format";
 import type { TimelineRow as Row } from "@/lib/transcript/timeline";
 import { ApprovalCard } from "./cards/approval-card";
+import { NoticeBatchCard, noticeBatchOf } from "./cards/notice-cards";
 import { QuestionCard } from "./cards/question-card";
 import { SharedArtifactCard, sharedArtifactOf } from "./cards/shared-artifact-card";
 import { ErrorCard, NoticeCard, PlanCard, TodoCard } from "./cards/simple-cards";
@@ -96,6 +97,8 @@ export function TimelineRowView({ row, sessionId }: { row: Row; sessionId: strin
         case "notice": {
           const artifact = sharedArtifactOf(item);
           if (artifact) return <SharedArtifactCard item={item} artifact={artifact} />;
+          const notices = noticeBatchOf(item);
+          if (notices) return <NoticeBatchCard notices={notices} />;
           return <NoticeCard item={item} />;
         }
         case "error":

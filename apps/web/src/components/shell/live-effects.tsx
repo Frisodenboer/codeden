@@ -17,6 +17,7 @@ const inboxVerb: Record<string, string> = {
   triage: "Triage decision",
   automation_result: "Automation result",
   message: "Message",
+  conflict: "Already running",
 };
 
 /**

@@ -82,7 +82,9 @@ export function ProjectGroup({
   const toggle = useLayoutStore((s) => s.toggleProject);
   const [showAll, setShowAll] = useState(false);
   const homeActive = useIsActive(`/projects/${project.id}`, false);
-  const pm = sessions.find((s) => s.role === "pm");
+  const pm = sessions
+    .filter((s) => s.role === "pm")
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
   const agents = sortSessions(sessions.filter((s) => s.role === "agent"));
   const visible = showAll ? agents : agents.slice(0, LIMIT);
   const attention = agents.some((s) => s.status === "waiting");
@@ -140,17 +142,18 @@ export function ProjectGroup({
 
       {open && (
         <div className="flex flex-col gap-px">
-          {pm && (
-            <NavRow
-              href={`/sessions/${pm.id}`}
-              link={{ to: "/sessions/$sessionId", params: { sessionId: pm.id } }}
-              className="pl-7"
-            >
-              <Bot className="size-3.5 shrink-0 text-primary/80" />
-              <span className="flex-1 truncate">Project manager</span>
-              <StatusDot status={pm.status} />
-            </NavRow>
-          )}
+          <NavRow
+            href={`/projects/${project.id}/pm`}
+            link={{ to: "/projects/$projectId/pm", params: { projectId: project.id } }}
+            className="pl-7"
+          >
+            <Bot className="size-3.5 shrink-0 text-primary/80" />
+            <span className="flex-1 truncate">Project manager</span>
+            <span className="rounded-full bg-primary/10 px-1.5 text-3xs font-medium text-primary">
+              PM
+            </span>
+            {pm && <StatusDot status={pm.status} />}
+          </NavRow>
           {visible.map((s) => (
             <SessionRow key={s.id} session={s} />
           ))}

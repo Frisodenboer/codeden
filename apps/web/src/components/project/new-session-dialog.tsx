@@ -1,5 +1,6 @@
 import type {
   AutonomyLevel,
+  ConflictRecord,
   ReasoningEffort,
   StartSessionRequestInit,
   StartSessionResponse,
@@ -21,9 +22,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useClient } from "@/lib/api";
-import type { ConflictCase } from "@/lib/api/types";
 import { useProject, useSnapshotData } from "@/lib/queries";
-import { ConflictCard } from "./conflict-card";
+import { ConflictCard, LOCAL_CONFLICT_PREFIX } from "./conflict-card";
 
 interface Choice {
   provider: string | null;
@@ -59,7 +59,7 @@ export function NewSessionDialog({
     effort: null,
     autonomy: null,
   });
-  const [conflict, setConflict] = useState<ConflictCase | null>(null);
+  const [conflict, setConflict] = useState<ConflictRecord | null>(null);
 
   const known = (id: string | null | undefined) =>
     id && providers.some((p) => p.id === id) ? id : null;
@@ -90,24 +90,38 @@ export function NewSessionDialog({
         ...(workKey.trim() ? { workKey: workKey.trim() } : {}),
       };
       const result = await client.startSession(request);
-      return { request, result };
+      if (result.status !== "conflict") return { request, result, record: null };
+      // The server persisted the conflict (409 with `conflictId`); show that record.
+      const persisted = result.conflictId
+        ? (await client.listConflicts({ projectId })).find((c) => c.id === result.conflictId)
+        : undefined;
+      const record: ConflictRecord = persisted ?? {
+        id: `${LOCAL_CONFLICT_PREFIX}${Date.now()}`,
+        projectId,
+        request: {
+          purpose: prompt.trim().split(/\r?\n/)[0] ?? "New session",
+          workKey: workKey.trim() || result.existing[0]?.workKey || "request:new",
+          startedBy: { kind: "user" },
+        },
+        existing: result.existing,
+        start: JSON.parse(JSON.stringify(request)),
+        status: "open",
+        resolution: null,
+        outcome: null,
+        createdAt: new Date().toISOString(),
+        resolvedAt: null,
+      };
+      return { request, result, record };
     },
     onSuccess: ({
-      request,
       result,
+      record,
     }: {
-      request: StartSessionRequestInit;
       result: StartSessionResponse;
+      record: ConflictRecord | null;
     }) => {
       if (result.status === "conflict") {
-        setConflict({
-          id: `local-${Date.now()}`,
-          projectId,
-          request: { purpose: prompt, workKey: workKey.trim(), requestedBy: "You" },
-          existing: result.existing,
-          createdAt: new Date().toISOString(),
-          start: request,
-        });
+        setConflict(record);
         return;
       }
       onOpenChange(false);

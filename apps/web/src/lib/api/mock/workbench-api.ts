@@ -7,7 +7,6 @@ import {
   allPaths,
   fileContents,
   fileTree,
-  prDetails,
   sessionDiffs,
   slashCommands,
 } from "./fixtures/workbench";
@@ -36,7 +35,6 @@ type WorkbenchApi = Pick<
   | "speechSummary"
   | "listFiles"
   | "readFile"
-  | "getPrDetails"
   | "searchMentions"
   | "listSlashCommands"
   | "openTerminal"
@@ -125,7 +123,6 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
         `// ${path}\n// (mock) File contents are loaded from the session worktree.\n\nexport {};\n`;
       return delay({ path, content, sizeBytes: content.length, binary: false, truncated: false });
     },
-    getPrDetails: (sessionId) => delay(prDetails[sessionId] ?? { issue: null, pr: null }),
     searchMentions: (_sessionId, query) => {
       const q = query.toLowerCase();
       const hits = allPaths()

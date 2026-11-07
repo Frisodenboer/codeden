@@ -1,7 +1,7 @@
 /**
  * Types the web client needs that are not in `@codeden/contracts`: UI-only shapes (file tree
- * nodes, live channels) and data for screens whose server APIs are not wired yet (factory,
- * conflicts list, PR details). Server shapes come from contracts.
+ * nodes, live channels) and data for screens whose server APIs are not wired yet (factory).
+ * Server shapes come from contracts.
  */
 import type {
   AutonomyMode,
@@ -10,9 +10,7 @@ import type {
   GitHubIssueRef,
   GitHubPrRef,
   ProviderId,
-  StartSessionRequestInit,
   WorkKey,
-  WorkSummary,
 } from "@codeden/contracts";
 
 // ------------------------------------------------------------------ factory panel (§10.1)
@@ -55,19 +53,6 @@ export interface FactoryStatus {
   visionExists: boolean;
 }
 
-// ------------------------------------------------------------------ conflicts (§8.4)
-
-/** A start request that collided with running work, waiting for a decision. */
-export interface ConflictCase {
-  id: string;
-  projectId: string | null;
-  request: { purpose: string; workKey: WorkKey; requestedBy: string };
-  existing: WorkSummary[];
-  createdAt: string;
-  /** The original start request, retried with the decision (real server). */
-  start?: StartSessionRequestInit;
-}
-
 // ------------------------------------------------------------------ workbench (§12)
 
 /** A node of the files panel tree, built from `SessionFileList` entries. */
@@ -78,19 +63,6 @@ export interface FileNode {
   children?: FileNode[];
   /** Git status in the worktree. */
   status?: "added" | "modified" | "deleted";
-}
-
-export interface PrDetails {
-  issue: (GitHubIssueRef & { body: string; labels: string[]; state: "open" | "closed" }) | null;
-  pr:
-    | (GitHubPrRef & {
-        body: string;
-        checks: { name: string; state: "pending" | "pass" | "fail" }[];
-        reviews: { author: string; state: "approved" | "changes_requested" | "commented" }[];
-        additions: number;
-        deletions: number;
-      })
-    | null;
 }
 
 export interface MentionCandidate {

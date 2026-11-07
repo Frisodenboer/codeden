@@ -13,8 +13,9 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { IssueBadge, PrBadge, ProviderMark } from "@/components/common/bits";
+import { ProviderMark } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
+import { ReadOnlyBadge, RoleBadge } from "@/components/orchestration/role-badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,6 +33,7 @@ import { useProject, useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
 import { AutonomyBadge } from "./autonomy";
+import { SessionGithubBadges } from "./session-github-badges";
 
 function Chip({
   icon,
@@ -81,7 +83,7 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
     session.role === "orchestrator"
       ? "Orchestrator"
       : session.role === "pm"
-        ? `${project?.name ?? "Project"} · Project manager`
+        ? "Project manager"
         : (session.title ?? session.purpose);
 
   return (
@@ -89,10 +91,10 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
       {session.role === "agent" ? (
         <StatusDot status={session.status} />
       ) : (
-        <Bot className="size-4 text-primary" />
+        <RoleBadge role={session.role} short />
       )}
       <div className="flex min-w-[10rem] shrink items-baseline gap-2 overflow-hidden">
-        {project && session.role === "agent" && (
+        {project && session.role !== "orchestrator" && (
           <Link
             to="/projects/$projectId"
             params={{ projectId: project.id }}
@@ -137,11 +139,8 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
           </Chip>
         )}
         <SessionCostChip sessionId={session.id} className="hidden @[40rem]:inline-flex" />
-        <AutonomyBadge level={session.autonomy} />
-        {session.issue && (
-          <IssueBadge issue={session.issue} className="hidden h-6 @[44rem]:inline-flex" />
-        )}
-        {session.pr && <PrBadge pr={session.pr} className="hidden h-6 @[44rem]:inline-flex" />}
+        {session.role === "agent" ? <AutonomyBadge level={session.autonomy} /> : <ReadOnlyBadge />}
+        <SessionGithubBadges session={session} className="hidden @[44rem]:inline-flex" />
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-0.5">

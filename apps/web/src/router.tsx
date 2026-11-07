@@ -11,7 +11,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { AgentsPage, type AgentTab } from "@/routes/agents";
 import { HomePage } from "@/routes/home";
 import { InboxPage } from "@/routes/inbox";
-import { ProjectPage } from "@/routes/project";
+import { PmPage } from "@/routes/pm";
+import { ProjectPage, type ProjectTab } from "@/routes/project";
 import { ReportsPage } from "@/routes/reports";
 import { SessionPage } from "@/routes/session";
 import { SettingsPage } from "@/routes/settings";
@@ -46,12 +47,30 @@ const sessionRoute = createRoute({
 const projectRoute = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId",
-  validateSearch: (s: Record<string, unknown>): { newSession?: boolean } =>
-    s.newSession ? { newSession: true } : {},
+  validateSearch: (s: Record<string, unknown>): { newSession?: boolean; tab?: ProjectTab } => ({
+    ...(s.newSession ? { newSession: true } : {}),
+    ...(s.tab === "github" ? { tab: "github" as const } : {}),
+  }),
   component: function Project() {
     const { projectId } = projectRoute.useParams();
-    const { newSession } = projectRoute.useSearch();
-    return <ProjectPage key={projectId} projectId={projectId} newSession={Boolean(newSession)} />;
+    const { newSession, tab } = projectRoute.useSearch();
+    return (
+      <ProjectPage
+        key={projectId}
+        projectId={projectId}
+        newSession={Boolean(newSession)}
+        tab={tab ?? "overview"}
+      />
+    );
+  },
+});
+
+const pmRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/pm",
+  component: function Pm() {
+    const { projectId } = pmRoute.useParams();
+    return <PmPage key={projectId} projectId={projectId} />;
   },
 });
 
@@ -105,6 +124,7 @@ const routeTree = rootRoute.addChildren([
     reportsRoute,
     sessionRoute,
     projectRoute,
+    pmRoute,
     visionRoute,
     createRoute({
       getParentRoute: () => shell,

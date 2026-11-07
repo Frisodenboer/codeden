@@ -17,6 +17,13 @@ import type {
   BrowserTabResponse,
   BrowserTabsResponse,
   DevServersResponse,
+  GithubConnection,
+  GithubIssueDetails,
+  GithubIssuesResponse,
+  GithubListQuery,
+  GithubPrDetails,
+  GithubPrsResponse,
+  GithubSyncStatus,
   ImageEnginesResponse,
   ImageTestRequest,
   ImageTestResponse,
@@ -26,11 +33,22 @@ import type {
   McpServerTarget,
   McpServerUpsertRequest,
   McpServerWriteResponse,
+  MergePrRequest,
+  MergePrResponse,
+  Notice,
+  Overview,
+  ProjectStatus,
+  RoleMessageResponse,
   SecretKey,
   SecretsStatus,
+  Session,
+  SessionGithubResponse,
   SttQuery,
   SttResponse,
+  TriageIssueRequest,
+  TriageIssueResult,
   TtsRequest,
+  UserInputInit,
   VoiceListResponse,
 } from "@codeden/contracts";
 
@@ -126,4 +144,51 @@ export interface SecretsApi {
   status(): Promise<SecretsStatus>;
   set(key: SecretKey, value: string): Promise<void>;
   remove(key: SecretKey): Promise<void>;
+}
+
+// ------------------------------------------------------------------ orchestration (§8)
+
+export type OrchestrationRole = "orchestrator" | "pm";
+
+/** `/api/orchestration/*`: the orchestrator and PM chats, digests and notices. */
+export interface OrchestrationApi {
+  /** Create the role session if it does not exist yet (the PM needs `projectId`). */
+  ensure(role: OrchestrationRole, projectId: string | null): Promise<Session | null>;
+  /** Send to the orchestrator or a project's PM; creates the session on first use. */
+  send(
+    role: OrchestrationRole,
+    projectId: string | null,
+    input: UserInputInit,
+    whenBusy?: "queue" | "steer" | "reject",
+  ): Promise<RoleMessageResponse>;
+  projectStatus(projectId: string): Promise<ProjectStatus>;
+  overview(): Promise<Overview>;
+  notices(query?: {
+    projectId?: string;
+    target?: OrchestrationRole;
+    limit?: number;
+  }): Promise<Notice[]>;
+}
+
+// ------------------------------------------------------------------ GitHub (§9)
+
+export type GithubState = GithubListQuery["state"];
+
+/** `/api/github/connection`, `/api/projects/:id/github/*`, `/api/prs/:id`, session GitHub. */
+export interface GithubApi {
+  connection(): Promise<GithubConnection>;
+  issues(projectId: string, state?: GithubState): Promise<GithubIssuesResponse>;
+  prs(projectId: string, state?: GithubState): Promise<GithubPrsResponse>;
+  /** One issue, fresh from GitHub, with its latest comments. */
+  issue(projectId: string, number: number): Promise<GithubIssueDetails>;
+  sync(projectId: string): Promise<GithubSyncStatus>;
+  /** `prId` is `<projectId>:<number>` (`githubPrId`). */
+  pr(prId: string): Promise<GithubPrDetails>;
+  merge(prId: string, req?: Partial<MergePrRequest>): Promise<MergePrResponse>;
+  session(sessionId: string): Promise<SessionGithubResponse>;
+  triage(
+    projectId: string,
+    number: number,
+    req: Pick<TriageIssueRequest, "decision"> & Partial<TriageIssueRequest>,
+  ): Promise<TriageIssueResult>;
 }
