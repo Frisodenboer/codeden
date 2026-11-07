@@ -5,6 +5,20 @@ import { AutonomyLevel, ProviderId, QuietHours, ReasoningEffort } from "./common
 export const ProviderChoice = z.union([z.literal("auto"), ProviderId]);
 export type ProviderChoice = z.infer<typeof ProviderChoice>;
 
+/** Image engine choice (§12.5): `auto` picks Codex when logged in, `none` hides the tool. */
+export const ImageEngineSetting = z.enum(["auto", "codex", "gemini", "openai", "none"]);
+export type ImageEngineSetting = z.infer<typeof ImageEngineSetting>;
+
+/** Per-project image generation override; unset fields fall back to the global settings. */
+export const ImageGenerationOverride = z.object({
+  engine: ImageEngineSetting.optional(),
+  defaultSize: z.string().optional(),
+  quality: z.enum(["auto", "low", "medium", "high"]).optional(),
+  /** Images per day for this project (counted on its own, inside the global cap). */
+  dailyCap: z.int().nonnegative().optional(),
+});
+export type ImageGenerationOverride = z.infer<typeof ImageGenerationOverride>;
+
 /** Default provider/model/effort for one role. */
 export const RoleDefaults = z.object({
   provider: ProviderChoice.default("auto"),
@@ -86,10 +100,13 @@ export const Settings = z.object({
   imageGeneration: z
     .object({
       /** `auto`: Codex when logged in, else the first engine with a key; `none` hides the tool. */
-      engine: z.enum(["auto", "codex", "gemini", "openai", "none"]).default("auto"),
+      engine: ImageEngineSetting.default("auto"),
       defaultSize: z.string().default("1024x1024"),
       quality: z.enum(["auto", "low", "medium", "high"]).default("auto"),
+      /** Images per day across all projects (0 turns generation off). */
       dailyCap: z.int().nonnegative().default(50),
+      /** Overrides by project id. */
+      projects: z.record(z.string(), ImageGenerationOverride).default({}),
     })
     .prefault({}),
   notifications: z

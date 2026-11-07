@@ -13,6 +13,7 @@ export * from "./entities/project";
 export * from "./entities/session";
 export * from "./events";
 export * from "./factory";
+export * from "./images-api";
 export * from "./input";
 export * from "./items";
 export * from "./project-config";
