@@ -1,11 +1,13 @@
-import type {
-  Automation,
-  AutomationEventName,
-  GithubIssue,
-  GithubPr,
-  Notice,
-  RawEventEnvelope,
-  Session,
+import {
+  type Automation,
+  type AutomationEventName,
+  type GithubIssue,
+  type GithubPr,
+  isFactoryMode,
+  type Notice,
+  type Project,
+  type RawEventEnvelope,
+  type Session,
 } from "@codeden/contracts";
 import { issueVars, prVars, sessionVars, type TemplateVars } from "./prompt";
 
@@ -116,4 +118,19 @@ export function startedByAutomation(
   if (!event.sessionId) return false;
   const s = session(event.sessionId);
   return s?.startedBy.kind === "automation" && s.startedBy.id === automation.id;
+}
+
+/**
+ * Intake ownership (§10.1): in autopilot and dark factory the factory loop owns issue intake
+ * (new and labelled issues become factory candidates the PM triages). Event automations on
+ * `issue.opened` / `issue.labeled` that would triage or start work are skipped there, so an
+ * issue is never taken on twice; `message_pm` automations still fire. Manual runs are unaffected.
+ */
+export function factoryOwnsIntake(
+  automation: Automation,
+  event: TriggerEvent,
+  project: Project,
+): boolean {
+  if (event.event !== "issue.opened" && event.event !== "issue.labeled") return false;
+  return automation.action.type !== "message_pm" && isFactoryMode(project.autonomyMode);
 }

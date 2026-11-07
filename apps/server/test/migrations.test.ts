@@ -45,6 +45,9 @@ function expectFullSchema(file: string): void {
         "rate_limit_windows",
         "automation_schedules",
         "automation_projects",
+        "factory_loops",
+        "factory_items",
+        "factory_digests",
       ]),
     );
     expect(columns(database.client, "automations")).toContain("work_key");
@@ -65,13 +68,14 @@ afterEach(() => {
 });
 
 describe("migrations", () => {
-  it("chain in timestamp order: GitHub sync, orchestration, usage ledger, automations", () => {
+  it("chain in timestamp order: GitHub sync, orchestration, usage ledger, factory loop, automations", () => {
     expect(names).toEqual([...names].sort());
     const at = (suffix: string) => names.findIndex((n) => n.endsWith(suffix));
     expect(at("_github_sync")).toBeGreaterThan(-1);
     expect(at("_orchestration")).toBeGreaterThan(at("_github_sync"));
     expect(at("_usage_ledger")).toBeGreaterThan(at("_orchestration"));
-    expect(at("_automations")).toBeGreaterThan(at("_usage_ledger"));
+    expect(at("_factory_loop")).toBeGreaterThan(at("_usage_ledger"));
+    expect(at("_automations")).toBeGreaterThan(at("_factory_loop"));
   });
 
   it("create the full schema on a fresh database", () => {
@@ -82,11 +86,50 @@ describe("migrations", () => {
     ["orchestration only", (n: string) => !/_(github_sync|usage_ledger)$/.test(n)],
     ["GitHub sync only", (n: string) => !/_(orchestration|usage_ledger)$/.test(n)],
     ["usage ledger only", (n: string) => !/_(github_sync|orchestration)$/.test(n)],
-    ["everything before the usage ledger", (n: string) => !/_(usage_ledger|automations)$/.test(n)],
-    ["everything before automations", (n: string) => !n.endsWith("_automations")],
+    [
+      "everything before the usage ledger",
+      (n: string) => !/_(usage_ledger|factory_loop|automations)$/.test(n),
+    ],
+    // The previous main: automations shipped first, so factory_loop arrives with an older timestamp.
+    ["everything but the factory loop", (n: string) => !n.endsWith("_factory_loop")],
+    ["everything but automations", (n: string) => !n.endsWith("_automations")],
+    ["everything before the factory loop", (n: string) => !/_(factory_loop|automations)$/.test(n)],
   ])("upgrade a database that applied %s", (_label, keep) => {
     const file = join(tempDir(), "old.db");
     openDatabase(file, partialMigrations(keep)).close();
     expectFullSchema(file);
+  });
+
+  it("apply the older-timestamped factory loop on a database that already applied automations", () => {
+    const file = join(tempDir(), "previous-main.db");
+    const old = openDatabase(
+      file,
+      partialMigrations((n) => !n.endsWith("_factory_loop")),
+    );
+    old.client
+      .prepare(
+        "INSERT INTO automation_projects (project_id, enabled, updated_at) VALUES ('p1', 1, 'x')",
+      )
+      .run();
+    old.close();
+    const database = openDatabase(file, all);
+    try {
+      const order = (
+        database.client.prepare("SELECT name FROM __drizzle_migrations ORDER BY id").all() as {
+          name: string;
+        }[]
+      ).map((m) => m.name);
+      // Applied by folder name, not timestamp: factory_loop runs last, after automations.
+      expect(order.at(-1)).toMatch(/_factory_loop$/);
+      expect(order.at(-2)).toMatch(/_automations$/);
+      expect(columns(database.client, "factory_items")).toContain("work_key");
+      expect(database.client.prepare("SELECT project_id FROM automation_projects").all()).toEqual([
+        { project_id: "p1" },
+      ]);
+    } finally {
+      database.close();
+    }
+    // Reopening applies nothing new.
+    openDatabase(file, all).close();
   });
 });

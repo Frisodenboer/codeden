@@ -90,6 +90,8 @@ export interface StartServerOptions {
   github?: ServicesOptions["github"] & { sync?: boolean };
   /** Automations (§10): clock, scheduler timings and file rescans for tests. */
   automations?: ServicesOptions["automations"];
+  /** Factory loop (§10.1): tick interval, background ticking, a scripted GitHub for tests. */
+  factory?: ServicesOptions["factory"];
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
   log?: (message: string) => void;
@@ -156,6 +158,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     orchestration: opts.orchestration,
     github: opts.github,
     automations: opts.automations,
+    factory: opts.factory,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
@@ -165,6 +168,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.github.start({ sync: opts.github?.sync ?? process.env.CODEDEN_GITHUB_SYNC !== "0" });
   services.usage.start();
   services.automations.start();
+  services.factory.start();
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -282,6 +286,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.github.stop();
       services.usage.stop();
       services.automations.stop();
+      services.factory.stop();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();

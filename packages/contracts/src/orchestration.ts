@@ -27,6 +27,7 @@ export const NoticeType = z.enum([
   "automation.skipped",
   "conflict",
   "pm.message",
+  "factory.update",
 ]);
 export type NoticeType = z.infer<typeof NoticeType>;
 
@@ -153,6 +154,25 @@ export const Notice = z.discriminatedUnion("type", [
       text: z.string(),
       /** Informational messages never wake the orchestrator; they show in its next digest. */
       informational: z.boolean(),
+    }),
+  }),
+  z.object({
+    ...noticeBase,
+    type: z.literal("factory.update"),
+    data: z.object({
+      /** What happened in the factory loop (§10.1). */
+      event: z.enum([
+        "triage_needed",
+        "digest",
+        "paused",
+        "escalated",
+        "regression",
+        "merged",
+        "failed",
+      ]),
+      /** Instructions (for the PM) or a summary (for the orchestrator). */
+      text: z.string(),
+      itemIds: z.array(Id).default([]),
     }),
   }),
 ]);

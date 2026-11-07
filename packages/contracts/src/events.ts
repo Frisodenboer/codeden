@@ -19,6 +19,7 @@ import { Automation, AutomationRun } from "./entities/automation";
 import { InboxItem } from "./entities/inbox";
 import { Project } from "./entities/project";
 import { Session } from "./entities/session";
+import { FACTORY_EVENT_PAYLOADS } from "./factory-api";
 import { GITHUB_EVENT_PAYLOADS } from "./github";
 import { ConflictRecord, Notice } from "./orchestration";
 import { PtyId } from "./runner/commands";
@@ -124,6 +125,10 @@ export const EventEnvelope = z.discriminatedUnion("type", [
   globalEvent("pr.merged", GITHUB_EVENT_PAYLOADS["pr.merged"]),
   globalEvent("pr.closed", GITHUB_EVENT_PAYLOADS["pr.closed"]),
   globalEvent("review.submitted", GITHUB_EVENT_PAYLOADS["review.submitted"]),
+  // Factory loop (§10.1): the loop record, work items (with merge checks) and daily digests.
+  globalEvent("factory.loop.updated", FACTORY_EVENT_PAYLOADS["factory.loop.updated"]),
+  globalEvent("factory.item.updated", FACTORY_EVENT_PAYLOADS["factory.item.updated"]),
+  globalEvent("factory.digest.created", FACTORY_EVENT_PAYLOADS["factory.digest.created"]),
 ]);
 export type EventEnvelope = z.infer<typeof EventEnvelope>;
 export type EventType = EventEnvelope["type"];

@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Automation, AutomationGuards, type WorkSummary } from "@codeden/contracts";
+import {
+  type Automation,
+  AutomationGuards,
+  FactoryLimits,
+  type Project,
+  type WorkSummary,
+} from "@codeden/contracts";
 import { describe, expect, it } from "vitest";
 import {
   effectiveTimezone,
@@ -10,7 +16,11 @@ import {
   nextOccurrences,
 } from "../src/services/automations/cron";
 import { validateAutomation } from "../src/services/automations/definitions";
-import { type TriggerEvent, triggerMatches } from "../src/services/automations/event-triggers";
+import {
+  factoryOwnsIntake,
+  type TriggerEvent,
+  triggerMatches,
+} from "../src/services/automations/event-triggers";
 import { runStatusForSession } from "../src/services/automations/executor";
 import {
   overConcurrencyCap,
@@ -296,5 +306,53 @@ describe("event triggers", () => {
     expect(triggerMatches(onLabel({ labels: ["feature"] }), event())).toBe(false);
     expect(triggerMatches(onLabel({ authors: ["someone"] }), event())).toBe(false);
     expect(triggerMatches(onLabel({ branches: ["main"] }), event({ branch: "main" }))).toBe(true);
+  });
+});
+
+describe("issue intake ownership (§10.1)", () => {
+  const project = (autonomyMode: Project["autonomyMode"]): Project => ({
+    id: "p1",
+    kind: "local",
+    name: "Widgets",
+    slug: "widgets",
+    path: "/tmp/widgets",
+    defaultBranch: "main",
+    defaultProvider: "fake",
+    autonomy: null,
+    autonomyMode,
+    visionPath: ".codeden/VISION.md",
+    factoryLimits: FactoryLimits.parse({}),
+    killSwitch: false,
+    timezone: null,
+    createdAt: "2026-11-07T10:00:00.000Z",
+    updatedAt: "2026-11-07T10:00:00.000Z",
+    archivedAt: null,
+  });
+  const event = (name: TriggerEvent["event"]): TriggerEvent => ({
+    event: name,
+    projectId: "p1",
+    vars: {},
+    labels: [],
+    branch: null,
+    author: null,
+    sessionId: null,
+  });
+  const triage = automation({ action: { type: "triage" } as Automation["action"] });
+  const start = automation();
+  const message = automation({ action: { type: "message_pm", message: "New issue" } });
+
+  it("gives issue events to the factory in autopilot and dark factory", () => {
+    for (const mode of ["autopilot", "dark_factory"] as const) {
+      expect(factoryOwnsIntake(triage, event("issue.opened"), project(mode))).toBe(true);
+      expect(factoryOwnsIntake(start, event("issue.labeled"), project(mode))).toBe(true);
+      expect(factoryOwnsIntake(message, event("issue.opened"), project(mode))).toBe(false);
+      expect(factoryOwnsIntake(triage, event("pr.opened"), project(mode))).toBe(false);
+    }
+  });
+
+  it("leaves intake to automations in manual and assisted", () => {
+    for (const mode of ["manual", "assisted"] as const) {
+      expect(factoryOwnsIntake(triage, event("issue.opened"), project(mode))).toBe(false);
+    }
   });
 });

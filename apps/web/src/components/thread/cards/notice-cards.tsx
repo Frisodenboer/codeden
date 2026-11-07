@@ -10,6 +10,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   CircleDot,
+  Factory,
   GitMerge,
   GitPullRequest,
   type LucideIcon,
@@ -49,6 +50,7 @@ const look: Record<NoticeType, { icon: LucideIcon; tone: string; label: string }
   "review.submitted": { icon: MessagesSquare, tone: "text-primary", label: "Review" },
   "issue.opened": { icon: CircleDot, tone: "text-status-done", label: "New issue" },
   "automation.skipped": { icon: SkipForward, tone: "text-muted-foreground", label: "Skipped" },
+  "factory.update": { icon: Factory, tone: "text-primary", label: "Factory" },
   conflict: { icon: Swords, tone: "text-chart-5", label: "Conflict" },
   "pm.message": { icon: MessageSquare, tone: "text-primary", label: "From the PM" },
 };

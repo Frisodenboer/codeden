@@ -22,7 +22,12 @@ import type { SessionRepo } from "../sessions/repo";
 import type { SessionService } from "../sessions/session-service";
 import { effectiveTimezone } from "./cron";
 import { AutomationDefinitions } from "./definitions";
-import { startedByAutomation, triggerEvents, triggerMatches } from "./event-triggers";
+import {
+  factoryOwnsIntake,
+  startedByAutomation,
+  triggerEvents,
+  triggerMatches,
+} from "./event-triggers";
 import { AutomationExecutor, type FireRequest } from "./executor";
 import { baseVars, type TemplateVars } from "./prompt";
 import { lastTurnStatus, RunStore } from "./runs";
@@ -386,6 +391,10 @@ export class AutomationService implements AutomationPort {
         if (this.schedules.get(automation.id, project.id)?.paused) continue;
         if (startedByAutomation(automation, event, session)) continue;
         const req = this.fireRequest(automation, project, "event", event.vars);
+        if (factoryOwnsIntake(automation, event, project)) {
+          this.executor.recordSkipped(this.executor.newRun(req), "factory_intake");
+          continue;
+        }
         void this.fire({ ...req, issue: event.issue }).catch((error) =>
           this.deps.log?.(`automations: event run of ${automation.id}: ${errorMessage(error)}`),
         );
