@@ -138,6 +138,21 @@ export class FakeFactoryGithub implements FactoryGithub {
     return { ...this.main };
   }
 
+  visionCommits: Array<{ path: string; contents: string }> = [];
+  visionPr: GitHubPrRef | null = null;
+  async shareVision(_projectId: string, path: string, contents: string) {
+    const last = this.visionCommits.at(-1);
+    if (last?.contents === contents) return this.visionPr;
+    this.visionCommits.push({ path, contents });
+    this.visionPr ??= {
+      number: 900,
+      url: "https://github.com/acme/widgets/pull/900",
+      state: "open",
+      title: "Update the project vision",
+    };
+    return this.visionPr;
+  }
+
   async revertMerge(_projectId: string, merge: { sha: string; prNumber: number; title: string }) {
     if (!this.canRevertViaApi) return null;
     this.reverts.push({ sha: merge.sha, prNumber: merge.prNumber });

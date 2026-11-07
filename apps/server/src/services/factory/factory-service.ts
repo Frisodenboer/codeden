@@ -26,7 +26,7 @@ import type { ProjectService } from "../projects/project-service";
 import type { RunnerPort } from "../runner-port";
 import type { SessionRepo } from "../sessions/repo";
 import type { SessionService } from "../sessions/session-service";
-import { type FactoryContext, factoryNotice, raiseInbox } from "./context";
+import { budgetSpend, type FactoryContext, factoryNotice, raiseInbox } from "./context";
 import * as decisions from "./decisions";
 import { buildDigest } from "./digest";
 import type { FactoryGithub } from "./github-port";
@@ -184,8 +184,23 @@ export class FactoryService {
     return readVision(this.deps.projects.get(projectId));
   }
 
-  putVision(projectId: string, contents: string): VisionResponse {
-    return writeVision(this.deps.projects.get(projectId), contents);
+  /**
+   * Save the vision in the main checkout (the factory reads it from there), then, in a GitHub
+   * project, commit it through a small PR (`codeden/vision`) so agent worktrees get it too.
+   * A failed commit keeps the local save and reports `shareError`.
+   */
+  async putVision(projectId: string, contents: string): Promise<VisionResponse> {
+    const project = this.deps.projects.get(projectId);
+    const saved = writeVision(project, contents);
+    if (project.kind !== "github" || !this.ctx.github.isGithubProject(projectId)) return saved;
+    try {
+      const path = project.visionPath.replaceAll("\\", "/").replace(/^\.\//, "");
+      const pr = await this.ctx.github.shareVision(projectId, path, saved.contents);
+      return { ...saved, pr, shareError: null };
+    } catch (error) {
+      this.deps.log?.(`factory: committing the vision: ${errorMessage(error)}`);
+      return { ...saved, pr: null, shareError: errorMessage(error) };
+    }
   }
 
   /**
@@ -354,7 +369,7 @@ export class FactoryService {
       items,
       escalated: this.data.items(project.id, ["escalated"]),
       inbox: this.deps.inbox.list({ projectId: project.id }),
-      spend: this.deps.usage.spendSince(day, project.id),
+      spend: budgetSpend(this.ctx, project.id, day, project.factoryLimits),
       limits: project.factoryLimits,
       pausedReason: loop.state === "paused" ? loop.pausedReason : null,
       now: this.ctx.now(),

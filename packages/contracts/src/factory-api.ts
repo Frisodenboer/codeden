@@ -248,6 +248,13 @@ export const VisionResponse = z.object({
   exists: z.boolean(),
   contents: z.string(),
   parsed: ParsedVision,
+  /**
+   * After a save in a GitHub project: the pull request (`codeden/vision`) that commits the
+   * vision, so agents' worktrees (cut from the default branch) get it once it merges.
+   */
+  pr: GitHubPrRef.nullable().optional(),
+  /** Why the vision could not be committed to GitHub (it is still saved locally). */
+  shareError: z.string().nullable().optional(),
 });
 export type VisionResponse = z.infer<typeof VisionResponse>;
 

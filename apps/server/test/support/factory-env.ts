@@ -48,6 +48,8 @@ export interface FactoryEnv {
   stopped: string[];
   notices: NoticeDraft[];
   spend: { usd: number; tokens: number };
+  /** Session filters the budget asked spend for (null: the whole project). */
+  spendFilters: Array<string[] | null>;
   providers: string[];
   /** Shift of the factory clock against real time (day rollover, CI grace). */
   clock: { offsetMs: number };
@@ -124,6 +126,7 @@ export function createFactoryEnv(
     stopped: [],
     notices: [],
     spend: { usd: 0, tokens: 0 },
+    spendFilters: [],
     providers: opts.providers ?? ["claude", "codex"],
     clock: { offsetMs: 0 },
   } as unknown as FactoryEnv;
@@ -181,7 +184,12 @@ export function createFactoryEnv(
       repo,
       sessions,
       runner,
-      usage: { spendSince: () => env.spend },
+      usage: {
+        spendSince: (_day: string, _projectId?: string, ids?: ReadonlySet<string>) => {
+          env.spendFilters.push(ids ? [...ids] : null);
+          return env.spend;
+        },
+      },
       inbox,
       notify: (draft) => {
         env.notices.push(draft);

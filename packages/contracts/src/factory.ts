@@ -29,6 +29,11 @@ export const FactoryLimits = z.object({
       usd: z.number().positive().optional(),
     })
     .prefault({}),
+  /**
+   * What counts against the daily budget: `factory` (default) is the factory's own sessions
+   * (discovery, builders, reviewers, reverts); `project` is every session in the project.
+   */
+  budgetScope: z.enum(["factory", "project"]).default("factory"),
   /** Pause the loop after this many failed merge checks or reverts in a row. */
   pauseAfterConsecutiveFailures: z.int().positive().default(3),
   /** Globs that always escalate to a human (auth, payments, migrations, infra, licensing). */

@@ -76,6 +76,22 @@ export function LimitsEditor({
           />
         </Field>
       </div>
+      <div className="flex items-start gap-2.5 text-xs">
+        <Switch
+          checked={limits.budgetScope === "project"}
+          aria-label="Count all project spend against the budget"
+          onCheckedChange={(all) =>
+            onChange({ ...limits, budgetScope: all ? "project" : "factory" })
+          }
+          className="mt-0.5"
+        />
+        <span>
+          Count all spend in this project
+          <span className="block text-3xs text-muted-foreground">
+            Off: only the factory's own sessions (discovery, builders, reviewers, reverts) count.
+          </span>
+        </span>
+      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Sessions at once" htmlFor={`${id}-conc`}>
           <Input

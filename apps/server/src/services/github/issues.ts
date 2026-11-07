@@ -91,6 +91,7 @@ export async function createIssue(
  * comments (they are written with the user's own token) and never triggers on its own words.
  */
 export const CODEDEN_COMMENT_MARKER = "<!-- codeden -->";
+const MARKER_SUFFIX = `\n\n${CODEDEN_COMMENT_MARKER}`;
 
 /** True when a comment body was posted by CodeDen. */
 export function isCodedenComment(body: string): boolean {
@@ -99,14 +100,7 @@ export function isCodedenComment(body: string): boolean {
 
 /** A comment body without CodeDen's hidden marker (for briefs and the UI). */
 export function withoutMarker(body: string): string {
-  return body
-    .replace(
-      `
-
-${CODEDEN_COMMENT_MARKER}`,
-      "",
-    )
-    .replace(CODEDEN_COMMENT_MARKER, "");
+  return body.replace(MARKER_SUFFIX, "").replace(CODEDEN_COMMENT_MARKER, "");
 }
 
 export async function commentOnIssue(
@@ -120,11 +114,7 @@ export async function commentOnIssue(
       owner: repo.owner,
       repo: repo.repo,
       issue_number: number,
-      body: isCodedenComment(body)
-        ? body
-        : `${body}
-
-${CODEDEN_COMMENT_MARKER}`,
+      body: isCodedenComment(body) ? body : `${body}${MARKER_SUFFIX}`,
     });
     return { id: res.data.id, url: res.data.html_url };
   });

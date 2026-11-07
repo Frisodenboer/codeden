@@ -65,7 +65,15 @@ export interface FactoryGithub {
     projectId: string,
     merge: { sha: string; prNumber: number; title: string },
   ): Promise<GitHubPrRef | null>;
+  /**
+   * Commit the vision file to the `codeden/vision` branch (from the default branch, or on top
+   * of its open PR) and open or update that PR. Null when the file already matches.
+   */
+  shareVision(projectId: string, path: string, contents: string): Promise<GitHubPrRef | null>;
 }
+
+/** Branch the vision editor commits to. */
+export const VISION_BRANCH = "codeden/vision";
 
 const IMAGE_LINK = /\.(png|jpe?g|gif|webp)\?raw=true/i;
 
@@ -170,6 +178,78 @@ export class GithubFactoryPort implements FactoryGithub {
     );
     const { state, failed } = await this.checksFor(projectId, branch.commit.sha);
     return { sha: branch.commit.sha, checks: state, failed };
+  }
+
+  async shareVision(projectId: string, path: string, contents: string) {
+    const { owner, repo: name, defaultBranch } = this.github.githubRepo(projectId);
+    const ref = (pr: { number: number; html_url: string; title: string }): GitHubPrRef => ({
+      number: pr.number,
+      url: pr.html_url,
+      state: "open",
+      title: pr.title,
+    });
+    const result = await this.github.client.run(async (o) => {
+      const open = (
+        await o.rest.pulls.list({
+          owner,
+          repo: name,
+          head: `${owner}:${VISION_BRANCH}`,
+          state: "open",
+          per_page: 1,
+        })
+      ).data[0];
+      const parentRef = open ? `heads/${VISION_BRANCH}` : `heads/${defaultBranch}`;
+      const parent = (await o.rest.git.getRef({ owner, repo: name, ref: parentRef })).data.object
+        .sha;
+      const parentTree = (await o.rest.git.getCommit({ owner, repo: name, commit_sha: parent }))
+        .data.tree.sha;
+      const tree = await o.rest.git.createTree({
+        owner,
+        repo: name,
+        base_tree: parentTree,
+        tree: [{ path, mode: "100644", type: "blob", content: contents }],
+      });
+      if (tree.data.sha === parentTree) return open ? ref(open) : null;
+      const commit = await o.rest.git.createCommit({
+        owner,
+        repo: name,
+        message: "docs: update the project vision\n\nSaved from the CodeDen vision editor.",
+        tree: tree.data.sha,
+        parents: [parent],
+      });
+      if (open) {
+        await o.rest.git.updateRef({
+          owner,
+          repo: name,
+          ref: `heads/${VISION_BRANCH}`,
+          sha: commit.data.sha,
+        });
+        return ref(open);
+      }
+      // A stale branch from a merged or closed vision PR is reset onto the new commit.
+      await o.rest.git
+        .createRef({ owner, repo: name, ref: `refs/heads/${VISION_BRANCH}`, sha: commit.data.sha })
+        .catch(() =>
+          o.rest.git.updateRef({
+            owner,
+            repo: name,
+            ref: `heads/${VISION_BRANCH}`,
+            sha: commit.data.sha,
+            force: true,
+          }),
+        );
+      const pr = await o.rest.pulls.create({
+        owner,
+        repo: name,
+        head: VISION_BRANCH,
+        base: defaultBranch,
+        title: "Update the project vision",
+        body: `Commits \`${path}\`, saved from the CodeDen vision editor. The factory reads the vision from the local checkout right away; merging this shares it with agent worktrees, which start from \`${defaultBranch}\`.`,
+      });
+      return ref(pr.data);
+    });
+    this.github.sync.soon(projectId);
+    return result;
   }
 
   async revertMerge(projectId: string, merge: { sha: string; prNumber: number; title: string }) {

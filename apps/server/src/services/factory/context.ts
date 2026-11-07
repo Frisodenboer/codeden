@@ -1,5 +1,6 @@
 import type {
   FactoryItem,
+  FactoryLimits,
   FactoryLoop,
   GitHubIssueRef,
   GitHubPrRef,
@@ -25,7 +26,13 @@ export interface FactoryContext {
   sessions: FactorySessions;
   projects: ProjectService;
   repo: SessionRepo;
-  usage: { spendSince(day: string, projectId?: string): { usd: number; tokens: number } };
+  usage: {
+    spendSince(
+      day: string,
+      projectId?: string,
+      sessionIds?: ReadonlySet<string>,
+    ): { usd: number; tokens: number };
+  };
   inbox: InboxService;
   /** Record an orchestration notice (wakes its target unless `wake` is false). */
   notify: (draft: NoticeDraft, wake?: boolean) => void;
@@ -162,4 +169,19 @@ export function pauseLoop(
     });
   }
   return next;
+}
+
+/**
+ * Spend since `day` that counts against the project's daily factory budget: the factory's own
+ * sessions (`budgetScope: "factory"`, the default) or the whole project (`"project"`).
+ */
+export function budgetSpend(
+  ctx: Pick<FactoryContext, "usage" | "sessions">,
+  projectId: string,
+  day: string,
+  limits: FactoryLimits,
+): { usd: number; tokens: number } {
+  if (limits.budgetScope === "project") return ctx.usage.spendSince(day, projectId);
+  const ids = new Set(ctx.sessions.list(projectId).map((s) => s.id));
+  return ctx.usage.spendSince(day, projectId, ids);
 }

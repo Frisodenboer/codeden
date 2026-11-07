@@ -164,6 +164,7 @@ export const sampleProject: Project = {
     maxConcurrentSessions: 2,
     maxMergesPerDay: 5,
     dailyBudget: { usd: 20 },
+    budgetScope: "factory",
     pauseAfterConsecutiveFailures: 3,
     protectedPaths: ["src/auth/**"],
     allowDeploys: false,

@@ -6,7 +6,7 @@ import {
   type Project,
 } from "@codeden/contracts";
 import { errorMessage } from "../errors";
-import { type FactoryContext, factoryNotice, visionOf } from "./context";
+import { budgetSpend, type FactoryContext, factoryNotice, visionOf } from "./context";
 import {
   budgetExceeded,
   discoveryDue,
@@ -86,7 +86,7 @@ export async function runTick(
   }
 
   if (loop.state !== "paused") {
-    const spend = ctx.usage.spendSince(today, projectId);
+    const spend = budgetSpend(ctx, projectId, today, project.factoryLimits);
     const over = budgetExceeded(spend, project.factoryLimits);
     if (over) loop = { ...loop, state: "paused", pausedReason: over };
   }

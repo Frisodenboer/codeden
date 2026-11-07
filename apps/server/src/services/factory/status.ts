@@ -5,7 +5,7 @@ import {
   type FactoryWorkItem,
   isFactoryMode,
 } from "@codeden/contracts";
-import { type FactoryContext, visionOf } from "./context";
+import { budgetSpend, type FactoryContext, visionOf } from "./context";
 import { localDay } from "./policy";
 import { ACTIVE_STAGES, DONE_STAGES, WAITING_STAGES } from "./store";
 
@@ -49,7 +49,7 @@ export function buildStatus(ctx: FactoryContext, projectId: string): FactoryStat
     .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
   const active = all.filter((i) => ACTIVE_STAGES.includes(i.stage));
   const done = all.filter((i) => DONE_STAGES.includes(i.stage)).slice(0, 30);
-  const spend = ctx.usage.spendSince(localDay(ctx.now()), projectId);
+  const spend = budgetSpend(ctx, projectId, localDay(ctx.now()), project.factoryLimits);
   const globalKill = ctx.settings.get().factory.killSwitch;
   return {
     projectId,

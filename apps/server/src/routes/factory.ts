@@ -21,8 +21,8 @@ export function projectFactoryRoutes(s: AppServices) {
       c.json(f.setMode(c.req.param("id"), c.req.valid("json"))),
     )
     .get("/:id/vision", (c) => c.json(f.vision(c.req.param("id"))))
-    .put("/:id/vision", jsonBody(PutVisionRequest), (c) =>
-      c.json(f.putVision(c.req.param("id"), c.req.valid("json").contents)),
+    .put("/:id/vision", jsonBody(PutVisionRequest), async (c) =>
+      c.json(await f.putVision(c.req.param("id"), c.req.valid("json").contents)),
     )
     .post("/:id/kill-switch", jsonBody(KillSwitchRequest), async (c) =>
       c.json(await f.setKillSwitch(c.req.param("id"), c.req.valid("json").on)),

@@ -185,10 +185,20 @@ export class UsageService {
     };
   }
 
-  /** Spend (USD) and tokens since a local day, for a project or everything (factory limits). */
-  spendSince(day: string, projectId?: string): { usd: number; tokens: number } {
+  /**
+   * Spend (USD) and tokens since a local day, for a project or everything, optionally only of
+   * some sessions (factory limits).
+   */
+  spendSince(
+    day: string,
+    projectId?: string,
+    sessionIds?: ReadonlySet<string>,
+  ): { usd: number; tokens: number } {
     const rows = this.rows(day, this.today()).filter(
-      (r) => r.day >= day && (!projectId || r.projectId === projectId),
+      (r) =>
+        r.day >= day &&
+        (!projectId || r.projectId === projectId) &&
+        (!sessionIds || sessionIds.has(r.sessionId)),
     );
     const t = totalsOf(rows);
     return {

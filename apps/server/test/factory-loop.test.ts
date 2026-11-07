@@ -63,7 +63,7 @@ function review(it: FactoryItem, verdict: ReviewVerdictInit = APPROVE) {
 }
 
 describe("factory modes and vision", () => {
-  it("needs a vision, limits with a budget and a GitHub project for autopilot", () => {
+  it("needs a vision, limits with a budget and a GitHub project for autopilot", async () => {
     env = createFactoryEnv();
     const fail = (fn: () => unknown) => {
       try {
@@ -87,7 +87,13 @@ describe("factory modes and vision", () => {
     rmSync(join(env.project.path, ".codeden", "VISION.md"));
     expect(fail(() => enable())).toBe("vision_required");
     expect(env.factory.vision(env.project.id)).toMatchObject({ exists: false });
-    env.factory.putVision(env.project.id, "# Vision\n\n## Goals\n- Count things\n");
+    const text = "# Vision\n\n## Goals\n- Count things\n";
+    const saved = await env.factory.putVision(env.project.id, text);
+    // Saved locally and committed through the vision PR; saving it unchanged adds no commit.
+    expect(saved).toMatchObject({ exists: true, pr: { number: 900 }, shareError: null });
+    expect(env.gh.visionCommits).toEqual([{ path: ".codeden/VISION.md", contents: text }]);
+    await env.factory.putVision(env.project.id, text);
+    expect(env.gh.visionCommits).toHaveLength(1);
     const res = enable("dark_factory");
     expect(res).toMatchObject({ mode: "dark_factory", experimental: true });
     expect(env.factory.status(env.project.id)).toMatchObject({
@@ -214,6 +220,24 @@ describe("factory loop state machine (§10.1)", () => {
     expect(env.factory.data.loopOrNew(env.project.id).state).toBe("building");
     // The day that ended got its digest.
     expect(env.factory.data.digests(env.project.id)).toHaveLength(1);
+  });
+
+  it("counts factory sessions against the budget by default, or the whole project", async () => {
+    env = createFactoryEnv();
+    enable();
+    const it1 = backlogItem();
+    await tick();
+    const builder = item(it1.id).builderSessionId as string;
+    env.spendFilters = [];
+    await tick();
+    expect(env.spendFilters.at(-1)).toContain(builder);
+    env.factory.setMode(env.project.id, {
+      mode: "autopilot",
+      limits: { ...env.factory.status(env.project.id).limits, budgetScope: "project" },
+    });
+    env.spendFilters = [];
+    await tick();
+    expect(env.spendFilters.at(-1)).toBeNull();
   });
 
   it("pauses after consecutive failed merge checks", async () => {
