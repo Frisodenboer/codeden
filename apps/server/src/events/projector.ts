@@ -9,6 +9,7 @@ import {
   projects,
   sessions,
 } from "../db/schema";
+import { applyGithubProjection } from "../services/github/projection";
 import { applyMutations, DbProjectionReader, derivedEvents, type Tx } from "./projection-db";
 import { reduceAgentEvent } from "./reducer/agent";
 import { applyWorkbenchProjection } from "./workbench-projection";
@@ -80,6 +81,19 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
     case "message.queued":
     case "message.dequeued":
       applyWorkbenchProjection(tx, e);
+      return [];
+    case "github.synced":
+    case "issue.opened":
+    case "issue.labeled":
+    case "issue.updated":
+    case "pr.opened":
+    case "pr.updated":
+    case "pr.checks_passed":
+    case "pr.checks_failed":
+    case "pr.merged":
+    case "pr.closed":
+    case "review.submitted":
+      applyGithubProjection(tx, e);
       return [];
     case "settings.updated":
     case "runner.connected":
