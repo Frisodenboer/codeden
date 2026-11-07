@@ -61,8 +61,9 @@ test("orchestrator and PM chats reply, with the status digest folded away", asyn
     const disclosure = page.getByTestId("digest-disclosure").first();
     const toggle = disclosure.getByRole("button", { name: /Status sent to agent/ });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // The first message also names the conversation (sidebar, header) once titled.
     await expect(
-      page.getByText("What's going on across my projects?", { exact: true }),
+      page.getByText("What's going on across my projects?", { exact: true }).first(),
     ).toBeVisible();
     await expect(disclosure.locator("pre")).toHaveCount(0);
     await toggle.click();
@@ -80,7 +81,9 @@ test("orchestrator and PM chats reply, with the status digest folded away", asyn
     const composer = page.getByRole("textbox", { name: "Message" });
     await composer.fill("And what is waiting on me?");
     await composer.press("Enter");
-    await expect(page.getByText("And what is waiting on me?", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("And what is waiting on me?", { exact: true }).first(),
+    ).toBeVisible();
     await expect(page.getByTestId("digest-disclosure")).toHaveCount(2);
     await expect(page.getByText(/^Echo: /)).toHaveCount(2, { timeout: 30_000 });
   });
@@ -91,7 +94,7 @@ test("orchestrator and PM chats reply, with the status digest folded away", asyn
     await composer.fill("What's running?");
     await composer.press("Enter");
     await expect(page.getByText(/^Echo: /).first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("What's running?", { exact: true })).toBeVisible();
+    await expect(page.getByText("What's running?", { exact: true }).first()).toBeVisible();
     await expect(page.locator('[data-role="pm"]').first()).toBeVisible();
   });
 });
