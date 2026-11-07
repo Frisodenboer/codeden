@@ -1,9 +1,11 @@
+import { isFactoryMode } from "@codeden/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bot, FileText, FolderGit2, GitBranch, MessageSquarePlus } from "lucide-react";
 import { AutomationsPanel } from "@/components/automations/automations-panel";
 import { SectionLabel } from "@/components/common/bits";
+import { AutonomyModeButton } from "@/components/factory/autonomy-dialog";
+import { FactoryPanel } from "@/components/factory/factory-panel";
 import { ProjectGithub } from "@/components/github/project-github";
-import { FactoryPanel } from "@/components/project/factory-panel";
 import { SessionsList } from "@/components/project/lists";
 import { NewSessionDialog } from "@/components/project/new-session-dialog";
 import { NowNext } from "@/components/project/now-next";
@@ -14,13 +16,6 @@ import { useProjectStatus } from "@/lib/orchestration";
 import { useSnapshot } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "./page-header";
-
-const modeLabel = {
-  manual: "Manual",
-  assisted: "Assisted",
-  autopilot: "Autopilot",
-  dark_factory: "Dark factory",
-};
 
 export type ProjectTab = "overview" | "github";
 
@@ -40,7 +35,7 @@ export function ProjectPage({
   const project = data?.projects.find((p) => p.id === projectId);
   if (!data || !project) return null;
   const agents = data.sessions.filter((s) => s.projectId === projectId && s.role === "agent");
-  const factory = project.autonomyMode === "autopilot" || project.autonomyMode === "dark_factory";
+  const factory = isFactoryMode(project.autonomyMode);
   const titleOf = (id: string | null) => data.sessions.find((s) => s.id === id)?.title ?? null;
   const go = (search: { newSession?: boolean; tab?: ProjectTab }) =>
     void navigate({ to: "/projects/$projectId", params: { projectId }, search, replace: true });
@@ -62,9 +57,7 @@ export function ProjectPage({
                 <FolderGit2 className="size-3" /> Local folder
               </span>
             )}
-            <span className="rounded-full border border-border px-1.5 py-px">
-              {modeLabel[project.autonomyMode]}
-            </span>
+            <AutonomyModeButton project={project} />
           </span>
         }
         actions={
@@ -112,7 +105,7 @@ export function ProjectPage({
           ) : (
             <>
               <NowNext work={work} projectId={projectId} titleOf={titleOf} />
-              {factory && <FactoryPanel projectId={projectId} />}
+              {factory && <FactoryPanel project={project} />}
               <ProjectSpendCard projectId={projectId} />
               <section>
                 <SectionLabel className="mb-2">Sessions · {agents.length}</SectionLabel>

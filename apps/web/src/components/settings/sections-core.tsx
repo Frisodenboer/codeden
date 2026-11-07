@@ -1,5 +1,6 @@
 import type { ReasoningEffort, Role } from "@codeden/contracts";
 import { ProviderMark } from "@/components/common/bits";
+import { KillSwitchButton } from "@/components/factory/kill-switch";
 import { AUTONOMY } from "@/components/thread/autonomy";
 import {
   Select,
@@ -68,13 +69,13 @@ export function GeneralSettings() {
         </SettingRow>
         <SettingRow
           label="Global factory kill switch"
-          help="Stops every project's factory loop and all factory sessions."
+          help={
+            settings.factory.killSwitch
+              ? "On: no project's factory loop runs."
+              : "Stops every project's factory loop and all factory sessions at once."
+          }
         >
-          <Switch
-            checked={settings.factory.killSwitch}
-            onCheckedChange={(v) => update({ factory: { killSwitch: v } })}
-            className="data-[state=checked]:bg-destructive"
-          />
+          <KillSwitchButton scope="global" on={settings.factory.killSwitch} size="xs" />
         </SettingRow>
         <SettingRow label="Check for updates">
           <Switch

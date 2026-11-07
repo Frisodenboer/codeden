@@ -1,14 +1,14 @@
 import { FactoryLimits, type FsListResponse, type SetupCheck } from "@codeden/contracts";
-import type { FactoryStatus } from "../../types";
+import type { FactoryFixture } from "./factory-fixture-types";
 import { gh } from "./helpers";
 
 const sf = gh("hearth-co/storefront");
 
 export function factoryFor(
   projectId: string,
-  mode: FactoryStatus["mode"],
+  mode: FactoryFixture["mode"],
   limits: FactoryLimits,
-): FactoryStatus {
+): FactoryFixture {
   if (projectId !== "p-storefront") {
     return {
       projectId,

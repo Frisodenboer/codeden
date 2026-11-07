@@ -21,6 +21,7 @@ import {
 } from "@codeden/contracts";
 import { httpAutomationsApi } from "./automations-api";
 import type { CodeDenClient, SendMode } from "./client";
+import { httpFactoryApi } from "./factory-api";
 import { createFetcher } from "./http";
 import {
   httpAgentConfigApi,
@@ -90,16 +91,7 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
 
     createProject: (input) => post("/projects", input, (v) => CreateProjectResponse.parse(v)),
     automations: httpAutomationsApi(http),
-    getFactoryStatus: (id) => get(`/projects/${enc(id)}/factory`),
-    async setKillSwitch(scope, on) {
-      if (scope === "global") await post("/factory/kill-switch", { on });
-      else await post(`/projects/${enc(scope.projectId)}/kill-switch`, { on });
-    },
-    readVision: (id) =>
-      get<{ contents: string }>(`/projects/${enc(id)}/vision`).then((r) => r.contents),
-    async writeVision(id, contents) {
-      await call("PUT", `/projects/${enc(id)}/vision`, { contents });
-    },
+    factory: httpFactoryApi(http),
 
     updateSettings: (patch) => call("PATCH", "/settings", patch, (v) => Settings.parse(v)),
     secrets: httpSecretsApi(http),

@@ -1,0 +1,286 @@
+import type { FactoryItem, MergeCheck, ReviewVerdict } from "@codeden/contracts";
+import { Link } from "@tanstack/react-router";
+import {
+  AlertTriangle,
+  Check,
+  ChevronLeft,
+  CircleDot,
+  Factory,
+  GitPullRequest,
+  X,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { SectionLabel } from "@/components/common/bits";
+import { StatusDot } from "@/components/common/status-dot";
+import { CheckPill } from "@/components/factory/factory-columns";
+import { CHECK_HELP, CHECK_LABEL, SOURCE_LABEL, STAGE_LABEL } from "@/components/factory/meta";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useFactoryItem } from "@/lib/factory";
+import { ago } from "@/lib/format";
+import { platform } from "@/lib/platform";
+import { useProject } from "@/lib/queries";
+import { cn } from "@/lib/utils";
+import { PageHeader } from "./page-header";
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 text-xs">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right">{children}</span>
+    </div>
+  );
+}
+
+function SessionLink({ id, label }: { id: string | null; label: string }) {
+  if (!id) return <span className="text-muted-foreground">—</span>;
+  return (
+    <Link
+      to="/sessions/$sessionId"
+      params={{ sessionId: id }}
+      className="text-primary hover:underline"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function CheckRow({ check }: { check: MergeCheck }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-border px-3.5 py-2.5 last:border-0">
+      <CheckPill check={check} />
+      <div className="min-w-0 flex-1 text-2xs">
+        <p className={cn(check.state === "fail" && "text-status-failed")}>
+          {check.detail ?? CHECK_HELP[check.name]}
+        </p>
+        {check.escalate && (
+          <p className="mt-0.5 flex items-center gap-1 text-status-waiting">
+            <AlertTriangle className="size-3" /> Escalated: a human has to review and merge this
+          </p>
+        )}
+      </div>
+      <span className="shrink-0 text-3xs text-muted-foreground">{ago(check.at)}</span>
+    </div>
+  );
+}
+
+function Verdict({ review, item }: { review: ReviewVerdict; item: FactoryItem }) {
+  const tone =
+    review.verdict === "approve"
+      ? "text-status-done"
+      : review.verdict === "reject"
+        ? "text-status-failed"
+        : "text-status-waiting";
+  const yes = (ok: boolean) =>
+    ok ? (
+      <Check className="size-3.5 text-status-done" />
+    ) : (
+      <X className="size-3.5 text-status-failed" />
+    );
+  return (
+    <div className="rounded-xl border border-border bg-card p-4" data-testid="review-verdict">
+      <div className="flex items-center gap-2 text-[13px]">
+        <span className={cn("font-medium capitalize", tone)}>
+          {review.verdict.replace("_", " ")}
+        </span>
+        <span className="text-2xs text-muted-foreground">
+          by the reviewer on {item.reviewerProvider ?? "another provider"}
+          {item.reviewerNote && ` · ${item.reviewerNote}`}
+        </span>
+      </div>
+      <p className="mt-2 text-[13px] leading-relaxed">{review.summary}</p>
+      <div className="mt-3 grid gap-1.5 text-2xs sm:grid-cols-3">
+        <span className="flex items-center gap-1.5">
+          {yes(review.vision.aligned)} Fits the vision
+        </span>
+        <span className="flex items-center gap-1.5">
+          {yes(review.tests.adequate)}{" "}
+          {review.tests.notNeeded ? "No tests needed" : "Tests adequate"}
+        </span>
+        <span className="flex items-center gap-1.5">
+          {yes(review.security.concerns.length === 0)}{" "}
+          {review.security.concerns.length
+            ? `${review.security.concerns.length} security concerns`
+            : "No security concerns"}
+        </span>
+      </div>
+      {review.security.concerns.length > 0 && (
+        <ul className="mt-2 list-disc pl-5 text-2xs text-status-failed">
+          {review.security.concerns.map((c) => (
+            <li key={c}>{c}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** One factory work item (§10.1): what it is, its merge checks, the review and its sessions. */
+export function FactoryItemPage({ projectId, itemId }: { projectId: string; itemId: string }) {
+  const project = useProject(projectId);
+  const { data: item, error } = useFactoryItem(projectId, itemId);
+  if (error) return <div className="p-8 text-sm text-muted-foreground">{error.message}</div>;
+  if (!item || !project) return <Skeleton className="m-6 h-64 rounded-xl" />;
+  const stage = STAGE_LABEL[item.stage];
+  const met = new Map(item.review?.criteria.map((c) => [c.criterion, c]) ?? []);
+
+  return (
+    <>
+      <PageHeader
+        icon={<Factory />}
+        title={
+          <span className="flex items-center gap-1.5">
+            <Link
+              to="/projects/$projectId"
+              params={{ projectId }}
+              className="flex items-center text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="size-4" /> {project.name}
+            </Link>
+            <span className="text-muted-foreground">/</span> {item.title}
+          </span>
+        }
+        meta={
+          <span className="flex items-center gap-1.5" data-testid="factory-item-stage">
+            <StatusDot tone={stage.tone} /> {stage.label}
+          </span>
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+        <div className="mx-auto grid w-full max-w-6xl gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="min-w-0 space-y-5">
+            {(item.reason || item.note) && (
+              <div className="rounded-lg border border-status-waiting/30 bg-status-waiting/[0.06] px-3 py-2 text-2xs">
+                {item.reason ?? item.note}
+              </div>
+            )}
+            <section>
+              <SectionLabel className="mb-2">Why it matters</SectionLabel>
+              <p className="text-[13px] leading-relaxed">{item.summary}</p>
+            </section>
+            <section>
+              <SectionLabel className="mb-2">Acceptance criteria</SectionLabel>
+              <ul className="space-y-1.5">
+                {item.acceptanceCriteria.map((c) => {
+                  const r = met.get(c);
+                  return (
+                    <li key={c} className="flex items-start gap-2 text-[13px]">
+                      {r ? (
+                        r.met ? (
+                          <Check className="mt-0.5 size-3.5 shrink-0 text-status-done" />
+                        ) : (
+                          <X className="mt-0.5 size-3.5 shrink-0 text-status-failed" />
+                        )
+                      ) : (
+                        <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                      )}
+                      <span>
+                        {c}
+                        {r?.note && (
+                          <span className="block text-2xs text-muted-foreground">{r.note}</span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+            <section>
+              <SectionLabel className="mb-2">
+                Merge checks · {item.checks.filter((c) => c.state === "pass").length}/
+                {item.checks.length} passed
+              </SectionLabel>
+              {item.checks.length === 0 ? (
+                <p className="text-2xs text-muted-foreground">
+                  Checks run once the builder opens a pull request:{" "}
+                  {Object.values(CHECK_LABEL).join(", ")}.
+                </p>
+              ) : (
+                <div
+                  className="overflow-hidden rounded-xl border border-border bg-card"
+                  data-testid="item-checks"
+                >
+                  {item.checks.map((c) => (
+                    <CheckRow key={c.name} check={c} />
+                  ))}
+                </div>
+              )}
+            </section>
+            {item.review && (
+              <section>
+                <SectionLabel className="mb-2">Independent review</SectionLabel>
+                <Verdict review={item.review} item={item} />
+              </section>
+            )}
+          </div>
+          <aside className="space-y-3 rounded-xl border border-border bg-card p-4 self-start">
+            <Fact label="Source">
+              {SOURCE_LABEL[item.source]}
+              {item.area && ` · ${item.area.replace("_", " ")}`}
+            </Fact>
+            <Fact label="Vision score">
+              {item.score === null ? "Not scored" : item.score.toFixed(2)}
+            </Fact>
+            <Fact label="Work key">
+              <code className="font-mono text-2xs">{item.workKey}</code>
+            </Fact>
+            <Fact label="Issue">
+              {item.issue ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                  onClick={() => item.issue && platform.openExternal(item.issue.url)}
+                >
+                  <CircleDot className="size-3" />#{item.issue.number}
+                </button>
+              ) : (
+                "—"
+              )}
+            </Fact>
+            <Fact label="Pull request">
+              {item.pr ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                  onClick={() => item.pr && platform.openExternal(item.pr.url)}
+                >
+                  <GitPullRequest className="size-3" />#{item.pr.number} · {item.pr.state}
+                </button>
+              ) : (
+                "—"
+              )}
+            </Fact>
+            <Fact label="Builder">
+              <SessionLink id={item.builderSessionId} label={item.builderProvider ?? "session"} />
+            </Fact>
+            <Fact label="Reviewer">
+              <SessionLink id={item.reviewerSessionId} label={item.reviewerProvider ?? "session"} />
+            </Fact>
+            <Fact label="Fix rounds">{item.attempts}</Fact>
+            {item.mergeSha && (
+              <Fact label="Merge commit">
+                <code className="font-mono text-2xs">{item.mergeSha.slice(0, 10)}</code>
+              </Fact>
+            )}
+            {item.revertOf && (
+              <Fact label="Reverts">
+                <Link
+                  to="/projects/$projectId/factory/$itemId"
+                  params={{ projectId, itemId: item.revertOf }}
+                  className="text-primary hover:underline"
+                >
+                  the original item
+                </Link>
+              </Fact>
+            )}
+            <div className="space-y-1 border-t border-border pt-3 text-3xs text-muted-foreground">
+              <p>Found {ago(item.createdAt)}</p>
+              {item.triageRequestedAt && <p>Sent to the PM {ago(item.triageRequestedAt)}</p>}
+              {item.mergedAt && <p>Merged {ago(item.mergedAt)}</p>}
+              {item.finishedAt && <p>Finished {ago(item.finishedAt)}</p>}
+            </div>
+          </aside>
+        </div>
+      </div>
+    </>
+  );
+}

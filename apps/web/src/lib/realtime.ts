@@ -10,6 +10,7 @@ import { useConnectionStore } from "@/stores/connection";
 import { useTranscriptsStore } from "@/stores/transcripts";
 import type { CodeDenClient } from "./api/client";
 import { invalidateAutomations } from "./automations";
+import { invalidateFactory } from "./factory";
 import { snapshotKey } from "./queries";
 import { applyDomainEvent } from "./snapshot-reducer";
 
@@ -73,6 +74,7 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
       );
       invalidateWorkbench(queryClient, env);
       invalidateAutomations(queryClient, env);
+      invalidateFactory(queryClient, env);
     }
     if (env.seq > conn().seq) conn().setSeq(env.seq);
     for (const l of listeners) l(env);

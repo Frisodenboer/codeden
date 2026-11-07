@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   ConflictRecord,
   EventEnvelope,
+  FactoryStatus,
   Item,
   ItemRecord,
   ServerToClientMessage,
@@ -11,7 +12,6 @@ import type {
 } from "@codeden/contracts";
 import { applyDomainEvent } from "@/lib/snapshot-reducer";
 import { applyAgentEvent, type TranscriptState } from "@/lib/transcript/reducer";
-import type { FactoryStatus } from "../types";
 import { conflicts, inboxItems, sessions } from "./fixtures/sessions";
 import { checkoutTranscript } from "./fixtures/transcript-checkout";
 import { a11yTranscript, orchestratorTranscript, searchTranscript } from "./fixtures/transcripts-a";

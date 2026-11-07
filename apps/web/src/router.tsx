@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AgentsPage, type AgentTab } from "@/routes/agents";
 import { AutomationPage } from "@/routes/automation";
 import { AutomationsPage, type AutomationsTab } from "@/routes/automations";
+import { FactoryItemPage } from "@/routes/factory-item";
 import { HomePage } from "@/routes/home";
 import { InboxPage } from "@/routes/inbox";
 import { PmPage } from "@/routes/pm";
@@ -100,6 +101,15 @@ const automationRoute = createRoute({
   },
 });
 
+const factoryItemRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/factory/$itemId",
+  component: function FactoryItemDetail() {
+    const { projectId, itemId } = factoryItemRoute.useParams();
+    return <FactoryItemPage key={itemId} projectId={projectId} itemId={itemId} />;
+  },
+});
+
 const visionRoute = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId/vision",
@@ -153,6 +163,7 @@ const routeTree = rootRoute.addChildren([
     pmRoute,
     automationsRoute,
     automationRoute,
+    factoryItemRoute,
     visionRoute,
     createRoute({
       getParentRoute: () => shell,

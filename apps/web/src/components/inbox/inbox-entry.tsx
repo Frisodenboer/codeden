@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ago } from "@/lib/format";
 import { platform } from "@/lib/platform";
 import { useProject, useTranscript } from "@/lib/queries";
+import { FactoryInboxCard, factoryInboxKind } from "./factory-inbox";
 import { InboxActions, PrReviewStatus } from "./inbox-actions";
 import { TriageCard } from "./triage-card";
 
@@ -80,6 +81,8 @@ export function InboxEntry({ item }: { item: InboxItem }) {
         <MirroredRequest item={item} />
       ) : item.kind === "triage" ? (
         <TriageCard item={item} />
+      ) : factoryInboxKind(item) ? (
+        <FactoryInboxCard item={item} />
       ) : (
         <div className="rounded-xl border border-border bg-card px-4 py-3">
           <h3 className="text-[14px] font-medium">{item.title}</h3>
