@@ -11,3 +11,5 @@ test-results/
 *.log
 .DS_Store
 .screenshots/
+.claude/worktrees/
+.screenshots/
