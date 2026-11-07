@@ -33,6 +33,7 @@ export * from "./settings";
 export * from "./tools";
 export * from "./usage";
 export * from "./version";
+export * from "./vision";
 export * from "./voice-api";
 export * from "./work";
 export * from "./ws";

@@ -72,6 +72,7 @@ export const SKIP_REASON: Record<NonNullable<AutomationRun["skipReason"]>, strin
   disabled: "Automation was off",
   skipped_by_pm: "Skipped ahead of time",
   conflict_skip: "Skipped on conflict",
+  factory_intake: "The factory loop owns intake",
 };
 
 export const TRIGGERED_BY: Record<AutomationRun["triggeredBy"], string> = {
