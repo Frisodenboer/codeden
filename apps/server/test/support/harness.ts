@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { CreateProjectResponse, SessionDetail, StartSessionResponse } from "@codeden/contracts";
 import {
   isProcessAlive,
@@ -39,7 +39,11 @@ export async function waitUntil<T>(
   }
 }
 
-export async function startHarness(extra: Partial<StartServerOptions> = {}): Promise<Harness> {
+export async function startHarness(
+  extra: Partial<StartServerOptions> = {},
+  /** Extra files committed to the repo before it becomes a project. */
+  files: Record<string, string> = {},
+): Promise<Harness> {
   const home = mkdtempSync(join(tmpdir(), "codeden-h-"));
   const repo = join(home, "repo");
   mkdirSync(repo);
@@ -48,6 +52,10 @@ export async function startHarness(extra: Partial<StartServerOptions> = {}): Pro
   git("config", "user.email", "test@example.com");
   git("config", "user.name", "Test");
   writeFileSync(join(repo, "README.md"), "# test\n");
+  for (const [path, contents] of Object.entries(files)) {
+    mkdirSync(dirname(join(repo, path)), { recursive: true });
+    writeFileSync(join(repo, path), contents);
+  }
   git("add", ".");
   git("commit", "-q", "-m", "init");
 
