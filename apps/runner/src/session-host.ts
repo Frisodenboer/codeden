@@ -20,6 +20,12 @@ interface Hosted {
   checkpoints: boolean;
   /** Serializes checkpoint writes for this session. */
   checkpointChain: Promise<void>;
+  /** Why the session is closing, reported with its exit event. */
+  closeReason?: "stopped" | "runner_exit";
+  /** A running turn was interrupted by a drain: report it as a runner restart. */
+  drainInterrupted: boolean;
+  /** A root turn was running when the runner started closing the session. */
+  turnCutOff: boolean;
 }
 
 export interface SessionHostOptions {
@@ -91,6 +97,8 @@ export class SessionHost {
       cwd: cmd.options.cwd,
       checkpoints,
       checkpointChain: Promise.resolve(),
+      drainInterrupted: false,
+      turnCutOff: false,
     };
     this.sessions.set(cmd.sessionId, hosted);
     if (checkpoints) this.checkpoint(cmd.sessionId, hosted, undefined, true);
@@ -124,15 +132,19 @@ export class SessionHost {
     await this.get(cmd.sessionId).session.respond(cmd.requestId, cmd.response);
   }
 
-  async stop(sessionId: string): Promise<void> {
+  async stop(sessionId: string, reason: "stopped" | "runner_exit" = "stopped"): Promise<void> {
     const hosted = this.get(sessionId);
+    if (hosted.state === "running" && reason === "runner_exit") hosted.turnCutOff = true;
+    hosted.closeReason ??= reason;
     hosted.state = "closing";
     await hosted.session.close();
     await hosted.checkpointChain;
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all([...this.sessions.keys()].map((id) => this.stop(id).catch(() => undefined)));
+    await Promise.all(
+      [...this.sessions.keys()].map((id) => this.stop(id, "runner_exit").catch(() => undefined)),
+    );
   }
 
   /**
@@ -143,6 +155,7 @@ export class SessionHost {
     const deadline = Date.now() + timeoutMs;
     while (this.running > 0 && Date.now() < deadline) await sleep(100);
     const stuck = [...this.sessions.values()].filter((h) => h.state === "running");
+    for (const h of stuck) h.drainInterrupted = true;
     await Promise.all(stuck.map((h) => h.session.interrupt().catch(() => undefined)));
     const settle = Date.now() + 5_000;
     while (this.running > 0 && Date.now() < settle) await sleep(50);
@@ -186,12 +199,22 @@ export class SessionHost {
 
   private async pump(sessionId: string, hosted: Hosted): Promise<void> {
     try {
-      for await (const event of hosted.session.events) {
+      for await (const raw of hosted.session.events) {
+        const event = this.rewrite(hosted, raw);
         this.emit({ kind: "agent", sessionId, event });
         this.track(sessionId, hosted, event);
       }
       await hosted.checkpointChain;
-      this.emit({ kind: "session.process", sessionId, state: "exited", exitCode: 0 });
+      this.emit({
+        kind: "session.process",
+        sessionId,
+        state: "exited",
+        exitCode: 0,
+        reason: hosted.closeReason ?? "ended",
+        ...(hosted.closeReason === "runner_exit"
+          ? { interruptedTurn: hosted.turnCutOff || hosted.drainInterrupted }
+          : {}),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emit({
@@ -203,6 +226,18 @@ export class SessionHost {
     } finally {
       this.sessions.delete(sessionId);
     }
+  }
+
+  /** A drain-interrupted root turn is reported as cut off by a runner restart. */
+  private rewrite(hosted: Hosted, event: AgentEvent): AgentEvent {
+    if (
+      hosted.drainInterrupted &&
+      event.type === "turn.interrupted" &&
+      event.threadId === hosted.rootThreadId
+    ) {
+      return { ...event, reason: "runner_restart" };
+    }
+    return event;
   }
 
   private track(sessionId: string, hosted: Hosted, event: AgentEvent): void {

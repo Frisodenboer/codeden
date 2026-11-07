@@ -1,6 +1,6 @@
 /**
  * Runner process entry. Started detached by the server:
- *   node main.js --home <dir> [--fake] [--mcp-upstream <url>]
+ *   node main.js --home <dir> [--fake] [--no-builtin] [--replay <fixture.json>] [--mcp-upstream <url>]
  */
 import { parseArgs } from "node:util";
 import { startRunner } from "./runner";
@@ -9,6 +9,10 @@ const { values } = parseArgs({
   options: {
     home: { type: "string" },
     fake: { type: "boolean", default: false },
+    /** Skip the real Claude Code / Codex adapters (tests that only use Fake or Replay). */
+    "no-builtin": { type: "boolean", default: false },
+    /** Serve a recorded fixture as the `replay` provider (repeatable). */
+    replay: { type: "string", multiple: true },
     "mcp-upstream": { type: "string" },
   },
   allowPositionals: false,
@@ -26,6 +30,8 @@ try {
   const runner = await startRunner({
     home,
     enableFakeProvider: values.fake,
+    builtinProviders: !values["no-builtin"],
+    replayFixtures: values.replay,
     mcpUpstreamUrl: values["mcp-upstream"],
     sweepDescendants: true,
     log,

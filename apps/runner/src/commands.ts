@@ -62,6 +62,25 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
       return { statuses: await Promise.all(adapters.map((a) => a.detect())) };
     }
 
+    case "provider.oneShot": {
+      const adapter = registry.get(command.providerId);
+      const utility = adapter?.utilityModel?.();
+      if (!utility) {
+        throw new CommandError(
+          "unsupported",
+          `Provider ${command.providerId} has no utility model`,
+        );
+      }
+      const model = command.model ?? utility.defaultModel;
+      const text = await utility.runOneShot({
+        prompt: command.prompt,
+        system: command.system,
+        model,
+        timeoutMs: command.timeoutMs,
+      });
+      return { text, model };
+    }
+
     case "workspace.prepare":
       if (core.isDraining()) throw new CommandError("draining", "Runner is draining");
       return prepareWorkspace(command, {

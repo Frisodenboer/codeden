@@ -9,7 +9,14 @@ import {
   type RunnerLock,
   type RunnerStream,
 } from "@codeden/contracts";
-import { FakeProvider, type ProviderAdapter, ProviderRegistry } from "@codeden/providers";
+import {
+  builtinProviders,
+  FakeProvider,
+  loadFixture,
+  type ProviderAdapter,
+  ProviderRegistry,
+  ReplayProvider,
+} from "@codeden/providers";
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
@@ -29,6 +36,10 @@ export interface StartRunnerOptions {
   enableFakeProvider?: boolean;
   /** Extra adapters (tests). */
   adapters?: ProviderAdapter[];
+  /** Load the real Claude Code and Codex adapters (the runner process does; tests opt in). */
+  builtinProviders?: boolean;
+  /** Recorded fixtures to serve as Replay providers (tests), registered as `replay-<n>`. */
+  replayFixtures?: string[];
   /** Port to listen on (127.0.0.1); 0 = random. */
   port?: number;
   /** Initial MCP proxy upstream (the server's `/mcp`); also set by `runner.configure`. */
@@ -72,6 +83,15 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   const registry = new ProviderRegistry(opts.adapters ?? []);
   if (opts.enableFakeProvider && !registry.get("fake"))
     registry.register(new FakeProvider({ delayMs: 15 }));
+  if (opts.builtinProviders) {
+    for (const adapter of builtinProviders())
+      if (!registry.get(adapter.id)) registry.register(adapter);
+  }
+  opts.replayFixtures?.forEach((file, i) => {
+    registry.register(
+      new ReplayProvider(loadFixture(file), { id: i === 0 ? "replay" : `replay-${i}` }),
+    );
+  });
 
   const connections = new Set<ServerConnection>();
   let attached: ServerConnection | undefined;
