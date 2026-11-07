@@ -36,7 +36,8 @@ describe.skipIf(!LIVE)("Codex live smoke", () => {
         (e) =>
           e.type === "item.completed" &&
           e.item.kind === "tool_call" &&
-          e.item.toolKind === "file_edit",
+          // The model may write the file with the edit tool or a shell command.
+          (e.item.toolKind === "file_edit" || e.item.toolKind === "command"),
       ),
     ).toBe(true);
     expect(r.events.some((e) => e.type === "usage.updated" && e.usage.inputTokens)).toBe(true);
