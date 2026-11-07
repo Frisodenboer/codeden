@@ -1,0 +1,74 @@
+# GitHub
+
+Projects with a GitHub remote get the full flow: issues and PRs synced into CodeDen, sessions linked to their issue, branch and PR, evidence that renders inline, and PR reviews in your inbox. Local-only folders work without any of this.
+
+## Connecting
+
+CodeDen uses your **GitHub CLI login**. Run `gh auth login` once (or use **Sign in** on the setup checklist) and you're done.
+
+- The token is read from `gh auth token` at runtime and kept in memory only. It is never written to disk, logged or returned by the API. If GitHub answers 401, CodeDen asks `gh` again once, so a re-login is picked up without a restart.
+- **Fallback:** if `gh` isn't available, you can store a token in the OS keychain (`github.token`).
+- **Settings → GitHub** shows the connection status.
+- Agents use `gh` inside their own worktrees for everything else (for example `gh issue create`).
+
+Without a connection, GitHub views show a hint and GitHub actions fail with a clear "not connected" error; nothing else breaks.
+
+## Sync
+
+CodeDen polls instead of using webhooks (a local app can't receive them):
+
+- **Issues** are listed with conditional requests (`If-None-Match`), so an unchanged repository costs nothing against your rate limit.
+- **Pull requests** that changed, have pending checks or unknown mergeability, or belong to a session are fetched in one batched GraphQL query.
+- **Interval:** every 15 seconds while a session's PR is open, every 60 seconds otherwise, with backoff on errors and a pause until the reset when you hit a rate limit.
+- A new session on the head branch of an open, unlinked PR gets linked within a few seconds.
+- `CODEDEN_GITHUB_SYNC=0` turns polling off.
+
+Sync produces events that the rest of CodeDen reacts to: `issue.opened`, `issue.labeled`, `issue.commented`, `issue.updated`, `pr.opened`, `pr.updated`, `pr.review_requested`, `pr.checks_passed`, `pr.checks_failed`, `pr.merged`, `pr.closed` and `review.submitted`. They feed [notices](orchestration.md#notices), [automation triggers](automations.md#triggers) and the [factory loop](autonomy-and-dark-factory.md). The very first import is silent, so connecting an existing repository doesn't flood your PM.
+
+## Where you see it
+
+- **Project → GitHub tab:** open issues and pull requests with their checks and review state.
+- **Session header badges:** the linked issue and PR.
+- **Right panel → Issue / PR tab** (**Alt+5**): the session's PR with live status, checks, reviews, mergeability, description and changed files.
+- **Inbox:** PRs ready for review.
+
+![A session's pull request: checks, reviews, changed files and a squash-merge button](images/pr-details.png)
+
+## Traceability
+
+Every session records its issue, branch, PR and commits.
+
+- **Branches** are `codeden/<slug>-<id>` by default, on a fresh worktree under `~/.codeden/wt/`.
+- **Pull requests** are opened by the agent with `create_pull_request`. It refuses to run with uncommitted changes unless the agent passes a commit message, pushes the session branch, then creates the PR (or updates the open one for that branch). The body gets `Fixes #<issue>` when the session has an issue, plus a footer naming the CodeDen session.
+- **A PR belongs** to the session that opened it, or to the session whose branch is its head.
+- **Comments** CodeDen posts carry a hidden `<!-- codeden -->` marker (they're posted with your token). It's stripped again when comments are shown to agents or in the UI, and those comments never trigger automations.
+
+## Reviewing and merging
+
+When a session's PR is open, out of draft and its checks have passed (or it has none), a **PR review** item appears in your inbox. Review it in the Issue / PR tab and use **Squash and merge** (squash is the default), or merge on GitHub. Merging or closing the PR resolves the inbox item.
+
+When a session's PR is merged, CodeDen:
+
+1. stops the session's provider if it's idle and marks the session **completed**;
+2. comments "Resolved by #N" on the linked issues.
+
+In **Manual** and **Assisted** projects, nothing is ever merged without you. Automatic merges only happen in the experimental [factory modes](autonomy-and-dark-factory.md), and only after every merge check passes.
+
+## Evidence
+
+Agents attach screenshots, test output and other files with `attach_evidence`:
+
+- Files are committed to a dedicated orphan branch, **`codeden/evidence`**, under `pr-<n>/<session>/` or `issue-<n>/<session>/`. CodeDen uses the Git Data API, so no checkout is touched and your branches stay clean.
+- One comment on the PR or issue embeds the images and includes the summary and test output.
+- Images are linked through `github.com/<owner>/<repo>/blob/<commit>/<path>?raw=true`, which GitHub serves to signed-in readers, so they **render inline in private repositories too**.
+
+Browser screenshots taken with `browser_screenshot` can go straight into evidence, which is how the [UI review automation](automations.md#built-in-templates) and the factory's `ui_evidence` merge check work.
+
+## Issues
+
+- PMs read issues with `list_issues` and `get_issue`, create them with `create_issue`, and comment with `comment_on_issue`.
+- With the **Issue triage** automation on, the PM classifies each new issue as **ready**, **needs info**, **unsafe**, **out of scope** or **duplicate**, applies labels and a comment per your policy, and either starts a session or asks you "Should I take this on?" in the inbox. See [Automations → Issue triage](automations.md#issue-triage).
+
+## Local-only projects
+
+A folder without a GitHub remote gets sessions, worktrees, checkpoints, diffs, the workbench and automations that don't need GitHub. GitHub lists are simply empty, and no GitHub request is ever made for it. Templates marked `requiresGithub` (issue triage, stale PR follow-up) aren't offered, and the factory modes need a GitHub project.
