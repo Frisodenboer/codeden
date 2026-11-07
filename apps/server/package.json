@@ -11,7 +11,8 @@
     "dev": "node --watch --watch-preserve-output --import tsx src/dev.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "test:live": "node scripts/test-live.mjs"
   },
   "dependencies": {
     "@codeden/contracts": "workspace:*",

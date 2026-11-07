@@ -4,7 +4,7 @@ import {
   type RawEventEnvelope,
   type Session,
 } from "@codeden/contracts";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { rowToItemRecord } from "../../db/rows";
 import { items } from "../../db/schema";
@@ -76,7 +76,10 @@ export class SessionLifecycle {
         if (session.status === "idle" && this.deps.sessions.hasOutbox(session.id)) {
           setImmediate(() => void this.deps.sessions.flushOutbox(session.id));
         }
-      } else if (e.type === "agent.item.started" && e.sessionId) {
+      } else if (
+        (e.type === "agent.item.started" || e.type === "agent.item.completed") &&
+        e.sessionId
+      ) {
         const { item } = e.payload as AgentEventOf<"item.started">;
         if (item.kind === "user_message" && item.input.text.trim()) {
           const sessionId = e.sessionId;
@@ -144,9 +147,17 @@ export class SessionLifecycle {
           ? r.item.changes.map((c) => c.path)
           : [],
       );
+      const first = this.deps.db
+        .select()
+        .from(items)
+        .where(and(eq(items.sessionId, sessionId), eq(items.kind, "user_message")))
+        .orderBy(asc(items.createdAt))
+        .limit(1)
+        .get();
       const ctx = {
         session,
         finalMessage: final?.kind === "assistant_message" ? final.text : null,
+        firstMessage: first?.data.kind === "user_message" ? first.data.input.text : null,
         changedFiles: [...new Set(changedFiles)],
       };
 
