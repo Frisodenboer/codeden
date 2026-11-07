@@ -79,11 +79,12 @@ export function rowToInbox(r: InboxRow): InboxItem {
 }
 
 export function automationToRow(a: Automation): AutomationRow {
-  return { ...a };
+  return { ...a, workKey: a.workKey ?? null };
 }
 
 export function rowToAutomation(r: AutomationRow): Automation {
-  return Automation.parse(r);
+  const { workKey, ...rest } = r;
+  return Automation.parse(workKey === null ? rest : { ...rest, workKey });
 }
 
 export function runToRow(run: AutomationRun): RunRow {

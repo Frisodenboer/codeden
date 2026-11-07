@@ -49,6 +49,34 @@ export const AutomationTrigger = z.discriminatedUnion("type", [
 ]);
 export type AutomationTrigger = z.infer<typeof AutomationTrigger>;
 
+/**
+ * How the PM's issue triage applies a decision (§10): labels per decision, whether to comment
+ * and close, and whether a `ready` issue may start a session without asking (assisted mode and
+ * above only; otherwise the user gets a "Should I take this on?" inbox decision).
+ */
+export const TriagePolicy = z.object({
+  labels: z
+    .object({
+      ready: z.array(z.string().min(1)).default(["triage:ready"]),
+      needs_info: z.array(z.string().min(1)).default(["needs-info"]),
+      unsafe: z.array(z.string().min(1)).default(["triage:unsafe"]),
+      out_of_scope: z.array(z.string().min(1)).default(["out-of-scope"]),
+      duplicate: z.array(z.string().min(1)).default(["duplicate"]),
+    })
+    .prefault({}),
+  /** Post a short comment explaining the decision. */
+  comment: z.boolean().default(true),
+  /** Close duplicates and out-of-scope issues as "not planned". */
+  closeRejected: z.boolean().default(false),
+  /** Start a session for `ready` issues without asking (never in `manual` projects). */
+  autoStart: z.boolean().default(false),
+  /** Provider, model and autonomy for sessions started from triage. */
+  provider: ProviderId.optional(),
+  model: z.string().optional(),
+  autonomy: AutonomyLevel.optional(),
+});
+export type TriagePolicy = z.infer<typeof TriagePolicy>;
+
 /** What an automation does when it fires. */
 export const AutomationAction = z.discriminatedUnion("type", [
   z.object({
@@ -65,7 +93,12 @@ export const AutomationAction = z.discriminatedUnion("type", [
     type: z.literal("message_pm"),
     message: z.string().min(1),
   }),
-  z.object({ type: z.literal("triage") }),
+  z.object({
+    type: z.literal("triage"),
+    policy: TriagePolicy.optional(),
+    /** Extra guidance for the PM, appended to the triage request. */
+    instructions: z.string().optional(),
+  }),
 ]);
 export type AutomationAction = z.infer<typeof AutomationAction>;
 
@@ -102,6 +135,12 @@ export const Automation = z.object({
   action: AutomationAction,
   target: AutomationTarget,
   guards: AutomationGuards.prefault({}),
+  /**
+   * Work key of its runs (§8.4), e.g. `automation:security-audit`; may contain
+   * `{{placeholders}}` from the trigger (`automation:ci-fix:{{pr.number}}`). Defaults to
+   * `automation:<template id or name slug>`.
+   */
+  workKey: z.string().min(1).max(200).optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });

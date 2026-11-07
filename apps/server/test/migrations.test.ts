@@ -43,8 +43,11 @@ function expectFullSchema(file: string): void {
         "conflicts",
         "usage_ledger",
         "rate_limit_windows",
+        "automation_schedules",
+        "automation_projects",
       ]),
     );
+    expect(columns(database.client, "automations")).toContain("work_key");
     expect(columns(database.client, "github_prs")).toEqual(
       expect.arrayContaining(["review_decision", "linked_issues", "merged_at"]),
     );
@@ -62,12 +65,13 @@ afterEach(() => {
 });
 
 describe("migrations", () => {
-  it("chain in timestamp order: GitHub sync, orchestration, usage ledger", () => {
+  it("chain in timestamp order: GitHub sync, orchestration, usage ledger, automations", () => {
     expect(names).toEqual([...names].sort());
     const at = (suffix: string) => names.findIndex((n) => n.endsWith(suffix));
     expect(at("_github_sync")).toBeGreaterThan(-1);
     expect(at("_orchestration")).toBeGreaterThan(at("_github_sync"));
     expect(at("_usage_ledger")).toBeGreaterThan(at("_orchestration"));
+    expect(at("_automations")).toBeGreaterThan(at("_usage_ledger"));
   });
 
   it("create the full schema on a fresh database", () => {
@@ -78,7 +82,8 @@ describe("migrations", () => {
     ["orchestration only", (n: string) => !/_(github_sync|usage_ledger)$/.test(n)],
     ["GitHub sync only", (n: string) => !/_(orchestration|usage_ledger)$/.test(n)],
     ["usage ledger only", (n: string) => !/_(github_sync|orchestration)$/.test(n)],
-    ["everything before the usage ledger", (n: string) => !n.endsWith("_usage_ledger")],
+    ["everything before the usage ledger", (n: string) => !/_(usage_ledger|automations)$/.test(n)],
+    ["everything before automations", (n: string) => !n.endsWith("_automations")],
   ])("upgrade a database that applied %s", (_label, keep) => {
     const file = join(tempDir(), "old.db");
     openDatabase(file, partialMigrations(keep)).close();

@@ -133,7 +133,9 @@ export class SessionRepo {
       .from(automationRuns)
       .where(inArray(automationRuns.status, [...ACTIVE_RUN_STATUSES]))
       .all()
-      .filter((r) => r.projectId === projectId);
+      // A run whose session is listed already is the same work; list it once.
+      .filter((r) => r.projectId === projectId)
+      .filter((r) => !(r.sessionId && sessionRows.some((s) => s.id === r.sessionId)));
     return [
       ...sessionRows.map(
         (s): WorkSummary => ({
