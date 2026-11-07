@@ -59,7 +59,7 @@ function TemplateCard({
             <GitBranch className="size-3" /> GitHub
           </span>
         )}
-        {template.path && (
+        {template.source === "global_file" && template.path && (
           <span className="flex items-center gap-1 truncate font-mono" title={template.path}>
             <FileCode2 className="size-3" /> {template.path.split(/[\\/]/).at(-1)}
           </span>

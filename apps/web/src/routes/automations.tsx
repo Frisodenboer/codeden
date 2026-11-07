@@ -44,7 +44,7 @@ export function AutomationsPage({ projectId, tab }: { projectId: string; tab: Au
             <Workflow className="size-3.5 text-muted-foreground" /> Automations
           </span>
         }
-        meta={`${on} on of ${data?.automations.length ?? 0}`}
+        meta={`${on} of ${data?.automations.length ?? 0} on`}
       />
       <div
         className="flex h-10 shrink-0 items-end gap-4 border-b border-border px-6"

@@ -68,7 +68,7 @@ function RunRow({
           ) : run.error ? (
             <span className="text-status-failed">{run.error.message}</span>
           ) : (
-            (run.progress?.text ?? run.purpose)
+            (run.progress?.text ?? (run.purpose === name ? run.workKey : run.purpose))
           )}
         </span>
         {!showAutomation && (

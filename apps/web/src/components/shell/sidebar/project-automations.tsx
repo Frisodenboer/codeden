@@ -19,20 +19,11 @@ export function ProjectAutomations({ projectId }: { projectId: string }) {
   const on = items.filter((i) => stateIn(i, projectId)?.enabled).length;
   return (
     <>
-      <div className="flex items-center">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex size-6 shrink-0 items-center justify-center pl-3 text-muted-foreground"
-          aria-label={open ? "Hide automations" : "Show automations"}
-          aria-expanded={open}
-        >
-          <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
-        </button>
+      <div className="relative flex items-center">
         <NavRow
           href={`/projects/${projectId}/automations`}
           link={{ to: "/projects/$projectId/automations", params: { projectId } }}
-          className="h-7 pl-1.5 text-xs text-muted-foreground"
+          className="h-7 pr-8 pl-7 text-xs text-muted-foreground"
           exact={false}
         >
           <Workflow className="size-3.5 shrink-0" />
@@ -41,6 +32,15 @@ export function ProjectAutomations({ projectId }: { projectId: string }) {
             {on} on
           </span>
         </NavRow>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="absolute right-1 flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-border hover:text-foreground"
+          aria-label={open ? "Hide automations" : "Show automations"}
+          aria-expanded={open}
+        >
+          <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
+        </button>
       </div>
       {open &&
         items.map((item) => {

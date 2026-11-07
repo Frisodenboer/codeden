@@ -70,7 +70,7 @@ function CronFields({
           </button>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_260px]">
         <Field label="Cron expression" htmlFor={`${id}-cron`}>
           <Input
             id={`${id}-cron`}
@@ -82,12 +82,12 @@ function CronFields({
             spellCheck={false}
           />
         </Field>
-        <Field label="Timezone" htmlFor={`${id}-tz`}>
+        <Field label="Timezone" htmlFor={`${id}-tz`} help="Empty: the project's timezone.">
           <Input
             id={`${id}-tz`}
             list={`${id}-tzs`}
             value={trigger.timezone ?? ""}
-            placeholder={`${projectTimezone} (project)`}
+            placeholder={projectTimezone}
             disabled={disabled}
             onChange={(e) => onChange({ ...trigger, timezone: e.target.value.trim() || undefined })}
             className="text-[13px]"

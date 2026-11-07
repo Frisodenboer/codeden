@@ -44,7 +44,7 @@ export function Segmented<T extends string>({
   return (
     <fieldset
       aria-label={label}
-      className="m-0 flex w-fit min-w-0 items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 text-xs"
+      className="flex w-fit min-w-0 items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 text-xs"
     >
       {options.map((o) => (
         <button
