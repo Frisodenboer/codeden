@@ -213,6 +213,7 @@ export class SessionLauncher {
           branch,
           baseRef,
           setupCommands: req.setupCommands ?? [],
+          ...(req.fetch ? { fetch: true } : {}),
         },
         PREPARE_TIMEOUT_MS,
       );

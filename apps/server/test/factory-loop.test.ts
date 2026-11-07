@@ -345,6 +345,16 @@ describe("factory loop state machine (§10.1)", () => {
     expect(env.inbox.find(`inbox:factory-regression:${it1.id}`)?.priority).toBe("high");
     // The revert goes through the same checks and may merge while the loop is paused.
     await tick();
+    // No builder worktree: the reviewer gets one on the revert PR's head, fetched by CodeDen,
+    // so the review itself is offline.
+    const reviewStart = env.starts.find((s) => s.workKey === `factory:review:${revert.pr?.number}`);
+    const revertHead = (await env.gh.prDetails(env.project.id, revert.pr?.number ?? 0)).headBranch;
+    expect(reviewStart?.workspace).toMatchObject({
+      mode: "worktree",
+      baseRef: `origin/${revertHead}`,
+      fetch: true,
+    });
+    expect(reviewStart?.input?.text).toContain("Do not use the network");
     review(item(revert.id));
     await tick();
     expect(item(revert.id).stage).toBe("watching");

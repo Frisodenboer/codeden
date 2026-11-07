@@ -183,7 +183,15 @@ async function ensureReviewer(
     }));
   }
   const choice = pickReviewer(item.builderProvider, ctx.sessions.providers());
-  const res = await ctx.sessions.startReviewer(item, vision, choice.provider, choice.note);
+  // No builder worktree (a revert PR opened through the API): review the PR's head locally.
+  let head: { headBranch: string; baseBranch: string } | null = null;
+  if (!item.builderSessionId && item.pr) {
+    const details = await ctx.github.prDetails(project.id, item.pr.number).catch(() => null);
+    if (details) {
+      head = { headBranch: details.headBranch, baseBranch: project.defaultBranch ?? "main" };
+    }
+  }
+  const res = await ctx.sessions.startReviewer(item, vision, choice.provider, choice.note, head);
   if (res.status !== "started") {
     return ctx.store.updateItem(item.id, (i) => ({
       ...i,

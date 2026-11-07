@@ -81,16 +81,36 @@ export class FactorySessions {
     });
   }
 
+  /**
+   * Start the reviewer offline: in the builder's worktree when there is one, otherwise (a
+   * revert PR opened through the API) in a new worktree on the PR's head, fetched from origin
+   * by CodeDen before the session starts.
+   */
   startReviewer(
     item: FactoryItem,
     vision: string,
     provider: string,
     note: string | null,
+    pr?: { headBranch: string; baseBranch: string } | null,
   ): Promise<StartSessionResponse> {
     const builder = item.builderSessionId
       ? this.deps.repo.find(item.builderSessionId)?.session
       : undefined;
     const worktree = builder?.worktreePath ?? null;
+    let workspace: StartSessionRequest["workspace"] = { mode: "worktree" };
+    let localBase: string | null = null;
+    if (worktree) {
+      workspace = { mode: "existing", path: worktree };
+      localBase = builder?.baseBranch ?? "main";
+    } else if (pr) {
+      workspace = {
+        mode: "worktree",
+        branch: `codeden/review-${item.pr?.number ?? item.id.slice(0, 8)}-${item.id.slice(0, 4)}`,
+        baseRef: `origin/${pr.headBranch}`,
+        fetch: true,
+      };
+      localBase = `origin/${pr.baseBranch}`;
+    }
     return this.start({
       projectId: item.projectId,
       provider,
@@ -98,11 +118,8 @@ export class FactorySessions {
       workKey: `factory:review:${item.pr?.number ?? item.id}`,
       title: `Review: ${item.title}`.slice(0, 200),
       issue: item.issue ?? undefined,
-      workspace: worktree ? { mode: "existing", path: worktree } : { mode: "worktree" },
-      input: {
-        text: reviewerPrompt(item, vision, note, worktree ? (builder?.baseBranch ?? "main") : null),
-        attachments: [],
-      },
+      workspace,
+      input: { text: reviewerPrompt(item, vision, note, localBase), attachments: [] },
     });
   }
 

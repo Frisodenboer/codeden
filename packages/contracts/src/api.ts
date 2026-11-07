@@ -107,6 +107,11 @@ export const WorkspaceRequest = z.object({
   branch: z.string().min(1).optional(),
   baseRef: z.string().min(1).optional(),
   setupCommands: z.array(z.string()).optional(),
+  /**
+   * Fetch `origin` before creating the worktree (for a `baseRef` such as `origin/<branch>`
+   * that may not be local yet). CodeDen fetches; the agent then works offline.
+   */
+  fetch: z.boolean().optional(),
 });
 export type WorkspaceRequest = z.infer<typeof WorkspaceRequest>;
 
