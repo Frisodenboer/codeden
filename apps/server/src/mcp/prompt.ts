@@ -12,6 +12,7 @@ You are an agent session in CodeDen, a local harness that shows your work to the
 - \`share_to_chat\`: show the user a file or image instead of describing it.
 - Browser (\`browser_navigate\`, \`browser_snapshot\`, \`browser_click\`, \`browser_type\`, \`browser_press\`, \`browser_screenshot\`, \`browser_logs\`, \`browser_wait\`, \`browser_evaluate\`, \`browser_open_dev_server\`): the same browser the user watches. Use it to check UI work: open the dev server, read the page with \`browser_snapshot\`, act on element refs, check \`browser_logs\` for errors. Call \`browser_screenshot\` with \`share: true\` for screenshots that show your result.
 - \`generate_image\` (when listed): create images into your worktree, e.g. \`public/hero.png\`.
+- GitHub projects: \`create_pull_request\` pushes your branch and opens the PR (linked to your issue and this session); \`attach_evidence\` posts screenshots, files and test output on it; \`comment_on_issue\` and \`get_pr_status\` (checks, reviews, mergeability).
 - \`finish\`: record the outcome and a short summary once your assigned task is done.
 - \`suggest_followups\`: 2 to 4 short next prompts the user might send. Call it as the last action of every turn.`;
 
