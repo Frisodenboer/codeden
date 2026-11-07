@@ -38,7 +38,23 @@ jobs:
           npm init -y > /dev/null
           npm install "$RUNNER_TEMP"/codeden-*.tgz
           npx codeden --version
-          npx codeden doctor --home "$RUNNER_TEMP/codeden-home" || true
+          export CODEDEN_HOME="$RUNNER_TEMP/codeden-home"
+          npx codeden doctor --home "$CODEDEN_HOME" | tee doctor.txt || true
+          grep -q "ok  Terminals" doctor.txt
+          grep -q "ok  Keychain" doctor.txt || echo "::warning::keychain module did not load"
+          # Start it like a user would and check the API and the web UI are served.
+          CODEDEN_UPDATE_CHECK=0 npx codeden --home "$CODEDEN_HOME" --port 4791 --no-open > server.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:4791/api/health > health.json && break
+            sleep 1
+          done
+          cat health.json
+          grep -q '"ok":true' health.json
+          TOKEN=$(tr -d '\r\n' < "$CODEDEN_HOME/install-token")
+          curl -sf -H "cookie: codeden_token_4791=$TOKEN" http://127.0.0.1:4791/ | grep -q "<title>CodeDen"
+          curl -sf -H "authorization: Bearer $TOKEN" http://127.0.0.1:4791/api/automations/templates | grep -q security-audit
+          npx codeden stop --home "$CODEDEN_HOME" || true
+          cat server.log
 
   e2e:
     name: e2e (${{ matrix.os }})

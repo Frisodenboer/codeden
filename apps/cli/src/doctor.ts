@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { CODEDEN_VERSION, type SetupCheck } from "@codeden/contracts";
 import { checkSetup, homePaths, readLiveRunnerLock } from "@codeden/server";
 import { findRunningServer } from "./running";
@@ -9,6 +10,23 @@ const MARK: Record<SetupCheck["state"], string> = {
   missing: "--",
   error: "xx",
 };
+
+/** Native dependencies (§16) and what breaks without them. */
+const NATIVE: Array<[label: string, module: string, purpose: string]> = [
+  ["Terminals", "node-pty", "the terminal panel is"],
+  ["Keychain", "@napi-rs/keyring", "saved API keys are"],
+];
+
+/** Why a native module cannot load here, or null when it loads. */
+function loadError(mod: string): string | null {
+  try {
+    createRequire(import.meta.url)(mod);
+    return null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.split(/\r?\n/)[0] ?? "error";
+  }
+}
 
 /**
  * `codeden doctor`: diagnostics. Runs the same detection checks as the first-run setup
@@ -36,6 +54,10 @@ export async function doctor(home: string): Promise<number> {
       runner ? `running on port ${runner.port} (pid ${runner.pid})` : "not running",
     ],
   ];
+  for (const [label, mod, purpose] of NATIVE) {
+    const error = loadError(mod);
+    rows.push([error ? "xx" : "ok", label, error ? `${purpose} unavailable: ${error}` : mod]);
+  }
   for (const check of status.checks) {
     const detail = [check.version, check.message].filter(Boolean).join(" - ");
     rows.push([MARK[check.state], check.label, detail]);
