@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node scripts/dev-token.mjs && pnpm --parallel --filter @codeden/server --filter @codeden/web run dev",
+    "dev": "pnpm --parallel --filter @codeden/server --filter @codeden/web run dev",
     "build": "pnpm -r --filter=!codeden-monorepo run build",
     "typecheck": "pnpm -r run typecheck",
     "lint": "biome check .",

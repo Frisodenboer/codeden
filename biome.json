@@ -10,7 +10,7 @@
     "includes": [
       "**",
       "!**/dist",
-      "!**/drizzle/meta",
+      "!apps/server/drizzle",
       "!**/*.gen.ts",
       "!pnpm-lock.yaml",
       "!**/*.md"
