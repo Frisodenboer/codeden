@@ -5,7 +5,8 @@
   "description": "CodeDen runner: hosts provider sessions next to the code and journals events for the server.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./main": "./src/main.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

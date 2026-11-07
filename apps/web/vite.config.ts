@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type ProxyOptions } from "vite";
 
-const serverUrl = process.env.CODEDEN_SERVER_URL ?? "http://127.0.0.1:4317";
+const serverUrl = process.env.CODEDEN_SERVER_URL ?? "http://127.0.0.1:4318";
 const devHome = process.env.CODEDEN_HOME ?? resolve(import.meta.dirname, "../../.codeden-dev");
 
 /** Dev token written by the dev server; read per request so a fresh install just works. */

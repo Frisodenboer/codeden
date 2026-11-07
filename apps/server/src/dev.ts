@@ -1,5 +1,5 @@
 /**
- * Development entry (`pnpm dev`): data in `<repo>/.codeden-dev`, fixed port 4317, the Fake
+ * Development entry (`pnpm dev`): data in `<repo>/.codeden-dev`, fixed port 4318, the Fake
  * provider enabled, and the Vite dev server allowed as an origin.
  */
 import { resolve } from "node:path";
@@ -8,7 +8,7 @@ import { startServer } from "./server";
 import { ensureInstallToken } from "./token";
 
 const home = process.env.CODEDEN_HOME ?? resolve(import.meta.dirname, "../../../.codeden-dev");
-const port = Number(process.env.CODEDEN_PORT ?? 4317);
+const port = Number(process.env.CODEDEN_PORT ?? 4318);
 const token = ensureInstallToken(ensureHome(home).token);
 
 const server = await startServer({
