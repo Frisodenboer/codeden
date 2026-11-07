@@ -1,0 +1,76 @@
+import { z } from "zod";
+
+/** Opaque identifier (UUIDs in practice, but never parsed). */
+export const Id = z.string().min(1).max(200);
+export type Id = z.infer<typeof Id>;
+
+/** UTC ISO-8601 timestamp, e.g. `2026-11-07T10:24:00.000Z`. */
+export const Timestamp = z.iso.datetime();
+export type Timestamp = z.infer<typeof Timestamp>;
+
+/** Arbitrary JSON value (tool inputs, structured results). */
+export const JsonValue = z.json();
+export type JsonValue = z.infer<typeof JsonValue>;
+
+/** The three agent roles (§8.1). All are the same kind of session with different tools/prompts. */
+export const Role = z.enum(["orchestrator", "pm", "agent"]);
+export type Role = z.infer<typeof Role>;
+
+/**
+ * Autonomy levels (§11.2), mapped onto each provider's native enforcement.
+ * - `supervised`: every edit and command asks.
+ * - `auto`: edits and normal commands in the worktree run freely; risky actions ask (default).
+ * - `full`: no approvals inside the worktree.
+ */
+export const AutonomyLevel = z.enum(["supervised", "auto", "full"]);
+export type AutonomyLevel = z.infer<typeof AutonomyLevel>;
+
+/** Reasoning effort. Each model advertises the subset it supports (see `ModelInfo.efforts`). */
+export const ReasoningEffort = z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]);
+export type ReasoningEffort = z.infer<typeof ReasoningEffort>;
+
+/**
+ * Provider identifier such as `claude`, `codex` or `fake`. Deliberately an open string:
+ * UI and orchestration must read capability flags, never branch on the id (Principle 5).
+ */
+export const ProviderId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
+export type ProviderId = z.infer<typeof ProviderId>;
+
+/** Structured error carried by events, results and entities. */
+export const ErrorInfo = z.object({
+  /** Machine-readable code, e.g. `provider_crashed`, `not_found`. */
+  code: z.string().optional(),
+  /** Human-readable message, safe to show in the UI (never contains tokens). */
+  message: z.string(),
+  /** Whether retrying the same operation may succeed. */
+  retryable: z.boolean().optional(),
+  /** Optional extra detail (stack trace excerpt, stderr tail). */
+  detail: z.string().optional(),
+});
+export type ErrorInfo = z.infer<typeof ErrorInfo>;
+
+/** Link to a GitHub issue. */
+export const GitHubIssueRef = z.object({
+  number: z.int().positive(),
+  url: z.url(),
+  title: z.string().optional(),
+});
+export type GitHubIssueRef = z.infer<typeof GitHubIssueRef>;
+
+/** Link to a GitHub pull request. */
+export const GitHubPrRef = z.object({
+  number: z.int().positive(),
+  url: z.url(),
+  state: z.enum(["draft", "open", "closed", "merged"]),
+  title: z.string().optional(),
+});
+export type GitHubPrRef = z.infer<typeof GitHubPrRef>;
+
+/** Hours of the day during which something must not run or speak, e.g. `22:00`-`07:00`. */
+export const QuietHours = z.object({
+  start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  /** IANA timezone; defaults to the machine's timezone when omitted. */
+  timezone: z.string().optional(),
+});
+export type QuietHours = z.infer<typeof QuietHours>;

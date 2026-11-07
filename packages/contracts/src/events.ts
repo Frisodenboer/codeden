@@ -1,0 +1,114 @@
+import { z } from "zod";
+import {
+  type AgentEvent,
+  ItemCompletedEvent,
+  ItemDeltaEvent,
+  ItemStartedEvent,
+  ItemUpdatedEvent,
+  SessionUpdatedEvent,
+  ThreadStartedEvent,
+  TurnCompletedEvent,
+  TurnFailedEvent,
+  TurnInterruptedEvent,
+  TurnStartedEvent,
+  UsageUpdatedEvent,
+} from "./agent-events";
+import { Id, Timestamp } from "./common";
+import { Artifact } from "./entities/artifact";
+import { Automation, AutomationRun } from "./entities/automation";
+import { InboxItem } from "./entities/inbox";
+import { Project } from "./entities/project";
+import { Session } from "./entities/session";
+import { Settings } from "./settings";
+
+/**
+ * Untyped row of the append-only `events` table (§6): `seq, session_id, type, payload, ts`.
+ * Use `EventEnvelope` to parse it into the typed union.
+ */
+export const RawEventEnvelope = z.object({
+  /** Global, monotonically increasing sequence number assigned by the server. */
+  seq: z.int().positive(),
+  /** Session the event belongs to; null for global events (projects, settings, runner). */
+  sessionId: Id.nullable(),
+  type: z.string(),
+  payload: z.unknown(),
+  ts: Timestamp,
+});
+export type RawEventEnvelope = z.infer<typeof RawEventEnvelope>;
+
+const base = { seq: z.int().positive(), sessionId: Id.nullable(), ts: Timestamp };
+const sessionBase = { seq: z.int().positive(), sessionId: Id, ts: Timestamp };
+
+function globalEvent<T extends string, P extends z.ZodType>(type: T, payload: P) {
+  return z.object({ ...base, type: z.literal(type), payload });
+}
+
+function agentEvent<T extends string, P extends z.ZodType>(type: T, payload: P) {
+  return z.object({ ...sessionBase, type: z.literal(`agent.${type}` as `agent.${T}`), payload });
+}
+
+/** Prefix used for persisted agent events: `agent.turn.started`, `agent.item.delta`, ... */
+export const AGENT_EVENT_PREFIX = "agent.";
+
+/**
+ * Typed persisted event. Agent events (§7.3) are stored as `agent.<type>` with the
+ * normalized `AgentEvent` as payload; the rest are domain events written by the server
+ * in the same transaction as the projections they update.
+ */
+export const EventEnvelope = z.discriminatedUnion("type", [
+  // Agent events, from runners.
+  agentEvent("session.updated", SessionUpdatedEvent),
+  agentEvent("thread.started", ThreadStartedEvent),
+  agentEvent("turn.started", TurnStartedEvent),
+  agentEvent("turn.completed", TurnCompletedEvent),
+  agentEvent("turn.failed", TurnFailedEvent),
+  agentEvent("turn.interrupted", TurnInterruptedEvent),
+  agentEvent("item.started", ItemStartedEvent),
+  agentEvent("item.delta", ItemDeltaEvent),
+  agentEvent("item.updated", ItemUpdatedEvent),
+  agentEvent("item.completed", ItemCompletedEvent),
+  agentEvent("usage.updated", UsageUpdatedEvent),
+  // Domain events.
+  globalEvent("project.created", z.object({ project: Project })),
+  globalEvent("project.updated", z.object({ project: Project })),
+  globalEvent("project.archived", z.object({ projectId: Id })),
+  globalEvent("session.created", z.object({ session: Session })),
+  /** Any change to a session row, including status transitions. */
+  globalEvent("session.updated", z.object({ session: Session })),
+  globalEvent("inbox.created", z.object({ item: InboxItem })),
+  globalEvent("inbox.updated", z.object({ item: InboxItem })),
+  globalEvent("automation.saved", z.object({ automation: Automation })),
+  globalEvent("automation.deleted", z.object({ automationId: Id })),
+  globalEvent("automation_run.updated", z.object({ run: AutomationRun })),
+  globalEvent("artifact.created", z.object({ artifact: Artifact })),
+  globalEvent("settings.updated", z.object({ settings: Settings })),
+  globalEvent(
+    "runner.connected",
+    z.object({ runnerId: z.string(), version: z.string(), protocolVersion: z.int() }),
+  ),
+  globalEvent("runner.disconnected", z.object({ runnerId: z.string(), reason: z.string() })),
+]);
+export type EventEnvelope = z.infer<typeof EventEnvelope>;
+export type EventType = EventEnvelope["type"];
+/** Narrow an envelope by type: `EventOf<"session.created">`. */
+export type EventOf<T extends EventType> = Extract<EventEnvelope, { type: T }>;
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+/** An event before the store assigns `seq` and `ts`. */
+export type NewEvent = DistributiveOmit<EventEnvelope, "seq" | "ts">;
+
+/** Build the persisted form of an agent event for a session. */
+export function agentEventToNewEvent(sessionId: string, event: AgentEvent): NewEvent {
+  return {
+    sessionId,
+    type: `${AGENT_EVENT_PREFIX}${event.type}`,
+    payload: event,
+  } as NewEvent;
+}
+
+/** True when a persisted event carries an agent event payload. */
+export function isAgentEnvelope(
+  e: EventEnvelope,
+): e is Extract<EventEnvelope, { type: `agent.${string}` }> {
+  return e.type.startsWith(AGENT_EVENT_PREFIX);
+}

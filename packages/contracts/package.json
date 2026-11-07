@@ -1,0 +1,17 @@
+{
+  "name": "@codeden/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared zod schemas: agent event model, entities, runner protocol, UI WebSocket messages, settings.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}
