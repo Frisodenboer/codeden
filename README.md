@@ -1,0 +1,282 @@
+<div align="center">
+
+# CodeDen
+
+**A local-first harness for coding agents.** Run Claude Code and Codex side by side in a calm, focused workspace, and when you're ready, let a small software factory work through your backlog while every step stays visible in GitHub.
+
+[![npm](https://img.shields.io/npm/v/codeden?color=e8a33d&label=npm)](https://www.npmjs.com/package/codeden)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node 24+](https://img.shields.io/badge/node-%3E%3D24-339933)
+![Windows, macOS, Linux](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555)
+
+</div>
+
+![A CodeDen agent session: the transcript with follow-up chips on the left, the per-turn diff on the right](docs/images/session.png)
+
+```sh
+npx codeden
+```
+
+That's the whole install. CodeDen starts a local server, opens your browser on an already signed-in URL, and reuses the Claude Code, Codex, GitHub and git setup you already have. No accounts, no license keys, no hosted backend, no telemetry.
+
+---
+
+## Contents
+
+- [Quick start](#quick-start)
+- [What you get](#what-you-get)
+- [How it works](#how-it-works)
+- [Security model](#security-model)
+- [Configuration](#configuration)
+- [CLI reference](#cli-reference)
+- [FAQ](#faq)
+- [Documentation](#documentation)
+- [Contributing](#contributing) · [License](#license)
+
+## Quick start
+
+**Requirements**
+
+| | |
+|---|---|
+| **Node.js 24+** | `node --version` |
+| **git** | with `user.name` and `user.email` set |
+| **An agent CLI, signed in** | [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) and/or [Codex CLI](https://developers.openai.com/codex/cli) (`codex`). At least one is required |
+| **GitHub CLI** *(optional)* | `gh auth login` unlocks issues, pull requests, evidence and the factory. Local-only folders work without it |
+| **Edge or Chrome** *(optional)* | for the browser panel and the agents' browser tools |
+
+**Run it**
+
+```sh
+npx codeden            # or: npm i -g codeden && codeden
+```
+
+1. The **setup checklist** detects Claude Code, Codex, GitHub, your git identity and a browser, and only asks about what's missing. Each failed check has one fix: an install command, or a **Sign in** button that runs the tool's own login in an embedded terminal.
+2. **Add a project:** pick a local folder (a server-side folder picker) or paste a GitHub URL to clone.
+3. **Start a session.** The agent works in its own git worktree and branch, so your checkout is never touched.
+
+![The first-run setup checklist](docs/images/setup.png)
+
+Already installed something and want to check it? `npx codeden doctor` runs the same checks in the terminal. See [Getting started](docs/getting-started.md) for a full walkthrough.
+
+## What you get
+
+### Orchestrator, project managers and agent sessions
+
+Three kinds of agents, each in its own lane:
+
+- **Orchestrator.** One agent you talk to across every project. It creates and configures projects, hands work to project managers and summarises what's going on.
+- **Project managers (PMs).** One long-lived agent per project. It triages issues, starts and steers agent sessions, follows their progress and escalates to you when it's unsure. PMs and the orchestrator are **read-only**: they never edit your code, they act through CodeDen's tools.
+- **Agent sessions.** The coding agents. Each runs in its own worktree and branch, can ask you questions, request approvals, share screenshots, and finish by opening a pull request with evidence.
+
+Every unit of work carries a **work key** (`issue:142`, `automation:security-audit`, ...), so starting something that's already running gives you a conflict card (**wait**, **skip**, **join** or **force**) instead of a silent duplicate. The orchestrator and PMs get a fresh status digest every time they wake, and session events reach them as typed **notices**. [More on orchestration](docs/orchestration.md).
+
+![Asking the orchestrator what's going on across projects](docs/images/orchestrator.png)
+
+### One inbox
+
+Questions, approvals, PRs ready for review, failed runs, triage decisions, duplicate-work conflicts and budget alerts all land in one **Inbox**, each linked to its session, issue and PR and answerable in place. Toasts and (opt-in) browser notifications tell you when something new arrives.
+
+![The inbox with a conflict, an approval and a PR ready for review](docs/images/inbox.png)
+
+### GitHub traceability
+
+For projects with a GitHub remote, CodeDen syncs issues, PRs, checks and reviews using your existing `gh` login. Agents open PRs that link the issue (`Fixes #N`) and the session, and attach screenshots and test output as **evidence** that renders inline, even in private repositories. PRs ready for review come to your inbox; you can review and squash-merge from CodeDen. [GitHub guide](docs/github.md).
+
+### Automations
+
+Background work you switch on per project: **security audit**, **refactor sweep**, **dependency updates**, **UI review**, **test coverage gaps**, **issue triage** and **stale PR follow-up** ship as templates. Triggers are cron schedules, GitHub and session events, or manual runs; guards cover overlap, concurrency, quiet hours, daily caps and catching up after downtime. Templates are plain Markdown files with YAML frontmatter, so writing your own takes a minute. **Everything is off by default.** [Automations guide](docs/automations.md).
+
+![A project's automations with their schedules and the next runs](docs/images/automations.png)
+
+### Autonomy modes, including an experimental dark factory
+
+Each project climbs a ladder: **Manual** → **Assisted** (the default) → **Autopilot** → **Dark factory**. In the last two (both **experimental**), a factory loop takes in work from issues, failed checks and improvement finders, builds it in agent sessions, and merges a PR automatically only when every merge check passes: green CI, tests, an independent review by a separate agent session, a security scan, UI evidence, a size limit and no protected areas touched. Limits you set (concurrent sessions, merges per day, a daily budget, pause after repeated failures) are enforced by the server, and a kill switch stops everything with one click. [Autonomy and the dark factory](docs/autonomy-and-dark-factory.md).
+
+![The factory panel: loop stages, budget meters, backlog, merge checks and recent merges](docs/images/factory-panel.png)
+
+### Workbench
+
+Everything an agent touches, next to the chat:
+
+- **Diffs and checkpoints.** Every turn is snapshotted into a hidden git ref, so you get exact per-turn and whole-session diffs and can restore files to any earlier turn. Commit and push from the git bar.
+- **Files.** A file tree and a syntax-highlighted viewer for the session's worktree.
+- **Terminal.** Real PTY terminals owned by the runner, so they survive server restarts.
+- **Browser.** A Chromium the agents drive (navigate, snapshot, click, type, screenshot, console and network logs), streamed into the panel. You can take over at any time.
+- **Subagents** open as child threads, and the composer queues or steers while a turn runs.
+
+![The browser panel watching the agent's browser](docs/images/browser-panel.png)
+
+[Workbench guide](docs/workbench.md).
+
+### Agent memory, skills, subagents and MCP servers
+
+First-class editors for each provider's **own files**: `CLAUDE.md`, `AGENTS.md`, `.claude/rules/`, Claude's auto-memory, skills, subagents, `.mcp.json`, `~/.claude.json` and `~/.codex/config.toml`. Edits are written in place with a diff preview and a backup, so they show up in the terminal CLI too, and a **What's loaded** view shows which files a session actually has in context. [Agent configuration](docs/agent-config.md).
+
+### Image generation for every agent
+
+One `generate_image` tool, available to every agent whatever its provider. It routes to **Codex** (your existing Codex login, no API key), **Gemini** image models or **OpenAI Images**, with a daily cap and per-project overrides. A Claude agent building a landing page can make its own hero image.
+
+### Voice
+
+Dictate into the composer (browser speech, or ElevenLabs / OpenAI), with push-to-talk. Have an agent's final message read aloud when its turn completes, with code stripped and long messages summarised first. [Voice and images](docs/voice-and-images.md).
+
+### Usage and cost reports
+
+A ledger of every turn's tokens and cost across providers, models, projects and roles, with daily charts, drill-down to sessions, top sessions, automation and factory spend, cache hit rate, cost per merged PR, CSV export, budget alerts and rate-limit windows. Subscription logins see a clearly labelled **API-equivalent cost**. [Usage and costs](docs/usage-and-costs.md).
+
+![The usage report: totals, daily spend by model and the per-model breakdown](docs/images/usage-reports.png)
+
+### Follow-up prompts
+
+When an agent finishes, CodeDen suggests two to four next prompts as one-click chips above the composer. The agent proposes them itself; a small utility model fills in when it didn't.
+
+## How it works
+
+```
+┌──────────────────────── Web UI (React SPA) ─────────────────────────┐
+│ sidebar · chat · inbox · right panels (diff/files/browser/terminal) │
+└───────────────┬──────────────────────────────────────▲──────────────┘
+                │ HTTP + WebSocket (127.0.0.1)          │ live events
+┌───────────────▼──────────────────────────────────────┴──────────────┐
+│ SERVER  (long-lived, owns all state)                                │
+│  SQLite event log + projections · orchestrator and PMs · inbox      │
+│  MCP endpoint (role-scoped) · automation scheduler · GitHub sync    │
+└───────────────┬──────────────────────────────────────▲──────────────┘
+                │ runner protocol over WebSocket        │ events + acks
+┌───────────────▼──────────────────────────────────────┴──────────────┐
+│ RUNNER  (separate process, next to the code)                        │
+│  Claude Agent SDK · codex app-server · terminals (node-pty)         │
+│  Chromium over CDP · worktrees, checkpoints, git · MCP proxy        │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Two processes.** The **server** owns the database, orchestration, the inbox, automations and GitHub sync, and serves the UI. The **runner** hosts the agent processes, terminals, the browser and git. If the server restarts (an update, a crash), running agents keep going; the runner journals their events until the server is back.
+- **Real SDKs and protocols.** Claude Code runs through the Claude Agent SDK using your installed `claude` binary; Codex runs through `codex app-server` over JSON-RPC. No scraped terminal output.
+- **Everything is an event.** Agent activity is an append-only event log in SQLite, so every action can be seen, replayed and traced to an issue, branch or PR.
+- **Agents reach CodeDen through MCP.** Each session gets a role-scoped token for CodeDen's internal MCP server (`report_progress`, `ask_user`, `create_pull_request`, `attach_evidence`, the browser tools, `generate_image`, ...). Tools outside a role are never listed.
+
+More in [Architecture](docs/architecture.md) and the full design in [docs/DESIGN.md](docs/DESIGN.md).
+
+## Security model
+
+- The server and runner listen on **127.0.0.1 only**. Remote or LAN access is not part of v1.
+- Every HTTP, WebSocket and MCP request needs a **per-install random token**. The browser gets it once through the launch URL, then holds it in an HttpOnly, `SameSite=Strict` cookie.
+- `Host` and `Origin` headers are checked, which blocks other websites and DNS rebinding from reaching the local API.
+- Agent MCP tokens are **per session and role-scoped**, stored only as hashes, and revoked when the session ends.
+- The default autonomy level, **Auto, risky actions ask**, lets agents edit and run normal commands inside their worktree, and sends risky actions to your inbox: writes outside the worktree, force pushes, branch deletion, global installs, piping downloads into a shell, and secrets access.
+- Optional API keys live in the **OS keychain**, never in files. GitHub and provider logins are read from their own CLIs at runtime and never stored.
+
+Details and how to report a vulnerability: [docs/security.md](docs/security.md) and [SECURITY.md](SECURITY.md).
+
+## Configuration
+
+| What | Where |
+|---|---|
+| Data directory | `~/.codeden/`, or `CODEDEN_HOME`, or `--home <dir>` |
+| Port | `4317` by default, or `--port <n>`. The runner picks a free loopback port itself |
+| Settings | **Settings** in the UI, stored in `<home>/settings.json` (non-secret) |
+| Usage prices and budgets | **Usage** in the UI, stored in `<home>/usage-settings.json` |
+| API keys | Settings, stored in the OS keychain |
+| Per-project setup | `.codeden/project.json` in the repo: worktree setup commands and the dev server |
+| Automations | `~/.codeden/automations/*.md` (all projects) and `<repo>/.codeden/automations/*.md` |
+| Project vision | `<repo>/.codeden/VISION.md` (autopilot and dark factory) |
+
+Inside the data directory:
+
+```
+~/.codeden/
+  codeden.db            SQLite database (event log + projections)
+  settings.json         settings
+  install-token         the per-install token (mode 600 where supported)
+  server.json           running server's port and pid
+  runner/               runner lock file and event journal
+  wt/<project>/<id>/    agent worktrees (short paths for Windows)
+  artifacts/            screenshots and files shared in chat
+  orchestrator/         the orchestrator's working directory
+  backups/              copies of config files taken before CodeDen overwrote them
+  logs/runner.log       runner output
+```
+
+Two copies can run side by side with different homes and ports, for example `codeden --home ~/.codeden-test --port 4400`.
+
+A minimal `.codeden/project.json`:
+
+```json
+{
+  "setup": ["pnpm install"],
+  "devServer": { "command": "pnpm dev", "port": 5173 }
+}
+```
+
+## CLI reference
+
+```
+codeden [options]      Start CodeDen and open it in the browser
+codeden doctor         Check the installation
+codeden stop           Stop the server and the runner
+
+Options:
+  --port <n>     Port to listen on (default 4317)
+  --home <dir>   Data directory (default ~/.codeden, or CODEDEN_HOME)
+  --no-open      Do not open the browser
+  -v, --version  Print the version
+  -h, --help     Show this help
+```
+
+- Running `codeden` while it's already running prints the URL and opens it again.
+- **Ctrl+C** stops the server; agents keep running in the runner. `codeden stop` stops both.
+- `codeden doctor` exits non-zero when CodeDen can't run a session, and prints the one command that fixes each problem.
+
+Environment variables: `CODEDEN_HOME` (data directory), `CODEDEN_DEBUG=1` (server log lines in the terminal), `CODEDEN_SHELL` (terminal shell; PowerShell on Windows, `$SHELL` elsewhere), `CODEDEN_GITHUB_SYNC=0` (turn GitHub polling off).
+
+## FAQ
+
+**Do I need API keys?**
+No. CodeDen runs your installed `claude` and `codex` CLIs, which use their own logins, including claude.ai and ChatGPT subscriptions. CodeDen never implements a login of its own and never asks for a credential it can already use. API keys are an optional extra for Gemini or OpenAI image generation and cloud voice. Check your provider's terms for how your plan may be used.
+
+**Where does my data go?**
+It stays on your machine, in `~/.codeden/`. CodeDen has no account system and no hosted backend. The only network traffic is what you set up: your agents talking to their providers, GitHub (through your `gh` login), and the optional image and voice engines you enable.
+
+**Is there telemetry?**
+No. CodeDen sends no usage data anywhere.
+
+**Does it work without GitHub?**
+Yes. Local-only folders get sessions, worktrees, checkpoints, diffs, the workbench and automations; issue, PR, evidence and factory features need a GitHub remote and `gh`.
+
+**Will it touch my working copy?**
+Agent sessions work in their own worktrees under `~/.codeden/wt/` on new `codeden/...` branches. Checkpoints use hidden refs and a temporary index, so your branch and index are never touched. The orchestrator and PMs are read-only.
+
+**What happens if I close the terminal?**
+The server stops; the runner, and any agent mid-turn, keeps going. The next `codeden` reconnects and catches up. `codeden stop` stops everything.
+
+**Which platforms?**
+Windows, macOS and Linux. Windows is tested first.
+
+**Is the dark factory safe to leave running?**
+It's experimental. Read [Autonomy and the dark factory](docs/autonomy-and-dark-factory.md) first, start with Autopilot on a sandbox repository, set a budget and protected areas, and keep the kill switch in reach.
+
+## Documentation
+
+| Guide | |
+|---|---|
+| [Getting started](docs/getting-started.md) | Install, first-run setup, first project and session |
+| [Orchestration](docs/orchestration.md) | Orchestrator, PMs, agents, work keys, conflicts and notices |
+| [GitHub](docs/github.md) | Issues, PRs, checks, reviews and the evidence branch |
+| [Automations](docs/automations.md) | Triggers, guards, templates and writing your own |
+| [Autonomy and the dark factory](docs/autonomy-and-dark-factory.md) | Modes, the vision file, merge checks, limits and the kill switch |
+| [Workbench](docs/workbench.md) | Diffs, checkpoints, files, terminal, browser, composer, shortcuts |
+| [Agent configuration](docs/agent-config.md) | Memory, skills, subagents and MCP servers |
+| [Voice and images](docs/voice-and-images.md) | Dictation, read-aloud and image generation |
+| [Usage and costs](docs/usage-and-costs.md) | The ledger, reports, budgets and rate limits |
+| [Security](docs/security.md) | The security model in detail |
+| [Troubleshooting](docs/troubleshooting.md) | `doctor`, logs and common issues |
+| [Architecture](docs/architecture.md) | How the pieces fit, with a link to the full design |
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, conventions and tests, and [CHANGELOG.md](CHANGELOG.md) for what's changed.
+
+## License
+
+[MIT](LICENSE) © 2026 Leon van Zyl
