@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { SlidersHorizontal } from "lucide-react";
-import { McpList, SkillsList, SubagentsList } from "@/components/agents/config-lists";
-import { MemoryEditor } from "@/components/agents/memory-editor";
+import { McpServers } from "@/components/agents/mcp-servers";
+import { MemoryEditor, SkillsView, SubagentsView } from "@/components/agents/memory-editor";
 import {
   Select,
   SelectContent,
@@ -12,6 +12,8 @@ import {
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "./page-header";
+
+const GLOBAL = "global";
 
 export type AgentTab = "memory" | "skills" | "subagents" | "mcp";
 const TABS: { id: AgentTab; label: string }[] = [
@@ -25,13 +27,17 @@ const TABS: { id: AgentTab; label: string }[] = [
 export function AgentsPage({ tab, projectId }: { tab: AgentTab; projectId: string | null }) {
   const navigate = useNavigate();
   const projects = useSnapshotData((s) => s.projects, []);
-  const scope = projectId ?? projects[0]?.id ?? null;
+  // `?project=global` keeps "Global only" selected; no param means the first project.
+  const scope =
+    projectId === GLOBAL
+      ? null
+      : (projects.find((p) => p.id === projectId)?.id ?? projects[0]?.id ?? null);
   const go = (next: { tab?: AgentTab; project?: string | null }) =>
     void navigate({
       to: "/agents",
       search: {
         tab: next.tab ?? tab,
-        project: next.project === undefined ? (scope ?? undefined) : (next.project ?? undefined),
+        project: next.project === undefined ? (scope ?? GLOBAL) : (next.project ?? GLOBAL),
       },
       replace: true,
     });
@@ -77,14 +83,13 @@ export function AgentsPage({ tab, projectId }: { tab: AgentTab; projectId: strin
             </button>
           ))}
         </div>
-        {tab === "memory" ? (
-          <MemoryEditor projectId={scope} />
-        ) : (
+        {tab === "memory" && <MemoryEditor projectId={scope} />}
+        {tab === "skills" && <SkillsView projectId={scope} />}
+        {tab === "subagents" && <SubagentsView projectId={scope} />}
+        {tab === "mcp" && (
           <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
             <div className="mx-auto max-w-4xl">
-              {tab === "skills" && <SkillsList projectId={scope} />}
-              {tab === "subagents" && <SubagentsList projectId={scope} />}
-              {tab === "mcp" && <McpList projectId={scope} />}
+              <McpServers projectId={scope} />
             </div>
           </div>
         )}

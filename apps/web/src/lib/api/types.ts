@@ -1,7 +1,7 @@
 /**
  * Types the web client needs that are not in `@codeden/contracts`: UI-only shapes (file tree
  * nodes, live channels) and data for screens whose server APIs are not wired yet (factory,
- * conflicts list, agent configuration, PR details). Server shapes come from contracts.
+ * conflicts list, PR details). Server shapes come from contracts.
  */
 import type {
   AutonomyMode,
@@ -106,59 +106,6 @@ export interface SlashCommand {
   provider?: ProviderId;
 }
 
-export interface LoadedContext {
-  memory: string[];
-  skills: string[];
-  mcpServers: string[];
-}
-
-// ------------------------------------------------------------------ agent configuration (§12.4)
-
-export type ConfigScope = "global" | "project" | "local";
-
-export interface MemoryFile {
-  id: string;
-  provider: ProviderId;
-  scope: ConfigScope;
-  label: string;
-  path: string;
-  exists: boolean;
-  sizeBytes: number;
-  updatedAt: string | null;
-}
-
-export interface SkillEntry {
-  id: string;
-  name: string;
-  description: string;
-  provider: ProviderId;
-  scope: ConfigScope;
-  path: string;
-  enabled: boolean;
-}
-
-export interface SubagentEntry {
-  id: string;
-  name: string;
-  description: string;
-  provider: ProviderId;
-  scope: ConfigScope;
-  path: string;
-  model: string | null;
-  tools: string[];
-}
-
-export interface McpServerEntry {
-  id: string;
-  name: string;
-  transport: "stdio" | "http";
-  target: string;
-  source: string;
-  enabledFor: ProviderId[];
-  status: "connected" | "error" | "unknown";
-  toolCount: number | null;
-}
-
 // ------------------------------------------------------------------ live workbench channels
 
 /** Lifecycle of a terminal channel (`/ws/pty` control frames). */
@@ -184,27 +131,4 @@ export interface OpenTerminalOptions {
   command?: string;
   /** Re-attach to a terminal opened earlier instead of starting a new one. */
   ptyId?: string;
-}
-
-export interface BrowserFrame {
-  /** Image URL (data: or blob:) of the latest screencast frame. */
-  src: string;
-  width: number;
-  height: number;
-  url: string;
-  title: string;
-}
-
-export interface BrowserChannel {
-  onFrame(listener: (frame: BrowserFrame) => void): () => void;
-  /** Called when the server has no browser for this session (not wired yet, or failed). */
-  onUnavailable(listener: () => void): () => void;
-  navigate(url: string): void;
-  back(): void;
-  forward(): void;
-  reload(): void;
-  /** Take over input from the agent (or hand it back). */
-  setControl(owner: "agent" | "user"): void;
-  click(x: number, y: number): void;
-  close(): void;
 }

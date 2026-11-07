@@ -22,6 +22,13 @@ import {
 } from "@codeden/contracts";
 import type { CodeDenClient, SendMode } from "./client";
 import { createFetcher } from "./http";
+import {
+  httpAgentConfigApi,
+  httpBrowserApi,
+  httpImagesApi,
+  httpSecretsApi,
+  httpVoiceApi,
+} from "./http-features";
 import { configApi } from "./http-unwired";
 import { RealtimeSocket } from "./realtime-socket";
 import { openTerminalSocket } from "./terminal-channel";
@@ -124,9 +131,7 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     },
 
     updateSettings: (patch) => call("PATCH", "/settings", patch, (v) => Settings.parse(v)),
-    async setSecret(name, value) {
-      await call("PUT", `/secrets/${enc(name)}`, { value });
-    },
+    secrets: httpSecretsApi(http),
 
     getSetupStatus: (o) =>
       get(`/setup/status${o?.refresh ? "?refresh=1" : ""}`, (v) => SetupStatus.parse(v)),
@@ -169,7 +174,11 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     speechSummary: (text) =>
       post("/utility/speech-summary", { text }, (v) => SpeechSummaryResponse.parse(v)),
 
-    ...configApi(http, wsBase),
+    browser: httpBrowserApi(http, wsBase),
+    agentConfig: httpAgentConfigApi(http),
+    images: httpImagesApi(http),
+    voice: httpVoiceApi(http),
+    ...configApi(http),
   };
 }
 

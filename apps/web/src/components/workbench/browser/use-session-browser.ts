@@ -1,0 +1,124 @@
+import type { BrowserServerMessage, BrowserTab } from "@codeden/contracts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { ApiRequestError, useClient } from "@/lib/api";
+import type { BrowserChannel, BrowserConnection } from "@/lib/api/feature-apis";
+
+export type FrameMessage = Extract<BrowserServerMessage, { type: "frame" }>;
+
+export interface SessionBrowser {
+  connection: BrowserConnection;
+  /** Null until the server reported the browser's state. */
+  open: boolean | null;
+  tabs: BrowserTab[];
+  activeTab: BrowserTab | undefined;
+  /** Subscribe to screencast frames (kept out of React state). */
+  onFrame(listener: (frame: FrameMessage) => void): () => void;
+  channel: BrowserChannel | null;
+  /** Run a browser command; `409 browser_not_open` flips the panel to its open screen. */
+  run<T>(label: string, action: () => Promise<T>): Promise<T | undefined>;
+  /** Open the browser (optionally at a URL) and start watching. */
+  openBrowser(url?: string): Promise<void>;
+  closeBrowser(): Promise<void>;
+}
+
+export function isBrowserNotOpen(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.code === "browser_not_open";
+}
+
+/**
+ * Live state of a session's browser (§12.2): one `/ws/browser` viewer socket for frames,
+ * tabs and open/close state, plus the REST commands, with `409 browser_not_open` handled.
+ */
+export function useSessionBrowser(sessionId: string): SessionBrowser {
+  const client = useClient();
+  const [channel, setChannel] = useState<BrowserChannel | null>(null);
+  const [connection, setConnection] = useState<BrowserConnection>("connecting");
+  const [open, setOpen] = useState<boolean | null>(null);
+  const [tabs, setTabs] = useState<BrowserTab[]>([]);
+  const frameListeners = useRef(new Set<(f: FrameMessage) => void>());
+  const [generation, setGeneration] = useState(0);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `generation` reconnects after close.
+  useEffect(() => {
+    const ch = client.browser.openChannel(sessionId, {
+      maxWidth: 1920,
+      maxHeight: 1200,
+      quality: 70,
+    });
+    setChannel(ch);
+    setOpen(null);
+    const offConn = ch.onConnection(setConnection);
+    const offMsg = ch.onMessage((msg) => {
+      if (msg.type === "state") {
+        setOpen(msg.open);
+        setTabs(msg.tabs);
+      } else if (msg.type === "tabs") {
+        if (msg.tabs.length === 0) {
+          // The browser closed (agent, session stop or another viewer): start a fresh viewer
+          // that waits for the next open instead of a stale screencast registration.
+          setOpen(false);
+          setTabs([]);
+          setGeneration((g) => g + 1);
+          return;
+        }
+        setOpen(true);
+        setTabs(msg.tabs);
+      } else if (msg.type === "frame") {
+        for (const l of frameListeners.current) l(msg);
+      } else if (msg.code === "browser_not_open") {
+        setOpen(false);
+      } else {
+        toast.error("Browser", { description: msg.message });
+      }
+    });
+    return () => {
+      offConn();
+      offMsg();
+      ch.close();
+      setChannel(null);
+    };
+  }, [client, sessionId, generation]);
+
+  return useMemo(() => {
+    const run = async <T>(label: string, action: () => Promise<T>): Promise<T | undefined> => {
+      try {
+        return await action();
+      } catch (error) {
+        if (isBrowserNotOpen(error)) setOpen(false);
+        else
+          toast.error(label, {
+            description: error instanceof Error ? error.message : String(error),
+          });
+        return undefined;
+      }
+    };
+    return {
+      connection,
+      open,
+      tabs,
+      activeTab: tabs.find((t) => t.active) ?? tabs[0],
+      channel,
+      onFrame(listener) {
+        frameListeners.current.add(listener);
+        return () => frameListeners.current.delete(listener);
+      },
+      run,
+      async openBrowser(url) {
+        // Over the viewer socket, so opening and watching happen together server-side.
+        if (channel) return channel.open(url);
+        const res = await run("Couldn't open the browser", () =>
+          client.browser.open(sessionId, url),
+        );
+        if (res) setTabs(res.tabs);
+      },
+      async closeBrowser() {
+        await run("Couldn't close the browser", () => client.browser.close(sessionId));
+        setOpen(false);
+        setTabs([]);
+        // A fresh viewer socket waits for the next open (by you or the agent).
+        setGeneration((g) => g + 1);
+      },
+    } satisfies SessionBrowser;
+  }, [client, sessionId, channel, connection, open, tabs]);
+}

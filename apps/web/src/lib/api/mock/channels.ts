@@ -1,5 +1,4 @@
-import type { BrowserChannel, BrowserFrame, OpenTerminalOptions, TerminalChannel } from "../types";
-import { storefrontFrame } from "./fixtures/images";
+import type { OpenTerminalOptions, TerminalChannel } from "../types";
 
 const c = {
   dim: "\x1b[2m",
@@ -100,57 +99,6 @@ export function mockTerminal(opts: OpenTerminalOptions): TerminalChannel {
     },
     kill() {
       for (const t of timers) clearTimeout(t);
-      listeners.clear();
-    },
-  };
-}
-
-/** A fake CDP screencast of the storefront dev server. */
-export function mockBrowser(): BrowserChannel {
-  const listeners = new Set<(f: BrowserFrame) => void>();
-  let url = "http://localhost:5173/products?category=Textiles";
-  let step = 0;
-  let owner: "agent" | "user" = "agent";
-  const frame = (): BrowserFrame => ({
-    src: storefrontFrame(step, url),
-    width: 1024,
-    height: 640,
-    url,
-    title: "Products · Hearth & Co.",
-  });
-  const push = () => {
-    const f = frame();
-    for (const l of listeners) l(f);
-  };
-  const interval = setInterval(() => {
-    if (owner === "agent") {
-      step += 1;
-      push();
-    }
-  }, 1200);
-  return {
-    onFrame(listener) {
-      listeners.add(listener);
-      listener(frame());
-      return () => listeners.delete(listener);
-    },
-    onUnavailable: () => () => {},
-    navigate(next) {
-      url = next;
-      push();
-    },
-    back: push,
-    forward: push,
-    reload: push,
-    setControl(next) {
-      owner = next;
-    },
-    click() {
-      step += 1;
-      push();
-    },
-    close() {
-      clearInterval(interval);
       listeners.clear();
     },
   };

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRight, BellRing, Check, Mic, Volume2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useSettings } from "@/components/settings/settings-ui";
 import { ProjectSourcePicker } from "@/components/setup/add-project-dialog";
 import { SetupChecklist, useSetupStatus } from "@/components/setup/checklist";
@@ -96,19 +97,22 @@ export function SetupPage() {
   const status = useSetupStatus();
   const ready = status.data?.ready ?? false;
   const finish = async (projectId?: string) => {
-    await client.completeSetup().catch(() => undefined);
-    // The server persists this without a live event; mirror it so "/" doesn't bounce back here.
+    const completedAt = new Date().toISOString();
+    // Mirror it right away so "/" doesn't bounce back here while the server catches up.
     queryClient.setQueryData<Snapshot>(snapshotKey, (s) =>
-      s
-        ? {
-            ...s,
-            settings: {
-              ...s.settings,
-              setup: { completed: true, completedAt: new Date().toISOString() },
-            },
-          }
-        : s,
+      s ? { ...s, settings: { ...s.settings, setup: { completed: true, completedAt } } } : s,
     );
+    try {
+      await client.completeSetup();
+      // `/setup/complete` saves without a live event; the settings PATCH broadcasts
+      // `settings.updated`, so every open tab (and a later snapshot) agrees.
+      const settings = await client.updateSettings({ setup: { completed: true, completedAt } });
+      queryClient.setQueryData<Snapshot>(snapshotKey, (s) => (s ? { ...s, settings } : s));
+    } catch (error) {
+      toast.error("Setup wasn't saved", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
     void navigate(projectId ? { to: "/projects/$projectId", params: { projectId } } : { to: "/" });
   };
 

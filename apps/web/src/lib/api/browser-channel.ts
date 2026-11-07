@@ -1,0 +1,103 @@
+import { type BrowserClientMessage, BrowserServerMessage } from "@codeden/contracts";
+import type { BrowserChannel, BrowserChannelOptions, BrowserConnection } from "./feature-apis";
+
+const RECONNECT_MS = [500, 1_000, 2_000, 4_000];
+
+/** `/ws/browser` query string from the channel options. */
+export function browserSocketQuery(sessionId: string, opts: BrowserChannelOptions = {}): string {
+  const params = new URLSearchParams({ sessionId });
+  if (opts.open) params.set("open", "1");
+  for (const key of ["quality", "maxWidth", "maxHeight", "maxFps"] as const) {
+    const value = opts[key];
+    if (value !== undefined) params.set(key, String(Math.round(value)));
+  }
+  return params.toString();
+}
+
+/**
+ * One viewer of a session's browser over `/ws/browser` (§12.2). Server messages are validated
+ * with the contract; control messages sent before the socket opens are queued (input is
+ * dropped, it is only meaningful against the frame the user saw). Reconnects after drops.
+ */
+export function openBrowserSocket(
+  wsBase: string,
+  sessionId: string,
+  opts: BrowserChannelOptions = {},
+): BrowserChannel {
+  const url = `${wsBase}/ws/browser?${browserSocketQuery(sessionId, opts)}`;
+  const messages = new Set<(m: BrowserServerMessage) => void>();
+  const states = new Set<(s: BrowserConnection) => void>();
+  let pending: BrowserClientMessage[] = [];
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let attempt = 0;
+  let state: BrowserConnection = "connecting";
+
+  const setState = (next: BrowserConnection) => {
+    state = next;
+    for (const l of states) l(next);
+  };
+
+  const connect = () => {
+    const socket = new WebSocket(url);
+    ws = socket;
+    socket.onopen = () => {
+      attempt = 0;
+      setState("open");
+      for (const msg of pending) socket.send(JSON.stringify(msg));
+      pending = [];
+    };
+    socket.onmessage = (e) => {
+      let parsed: BrowserServerMessage;
+      try {
+        parsed = BrowserServerMessage.parse(JSON.parse(String(e.data)));
+      } catch {
+        return;
+      }
+      for (const l of messages) l(parsed);
+    };
+    socket.onclose = () => {
+      if (ws !== socket) return;
+      ws = null;
+      setState("closed");
+      if (closed) return;
+      const wait = RECONNECT_MS[Math.min(attempt, RECONNECT_MS.length - 1)] ?? 4_000;
+      attempt += 1;
+      setTimeout(() => {
+        if (closed) return;
+        setState("connecting");
+        connect();
+      }, wait);
+    };
+  };
+  connect();
+
+  const send = (msg: BrowserClientMessage, queue: boolean) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    else if (queue) pending.push(msg);
+  };
+
+  return {
+    onMessage(listener) {
+      messages.add(listener);
+      return () => messages.delete(listener);
+    },
+    onConnection(listener) {
+      states.add(listener);
+      listener(state);
+      return () => states.delete(listener);
+    },
+    input: (input) => send({ type: "input", input }, false),
+    watch: (settings) => send({ type: "watch", settings }, true),
+    unwatch: () => send({ type: "unwatch" }, true),
+    open: (target) => send({ type: "open", url: target }, true),
+    close() {
+      closed = true;
+      const socket = ws;
+      ws = null;
+      socket?.close(1000);
+      messages.clear();
+      states.clear();
+    },
+  };
+}

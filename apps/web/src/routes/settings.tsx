@@ -21,11 +21,9 @@ import {
   ProviderSettings,
   UtilitySettings,
 } from "@/components/settings/sections-core";
-import {
-  ImageSettings,
-  NotificationSettings,
-  VoiceSettings,
-} from "@/components/settings/sections-media";
+import { ImageSettings } from "@/components/settings/sections-images";
+import { NotificationSettings } from "@/components/settings/sections-media";
+import { VoiceSettings } from "@/components/settings/sections-voice";
 import { SettingsSection } from "@/components/settings/settings-ui";
 import { Logo } from "@/components/shell/logo";
 import { ShortcutList } from "@/components/shell/shortcuts";

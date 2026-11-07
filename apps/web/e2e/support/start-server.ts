@@ -3,8 +3,8 @@
  * screenshots. Prints `CODEDEN_E2E_READY <json>` once listening; stops on SIGINT/SIGTERM or
  * (with `--exit-with-stdin`) when stdin closes, taking the runner down with it.
  *
- *   node --import tsx apps/web/e2e/support/start-server.ts --home <dir> [--port 0] [--builtin]
- *     [--exit-with-stdin]
+ *   node --import tsx apps/web/e2e/support/start-server.ts --home <dir> [--user-home <dir>]
+ *     [--port 0] [--builtin] [--exit-with-stdin]
  */
 import { parseArgs } from "node:util";
 import { ensureHome, ensureInstallToken, startServer } from "@codeden/server";
@@ -12,6 +12,8 @@ import { ensureHome, ensureInstallToken, startServer } from "@codeden/server";
 const { values } = parseArgs({
   options: {
     home: { type: "string" },
+    /** Folder used as the user's home for agent config (`~/.claude`, `~/.codex`). */
+    "user-home": { type: "string" },
     port: { type: "string", default: "0" },
     /** Load the real Claude Code and Codex adapters (screenshots); off for tests. */
     builtin: { type: "boolean", default: false },
@@ -32,6 +34,7 @@ const server = await startServer({
   enableFakeProvider: true,
   builtinProviders: values.builtin,
   waitForRunner: true,
+  userHome: values["user-home"],
   log: (m) => console.log(`[codeden] ${m}`),
 });
 console.log(
