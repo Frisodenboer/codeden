@@ -147,7 +147,7 @@ describe("ui websocket", () => {
           m.type === "events" ? m.events.map((e) => e.seq) : [],
         );
         if (seqs.length === 1) server.store.append(rest);
-        if (seqs.length === rest.length + 1) resolve();
+        else if (seqs.at(-1) === server.store.headSeq()) resolve();
       });
     });
     ws.close();

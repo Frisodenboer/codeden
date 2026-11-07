@@ -1,16 +1,21 @@
 import {
+  Artifact,
   Automation,
   type AutomationRun,
   InboxItem,
+  type ItemRecord,
   Project,
   Session,
   type Thread,
   type Turn,
 } from "@codeden/contracts";
+import type { TurnRecord } from "../events/reducer/types";
 import type {
+  artifacts,
   automationRuns,
   automations,
   inboxItems,
+  items,
   projects,
   sessions,
   threads,
@@ -56,7 +61,8 @@ export function rowToProject(r: ProjectRow): Project {
   });
 }
 
-export function sessionToRow(s: Session): SessionRow {
+/** Session columns only; `usage` and `startMeta` are written separately. */
+export function sessionToRow(s: Session): Omit<SessionRow, "usage" | "startMeta"> {
   return { ...s };
 }
 
@@ -89,5 +95,26 @@ export function rowToThread(r: typeof threads.$inferSelect): Thread {
 }
 
 export function rowToTurn(r: typeof turns.$inferSelect): Turn {
+  const { usage: _usage, ...turn } = r;
+  return { ...turn, status: r.status as Turn["status"] };
+}
+
+export function rowToTurnRecord(r: typeof turns.$inferSelect): TurnRecord {
   return { ...r, status: r.status as Turn["status"] };
+}
+
+export function rowToItemRecord(r: typeof items.$inferSelect): ItemRecord {
+  return {
+    sessionId: r.sessionId,
+    threadId: r.threadId,
+    turnId: r.turnId,
+    position: r.position,
+    item: r.data,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+export function rowToArtifact(r: typeof artifacts.$inferSelect): Artifact {
+  return Artifact.parse(r);
 }

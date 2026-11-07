@@ -8,7 +8,9 @@ import type {
   GitHubRepo,
   Item,
   JsonValue,
+  SessionStartMeta,
   StartedBy,
+  Usage,
   WorkProgress,
   WorkScope,
 } from "@codeden/contracts";
@@ -96,6 +98,10 @@ export const sessions = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     endedAt: text("ended_at"),
+    /** Accumulated usage (server-side projection; not part of the `Session` entity). */
+    usage: json<Usage>("usage"),
+    /** How the session was started (workspace fallback, forced conflict reason, queue). */
+    startMeta: json<SessionStartMeta>("start_meta"),
   },
   (t) => [
     index("sessions_project").on(t.projectId),
@@ -129,6 +135,8 @@ export const turns = sqliteTable(
     startedAt: text("started_at").notNull(),
     completedAt: text("completed_at"),
     error: json<ErrorInfo>("error"),
+    /** Usage reported for this turn (latest `usage.updated` with this turnId). */
+    usage: json<Usage>("usage"),
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.id] })],
 );
