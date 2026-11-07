@@ -171,23 +171,25 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
           </TooltipTrigger>
           <TooltipContent>Terminal · Ctrl J</TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={cn(
-                "text-muted-foreground",
-                layout.rightOpen && "bg-accent text-foreground",
-              )}
-              onClick={() => layout.toggleRight()}
-              aria-label="Toggle right panel"
-            >
-              <PanelRight />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Right panel · Ctrl \</TooltipContent>
-        </Tooltip>
+        {session.worktreePath && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "text-muted-foreground",
+                  layout.rightOpen && "bg-accent text-foreground",
+                )}
+                onClick={() => layout.toggleRight()}
+                aria-label="Toggle right panel"
+              >
+                <PanelRight />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Right panel · Ctrl \</TooltipContent>
+          </Tooltip>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

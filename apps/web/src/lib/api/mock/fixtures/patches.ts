@@ -157,6 +157,27 @@ index 5d02a11..77ac9b0 100644
  }
 `);
 
+export const tokensPatch = normalizePatch(`diff --git a/src/theme/tokens.css b/src/theme/tokens.css
+index 2c41a0e..9f03b7d 100644
+--- a/src/theme/tokens.css
++++ b/src/theme/tokens.css
+@@ -8,10 +8,10 @@
+ :root {
+   --surface: #ffffff;
+-  --text-muted: #cbd5e1;
+-  --text-price: #cbd5e1;
+-  --action: #fcd34d;
+-  --action-text: #fff7ed;
++  --text-muted: #475569;
++  --text-price: #334155;
++  --action: #b45309;
++  --action-text: #ffffff;
+   --radius: 10px;
+-  --focus-ring: transparent;
++  --focus-ring: #2563eb;
+ }
+`);
+
 export function countLines(patch: string): { additions: number; deletions: number } {
   let additions = 0;
   let deletions = 0;

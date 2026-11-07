@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { Hotkey } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -64,9 +65,10 @@ function Row({
       <span className="flex size-4 items-center justify-center text-muted-foreground [&_svg]:size-4">
         {icon}
       </span>
-      <span className="truncate">{label}</span>
-      {hint && <span className="truncate text-xs text-muted-foreground">{hint}</span>}
-      {keys && <Hotkey keys={formatCombo(shortcut(keys).combo)} className="ml-auto" />}
+      <span className="min-w-0 truncate">{label}</span>
+      {hint && <span className="min-w-0 truncate text-xs text-muted-foreground">{hint}</span>}
+      <span className="flex-1" />
+      {keys && <Hotkey keys={formatCombo(shortcut(keys).combo)} />}
     </CommandItem>
   );
 }
@@ -93,123 +95,125 @@ export function CommandPalette() {
       title="Command palette"
       className="sm:max-w-xl"
     >
-      <CommandInput placeholder="Search sessions, projects and actions…" />
-      <CommandList className="max-h-[min(440px,60dvh)]">
-        <CommandEmpty>No results.</CommandEmpty>
-        <CommandGroup heading="Go to">
-          <Row
-            icon={<Bot className="text-primary" />}
-            label="Orchestrator"
-            keys="orchestrator"
-            onSelect={run(() => navigate({ to: "/" }))}
-          />
-          <Row
-            icon={<Inbox />}
-            label="Inbox"
-            keys="inbox"
-            onSelect={run(() => navigate({ to: "/inbox" }))}
-          />
-          {data?.projects.map((p) => (
+      <Command>
+        <CommandInput placeholder="Search sessions, projects and actions…" />
+        <CommandList className="max-h-[min(440px,60dvh)]">
+          <CommandEmpty>No results.</CommandEmpty>
+          <CommandGroup heading="Go to">
             <Row
-              key={p.id}
-              icon={<ProjectTile project={p} />}
-              label={p.name}
-              hint="Project home"
-              onSelect={run(() =>
-                navigate({ to: "/projects/$projectId", params: { projectId: p.id } }),
-              )}
+              icon={<Bot className="text-primary" />}
+              label="Orchestrator"
+              keys="orchestrator"
+              onSelect={run(() => navigate({ to: "/" }))}
             />
-          ))}
-        </CommandGroup>
-        <CommandGroup heading="Sessions">
-          {data?.sessions
-            .filter((s) => s.role === "agent")
-            .map((s) => (
+            <Row
+              icon={<Inbox />}
+              label="Inbox"
+              keys="inbox"
+              onSelect={run(() => navigate({ to: "/inbox" }))}
+            />
+            {data?.projects.map((p) => (
               <Row
-                key={s.id}
-                value={`${s.title ?? s.purpose} ${s.workKey} ${projectName(s.projectId) ?? ""}`}
-                icon={<StatusDot status={s.status} />}
-                label={s.title ?? s.purpose}
-                hint={projectName(s.projectId)}
+                key={p.id}
+                icon={<ProjectTile project={p} />}
+                label={p.name}
+                hint="Project home"
                 onSelect={run(() =>
-                  navigate({ to: "/sessions/$sessionId", params: { sessionId: s.id } }),
+                  navigate({ to: "/projects/$projectId", params: { projectId: p.id } }),
                 )}
               />
             ))}
-        </CommandGroup>
-        <CommandSeparator />
-        <CommandGroup heading="Actions">
-          <Row
-            icon={<MessageSquarePlus />}
-            label="New session…"
-            onSelect={run(
-              () =>
-                data?.projects[0] &&
-                navigate({
-                  to: "/projects/$projectId",
-                  params: { projectId: data.projects[0].id },
-                  search: { newSession: true },
-                }),
-            )}
-          />
-          <Row
-            icon={<FolderPlus />}
-            label="Add project…"
-            onSelect={run(() => useUiStore.getState().setAddProjectOpen(true))}
-          />
-          <Row
-            icon={<PanelLeft />}
-            label="Toggle sidebar"
-            keys="sidebar"
-            onSelect={run(layout.toggleSidebar)}
-          />
-          <Row
-            icon={<PanelRight />}
-            label="Toggle right panel"
-            keys="rightPanel"
-            onSelect={run(() => layout.toggleRight())}
-          />
-          <Row
-            icon={<SquareTerminal />}
-            label="Toggle terminal drawer"
-            keys="terminal"
-            onSelect={run(() => layout.toggleDrawer())}
-          />
-          <Row
-            icon={<Moon />}
-            label="Toggle light / dark theme"
-            keys="theme"
-            onSelect={run(toggleTheme)}
-          />
-          <Row
-            icon={<Keyboard />}
-            label="Keyboard shortcuts"
-            keys="help"
-            onSelect={run(() => useUiStore.getState().setShortcutsOpen(true))}
-          />
-          <Row
-            icon={<SlidersHorizontal />}
-            label="Agent configuration"
-            hint="Memory, skills, subagents, MCP"
-            onSelect={run(() => navigate({ to: "/agents" }))}
-          />
-          <Row
-            icon={<Rocket />}
-            label="First-run setup"
-            onSelect={run(() => navigate({ to: "/setup" }))}
-          />
-        </CommandGroup>
-        <CommandGroup heading="Settings">
-          {SETTINGS.map((section) => (
+          </CommandGroup>
+          <CommandGroup heading="Sessions">
+            {data?.sessions
+              .filter((s) => s.role === "agent")
+              .map((s) => (
+                <Row
+                  key={s.id}
+                  value={`${s.title ?? s.purpose} ${s.workKey} ${projectName(s.projectId) ?? ""}`}
+                  icon={<StatusDot status={s.status} />}
+                  label={s.title ?? s.purpose}
+                  hint={projectName(s.projectId)}
+                  onSelect={run(() =>
+                    navigate({ to: "/sessions/$sessionId", params: { sessionId: s.id } }),
+                  )}
+                />
+              ))}
+          </CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading="Actions">
             <Row
-              key={section}
-              icon={<Settings />}
-              label={`Settings: ${section[0]?.toUpperCase()}${section.slice(1)}`}
-              onSelect={run(() => navigate({ to: "/settings/$section", params: { section } }))}
+              icon={<MessageSquarePlus />}
+              label="New session…"
+              onSelect={run(
+                () =>
+                  data?.projects[0] &&
+                  navigate({
+                    to: "/projects/$projectId",
+                    params: { projectId: data.projects[0].id },
+                    search: { newSession: true },
+                  }),
+              )}
             />
-          ))}
-        </CommandGroup>
-      </CommandList>
+            <Row
+              icon={<FolderPlus />}
+              label="Add project…"
+              onSelect={run(() => useUiStore.getState().setAddProjectOpen(true))}
+            />
+            <Row
+              icon={<PanelLeft />}
+              label="Toggle sidebar"
+              keys="sidebar"
+              onSelect={run(layout.toggleSidebar)}
+            />
+            <Row
+              icon={<PanelRight />}
+              label="Toggle right panel"
+              keys="rightPanel"
+              onSelect={run(() => layout.toggleRight())}
+            />
+            <Row
+              icon={<SquareTerminal />}
+              label="Toggle terminal drawer"
+              keys="terminal"
+              onSelect={run(() => layout.toggleDrawer())}
+            />
+            <Row
+              icon={<Moon />}
+              label="Toggle light / dark theme"
+              keys="theme"
+              onSelect={run(toggleTheme)}
+            />
+            <Row
+              icon={<Keyboard />}
+              label="Keyboard shortcuts"
+              keys="help"
+              onSelect={run(() => useUiStore.getState().setShortcutsOpen(true))}
+            />
+            <Row
+              icon={<SlidersHorizontal />}
+              label="Agent configuration"
+              hint="Memory, skills, subagents, MCP"
+              onSelect={run(() => navigate({ to: "/agents" }))}
+            />
+            <Row
+              icon={<Rocket />}
+              label="First-run setup"
+              onSelect={run(() => navigate({ to: "/setup" }))}
+            />
+          </CommandGroup>
+          <CommandGroup heading="Settings">
+            {SETTINGS.map((section) => (
+              <Row
+                key={section}
+                icon={<Settings />}
+                label={`Settings: ${section[0]?.toUpperCase()}${section.slice(1)}`}
+                onSelect={run(() => navigate({ to: "/settings/$section", params: { section } }))}
+              />
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </Command>
     </CommandDialog>
   );
 }

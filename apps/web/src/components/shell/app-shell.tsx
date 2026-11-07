@@ -2,7 +2,7 @@ import { Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import { AddProjectDialog } from "@/components/setup/add-project-dialog";
 import { RightPanel } from "@/components/workbench/right-panel";
 import { TerminalDrawer } from "@/components/workbench/terminal-drawer";
-import { useOrchestratorSession } from "@/lib/queries";
+import { useOrchestratorSession, useSession } from "@/lib/queries";
 import { DRAWER, RIGHT, SIDEBAR, useLayoutStore } from "@/stores/layout";
 import { CommandPalette } from "./command-palette";
 import { LiveEffects } from "./live-effects";
@@ -25,6 +25,8 @@ export function useCurrentSessionId(): string | undefined {
 export function AppShell() {
   const layout = useLayoutStore();
   const sessionId = useCurrentSessionId();
+  // The workbench panel belongs to sessions that own a worktree.
+  const hasWorkbench = Boolean(useSession(sessionId)?.worktreePath);
   useGlobalShortcuts();
 
   return (
@@ -64,7 +66,7 @@ export function AppShell() {
         )}
       </main>
 
-      {sessionId && layout.rightOpen && (
+      {sessionId && hasWorkbench && layout.rightOpen && (
         <>
           <ResizeHandle
             label="Resize panel"

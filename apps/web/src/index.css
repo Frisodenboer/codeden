@@ -192,55 +192,54 @@
   }
 }
 
-@layer components {
-  /* Dense, readable markdown for transcripts. */
-  .markdown {
-    @apply text-[14px] leading-[1.65] text-foreground/90;
-  }
-  .markdown > * + * {
-    margin-top: 0.7em;
-  }
-  .markdown h1,
-  .markdown h2,
-  .markdown h3 {
-    @apply mt-4 font-semibold tracking-tight text-foreground;
-  }
-  .markdown h1 {
-    @apply text-lg;
-  }
-  .markdown h2 {
-    @apply text-base;
-  }
-  .markdown h3 {
-    @apply text-[14.5px];
-  }
-  .markdown [data-streamdown="inline-code"] {
-    @apply rounded-[5px] border border-border bg-muted px-[0.35em] py-[0.05em] font-mono text-[0.86em] text-foreground;
-  }
-  .markdown [data-streamdown="code-block"] {
-    @apply my-3 overflow-hidden rounded-lg border border-border bg-surface;
-  }
-  .markdown [data-streamdown="code-block"] pre {
-    @apply font-mono text-[12.5px] leading-relaxed;
-  }
-  .markdown [data-streamdown="table-wrapper"] {
-    @apply my-3 overflow-hidden rounded-lg border border-border;
-  }
-  .markdown [data-streamdown="table"] {
-    @apply w-full border-collapse text-[13px];
-  }
-  .markdown [data-streamdown="table-header-cell"] {
-    @apply bg-muted/60 px-3 py-1.5 text-left font-medium text-muted-foreground;
-  }
-  .markdown [data-streamdown="table-cell"] {
-    @apply border-t border-border px-3 py-1.5;
-  }
-  .markdown [data-streamdown="link"] {
-    @apply text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary;
-  }
-  .markdown [data-streamdown="strong"] {
-    @apply font-semibold text-foreground;
-  }
+/* Unlayered so it wins over Streamdown's utility classes. */
+/* Dense, readable markdown for transcripts. */
+.markdown {
+  @apply text-[14px] leading-[1.65] text-foreground/90;
+}
+.markdown > * + * {
+  margin-top: 0.7em;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  @apply mt-4 font-semibold tracking-tight text-foreground;
+}
+.markdown h1 {
+  @apply text-lg;
+}
+.markdown h2 {
+  @apply text-base;
+}
+.markdown h3 {
+  @apply text-[14.5px];
+}
+.markdown [data-streamdown="inline-code"] {
+  @apply rounded-[5px] border border-border bg-muted px-[0.35em] py-[0.05em] font-mono text-[0.86em] text-foreground;
+}
+.markdown [data-streamdown="code-block"] {
+  @apply my-3 overflow-hidden rounded-lg border border-border bg-surface;
+}
+.markdown [data-streamdown="code-block"] pre {
+  @apply font-mono text-[12.5px] leading-relaxed;
+}
+.markdown [data-streamdown="table-wrapper"] {
+  @apply my-3 overflow-hidden rounded-lg border border-border;
+}
+.markdown [data-streamdown="table"] {
+  @apply w-full border-collapse text-[13px];
+}
+.markdown [data-streamdown="table-header-cell"] {
+  @apply bg-muted/60 px-3 py-1.5 text-left font-medium text-muted-foreground;
+}
+.markdown [data-streamdown="table-cell"] {
+  @apply border-t border-border px-3 py-1.5;
+}
+.markdown [data-streamdown="link"] {
+  @apply text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary;
+}
+.markdown [data-streamdown="strong"] {
+  @apply font-semibold text-foreground;
 }
 
 @utility scroll-thin {

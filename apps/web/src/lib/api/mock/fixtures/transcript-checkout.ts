@@ -74,7 +74,7 @@ const review: Item[] = [
   search("rv-4", "setTotal(", 3, "src"),
   assistant(
     "rv-5",
-    "The request-id guard is correct and minimal. One suggestion: `useRef` is not imported in `useCart.ts` yet — it is, on line 1. No blocking issues so far; checking the discount path next…",
+    "The request-id guard is correct and minimal, and `useRef` is already imported in `useCart.ts`. No blocking issues so far; checking the discount path next…",
     true,
   ),
 ];

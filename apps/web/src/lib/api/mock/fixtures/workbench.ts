@@ -1,5 +1,5 @@
 import type { DiffFile, FileNode, PrDetails, SlashCommand } from "../../types";
-import { cartPatch, countLines, indexPatch, searchPatch, specPatch } from "./patches";
+import { cartPatch, countLines, indexPatch, searchPatch, specPatch, tokensPatch } from "./patches";
 
 const diffFile = (
   path: string,
@@ -13,6 +13,7 @@ const diffFile = (
 });
 
 export const sessionDiffs: Record<string, DiffFile[]> = {
+  "s-a11y": [diffFile("src/theme/tokens.css", tokensPatch)],
   "s-checkout": [
     diffFile("src/checkout/useCart.ts", cartPatch),
     diffFile("tests/e2e/checkout.spec.ts", specPatch),
