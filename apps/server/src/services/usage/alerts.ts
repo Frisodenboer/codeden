@@ -86,7 +86,12 @@ export function toWindow(
   now: number,
 ): RateLimitWindow {
   return {
-    ...row,
+    provider: row.provider,
+    windowId: row.windowId,
+    status: row.status,
+    usedPercent: row.usedPercent,
+    resetsAt: row.resetsAt,
+    observedAt: row.observedAt,
     label: windowLabel(row.windowId),
     stale: row.resetsAt !== null && Date.parse(row.resetsAt) <= now,
   };
