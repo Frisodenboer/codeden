@@ -12,6 +12,7 @@ import { ResizeHandle } from "./resize-handle";
 import { ShortcutsDialog, useGlobalShortcuts } from "./shortcuts";
 import { Sidebar } from "./sidebar/sidebar";
 import { SidebarRail } from "./sidebar/sidebar-rail";
+import { UpdateBanner } from "./update-banner";
 
 /** The session shown in the centre, if the current route is a thread. */
 export function useCurrentSessionId(): string | undefined {
@@ -62,6 +63,7 @@ export function AppShell() {
       )}
 
       <main className="relative flex min-w-0 flex-1 flex-col">
+        <UpdateBanner />
         <div className="flex min-h-0 flex-1 flex-col">
           <Outlet />
         </div>

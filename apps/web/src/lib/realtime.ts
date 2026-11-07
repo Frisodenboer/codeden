@@ -13,6 +13,7 @@ import { invalidateAutomations } from "./automations";
 import { invalidateFactory } from "./factory";
 import { snapshotKey } from "./queries";
 import { applyDomainEvent } from "./snapshot-reducer";
+import { updatesKey } from "./updates";
 
 type EnvelopeListener = (env: EventEnvelope) => void;
 const GITHUB_EVENTS = new Set<string>(GITHUB_EVENT_TYPES);
@@ -93,6 +94,9 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
       switch (msg.type) {
         case "runner":
           conn().setRunner(msg.runner);
+          break;
+        case "update":
+          queryClient.setQueryData(updatesKey, msg.update);
           break;
         case "events":
           for (const e of msg.events) apply(e);

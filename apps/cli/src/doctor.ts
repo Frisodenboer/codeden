@@ -8,7 +8,16 @@ import {
   installClaudeSdk,
   isClaudeSdkInstalled,
 } from "@codeden/providers";
-import { checkSetup, homePaths, readLiveRunnerLock } from "@codeden/server";
+import {
+  checkSetup,
+  homePaths,
+  installProblem,
+  listInstalled,
+  packageRoot,
+  readLiveRunnerLock,
+  readPointer,
+} from "@codeden/server";
+import type { LaunchInfo } from "./launcher";
 import { findRunningServer } from "./running";
 
 const MARK: Record<SetupCheck["state"], string> = {
@@ -72,7 +81,10 @@ async function installClaudeSupport(depsDir: string): Promise<boolean> {
  * screen (§14): installed versions, logins and supported adapter versions, with the one
  * command that fixes each problem. Exits non-zero when CodeDen cannot run a session.
  */
-export async function doctor(home: string, opts: { install?: boolean } = {}): Promise<number> {
+export async function doctor(
+  home: string,
+  opts: { install?: boolean; launch?: LaunchInfo } = {},
+): Promise<number> {
   const paths = homePaths(home);
   const installed = opts.install ? await installClaudeSupport(paths.deps) : true;
   const [status, server] = await Promise.all([
@@ -82,6 +94,7 @@ export async function doctor(home: string, opts: { install?: boolean } = {}): Pr
   const runner = readLiveRunnerLock(paths.runnerLock);
   const rows: Array<[string, string, string]> = [
     ["ok", "CodeDen", CODEDEN_VERSION],
+    ...versionRows(home, opts.launch),
     [existsSync(home) ? "ok" : "--", "Data directory", home],
     [
       server ? "ok" : "--",
@@ -125,4 +138,42 @@ export async function doctor(home: string, opts: { install?: boolean } = {}): Pr
   const node = status.checks.find((c) => c.id === "node");
   const git = status.checks.find((c) => c.id === "git");
   return installed && status.ready && node?.state !== "missing" && git?.state !== "missing" ? 0 : 1;
+}
+
+/** Self-update rows (§16): the copy you ran, the installed versions and which one starts. */
+function versionRows(home: string, launch?: LaunchInfo): Array<[string, string, string]> {
+  const rows: Array<[string, string, string]> = [];
+  if (launch) {
+    const how = launch.kind === "source" ? "source checkout, never switches" : launch.kind;
+    rows.push(["ok", "Launched copy", `${launch.binVersion} (${how}) ${launch.binEntry}`]);
+    if (launch.warning) rows.push(["!!", "Launcher", launch.warning]);
+  }
+  const installed = listInstalled(home);
+  rows.push([
+    "ok",
+    "Installed versions",
+    installed.length === 0
+      ? "none (updates install into <home>/app)"
+      : installed
+          .map((v) => `${v.version}${v.current ? " (current)" : ""}${v.valid ? "" : " (broken)"}`)
+          .join(", "),
+  ]);
+  const pointer = readPointer(home);
+  if (pointer) {
+    const problem = installProblem(packageRoot(home, pointer.version), pointer.version);
+    rows.push(
+      problem
+        ? [
+            "xx",
+            "Current version",
+            `${pointer.version} can't start: ${problem}; run \`codeden update\``,
+          ]
+        : [
+            "ok",
+            "Current version",
+            `${pointer.version} starts on launch (previous: ${pointer.previous ?? "none"})`,
+          ],
+    );
+  }
+  return rows;
 }

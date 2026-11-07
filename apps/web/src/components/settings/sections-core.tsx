@@ -14,6 +14,7 @@ import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { type ThemePreference, useThemeStore } from "@/stores/theme";
 import { Segmented, SettingRow, SettingsSection, useSettings } from "./settings-ui";
+import { UpdateModeSetting } from "./update-mode";
 
 export function GeneralSettings() {
   const { settings, update } = useSettings();
@@ -77,15 +78,7 @@ export function GeneralSettings() {
         >
           <KillSwitchButton scope="global" on={settings.factory.killSwitch} size="xs" />
         </SettingRow>
-        <SettingRow
-          label="Check for updates"
-          help="Asks the npm registry for the latest version once a day. Nothing else is sent."
-        >
-          <Switch
-            checked={settings.updates.check}
-            onCheckedChange={(v) => update({ updates: { check: v } })}
-          />
-        </SettingRow>
+        <UpdateModeSetting />
       </SettingsSection>
     </>
   );

@@ -31,10 +31,13 @@ import { UpdateCheck } from "@/components/settings/update-check";
 import { Logo } from "@/components/shell/logo";
 import { ShortcutList } from "@/components/shell/shortcuts";
 import { isMockMode } from "@/lib/api";
+import { useSnapshot } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "./page-header";
 
 function About() {
+  // The server's version (the web bundle's constant may be older after a relabelled build).
+  const version = useSnapshot().data?.serverVersion ?? CODEDEN_VERSION;
   return (
     <SettingsSection title="About">
       <div className="flex items-center gap-4 p-5">
@@ -42,9 +45,7 @@ function About() {
         <div>
           <div className="text-[15px] font-semibold">
             CodeDen{" "}
-            <span className="font-mono text-xs font-normal text-muted-foreground">
-              v{CODEDEN_VERSION}
-            </span>
+            <span className="font-mono text-xs font-normal text-muted-foreground">v{version}</span>
           </div>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
             A local-first harness for coding agents. Open source under the MIT license. No accounts,

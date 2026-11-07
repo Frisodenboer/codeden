@@ -5,6 +5,7 @@ import {
   type SetupStatus,
 } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
+import { mockUpdatesApi } from "../updates-api";
 import { mockTerminal } from "./channels";
 import { ciFailureShot, contrastComparison, generatedIllustration } from "./fixtures/images";
 import { listDir, setupChecks } from "./fixtures/ops";
@@ -30,6 +31,7 @@ type WorkbenchApi = Pick<
   CodeDenClient,
   | "getSetupStatus"
   | "getUpdates"
+  | "updates"
   | "loginCommand"
   | "getClaudeSdkStatus"
   | "installClaudeSdk"
@@ -102,10 +104,23 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
         latest: CODEDEN_VERSION,
         updateAvailable: false,
         enabled: true,
+        mode: "notify" as const,
         checkedAt: new Date().toISOString(),
         error: null,
         command: "npm i -g codeden@latest",
+        source: "source" as const,
+        state: "idle" as const,
+        target: null,
+        progress: null,
+        installError: null,
+        canRestart: false,
+        restartCommand: "pnpm dev",
+        installed: [],
+        rollbackTo: null,
+        canRollback: false,
+        warning: null,
       }),
+    updates: mockUpdatesApi(),
     loginCommand: (tool) => {
       if (tool === "codex") codexFixed = true;
       const command = { claude: "claude auth login", codex: "codex login", gh: "gh auth login" }[

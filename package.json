@@ -14,7 +14,7 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "pnpm --filter @codeden/web build && pnpm --filter @codeden/web e2e",
+    "e2e": "pnpm build && pnpm --filter @codeden/web e2e",
     "db:generate": "pnpm --filter @codeden/server run db:generate"
   },
   "devDependencies": {

@@ -48,6 +48,7 @@ import type {
   VoiceApi,
 } from "./feature-apis";
 import type { MentionCandidate, OpenTerminalOptions, SlashCommand, TerminalChannel } from "./types";
+import type { UpdatesApi } from "./updates-api";
 
 /** How a message is delivered while a turn is running. */
 export type SendMode = "send" | "queue" | "steer";
@@ -121,8 +122,10 @@ export interface CodeDenClient {
   // First-run setup (§14).
   /** Detection results; `refresh` re-runs every check instead of using the cache. */
   getSetupStatus(opts?: { refresh?: boolean }): Promise<SetupStatus>;
-  /** The npm registry version check (`settings.updates.check`). */
+  /** The npm registry version check and self-update state (`settings.updates.mode`). */
   getUpdates(opts?: { refresh?: boolean }): Promise<UpdateStatus>;
+  /** One-click self-update: install, restart, roll back, release notes (§16). */
+  readonly updates: UpdatesApi;
   loginCommand(tool: "claude" | "codex" | "gh"): Promise<LoginCommandResponse>;
   /** Claude Code support: the Claude Agent SDK, installed on demand into `<home>/deps`. */
   getClaudeSdkStatus(): Promise<ClaudeSdkStatus>;

@@ -37,7 +37,8 @@ import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
 import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
-import { UpdateService } from "./updates";
+import { notesSources, updateRegistry } from "./updates/registry";
+import { type SelfUpdateHost, UpdateService } from "./updates/service";
 import { billingFromSetup } from "./usage/billing";
 import { UsageService } from "./usage/usage-service";
 import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
@@ -71,6 +72,10 @@ export interface ServicesOptions {
   automations?: Pick<AutomationServiceDeps, "now" | "scheduler" | "templatesDir" | "rescanMs">;
   /** Factory loop timings and its GitHub port (§10.1; tests pass a scripted GitHub). */
   factory?: FactoryOptions & { github?: FactoryGithub };
+  /** How the hosting process was started and how it restarts into another version (§16). */
+  selfUpdate?: SelfUpdateHost;
+  /** Update check transport (tests). */
+  updates?: { fetch?: typeof fetch; intervalMs?: number };
   log?: (message: string) => void;
 }
 
@@ -101,7 +106,7 @@ export interface AppServices {
   images: ImageService;
   /** Optional cloud text to speech and transcription (§11.3). */
   voice: VoiceService;
-  /** "Check for updates" against the npm registry (§16). */
+  /** Update checks and one-click self-update (§16). */
   updates: UpdateService;
   setup: SetupService;
   /** Claude Code support: the Claude Agent SDK, installed on demand (§14). */
@@ -272,7 +277,14 @@ export function createServices(opts: ServicesOptions): AppServices {
     artifacts,
     browser: new BrowserService({ runner: opts.runner, repo: sessionRepo }),
     updates: new UpdateService({
-      enabled: () => opts.settings.get().updates.check && process.env.CODEDEN_UPDATE_CHECK !== "0",
+      home: opts.paths.home,
+      mode: () => opts.settings.get().updates.mode,
+      checksDisabled: process.env.CODEDEN_UPDATE_CHECK === "0",
+      host: opts.selfUpdate,
+      registry: updateRegistry(),
+      notes: notesSources(),
+      fetch: opts.updates?.fetch,
+      intervalMs: opts.updates?.intervalMs,
       log: opts.log,
     }),
     images: new ImageService({

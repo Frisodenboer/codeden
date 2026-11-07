@@ -21,6 +21,7 @@ import {
   SessionOptions,
   Settings,
   Snapshot,
+  SOURCE_VERSION,
 } from "../src";
 import {
   sampleAgentEvents,
@@ -267,6 +268,7 @@ describe("version", () => {
     const pkgUrl = new URL("../../../apps/cli/package.json", import.meta.url);
     const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version: string };
     expect(CODEDEN_VERSION).toBe(pkg.version);
+    expect(SOURCE_VERSION).toBe(pkg.version);
   });
 });
 

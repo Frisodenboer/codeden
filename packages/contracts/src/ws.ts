@@ -8,6 +8,7 @@ import { RawEventEnvelope } from "./events";
 import { RoleSessionsRef } from "./orchestration";
 import { ProviderInfo } from "./provider";
 import { Settings } from "./settings";
+import { UpdateStatus } from "./updates";
 import { ScheduledRun } from "./work";
 
 /**
@@ -98,6 +99,8 @@ export const ServerToClientMessage = z.discriminatedUnion("type", [
   }),
   /** Runner connection changed (ephemeral; not in the event log). */
   z.object({ type: z.literal("runner"), runner: RunnerConnectionStatus }),
+  /** Update check or self-update progress changed (ephemeral; not in the event log, §16). */
+  z.object({ type: z.literal("update"), update: UpdateStatus }),
   z.object({ type: z.literal("pong"), id: z.string() }),
   z.object({ type: z.literal("error"), error: ErrorInfo }),
 ]);

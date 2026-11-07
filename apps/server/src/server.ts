@@ -94,6 +94,13 @@ export interface StartServerOptions {
   factory?: ServicesOptions["factory"];
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
+  /**
+   * How the hosting process was started and how it restarts into another CodeDen version
+   * (§16). The `codeden` CLI passes it; without it the server counts as running from source.
+   */
+  selfUpdate?: ServicesOptions["selfUpdate"];
+  /** Update check transport and interval (tests). */
+  updates?: ServicesOptions["updates"];
   log?: (message: string) => void;
 }
 
@@ -135,7 +142,10 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     lastError: null,
   };
   const runnerStatus = () => runner?.status ?? disabledStatus;
-  const hub = new WsHub(store, database.db, runnerStatus, { flushMs: opts.realtimeFlushMs });
+  const hub = new WsHub(store, database.db, runnerStatus, {
+    flushMs: opts.realtimeFlushMs,
+    updateStatus: () => services.updates.snapshot(),
+  });
   const secrets =
     opts.secrets === "memory"
       ? new MemorySecretStore()
@@ -159,6 +169,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     github: opts.github,
     automations: opts.automations,
     factory: opts.factory,
+    selfUpdate: opts.selfUpdate,
+    updates: opts.updates,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
@@ -169,6 +181,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.usage.start();
   services.automations.start();
   services.factory.start();
+  const stopUpdateEvents = services.updates.onChange((status) => hub.broadcastUpdate(status));
+  services.updates.start();
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -287,6 +301,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.usage.stop();
       services.automations.stop();
       services.factory.stop();
+      services.updates.stop();
+      stopUpdateEvents();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();

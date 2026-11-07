@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AutonomyLevel, ProviderId, QuietHours, ReasoningEffort } from "./common";
+import { UpdateMode } from "./updates";
 
 /** `auto` lets CodeDen pick the first ready provider (Claude, then Codex). */
 export const ProviderChoice = z.union([z.literal("auto"), ProviderId]);
@@ -128,11 +129,24 @@ export const Settings = z.object({
       enabled: z.boolean().default(true),
     })
     .prefault({}),
-  updates: z
-    .object({
-      check: z.boolean().default(true),
-    })
-    .prefault({}),
+  /**
+   * Update checks and one-click self-update (§16). Settings saved before `mode` existed had
+   * `check: false` to turn checks off; that reads as `mode: "off"`.
+   */
+  updates: z.preprocess(
+    (value) =>
+      typeof value === "object" &&
+      value !== null &&
+      !("mode" in value) &&
+      (value as { check?: unknown }).check === false
+        ? { mode: "off" }
+        : value,
+    z
+      .object({
+        mode: UpdateMode.default("notify"),
+      })
+      .prefault({}),
+  ),
   /** First-run setup (§14): set once the user finishes the detection checklist. */
   setup: z
     .object({

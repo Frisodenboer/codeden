@@ -5,6 +5,7 @@ import {
   UI_PROTOCOL_VERSION,
   UiClientMessage,
   type UiServerMessage,
+  type UpdateStatus,
 } from "@codeden/contracts";
 import type { WSContext, WSEvents } from "hono/ws";
 import type { Db } from "../db/client";
@@ -39,6 +40,8 @@ interface Client {
 export interface WsHubOptions {
   /** Live updates are batched for this long (default 40ms). */
   flushMs?: number;
+  /** The update status sent to each client on connect (§16). */
+  updateStatus?: () => UpdateStatus;
 }
 
 /**
@@ -56,7 +59,7 @@ export class WsHub {
     private readonly store: EventStore,
     private readonly db: Db,
     private readonly runnerStatus: () => RunnerConnectionStatus,
-    opts: WsHubOptions = {},
+    private readonly opts: WsHubOptions = {},
   ) {
     this.flushMs = opts.flushMs ?? 40;
     this.unsubscribe = store.subscribe((events) => this.onEvents(events));
@@ -84,6 +87,8 @@ export class WsHub {
           seq: this.store.headSeq(),
         });
         send(ws, { type: "runner", runner: this.runnerStatus() });
+        const update = this.opts.updateStatus?.();
+        if (update) send(ws, { type: "update", update });
       },
       onMessage: (event, ws) => {
         if (!client) return;
@@ -123,6 +128,11 @@ export class WsHub {
   /** Push a runner status change to every client. */
   broadcastRunner(runner: RunnerConnectionStatus): void {
     for (const client of this.clients) send(client.ws, { type: "runner", runner });
+  }
+
+  /** Push an update check or self-update change to every client (§16). */
+  broadcastUpdate(update: UpdateStatus): void {
+    for (const client of this.clients) send(client.ws, { type: "update", update });
   }
 
   close(): void {

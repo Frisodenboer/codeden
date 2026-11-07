@@ -29,6 +29,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      - name: Self-update against a local fake registry
+        run: pnpm exec vitest run apps/cli/test/self-update.integration.test.ts
+        env:
+          CODEDEN_REQUIRE_CLI_DIST: "1"
       - name: Install the packed tarball and run it
         shell: bash
         run: |

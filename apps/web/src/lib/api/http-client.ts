@@ -37,6 +37,7 @@ import { configApi } from "./http-unwired";
 import { RealtimeSocket } from "./realtime-socket";
 import { openTerminalSocket } from "./terminal-channel";
 import type { MentionCandidate } from "./types";
+import { httpUpdatesApi } from "./updates-api";
 
 const whenBusy: Record<SendMode, SendMessageRequestInit["whenBusy"]> = {
   send: "queue",
@@ -105,6 +106,7 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     installClaudeSdk: () => post("/setup/claude-sdk/install", {}, (v) => ClaudeSdkStatus.parse(v)),
     getUpdates: (o) =>
       get(`/updates${o?.refresh ? "?refresh=1" : ""}`, (v) => UpdateStatus.parse(v)),
+    updates: httpUpdatesApi(http, origin),
     async completeSetup() {
       await post("/setup/complete");
     },
