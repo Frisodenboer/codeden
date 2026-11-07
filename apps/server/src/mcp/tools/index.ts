@@ -12,6 +12,7 @@ import {
   browserWait,
 } from "./browser";
 import { browserScreenshot } from "./browser-screenshot";
+import { factoryTools } from "./factory";
 import { finish } from "./finish";
 import { generateImage } from "./generate-image";
 import { githubTools } from "./github";
@@ -42,4 +43,5 @@ export const allTools: AnyServerTool[] = [
   ...orchestratorTools,
   ...pmTools,
   ...githubTools,
+  ...factoryTools,
 ];

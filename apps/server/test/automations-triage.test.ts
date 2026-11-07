@@ -34,6 +34,7 @@ function issue(number: number): GithubIssue {
 
 describe("issue triage (§10)", () => {
   let h: Harness;
+  let project: Project;
   const triageId = `starter:${GH}:issue-triage`;
   const report = async (args: Record<string, unknown>) => {
     const res = await h.server.services.tools.call("report_triage", args, {
@@ -52,8 +53,9 @@ describe("issue triage (§10)", () => {
       orchestration: { wake: { debounceMs: 50, maxWaitMs: 300 } },
       github: { sync: false },
       automations: { rescanMs: 0 },
+      factory: { autoTick: false },
     });
-    const project: Project = {
+    project = {
       id: GH,
       kind: "github",
       name: "Widgets",
@@ -154,5 +156,35 @@ describe("issue triage (§10)", () => {
     });
     const auto = await report({ issueNumber: 45, decision: "ready", summary: "Typo." });
     expect(auto).toMatchObject({ status: "started", start: { status: "started" } });
+  });
+
+  it("leaves issue intake to the factory loop in autopilot and dark factory (§10.1)", async () => {
+    const runsOf = async () =>
+      AutomationRun.array().parse(
+        (await h.api("GET", `/automations/runs?automationId=${triageId}`)).body,
+      );
+    const before = (await runsOf()).length;
+    for (const autonomyMode of ["autopilot", "dark_factory"] as const) {
+      h.server.services.store.append([
+        {
+          type: "project.updated",
+          sessionId: null,
+          payload: { project: Project.parse({ ...project, autonomyMode }) },
+        },
+      ]);
+      const number = autonomyMode === "autopilot" ? 50 : 51;
+      h.server.services.store.append([
+        { type: "issue.opened", sessionId: null, payload: { issue: issue(number) } },
+      ]);
+      const run = await waitUntil(async () =>
+        (await runsOf()).find((r) => r.workKey === `triage:${number}`),
+      );
+      expect(run).toMatchObject({ status: "skipped", skipReason: "factory_intake" });
+    }
+    // Skipped before the executor runs: the PM is never handed these issues by the automation.
+    expect((await runsOf()).length).toBe(before + 2);
+    h.server.services.store.append([
+      { type: "project.updated", sessionId: null, payload: { project: Project.parse(project) } },
+    ]);
   });
 });

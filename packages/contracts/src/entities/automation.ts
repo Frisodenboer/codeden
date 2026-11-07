@@ -191,6 +191,8 @@ export const AutomationRun = z
         "disabled",
         "skipped_by_pm",
         "conflict_skip",
+        /** An issue-intake run in an autopilot/dark-factory project: the factory loop owns intake. */
+        "factory_intake",
       ])
       .nullable(),
     sessionId: Id.nullable(),
