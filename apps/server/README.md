@@ -25,6 +25,10 @@ The long-lived CodeDen server (design §4.1): Hono HTTP API and UI WebSocket, th
 | `browser_evaluate` | agent | Guarded JS evaluation (5 s timeout, result size cap, can be disabled in the runner) |
 | `browser_open_dev_server` | agent | Open `localhost:<port>`; without a port, the only running dev server or a list |
 | `generate_image` | all | Images from the Settings engine into the worktree (see below); hidden when no engine is available |
+| `create_pull_request` | agent | Commit (optional), push the session branch through the runner, open or update its PR (see GitHub below) |
+| `attach_evidence` | agent | Files/artifacts to the `codeden/evidence` branch + one comment embedding them, with summary and test output |
+| `comment_on_issue` | agent, pm | Comment on an issue or PR (defaults to the session's issue, then PR) |
+| `get_pr_status` | agent, pm | Live state, checks, reviews, mergeability (defaults to the session's PR) |
 
 Browser tools always act on the caller's own session (from its token); no tool takes a session id. A handler can return `new ToolOutput(text, images)` to add MCP `image` content.
 
@@ -101,6 +105,33 @@ Opt-in proxies next to the browser's speech APIs (which stay the default). Keys 
 | `POST /api/tts` | `TtsRequest` -> streamed `audio/mpeg` (ElevenLabs `POST /v1/text-to-speech/{voice}/stream`; voice from the request, then `settings.voice.readAloud.voice`, then a stock voice; model `eleven_flash_v2_5`) |
 | `POST /api/stt?engine=&language=` | raw audio body (`audio/webm`, `audio/ogg`, ...) or multipart `file`, up to 25 MB -> `SttResponse`. ElevenLabs Scribe (`scribe_v2`) or OpenAI (`gpt-4o-mini-transcribe`); default from `settings.voice.dictation.engine` |
 
+## GitHub (§9)
+
+`GithubService` (`src/services/github/`) owns everything GitHub. Shapes: `@codeden/contracts` `github.ts`.
+
+- **Auth.** `gh auth token` is read at runtime and cached in memory only; a 401 asks `gh` again once (picks up a re-login). Fallback: a token in the keychain (`github.token`). Without either, reads return `connection.connected: false` with a hint and GitHub operations fail with `409 github_not_connected`. The token is never logged, stored or returned.
+- **Sync.** Per GitHub project: the issues listing (`state=all`, `since` cursor) with `If-None-Match` (a 304 is free), then one batched GraphQL query (20 PRs per request) for PRs that changed, have pending checks or unknown mergeability, belong to a session, or every 4th poll. Interval: 15 s while a session's PR is open, 60 s otherwise; exponential backoff on errors, rate limits wait for the reset, "not connected" retries after 5 min. `CODEDEN_GITHUB_SYNC=0` or `startServer({ github: { sync: false } })` turns polling off.
+- **Events and projections.** The first import is one silent `github.synced`. Afterwards: `issue.opened`, `issue.labeled` (`added`), `issue.updated` (`changes`), `pr.opened`, `pr.updated`, `pr.checks_passed`, `pr.checks_failed`, `pr.merged`, `pr.closed`, `review.submitted`. Each carries the full row and projects into `github_issues` / `github_prs` (checks summary, review decision, mergeable, linked issues, commits, linked session). PR events carry the linked session as `sessionId`. ETags and cursors live in `github_sync_state` (not event-sourced).
+- **Session linkage.** A PR belongs to the session that opened it or whose branch is its head. Every `pr.*` event updates `session.pr`; `pr.merged` stops an idle session's provider, marks it `completed` and comments "Resolved by #N" on the linked issues.
+- **Pull requests.** `create_pull_request` refuses uncommitted changes unless `commitMessage` is given, pushes with the runner's `git.push`, then creates the PR (or updates the open one for the branch). The body gets `Fixes #<issue>` and a footer naming the session (`<!-- codeden:session=<id> -->`).
+- **Evidence.** Files are committed with the Git Data API (blobs, tree on the branch's tree, commit, ref) to the orphan branch `codeden/evidence` under `<pr-N|issue-N>/<sessionId>/`, so no checkout is touched. Comments link `https://github.com/<o>/<r>/blob/<commit>/<path>?raw=true`: GitHub keeps that URL as the `<img src>` and serves it to signed-in readers, so images render in private repositories too (`raw.githubusercontent.com` links would not).
+- **Local-only projects:** list routes return empty lists with `connection.message`; everything else is `409 not_a_github_project`. No GitHub request is made.
+
+| Route | Body / response |
+|---|---|
+| `GET /api/github/connection` | -> `GithubConnection` |
+| `GET /api/projects/:id/github/issues?state=&limit=` | -> `GithubIssuesResponse` (projection + connection + sync status) |
+| `GET /api/projects/:id/github/prs?state=&limit=` | -> `GithubPrsResponse` |
+| `POST /api/projects/:id/github/sync` | -> `GithubSyncStatus` (sync now) |
+| `POST /api/projects/:id/github/issues` | `CreateGithubIssueRequest` -> `GithubIssue` (201) |
+| `GET /api/projects/:id/github/issues/:number` | -> `GithubIssueDetails` (fresh, with recent comments) |
+| `POST /api/projects/:id/github/issues/:number/comments` | `GithubCommentRequest` -> `GithubCommentResponse` (201) |
+| `POST /api/projects/:id/github/issues/:number/labels` | `GithubLabelRequest` -> `GithubIssue` |
+| `POST /api/projects/:id/github/issues/:number/triage` | `TriageIssueRequest` -> `TriageIssueResult` |
+| `GET /api/prs/:id` (`<projectId>:<number>`) | -> `GithubPrDetails` (live status, body, files) |
+| `POST /api/prs/:id/merge` | `MergePrRequest` (squash by default) -> `MergePrResponse` |
+| `GET /api/sessions/:id/github` | -> `SessionGithubResponse` |
+
 ## Tests
 
 ```sh
@@ -110,4 +141,4 @@ pnpm --filter @codeden/server test:live   # real Claude and Codex sessions end t
 
 Server tests run the runner without the real Claude/Codex adapters (`CODEDEN_BUILTIN_PROVIDERS=0`), so they never reach a live agent or the utility model.
 
-From the repo root, `pnpm test` runs the suites that drive real processes with timing-sensitive waits (Chromium, terminals, detached runners: `RUNNER_PROCESS_TESTS` / `SERVER_PROCESS_TESTS` in `vitest.config.ts`) after the parallel batch, one file at a time, so a loaded machine cannot starve their waits. `pnpm test:live` (`CODEDEN_LIVE=1`) also runs `test/live/workbench.live.test.ts`: a real Claude session drives the browser tools, and the Codex engine generates an image through `generate_image`.
+From the repo root, `pnpm test` runs the suites that drive real processes with timing-sensitive waits (Chromium, terminals, detached runners: `RUNNER_PROCESS_TESTS` / `SERVER_PROCESS_TESTS` in `vitest.config.ts`) after the parallel batch, one file at a time, so a loaded machine cannot starve their waits. `CODEDEN_LIVE=1 CODEDEN_LIVE_GITHUB=1 pnpm --filter @codeden/server test:live -- github` runs the GitHub flow against a new private `codeden-sandbox-<random>` repository (issue, PR from a Fake session, evidence, commit statuses as checks, squash merge, follow-up) and deletes it when the `gh` token has `delete_repo`; `CODEDEN_LIVE_GITHUB_REPO=codeden-sandbox-<id>` reuses a leftover one. Unit tests use a fake GitHub behind Octokit's `fetch` (`test/support/fake-github.ts`). `pnpm test:live` (`CODEDEN_LIVE=1`) also runs `test/live/workbench.live.test.ts`: a real Claude session drives the browser tools, and the Codex engine generates an image through `generate_image`.
