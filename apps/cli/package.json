@@ -1,8 +1,9 @@
 {
   "name": "codeden",
   "version": "0.0.0",
-  "description": "A local-first harness for coding agents.",
+  "description": "A local-first harness for coding agents: Claude Code and Codex sessions, an orchestrator and project managers, an inbox, GitHub traceability, automations and an experimental dark factory.",
   "license": "MIT",
+  "author": "Leon van Zyl",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/leonvanzyl/codeden.git",
@@ -17,20 +18,34 @@
     "codeden": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=24"
   },
   "keywords": [
     "coding-agents",
-    "claude-code",
-    "codex",
+    "ai-agents",
+    "agent-harness",
     "harness",
+    "claude-code",
+    "claude",
+    "codex",
+    "openai-codex",
+    "orchestration",
+    "automation",
+    "software-factory",
+    "github",
+    "git-worktree",
+    "mcp",
+    "developer-tools",
     "local-first"
   ],
   "scripts": {
     "build": "tsdown && node scripts/copy-assets.mjs",
+    "prepack": "node scripts/copy-readme.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
