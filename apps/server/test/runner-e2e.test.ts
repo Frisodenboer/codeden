@@ -34,6 +34,8 @@ const start = () =>
     token: TOKEN,
     enableFakeProvider: true,
     waitForRunner: true,
+    secrets: "memory",
+    checkSetupOnStart: false,
   });
 
 describe("server <-> runner", () => {

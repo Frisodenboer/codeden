@@ -8,12 +8,17 @@ import { type Database, openDatabase } from "./db/client";
 import { EventStore } from "./events/store";
 import { writeJsonFile } from "./json-file";
 import { ensureHome, type HomePaths } from "./paths";
+import { WsHub } from "./realtime/hub";
 import { createApi } from "./routes/api";
 import { findWebDir, mountWeb } from "./routes/static";
-import { WsHub } from "./routes/ws-hub";
 import { RunnerClient } from "./runner/client";
 import { defaultRunnerLaunch, type RunnerLaunchConfig } from "./runner/launcher";
 import { loopbackOrigins, securityMiddleware } from "./security";
+import { type AppServices, createServices } from "./services/container";
+import type { Exec } from "./services/exec";
+import { runnerPort } from "./services/runner-port";
+import { createSecretStore, MemorySecretStore, type SecretStore } from "./services/secrets";
+import type { UtilityService } from "./services/utility";
 import { SettingsStore } from "./settings-store";
 
 export interface StartServerOptions {
@@ -40,6 +45,20 @@ export interface StartServerOptions {
   waitForRunner?: boolean;
   /** Called when a client requests shutdown via the API (the CLI exits the process). */
   onShutdownRequest?: () => void;
+  /** Secret storage: the OS keychain by default; `"memory"` for tests. */
+  secrets?: SecretStore | "memory";
+  /** Utility-model jobs (§7.4); a no-op by default. */
+  utility?: UtilityService;
+  /** Runs CLI tools (detection, git); injectable for tests. */
+  exec?: Exec;
+  /** User home for provider config files and the default clone folder. */
+  userHome?: string;
+  /** Where clones go by default (`~/codeden-projects`). */
+  projectsDir?: string;
+  /** Batching window for live UI updates (default 40ms). */
+  realtimeFlushMs?: number;
+  /** Run first-run detection in the background on launch (default true). */
+  checkSetupOnStart?: boolean;
   log?: (message: string) => void;
 }
 
@@ -52,6 +71,7 @@ export interface RunningServer {
   paths: HomePaths;
   store: EventStore;
   database: Database;
+  services: AppServices;
   runner: RunnerClient | undefined;
   /** Stop listening and disconnect from the runner (which keeps running). */
   close(opts?: { stopRunner?: boolean }): Promise<void>;
@@ -80,7 +100,25 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     lastError: null,
   };
   const runnerStatus = () => runner?.status ?? disabledStatus;
-  const hub = new WsHub(store, runnerStatus);
+  const hub = new WsHub(store, database.db, runnerStatus, { flushMs: opts.realtimeFlushMs });
+  const secrets =
+    opts.secrets === "memory"
+      ? new MemorySecretStore()
+      : (opts.secrets ?? (await createSecretStore(log)));
+  const services = createServices({
+    db: database.db,
+    store,
+    settings,
+    paths,
+    runner: runnerPort(() => runner),
+    secrets,
+    exec: opts.exec,
+    utility: opts.utility,
+    userHome: opts.userHome,
+    projectsDir: opts.projectsDir,
+    log,
+  });
+  services.lifecycle.start();
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -94,12 +132,10 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     }),
   );
   const api = createApi({
-    db: database.db,
-    store,
-    settings,
-    runner: () => runner,
+    services,
     runnerStatus,
     startedAt,
+    log,
     shutdown: ({ stopRunner }) => {
       setTimeout(() => {
         void close({ stopRunner }).then(() => opts.onShutdownRequest?.());
@@ -133,6 +169,13 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   writeJsonFile(paths.serverLock, lock);
   log(`server listening on ${url}`);
 
+  if (opts.checkSetupOnStart !== false) {
+    // Re-check tools silently on every launch (§14 step 6); results are cached.
+    services.setup
+      .status({ refresh: true })
+      .catch((error: unknown) => log(`setup: ${String(error)}`));
+  }
+
   if (opts.runner !== false) {
     const launch =
       opts.runner ?? defaultRunnerLaunch(opts.enableFakeProvider ? ["--fake"] : []) ?? null;
@@ -152,6 +195,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
 
   async function close(closeOpts: { stopRunner?: boolean } = {}): Promise<void> {
     closing ??= (async () => {
+      services.lifecycle.stop();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();
         else await runner.stop();
@@ -175,6 +219,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     paths,
     store,
     database,
+    services,
     runner,
     close,
   };

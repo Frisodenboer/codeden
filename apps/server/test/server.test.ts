@@ -20,7 +20,14 @@ let server: RunningServer;
 
 beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), "codeden-server-"));
-  server = await startServer({ port: 0, dataDir: home, token: TOKEN, runner: false });
+  server = await startServer({
+    port: 0,
+    dataDir: home,
+    token: TOKEN,
+    runner: false,
+    secrets: "memory",
+    checkSetupOnStart: false,
+  });
 });
 
 afterEach(async () => {
@@ -147,13 +154,21 @@ describe("ui websocket", () => {
           m.type === "events" ? m.events.map((e) => e.seq) : [],
         );
         if (seqs.length === 1) server.store.append(rest);
-        if (seqs.length === rest.length + 1) resolve();
+        else if (seqs.at(-1) === server.store.headSeq()) resolve();
       });
     });
     ws.close();
     expect(messages[0]?.type).toBe("hello");
-    const seqs = messages.flatMap((m) => (m.type === "events" ? m.events.map((e) => e.seq) : []));
-    expect(seqs).toEqual(seqs.map((_, i) => i + 1));
+    const events = messages.flatMap((m) => (m.type === "events" ? m.events : []));
+    const seqs = events.map((e) => e.seq);
+    // Strictly increasing up to the head; consecutive text deltas are merged into one.
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+    expect(seqs.at(-1)).toBe(server.store.headSeq());
+    const deltas = events.filter((e) => e.type === "agent.item.delta");
+    expect(deltas).toHaveLength(1);
+    const merged = deltas[0]?.payload as { delta: { text: string } } | undefined;
+    expect(merged?.delta.text).toBe("Hello world");
   });
 
   it("asks clients ahead of the log to resync", async () => {

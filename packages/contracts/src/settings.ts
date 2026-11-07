@@ -116,6 +116,13 @@ export const Settings = z.object({
       check: z.boolean().default(true),
     })
     .prefault({}),
+  /** First-run setup (§14): set once the user finishes the detection checklist. */
+  setup: z
+    .object({
+      completed: z.boolean().default(false),
+      completedAt: z.iso.datetime().nullable().default(null),
+    })
+    .prefault({}),
   telemetry: z
     .object({
       crashReports: z.boolean().default(false),
