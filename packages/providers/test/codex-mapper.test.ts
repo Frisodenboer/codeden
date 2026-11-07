@@ -1,7 +1,7 @@
 import { AgentEvent } from "@codeden/contracts";
 import { describe, expect, it } from "vitest";
 import { mapThreadItem } from "../src/codex/items";
-import { CodexEventMapper } from "../src/codex/mapper";
+import { CodexEventMapper, CodexTurnUsage } from "../src/codex/mapper";
 import type { ServerNotification } from "../src/codex/protocol";
 
 const T = "thread-x";
@@ -149,16 +149,44 @@ describe("CodexEventMapper", () => {
       durationMs: 84,
     });
     expect(events.find((e) => e.type === "usage.updated")).toMatchObject({
+      // First report of this process: only the last request counts (the rest predates it).
       usage: {
-        inputTokens: 90,
-        outputTokens: 10,
+        inputTokens: 5,
+        outputTokens: 5,
         cachedInputTokens: 50,
-        reasoningTokens: 2,
+        reasoningTokens: 1,
         contextTokens: 60,
         contextWindow: 258400,
       },
     });
     expect(events.at(-1)).toMatchObject({ type: "turn.completed" });
+  });
+
+  it("charges each turn the growth of the thread total and ignores repeats", () => {
+    const acc = new CodexTurnUsage();
+    const b = (input: number, cached: number, output: number) => ({
+      totalTokens: input + output,
+      inputTokens: input,
+      cachedInputTokens: cached,
+      cacheWriteInputTokens: 0,
+      outputTokens: output,
+      reasoningOutputTokens: 0,
+    });
+    const report = (total: ReturnType<typeof b>, last: ReturnType<typeof b>) => ({
+      total,
+      last,
+      modelContextWindow: null,
+    });
+    acc.add("t1", report(b(100, 0, 10), b(100, 0, 10)));
+    expect(acc.add("t1", report(b(100, 0, 10), b(100, 0, 10)))).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 10,
+    });
+    expect(acc.add("t2", report(b(250, 100, 30), b(150, 100, 20)))).toMatchObject({
+      inputTokens: 50,
+      cachedInputTokens: 100,
+      outputTokens: 20,
+    });
   });
 
   it("maps plans to a todo list and finishes dangling items on interrupt", () => {

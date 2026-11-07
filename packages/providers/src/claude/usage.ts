@@ -46,6 +46,32 @@ export function usageFromResult(result: unknown, contextTokens: number | undefin
   return stripUndefined(usage);
 }
 
+const ADDITIVE = [
+  "inputTokens",
+  "outputTokens",
+  "cachedInputTokens",
+  "cacheWriteTokens",
+  "reasoningTokens",
+  "costUsd",
+] as const;
+
+/**
+ * One turn's own usage from two running totals of the same query: `total` now minus
+ * `baseline` (the total when the turn began; none for the first turn of a process). Fields
+ * are clamped at zero, since a running total can dip slightly (compaction). Context size and
+ * window are kept from `total`. Pure.
+ */
+export function turnDelta(total: Usage, baseline: Usage | undefined): Usage {
+  const out: Usage = { ...total };
+  for (const field of ADDITIVE) {
+    const now = total[field];
+    if (now === undefined) continue;
+    const diff = Math.max(0, now - (baseline?.[field] ?? 0));
+    out[field] = field === "costUsd" ? Math.round(diff * 1e9) / 1e9 : Math.round(diff);
+  }
+  return out;
+}
+
 /** Tokens occupying the context window, from an assistant message's `usage`. */
 export function contextTokensFromMessageUsage(usage: unknown): number | undefined {
   if (!usage || typeof usage !== "object") return undefined;

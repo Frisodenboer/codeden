@@ -327,6 +327,34 @@ describe("ClaudeEventMapper", () => {
     });
   });
 
+  it("reports each turn's own usage from the query's running totals", () => {
+    const { mapper, events } = setup();
+    mapper.beginTurn();
+    mapper.handle(result());
+    mapper.beginTurn();
+    mapper.handle(
+      result({
+        total_cost_usd: 0.2,
+        modelUsage: {
+          m: {
+            inputTokens: 8,
+            outputTokens: 17,
+            cacheReadInputTokens: 400,
+            cacheCreationInputTokens: 50,
+          },
+        },
+      }),
+    );
+    const usages = events.flatMap((e) => (e.type === "usage.updated" ? [e.usage] : []));
+    expect(usages[1]).toMatchObject({
+      inputTokens: 3,
+      outputTokens: 10,
+      cachedInputTokens: 300,
+      cacheWriteTokens: 0,
+      costUsd: 0.08,
+    });
+  });
+
   it("maps rate limit events", () => {
     const { mapper, events } = setup();
     mapper.handle({
