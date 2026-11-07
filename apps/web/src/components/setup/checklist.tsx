@@ -11,7 +11,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,7 @@ import { TerminalView } from "@/components/workbench/terminal-view";
 import { useClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { ClaudeSupportRow } from "./claude-support";
 
 type RowState = SetupCheck["state"] | "checking";
 
@@ -120,54 +121,57 @@ export function SetupChecklist() {
         {rows.map(({ id, label, check: c }) => {
           const state: RowState = !c || rechecking ? "checking" : c.state;
           return (
-            <div key={id} className="flex items-center gap-3 px-4 py-3" data-check={id}>
-              <StateIcon state={state} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-[13.5px] font-medium">
-                  {label}
-                  {PROVIDERS.has(id) ? (
-                    <span className="text-3xs font-normal text-muted-foreground">provider</span>
-                  ) : null}
-                </div>
-                <div
-                  className={cn(
-                    "truncate text-2xs",
-                    state === "missing" || state === "error"
-                      ? "text-status-failed/90"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {state === "checking" ? "Checking…" : c?.message}
-                </div>
-              </div>
-              {c?.fix && state !== "ok" && state !== "checking" && (
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    className="max-w-56 font-mono text-muted-foreground"
-                    title={c.fix.command}
-                    onClick={() =>
-                      void platform
-                        .writeClipboard(c.fix?.command ?? "")
-                        .then(() => toast("Command copied"))
-                    }
-                  >
-                    <Copy /> <span className="truncate">{c.fix.command}</span>
-                  </Button>
-                  <Button size="sm" onClick={() => setFixing(c)}>
-                    {c.fix.kind === "login" ? (
-                      <LogIn />
-                    ) : c.fix.kind === "install" ? (
-                      <Download />
-                    ) : (
-                      <Wrench />
+            <Fragment key={id}>
+              <div className="flex items-center gap-3 px-4 py-3" data-check={id}>
+                <StateIcon state={state} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-[13.5px] font-medium">
+                    {label}
+                    {PROVIDERS.has(id) ? (
+                      <span className="text-3xs font-normal text-muted-foreground">provider</span>
+                    ) : null}
+                  </div>
+                  <div
+                    className={cn(
+                      "truncate text-2xs",
+                      state === "missing" || state === "error"
+                        ? "text-status-failed/90"
+                        : "text-muted-foreground",
                     )}
-                    {fixLabel[c.fix.kind]}
-                  </Button>
+                  >
+                    {state === "checking" ? "Checking…" : c?.message}
+                  </div>
                 </div>
-              )}
-            </div>
+                {c?.fix && state !== "ok" && state !== "checking" && (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="max-w-56 font-mono text-muted-foreground"
+                      title={c.fix.command}
+                      onClick={() =>
+                        void platform
+                          .writeClipboard(c.fix?.command ?? "")
+                          .then(() => toast("Command copied"))
+                      }
+                    >
+                      <Copy /> <span className="truncate">{c.fix.command}</span>
+                    </Button>
+                    <Button size="sm" onClick={() => setFixing(c)}>
+                      {c.fix.kind === "login" ? (
+                        <LogIn />
+                      ) : c.fix.kind === "install" ? (
+                        <Download />
+                      ) : (
+                        <Wrench />
+                      )}
+                      {fixLabel[c.fix.kind]}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {id === "claude" && c?.installed && <ClaudeSupportRow />}
+            </Fragment>
           );
         })}
       </div>

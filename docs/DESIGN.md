@@ -128,7 +128,7 @@ codeden/
   docs/
 ```
 
-The published `codeden` npm package bundles the server, runner and CLI with tsdown, and includes the prebuilt web assets. Pure-JS dependencies (including the Claude Agent SDK's JS entry) are inlined, so `npx codeden` installs only the native modules and `playwright-core`; the Claude adapter runs the user's installed `claude`, so the SDK's platform binaries are never installed.
+The published `codeden` npm package bundles the server, runner and CLI with tsdown, and includes the prebuilt web assets. Permissively licensed pure-JS dependencies are inlined (their licenses ship in `dist/THIRD-PARTY-NOTICES.txt`), so `npx codeden` installs only the native modules and `playwright-core`. The **Claude Agent SDK is not redistributed**: on first use it is installed from npm into `~/.codeden/deps/` with `--omit=optional --omit=peer` (about 5 MB; its platform binaries are never needed because the adapter runs the user's installed `claude`, and its JS entry needs no peers). A lock file keeps the server and runner from installing it twice; in the workspace it resolves from `node_modules` instead.
 
 ## 6. Data and persistence
 
@@ -532,6 +532,7 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
 1. **Start.** `npx codeden` checks the Node version, creates `~/.codeden/`, generates the install token, starts the server and runner, and opens the browser on an already-authenticated URL.
 2. **Detect.** One checklist screen with live ticks. All checks run in parallel and nothing is asked when a check passes:
    - **Claude Code:** `claude --version`, then `claude auth status`. This returns JSON with `loggedIn`, `authMethod` and `loginExpiresAt`. Logged in means ready; the Agent SDK uses the installed binary and its login.
+   - **Claude Code support:** when `claude` is installed, a row for the Claude Agent SDK. It installs into `~/.codeden/deps/` when the user continues, with live progress; a failure shows npm's reason and a **Retry**. Sessions that start before it is installed install it themselves, and `codeden doctor --install` does it from a terminal.
    - **Codex:** `codex --version`, then `codex login status`. Logged in also enables **image generation through Codex** as the default engine (§12.5).
    - **GitHub:** `gh auth status`. Logged in means ready, and the token is read at runtime with `gh auth token`, never stored.
    - **git identity:** `git config user.name` and `user.email`.

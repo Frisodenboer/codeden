@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ClaudeSdkStatus,
   FsListResponse,
   InboxCounts,
   SecretsStatus,
@@ -101,6 +102,13 @@ describe("api routes", () => {
     const dismissed = await call("POST", `/inbox/${item?.id}/resolve`, { status: "dismissed" });
     expect(dismissed.json()).toMatchObject({ status: "dismissed" });
     expect(InboxCounts.parse((await call("GET", "/inbox/counts")).json()).open).toBe(0);
+  });
+
+  it("reports Claude Code support as ready from the workspace SDK", async () => {
+    const status = ClaudeSdkStatus.parse((await call("GET", "/setup/claude-sdk")).json());
+    expect(status).toMatchObject({ state: "ready", source: "workspace", location: null });
+    const install = ClaudeSdkStatus.parse((await call("POST", "/setup/claude-sdk/install")).json());
+    expect(install.state).toBe("ready");
   });
 
   it("serves first-run setup status, login commands and completion", async () => {

@@ -34,6 +34,14 @@ jobs:
         run: |
           cd apps/cli
           npm pack --pack-destination "$RUNNER_TEMP"
+          # The Claude Agent SDK is never shipped in the tarball (it is installed on demand).
+          mkdir "$RUNNER_TEMP/tarball" && tar xzf "$RUNNER_TEMP"/codeden-*.tgz -C "$RUNNER_TEMP/tarball"
+          if grep -rlE "Anthropic PBC|Native CLI binary for" "$RUNNER_TEMP/tarball"; then
+            echo "::error::the tarball contains Claude Agent SDK code"; exit 1
+          fi
+          if grep -q "claude-agent-sdk@" "$RUNNER_TEMP/tarball/package/dist/THIRD-PARTY-NOTICES.txt"; then
+            echo "::error::THIRD-PARTY-NOTICES lists the Claude Agent SDK as bundled"; exit 1
+          fi
           mkdir "$RUNNER_TEMP/install-check" && cd "$RUNNER_TEMP/install-check"
           npm init -y > /dev/null
           npm install "$RUNNER_TEMP"/codeden-*.tgz
@@ -41,13 +49,23 @@ jobs:
           du -sh node_modules
           ls node_modules
           if [ -e node_modules/@anthropic-ai ]; then
-            echo "::error::the packed CLI installed @anthropic-ai packages (they should be bundled)"; exit 1
+            echo "::error::the packed CLI installed @anthropic-ai packages"; exit 1
           fi
           npx codeden --version
           export CODEDEN_HOME="$RUNNER_TEMP/codeden-home"
           npx codeden doctor --home "$CODEDEN_HOME" | tee doctor.txt || true
           grep -q "ok  Terminals" doctor.txt
           grep -q "ok  Keychain" doctor.txt || echo "::warning::keychain module did not load"
+          grep -q -- "--  Claude Code support" doctor.txt
+          # On-demand install of Claude Code support, then doctor loads it and checks the version
+          # (no real session: CI has no `claude`).
+          npx codeden doctor --install --home "$CODEDEN_HOME" | tee doctor-install.txt || true
+          grep -q "ok  Claude Code support  SDK " doctor-install.txt
+          du -sh "$CODEDEN_HOME/deps"
+          ls "$CODEDEN_HOME/deps/node_modules/@anthropic-ai"
+          if [ "$(ls "$CODEDEN_HOME/deps/node_modules/@anthropic-ai")" != "claude-agent-sdk" ]; then
+            echo "::error::on-demand install added platform binaries or peers"; exit 1
+          fi
           # Start it like a user would and check the API and the web UI are served.
           CODEDEN_UPDATE_CHECK=0 npx codeden --home "$CODEDEN_HOME" --port 4791 --no-open > server.log 2>&1 &
           for i in $(seq 1 60); do

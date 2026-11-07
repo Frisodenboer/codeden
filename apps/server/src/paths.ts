@@ -30,6 +30,8 @@ export function homePaths(home: string) {
     orchestrator: join(home, "orchestrator"),
     /** Copies of config files taken before the editors overwrite them (§12.4). */
     backups: join(home, "backups"),
+    /** Dependencies installed on demand, e.g. Claude Code support (§14). */
+    deps: join(home, "deps"),
   };
 }
 export type HomePaths = ReturnType<typeof homePaths>;

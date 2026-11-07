@@ -4,7 +4,7 @@ Provider adapters behind one normalized interface (`ProviderAdapter` / `Provider
 
 | Adapter | How | Notes |
 |---|---|---|
-| `claude` | Claude Agent SDK `query()` with streaming input, `pathToClaudeCodeExecutable` = the user's `claude` | SDK pinned to `0.3.318` (tested with Claude Code 2.1.318) |
+| `claude` | Claude Agent SDK `query()` with streaming input, `pathToClaudeCodeExecutable` = the user's `claude` | SDK pinned to `0.3.318` (tested with Claude Code 2.1.318); loaded through `loadClaudeSdk()` |
 | `codex` | `codex app-server` JSON-RPC over stdio | Types generated from Codex 0.160.1 into `src/codex/protocol/` |
 | `fake` | Scripted, deterministic | Demos and tests |
 | `replay` | Plays back recorded fixtures | Contract tests; never spawns a CLI |
@@ -23,6 +23,15 @@ pnpm --filter @codeden/providers codex:protocol  # regenerate src/codex/protocol
 
 Fixtures replace the recording cwd with `<CWD>`, the session id with `<SESSION>` and the OS user name with `user`. `CODEDEN_RECORD_MODEL`, `CODEDEN_LIVE_CLAUDE_MODEL` and `CODEDEN_LIVE_CODEX_MODEL` override the models (Claude defaults to the `haiku` alias, Codex to the user's configured model).
 
+## Loading the Claude Agent SDK (`src/claude/sdk/`)
+
+The SDK is not redistributed in the published `codeden` package. `loadClaudeSdk()` picks the source with `claudeSdkSource()`:
+
+- **workspace** (dev, unit tests, e2e): a plain `import("@anthropic-ai/claude-agent-sdk")` from `node_modules`.
+- **deps** (the published bundle, where tsdown defines `__CODEDEN_CLAUDE_SDK_ON_DEMAND__`): `installClaudeSdk()` runs `npm install @anthropic-ai/claude-agent-sdk@<CLAUDE_SDK_VERSION> --omit=optional --omit=peer --prefix <home>/deps` once, then the entry is imported by absolute file URL (`createRequire(...).resolve` + `pathToFileURL`, so Windows paths work). The runner calls `configureClaudeSdk({ depsDir })` at start.
+
+`CODEDEN_CLAUDE_SDK=deps|workspace` overrides the choice. npm runs as `node <npm-cli.js>` (from `npm_execpath`, else the npm next to Node, else `npm` on PATH). Concurrent installs share one promise per process and a `<deps>/.install.lock` file across processes (stale when its pid is gone or after 10 minutes). The JS entry only imports Node built-ins, so the `@anthropic-ai/sdk`, MCP SDK and zod peers are not installed; the platform binary is only looked up when `pathToClaudeCodeExecutable` is missing, which CodeDen always sets. `CLAUDE_SDK_VERSION` must equal the version in `package.json` (a test checks it).
+
 ## Autonomy mapping (§11.2)
 
 | Level | Claude | Codex |
@@ -40,7 +49,7 @@ Fixtures replace the recording cwd with `<CWD>`, the session id with `<SESSION>`
 - Thinking blocks come back with empty text plus a signature on current models; they map to `reasoning` items with `redacted: true`.
 - `result.modelUsage` and `total_cost_usd` are cumulative for the whole query, so `usage.updated` reports session totals.
 - Steering pushes another user message into the streaming input; the CLI folds it in at the next tool boundary. If it ran as its own turn, the first `result` has `queued_turn_count > 0`, and the CodeDen turn stays open until it is 0.
-- Windows: the native installer provides `claude.exe`; npm `.cmd` shims are unwrapped to `node <cli.js>` (Node refuses to spawn `.cmd` without a shell). The SDK's platform binary packages (optional dependencies) are never used: the published `codeden` package inlines only the SDK's JS entry and does not install them. The CLI keeps the cwd locked for a moment after `close()`.
+- Windows: the native installer provides `claude.exe`; npm `.cmd` shims are unwrapped to `node <cli.js>` (Node refuses to spawn `.cmd` without a shell). The SDK's platform binary packages (optional dependencies) are never used. The CLI keeps the cwd locked for a moment after `close()`.
 
 **Codex app-server**
 - One JSON message per line, no `jsonrpc` field. Server-to-client request ids start at `0`, so never test them for truthiness.

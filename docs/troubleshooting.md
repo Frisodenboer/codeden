@@ -9,16 +9,19 @@ npx codeden doctor
 It runs the same checks as the setup screen and prints one line per item, then the command that fixes each problem:
 
 ```
-ok  CodeDen          0.1.0
-ok  Data directory   C:\Users\you\.codeden
-ok  Server           running on port 4317 (pid 12345)
-ok  Runner           running on port 51234 (pid 12346)
-ok  Claude Code      2.1.318 - Signed in
---  Codex            Codex is not installed
-ok  GitHub CLI       2.83.0 - Signed in
-ok  git              2.51.0 - Identity configured
-ok  Browser          Microsoft Edge
-ok  Node.js          Node.js 24.16.0
+ok  CodeDen              0.1.0
+ok  Data directory       C:\Users\you\.codeden
+ok  Server               running on port 4317 (pid 12345)
+ok  Runner               running on port 51234 (pid 12346)
+ok  Terminals            node-pty
+ok  Keychain             @napi-rs/keyring
+ok  Claude Code          2.1.318 - Signed in
+ok  Claude Code support  SDK 0.3.318 in C:\Users\you\.codeden\deps
+--  Codex                Codex is not installed
+ok  GitHub CLI           2.83.0 - Signed in
+ok  git                  2.51.0 - Identity configured
+ok  Browser              Microsoft Edge
+ok  Node.js              Node.js 24.16.0
 
 To fix:
   Codex: npm install -g @openai/codex
@@ -36,6 +39,7 @@ To fix:
 | Running runner | `~/.codeden/runner/runner.json` (port, pid and version) |
 | Database | `~/.codeden/codeden.db` (SQLite, WAL mode) |
 | Config-file backups | `~/.codeden/backups/` |
+| Claude Code support (Claude Agent SDK) | `~/.codeden/deps/` |
 
 On Windows `~` is your user folder, for example `C:\Users\you\.codeden`. If you set `CODEDEN_HOME` or `--home`, look there instead.
 
@@ -70,6 +74,16 @@ gh auth login
 ```
 
 A Claude login close to expiry shows as a warning; signing in again clears it.
+
+### "Claude Code support could not be installed"
+
+CodeDen doesn't ship the Claude Agent SDK. The first time it's needed (on the setup screen, or by the first Claude session), CodeDen installs it from npm into `~/.codeden/deps/`. That's about 5 MB, without the SDK's platform binaries or peer packages. If the install fails, the setup row and the session error show npm's reason, usually a network, proxy or registry problem. Fix that, then retry in one of these ways:
+
+- **Retry** on the Claude Code support row (Settings > First-run setup).
+- Start the Claude session again.
+- Run `npx codeden doctor --install`, which prints npm's output as it installs.
+
+npm uses your normal configuration (`.npmrc`, `npm_config_registry`, proxy settings). If the folder ends up broken, delete `~/.codeden/deps/` and retry. A `.install.lock` left by a crashed install is cleared automatically once its process is gone, or after 10 minutes.
 
 ### "older than the tested minimum"
 

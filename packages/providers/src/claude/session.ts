@@ -1,10 +1,9 @@
-import {
-  type CanUseTool,
-  type HookCallback,
-  type PermissionResult,
-  type Query,
-  query,
-  type SDKUserMessage,
+import type {
+  CanUseTool,
+  HookCallback,
+  PermissionResult,
+  Query,
+  SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AgentEvent,
@@ -22,12 +21,15 @@ import { str, toJson } from "../util/text";
 import { ClaudeEventMapper } from "./mapper";
 import { buildQueryOptions, claudeEffort, toSdkUserMessage } from "./options";
 import { ClaudePolicy } from "./permissions";
+import type { ClaudeSdkModule } from "./sdk";
 import { approvalTitle, QUESTION_TOOL } from "./tools";
 
 export interface ClaudeSessionConfig {
   executable: ResolvedCommand;
   /** Called with the CLI's model list once a session is initialized. */
   onModels?: (models: Awaited<ReturnType<Query["supportedModels"]>>) => void;
+  /** The SDK's `query()`, loaded by the adapter (installed on demand in the published build). */
+  query: ClaudeSdkModule["query"];
   /** How long to wait for the CLI to confirm an interrupt before forcing the turn closed. */
   interruptTimeoutMs?: number;
 }
@@ -173,7 +175,7 @@ export class ClaudeSession implements ProviderSession {
         },
       };
     };
-    const q = query({
+    const q = this.config.query({
       prompt: prompts,
       options: buildQueryOptions({
         session: this.opts,

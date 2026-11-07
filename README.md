@@ -213,7 +213,7 @@ A minimal `.codeden/project.json`:
 
 ```
 codeden [options]      Start CodeDen and open it in the browser
-codeden doctor         Check the installation
+codeden doctor         Check the installation (--install: add Claude Code support now)
 codeden stop           Stop the server and the runner
 
 Options:
@@ -227,6 +227,7 @@ Options:
 - Running `codeden` while it's already running prints the URL and opens it again.
 - **Ctrl+C** stops the server; agents keep running in the runner. `codeden stop` stops both.
 - `codeden doctor` exits non-zero when CodeDen can't run a session, and prints the one command that fixes each problem.
+- Claude Code support (the Claude Agent SDK) isn't part of the package: it installs from npm into `~/.codeden/deps/` the first time it's needed, or with `codeden doctor --install`.
 
 Environment variables: `CODEDEN_HOME` (data directory), `CODEDEN_DEBUG=1` (server log lines in the terminal), `CODEDEN_SHELL` (terminal shell; PowerShell on Windows, `$SHELL` elsewhere), `CODEDEN_GITHUB_SYNC=0` (turn GitHub polling off).
 

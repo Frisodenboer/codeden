@@ -35,6 +35,7 @@ import { QuestionBroker } from "./sessions/questions";
 import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
+import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
 import { UpdateService } from "./updates";
 import { billingFromSetup } from "./usage/billing";
@@ -103,6 +104,8 @@ export interface AppServices {
   /** "Check for updates" against the npm registry (§16). */
   updates: UpdateService;
   setup: SetupService;
+  /** Claude Code support: the Claude Agent SDK, installed on demand (§14). */
+  claudeSdk: ClaudeSdkService;
   configFiles: ConfigFiles;
   /** Provider memory, skills, subagents and MCP servers (§12.4). */
   agentConfig: AgentConfigService;
@@ -197,6 +200,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     log: opts.log,
   });
   const setup = new SetupService({ exec, settings: opts.settings });
+  const claudeSdk = new ClaudeSdkService({ depsDir: opts.paths.deps, log: opts.log });
   const automations = new AutomationService({
     db: opts.db,
     store: opts.store,
@@ -282,6 +286,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     }),
     voice: new VoiceService({ secrets: opts.secrets, settings: opts.settings, ...opts.voice }),
     setup,
+    claudeSdk,
     usage,
     factory,
     configFiles: new ConfigFiles({

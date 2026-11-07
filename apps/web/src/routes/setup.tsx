@@ -1,12 +1,13 @@
 import type { Snapshot } from "@codeden/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight, BellRing, Check, Mic, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, BellRing, Check, Loader2, Mic, Volume2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useSettings } from "@/components/settings/settings-ui";
 import { ProjectSourcePicker } from "@/components/setup/add-project-dialog";
 import { SetupChecklist, useSetupStatus } from "@/components/setup/checklist";
+import { useClaudeSdkStatus, useInstallClaudeSdk } from "@/components/setup/claude-support";
 import { Logo } from "@/components/shell/logo";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -96,6 +97,29 @@ export function SetupPage() {
   const [step, setStep] = useState(0);
   const status = useSetupStatus();
   const ready = status.data?.ready ?? false;
+  // Claude Code support installs when the user continues with Claude Code detected (§14).
+  const claudeInstalled = status.data?.checks.some((c) => c.id === "claude" && c.installed);
+  const sdk = useClaudeSdkStatus(claudeInstalled === true).data;
+  const installSdk = useInstallClaudeSdk();
+  const [waitingForSdk, setWaitingForSdk] = useState(false);
+  useEffect(() => {
+    if (!waitingForSdk || sdk?.state === "installing") return;
+    setWaitingForSdk(false);
+    if (sdk?.state === "ready") setStep(1);
+  }, [waitingForSdk, sdk?.state]);
+  const next = async () => {
+    if (
+      step === 0 &&
+      claudeInstalled &&
+      (sdk?.state === "missing" || sdk?.state === "installing")
+    ) {
+      const started = sdk.state === "missing" ? await installSdk() : sdk;
+      if (started?.state === "ready") setStep(1);
+      else if (started?.state === "installing") setWaitingForSdk(true);
+      return;
+    }
+    setStep(step + 1);
+  };
   const finish = async (projectId?: string) => {
     const completedAt = new Date().toISOString();
     // Mirror it right away so "/" doesn't bounce back here while the server catches up.
@@ -176,9 +200,15 @@ export function SetupPage() {
             Skip setup
           </Button>
           {step < 2 ? (
-            <Button disabled={step === 0 && !ready} onClick={() => setStep(step + 1)}>
-              {step === 1 ? "Continue" : ready ? "Continue" : "Waiting for a provider…"}{" "}
-              <ArrowRight />
+            <Button disabled={(step === 0 && !ready) || waitingForSdk} onClick={() => void next()}>
+              {waitingForSdk
+                ? "Installing Claude Code support…"
+                : step === 0 && claudeInstalled && sdk?.state === "failed"
+                  ? "Continue anyway"
+                  : step === 1 || ready
+                    ? "Continue"
+                    : "Waiting for a provider…"}{" "}
+              {waitingForSdk ? <Loader2 className="animate-spin" /> : <ArrowRight />}
             </Button>
           ) : (
             <Button variant="outline" onClick={() => void finish()}>

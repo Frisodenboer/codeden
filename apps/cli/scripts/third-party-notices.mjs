@@ -1,6 +1,7 @@
 // Rolldown plugin: writes dist/THIRD-PARTY-NOTICES.txt with the name, version, license and
 // license text of every third-party package inlined into the bundle, so the notices travel
-// with the published package.
+// with the published package. Fails the build if a `forbidden` package (one we must not
+// redistribute) ends up inlined.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 
@@ -19,7 +20,7 @@ function licenseText(root) {
   return file ? readFileSync(join(root, file), "utf8").trim() : null;
 }
 
-export function thirdPartyNotices() {
+export function thirdPartyNotices({ forbidden = [] } = {}) {
   return {
     name: "codeden-third-party-notices",
     generateBundle() {
@@ -32,6 +33,9 @@ export function thirdPartyNotices() {
       for (const root of roots) {
         const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
         const key = `${pkg.name}@${pkg.version}`;
+        if (forbidden.includes(pkg.name)) {
+          this.error(`${pkg.name} must not be bundled into the published package`);
+        }
         if (!pkg.name || seen.has(key)) continue;
         const license = typeof pkg.license === "string" ? pkg.license : "see package";
         const text = licenseText(root) ?? "";

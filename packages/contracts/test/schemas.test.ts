@@ -5,6 +5,7 @@ import {
   AgentEvent,
   Automation,
   agentEventToNewEvent,
+  ClaudeSdkStatus,
   ClientToServerMessage,
   CODEDEN_VERSION,
   defaultSettings,
@@ -266,5 +267,34 @@ describe("version", () => {
     const pkgUrl = new URL("../../../apps/cli/package.json", import.meta.url);
     const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version: string };
     expect(CODEDEN_VERSION).toBe(pkg.version);
+  });
+});
+
+describe("claude sdk status", () => {
+  it("round-trips every state", () => {
+    for (const state of ["ready", "missing", "installing", "failed"] as const) {
+      const status: ClaudeSdkStatus = {
+        state,
+        version: "0.3.318",
+        source: "deps",
+        location: "/home/u/.codeden/deps",
+        progress: state === "installing" ? "Downloading from npm" : null,
+        error: state === "failed" ? "npm exited with code 1" : null,
+      };
+      expect(ClaudeSdkStatus.parse(JSON.parse(JSON.stringify(status)))).toEqual(status);
+    }
+  });
+
+  it("rejects an unknown source", () => {
+    expect(
+      ClaudeSdkStatus.safeParse({
+        state: "ready",
+        version: "1",
+        source: "global",
+        location: null,
+        progress: null,
+        error: null,
+      }).success,
+    ).toBe(false);
   });
 });

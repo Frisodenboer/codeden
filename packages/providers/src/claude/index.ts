@@ -7,4 +7,5 @@ export { CLAUDE_MIN_VERSION, detectClaude, parseClaudeAuthStatus } from "./detec
 export { ClaudeEventMapper } from "./mapper";
 export { CLAUDE_UTILITY_MODEL, ClaudeUtilityModel } from "./one-shot";
 export { ClaudePolicy, permissionModeFor } from "./permissions";
+export * from "./sdk";
 export { ClaudeSession } from "./session";

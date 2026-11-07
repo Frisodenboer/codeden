@@ -1,4 +1,5 @@
 import {
+  ClaudeSdkStatus,
   CreateProjectResponse,
   DiffResult,
   FsListResponse,
@@ -100,6 +101,8 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     getSetupStatus: (o) =>
       get(`/setup/status${o?.refresh ? "?refresh=1" : ""}`, (v) => SetupStatus.parse(v)),
     loginCommand: (tool) => post(`/setup/login/${tool}`, {}, (v) => LoginCommandResponse.parse(v)),
+    getClaudeSdkStatus: () => get("/setup/claude-sdk", (v) => ClaudeSdkStatus.parse(v)),
+    installClaudeSdk: () => post("/setup/claude-sdk/install", {}, (v) => ClaudeSdkStatus.parse(v)),
     getUpdates: (o) =>
       get(`/updates${o?.refresh ? "?refresh=1" : ""}`, (v) => UpdateStatus.parse(v)),
     async completeSetup() {

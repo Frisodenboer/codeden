@@ -1,4 +1,5 @@
 import type {
+  ClaudeSdkStatus,
   ConflictDecision,
   ConflictRecord,
   CreateProjectRequest,
@@ -123,6 +124,10 @@ export interface CodeDenClient {
   /** The npm registry version check (`settings.updates.check`). */
   getUpdates(opts?: { refresh?: boolean }): Promise<UpdateStatus>;
   loginCommand(tool: "claude" | "codex" | "gh"): Promise<LoginCommandResponse>;
+  /** Claude Code support: the Claude Agent SDK, installed on demand into `<home>/deps`. */
+  getClaudeSdkStatus(): Promise<ClaudeSdkStatus>;
+  /** Start (or join) the Claude Code support install; poll `getClaudeSdkStatus` for progress. */
+  installClaudeSdk(): Promise<ClaudeSdkStatus>;
   completeSetup(): Promise<void>;
   listDirectory(path: string | null, opts?: { showHidden?: boolean }): Promise<FsListResponse>;
 

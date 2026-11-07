@@ -10,6 +10,7 @@ import { type ResolvedCommand, resolveExecutable } from "../util/exec";
 import type { UtilityModel } from "../utility";
 import { detectClaude } from "./detect";
 import { ClaudeUtilityModel } from "./one-shot";
+import { loadClaudeSdk } from "./sdk";
 import { ClaudeSession } from "./session";
 
 export const CLAUDE_PROVIDER_ID = "claude";
@@ -81,8 +82,10 @@ export class ClaudeAdapter implements ProviderAdapter {
   async openSession(opts: SessionOptions): Promise<ProviderSession> {
     const executable = this.executable();
     if (!executable) throw new Error("Claude Code is not installed (no `claude` on PATH)");
+    const { query } = await loadClaudeSdk();
     return new ClaudeSession(opts, {
       executable,
+      query,
       onModels: (models) => {
         if (!models.length) return;
         this.modelList = models.map((m, i) => ({

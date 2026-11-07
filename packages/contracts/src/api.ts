@@ -328,6 +328,28 @@ export const SetupStatus = z.object({
 });
 export type SetupStatus = z.infer<typeof SetupStatus>;
 
+/**
+ * Claude Code support (§14): the Claude Agent SDK that drives the user's installed `claude`.
+ * The published package does not ship it; it is installed from npm on first use into
+ * `<home>/deps` (without its optional platform binaries). `GET /api/setup/claude-sdk`;
+ * `POST /api/setup/claude-sdk/install` starts (or joins) the install.
+ */
+export const ClaudeSdkStatus = z.object({
+  /** `ready`: loadable; `missing`: not installed yet; `failed`: the last install failed. */
+  state: z.enum(["ready", "missing", "installing", "failed"]),
+  /** The SDK version CodeDen is tested with; the only version it installs. */
+  version: z.string(),
+  /** `deps`: installed on demand into `location`; `workspace`: resolved from a dev checkout. */
+  source: z.enum(["deps", "workspace"]),
+  /** The deps folder (null for `workspace`). */
+  location: z.string().nullable(),
+  /** Latest progress line while installing. */
+  progress: z.string().nullable(),
+  /** Why the last install failed. */
+  error: z.string().nullable(),
+});
+export type ClaudeSdkStatus = z.infer<typeof ClaudeSdkStatus>;
+
 /** `POST /api/setup/login/:tool` response: what to run in a terminal. */
 export const LoginCommandResponse = z.object({
   tool: z.enum(["claude", "codex", "gh"]),

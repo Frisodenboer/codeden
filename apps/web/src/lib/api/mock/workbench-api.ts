@@ -1,4 +1,9 @@
-import { CODEDEN_VERSION, type DiffResult, type SetupStatus } from "@codeden/contracts";
+import {
+  type ClaudeSdkStatus,
+  CODEDEN_VERSION,
+  type DiffResult,
+  type SetupStatus,
+} from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { mockTerminal } from "./channels";
 import { ciFailureShot, contrastComparison, generatedIllustration } from "./fixtures/images";
@@ -26,6 +31,8 @@ type WorkbenchApi = Pick<
   | "getSetupStatus"
   | "getUpdates"
   | "loginCommand"
+  | "getClaudeSdkStatus"
+  | "installClaudeSdk"
   | "completeSetup"
   | "listDirectory"
   | "getDiff"
@@ -45,6 +52,25 @@ type WorkbenchApi = Pick<
 /** Setup, workbench and agent-configuration parts of the mock client. */
 export function workbenchApi(world: MockWorld): WorkbenchApi {
   let codexFixed = false;
+  // Claude Code support "installs" over ~2.5s so the setup screen shows its progress.
+  let sdkInstallStarted: number | null = null;
+  const sdkStatus = (): ClaudeSdkStatus => {
+    const elapsed = sdkInstallStarted === null ? -1 : Date.now() - sdkInstallStarted;
+    const state = elapsed < 0 ? "missing" : elapsed < 2500 ? "installing" : "ready";
+    return {
+      state,
+      version: "0.3.318",
+      source: "deps",
+      location: "~/.codeden/deps",
+      progress:
+        state !== "installing"
+          ? null
+          : elapsed < 1200
+            ? "Downloading @anthropic-ai/claude-agent-sdk@0.3.318 from npm"
+            : "Checking the install",
+      error: null,
+    };
+  };
 
   const setupStatus = (): SetupStatus => {
     const checks = setupChecks.map((check) =>
@@ -87,6 +113,11 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
       ];
       const [bin = tool, ...args] = command.split(" ");
       return delay({ tool, command: bin, args });
+    },
+    getClaudeSdkStatus: () => delay(sdkStatus(), 120),
+    installClaudeSdk: () => {
+      sdkInstallStarted ??= Date.now();
+      return delay(sdkStatus(), 120);
     },
     completeSetup: () => delay(undefined),
     listDirectory: (path, opts) => delay(listDir(path, opts?.showHidden), 90),

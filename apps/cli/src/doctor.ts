@@ -1,6 +1,13 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { CODEDEN_VERSION, type SetupCheck } from "@codeden/contracts";
+import {
+  CLAUDE_SDK_VERSION,
+  claudeSdkSource,
+  importClaudeSdkFrom,
+  installClaudeSdk,
+  isClaudeSdkInstalled,
+} from "@codeden/providers";
 import { checkSetup, homePaths, readLiveRunnerLock } from "@codeden/server";
 import { findRunningServer } from "./running";
 
@@ -28,13 +35,46 @@ function loadError(mod: string): string | null {
   }
 }
 
+/** The "Claude Code support" row: the on-demand Claude Agent SDK, loaded to prove it works. */
+async function claudeSupport(depsDir: string): Promise<[string, string]> {
+  if (claudeSdkSource() === "workspace") return ["ok", `SDK ${CLAUDE_SDK_VERSION} (workspace)`];
+  if (!isClaudeSdkInstalled(depsDir)) {
+    return ["--", "not installed yet; installs on first use, or run `codeden doctor --install`"];
+  }
+  try {
+    await importClaudeSdkFrom(depsDir);
+    return ["ok", `SDK ${CLAUDE_SDK_VERSION} in ${depsDir}`];
+  } catch (error) {
+    return ["xx", `installed but does not load: ${error instanceof Error ? error.message : error}`];
+  }
+}
+
+/** `codeden doctor --install`: install Claude Code support now, printing npm's progress. */
+async function installClaudeSupport(depsDir: string): Promise<boolean> {
+  if (claudeSdkSource() === "workspace" || isClaudeSdkInstalled(depsDir)) return true;
+  console.log(`Installing Claude Code support into ${depsDir} ...`);
+  try {
+    await installClaudeSdk({ depsDir, onProgress: (line) => console.log(`  ${line}`) });
+    return true;
+  } catch (error) {
+    console.error(
+      `Claude Code support could not be installed: ${error instanceof Error ? error.message : error}`,
+    );
+    console.error(
+      "Check your network and npm configuration, then run `codeden doctor --install` again.",
+    );
+    return false;
+  }
+}
+
 /**
  * `codeden doctor`: diagnostics. Runs the same detection checks as the first-run setup
  * screen (§14): installed versions, logins and supported adapter versions, with the one
  * command that fixes each problem. Exits non-zero when CodeDen cannot run a session.
  */
-export async function doctor(home: string): Promise<number> {
+export async function doctor(home: string, opts: { install?: boolean } = {}): Promise<number> {
   const paths = homePaths(home);
+  const installed = opts.install ? await installClaudeSupport(paths.deps) : true;
   const [status, server] = await Promise.all([
     checkSetup({ home }),
     findRunningServer(paths.serverLock),
@@ -61,8 +101,12 @@ export async function doctor(home: string): Promise<number> {
   for (const check of status.checks) {
     const detail = [check.version, check.message].filter(Boolean).join(" - ");
     rows.push([MARK[check.state], check.label, detail]);
+    if (check.id === "claude") {
+      const [mark, text] = await claudeSupport(paths.deps);
+      rows.push([mark, "Claude Code support", text]);
+    }
   }
-  for (const [mark, name, detail] of rows) console.log(`${mark}  ${name.padEnd(16)} ${detail}`);
+  for (const [mark, name, detail] of rows) console.log(`${mark}  ${name.padEnd(20)} ${detail}`);
 
   const fixes = status.checks.filter((c) => c.state !== "ok" && c.fix);
   if (fixes.length > 0) {
@@ -80,5 +124,5 @@ export async function doctor(home: string): Promise<number> {
   }
   const node = status.checks.find((c) => c.id === "node");
   const git = status.checks.find((c) => c.id === "git");
-  return status.ready && node?.state !== "missing" && git?.state !== "missing" ? 0 : 1;
+  return installed && status.ready && node?.state !== "missing" && git?.state !== "missing" ? 0 : 1;
 }

@@ -11,6 +11,7 @@ import {
 } from "@codeden/contracts";
 import {
   builtinProviders,
+  configureClaudeSdk,
   FakeProvider,
   loadFixture,
   type ProviderAdapter,
@@ -83,6 +84,11 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
 
   const token = randomBytes(32).toString("hex");
   const journal = new Journal(dir);
+  // Claude Code support is installed on demand into `<home>/deps` in the published package.
+  configureClaudeSdk({
+    depsDir: join(opts.home, "deps"),
+    onProgress: (line) => log(`claude sdk: ${line}`),
+  });
   const registry = new ProviderRegistry(opts.adapters ?? []);
   if (opts.enableFakeProvider && !registry.get("fake"))
     registry.register(new FakeProvider({ delayMs: 15 }));

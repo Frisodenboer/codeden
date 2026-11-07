@@ -14,7 +14,7 @@ import { badRequest } from "../services/errors";
 import { listDirectories } from "../services/files/fs-browser";
 import { jsonBody, queryOf } from "./validate";
 
-/** `/api/setup`: first-run detection, login commands, completion (§14). */
+/** `/api/setup`: first-run detection, login commands, Claude Code support, completion (§14). */
 export function setupRoutes(s: AppServices) {
   return new Hono()
     .get("/status", queryOf(z.object({ refresh: z.enum(["1", "true"]).optional() })), async (c) =>
@@ -25,6 +25,8 @@ export function setupRoutes(s: AppServices) {
       if (!tool.success) throw badRequest("Unknown tool", "unknown_tool");
       return c.json(s.setup.loginCommand(tool.data));
     })
+    .get("/claude-sdk", (c) => c.json(s.claudeSdk.status()))
+    .post("/claude-sdk/install", (c) => c.json(s.claudeSdk.install()))
     .post("/complete", (c) => {
       const setupCompleted = s.setup.complete();
       // Other tabs and fresh snapshots learn about it like any other settings change.

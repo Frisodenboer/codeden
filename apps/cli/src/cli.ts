@@ -2,7 +2,7 @@
 /**
  * `codeden` CLI (§16): start the server (which ensures the runner) and open the browser.
  *   codeden [--port <n>] [--home <dir>] [--no-open]
- *   codeden doctor
+ *   codeden doctor [--install]
  *   codeden stop
  */
 import { parseArgs } from "node:util";
@@ -19,7 +19,7 @@ const HELP = `codeden ${CODEDEN_VERSION}: a local-first harness for coding agent
 
 Usage:
   codeden [options]      Start CodeDen and open it in the browser
-  codeden doctor         Check the installation
+  codeden doctor         Check the installation (--install: add Claude Code support now)
   codeden stop           Stop the server and the runner
 
 Options:
@@ -37,6 +37,7 @@ async function main(): Promise<number> {
       port: { type: "string" },
       home: { type: "string" },
       "no-open": { type: "boolean", default: false },
+      install: { type: "boolean", default: false },
       version: { type: "boolean", short: "v", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -57,7 +58,7 @@ async function main(): Promise<number> {
 
   const home = resolveHome(values.home);
   const command = positionals[0];
-  if (command === "doctor") return doctor(home);
+  if (command === "doctor") return doctor(home, { install: values.install });
   if (command === "stop") return stop(home);
   if (command) {
     console.error(`Unknown command "${command}".\n\n${HELP}`);

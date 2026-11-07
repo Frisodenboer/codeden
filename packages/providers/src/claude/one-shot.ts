@@ -1,9 +1,9 @@
 import { tmpdir } from "node:os";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { ResolvedCommand } from "../util/exec";
 import { str } from "../util/text";
 import { type OneShotRequest, oneShotSignal, type UtilityModel } from "../utility";
 import { claudeEnv, executableOptions } from "./options";
+import { loadClaudeSdk } from "./sdk";
 
 /** Default utility model: the CLI's small-model alias. */
 export const CLAUDE_UTILITY_MODEL = "haiku";
@@ -25,6 +25,7 @@ export class ClaudeUtilityModel implements UtilityModel {
     const abortController = new AbortController();
     signal.addEventListener("abort", () => abortController.abort(), { once: true });
     try {
+      const { query } = await loadClaudeSdk();
       const q = query({
         prompt: request.prompt,
         options: {
