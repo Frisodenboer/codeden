@@ -10,6 +10,8 @@ export const InboxItemKind = z.enum([
   "triage",
   "automation_result",
   "message",
+  /** A start request that matched running work (§8.4); resolved with wait/skip/join/force. */
+  "conflict",
 ]);
 export type InboxItemKind = z.infer<typeof InboxItemKind>;
 

@@ -19,6 +19,7 @@ import { Automation, AutomationRun } from "./entities/automation";
 import { InboxItem } from "./entities/inbox";
 import { Project } from "./entities/project";
 import { Session } from "./entities/session";
+import { ConflictRecord, Notice } from "./orchestration";
 import { PtyId } from "./runner/commands";
 import { Settings } from "./settings";
 import { Checkpoint, QueuedMessage, SetupStep } from "./workbench";
@@ -102,6 +103,12 @@ export const EventEnvelope = z.discriminatedUnion("type", [
     "message.dequeued",
     z.object({ sessionId: Id, messageId: Id, reason: z.enum(["sent", "dropped"]) }),
   ),
+  /** A typed orchestration notice for a PM or the orchestrator (§8.2). */
+  globalEvent("notice.created", z.object({ notice: Notice })),
+  /** Notices delivered to their target (a wake, or shown in a digest). */
+  globalEvent("notice.delivered", z.object({ noticeIds: z.array(Id), at: Timestamp })),
+  /** A start request matched running work; persisted with its `conflict` inbox item (§8.4). */
+  globalEvent("conflict.created", z.object({ conflict: ConflictRecord })),
   /** A runner terminal exited. */
   globalEvent("pty.exited", z.object({ ptyId: PtyId, exitCode: z.int().nullable() })),
 ]);

@@ -5,6 +5,7 @@ import { InboxItem } from "./entities/inbox";
 import { Project } from "./entities/project";
 import { ItemRecord, Session, Thread, Turn } from "./entities/session";
 import { RawEventEnvelope } from "./events";
+import { RoleSessionsRef } from "./orchestration";
 import { ProviderInfo } from "./provider";
 import { Settings } from "./settings";
 import { ScheduledRun } from "./work";
@@ -41,6 +42,8 @@ export const Snapshot = z.object({
   automations: z.array(Automation),
   /** Upcoming scheduled runs across projects (§8.4 Now / Next). */
   scheduled: z.array(ScheduledRun).default([]),
+  /** The orchestrator and PM sessions (§8.1), also present in `sessions`. */
+  roleSessions: RoleSessionsRef.optional(),
   runner: RunnerConnectionStatus,
 });
 export type Snapshot = z.infer<typeof Snapshot>;
