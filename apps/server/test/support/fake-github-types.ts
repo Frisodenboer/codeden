@@ -34,6 +34,8 @@ export interface FakeIssue {
     mergedAt: string | null;
     checks: FakeCheck[];
     reviews: FakeReview[];
+    /** Pending review requests (logins). */
+    requestedReviewers?: string[];
     mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   };
 }

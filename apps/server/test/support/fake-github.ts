@@ -350,6 +350,11 @@ export class FakeGithub {
       closingIssuesReferences: { nodes: [] },
       commits: { nodes: [{ commit: { oid: pr.headSha, messageHeadline: "Change things" } }] },
       head: { nodes: [{ commit: { statusCheckRollup: rollup } }] },
+      reviewRequests: {
+        nodes: (pr.requestedReviewers ?? []).map((login) => ({
+          requestedReviewer: { __typename: "User", login },
+        })),
+      },
       reviews: {
         nodes: pr.reviews.map((r) => ({
           id: r.id,

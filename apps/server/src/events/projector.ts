@@ -94,8 +94,10 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
     case "issue.opened":
     case "issue.labeled":
     case "issue.updated":
+    case "issue.commented":
     case "pr.opened":
     case "pr.updated":
+    case "pr.review_requested":
     case "pr.checks_passed":
     case "pr.checks_failed":
     case "pr.merged":

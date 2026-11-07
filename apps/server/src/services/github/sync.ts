@@ -1,6 +1,7 @@
 import {
   type GitHubRepo,
   GithubIssue,
+  type GithubNewComment,
   GithubPr,
   type GithubSyncStatus,
   type NewEvent,
@@ -11,6 +12,7 @@ import { errorMessage } from "../errors";
 import { type GithubClient, GithubNotConnectedError, GithubRateLimitError } from "./client";
 import { diffIssue, diffPr, type RestIssue, toGithubIssue } from "./diff";
 import { fetchPullRequests, type GqlPullRequest, toGithubPr } from "./graphql";
+import { isCodedenComment, withoutMarker } from "./issues";
 import type { GithubStore, SyncState } from "./store";
 
 export interface GithubSyncDeps {
@@ -41,6 +43,7 @@ const MAX_BACKOFF_MS = 15 * 60_000;
 const BASELINE_OPEN_PAGES = 5;
 const BASELINE_CLOSED_DAYS = 30;
 const BODY_LIMIT = 20_000;
+const MAX_NEW_COMMENTS = 10;
 
 /**
  * Polls GitHub for each GitHub project (§9): the issues listing with `If-None-Match` (a 304
@@ -263,7 +266,46 @@ export class GithubSync {
         events.push(...diffPr(prev, next, { importedBefore: state.baselineAt }));
       }
     }
+    await this.fillNewComments(repo, events);
     if (events.length > 0) this.deps.events.append(events);
+  }
+
+  /** Read the new comments of each `issue.commented` (best effort: left empty on errors). */
+  private async fillNewComments(repo: GitHubRepo, events: NewEvent[]): Promise<void> {
+    for (const e of events) {
+      if (e.type !== "issue.commented") continue;
+      const payload = e.payload as { issue: GithubIssue; comments: GithubNewComment[] };
+      const prev = this.deps.store.issue(payload.issue.projectId, payload.issue.number);
+      const added = Math.max(1, payload.issue.comments - (prev?.comments ?? 0));
+      try {
+        const listed = await this.deps.client.run(async (octokit) => {
+          const res = await octokit.rest.issues.listComments({
+            owner: repo.owner,
+            repo: repo.repo,
+            issue_number: payload.issue.number,
+            per_page: 100,
+            ...(prev ? { since: prev.updatedAt } : {}),
+          });
+          return res.data;
+        });
+        payload.comments = listed.slice(-Math.min(added, MAX_NEW_COMMENTS)).map((c) => {
+          const raw = c.body ?? "";
+          const body = withoutMarker(raw);
+          return {
+            id: c.id,
+            author: c.user?.login ?? null,
+            body: body.length > BODY_LIMIT ? body.slice(0, BODY_LIMIT) : body,
+            createdAt: c.created_at,
+            url: c.html_url,
+            fromCodeden: isCodedenComment(raw),
+          };
+        });
+      } catch (error) {
+        this.deps.log?.(
+          `github sync: comments of #${payload.issue.number}: ${errorMessage(error)}`,
+        );
+      }
+    }
   }
 
   private issueOf(projectId: string, raw: RestIssue): GithubIssue {

@@ -19,6 +19,7 @@ import { validateAutomation } from "../src/services/automations/definitions";
 import {
   factoryOwnsIntake,
   type TriggerEvent,
+  triggerEvents,
   triggerMatches,
 } from "../src/services/automations/event-triggers";
 import { runStatusForSession } from "../src/services/automations/executor";
@@ -306,6 +307,81 @@ describe("event triggers", () => {
     expect(triggerMatches(onLabel({ labels: ["feature"] }), event())).toBe(false);
     expect(triggerMatches(onLabel({ authors: ["someone"] }), event())).toBe(false);
     expect(triggerMatches(onLabel({ branches: ["main"] }), event({ branch: "main" }))).toBe(true);
+  });
+
+  it("turns comments and review requests into triggers, never CodeDen's own comments", () => {
+    const issue = {
+      projectId: "p1",
+      number: 3,
+      title: "Bug",
+      state: "open" as const,
+      url: "https://github.com/a/b/issues/3",
+      labels: ["bug"],
+      author: "octocat",
+      body: null,
+      comments: 2,
+      createdAt: "2026-11-01T00:00:00Z",
+      updatedAt: "2026-11-01T00:00:00Z",
+      closedAt: null,
+      sessionIds: [],
+    };
+    const comment = (id: number, fromCodeden: boolean) => ({
+      id,
+      author: "lee",
+      body: `comment ${id}`,
+      createdAt: "2026-11-01T00:00:00Z",
+      url: `https://github.com/a/b/issues/3#issuecomment-${id}`,
+      fromCodeden,
+    });
+    const envelope = (type: string, payload: unknown, seq: number) =>
+      ({ seq, ts: "2026-11-01T00:00:00Z", sessionId: null, type, payload }) as never;
+    const [commented, ...rest] = triggerEvents(
+      [
+        envelope("issue.commented", { issue, comments: [comment(1, false), comment(2, true)] }, 1),
+        envelope("issue.commented", { issue, comments: [comment(3, true)] }, 2),
+      ],
+      () => undefined,
+    );
+    expect(rest).toEqual([]);
+    expect(commented).toMatchObject({
+      event: "issue.commented",
+      author: "lee",
+      labels: ["bug"],
+      vars: { "comment.body": "comment 1", "issue.number": "3" },
+    });
+    const pr = {
+      id: "p1:4",
+      projectId: "p1",
+      number: 4,
+      title: "Change",
+      state: "open" as const,
+      url: "https://github.com/a/b/pull/4",
+      author: "octocat",
+      headBranch: "feat",
+      baseBranch: "main",
+      headSha: null,
+      checks: { state: "none" as const, total: 0, passed: 0, failed: 0, pending: 0, checks: [] },
+      reviewDecision: "none" as const,
+      reviews: [],
+      mergeable: "unknown" as const,
+      linkedIssues: [],
+      requestedReviewers: ["lee", "acme/core"],
+      commits: [],
+      sessionId: null,
+      createdAt: null,
+      updatedAt: "2026-11-01T00:00:00Z",
+      mergedAt: null,
+      closedAt: null,
+    };
+    const [requested] = triggerEvents(
+      [envelope("pr.review_requested", { pr, reviewers: ["lee", "acme/core"] }, 3)],
+      () => undefined,
+    );
+    expect(requested).toMatchObject({
+      event: "pr.review_requested",
+      branch: "feat",
+      vars: { "pr.reviewers": "lee, acme/core" },
+    });
   });
 });
 

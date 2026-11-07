@@ -45,6 +45,7 @@ export function applyGithubProjection(tx: Tx, e: GithubEvent): void {
     case "issue.opened":
     case "issue.labeled":
     case "issue.updated":
+    case "issue.commented":
       upsertIssue(tx, e.payload.issue, e.ts);
       return;
     default:

@@ -54,7 +54,10 @@ function isOld(createdAt: string | null, opts: DiffOptions): boolean {
   return Boolean(createdAt && opts.importedBefore && createdAt < opts.importedBefore);
 }
 
-/** Events for one issue: opened, labeled (labels added) or updated (anything else). */
+/**
+ * Events for one issue: opened, labeled (labels added), commented (the comment count went up;
+ * the sync fills in the new comments) or updated (anything else).
+ */
 export function diffIssue(
   prev: GithubIssue | undefined,
   next: GithubIssue,
@@ -71,10 +74,14 @@ export function diffIssue(
   if ((prev.body ?? "") !== (next.body ?? "")) changes.push("body");
   if (prev.state !== next.state) changes.push("state");
   if (next.labels.length !== prev.labels.length + added.length) changes.push("labels");
-  if (prev.comments !== next.comments) changes.push("comments");
+  // More comments is `issue.commented`; fewer (a deletion) is just an update.
+  if (next.comments < prev.comments) changes.push("comments");
   const events: NewEvent[] = [];
   if (added.length > 0) {
     events.push({ type: "issue.labeled", sessionId: null, payload: { issue, added } });
+  }
+  if (next.comments > prev.comments) {
+    events.push({ type: "issue.commented", sessionId: null, payload: { issue, comments: [] } });
   }
   if (changes.length > 0) {
     events.push({ type: "issue.updated", sessionId: null, payload: { issue, changes } });
@@ -91,7 +98,18 @@ const PR_FIELDS: Array<keyof GithubPr> = [
   "mergeable",
   "linkedIssues",
   "sessionId",
+  "requestedReviewers",
 ];
+
+/**
+ * Reviewers requested now that were not before. A row without the field (synced before it
+ * was tracked) is unknown, so nothing counts as new.
+ */
+function newReviewRequests(prev: GithubPr | undefined, next: GithubPr): string[] {
+  if (prev && prev.requestedReviewers === undefined) return [];
+  const before = new Set(prev?.requestedReviewers ?? []);
+  return (next.requestedReviewers ?? []).filter((r) => !before.has(r));
+}
 
 /**
  * Events for one PR. Terminal transitions (merged, closed) and check outcomes get their own
@@ -113,6 +131,10 @@ export function diffPr(
     if (next.state === "merged") events.push({ type: "pr.merged", sessionId, payload: { pr } });
     else if (next.state === "closed")
       events.push({ type: "pr.closed", sessionId, payload: { pr } });
+    const reviewers = newReviewRequests(undefined, next);
+    if (reviewers.length > 0 && next.state !== "merged" && next.state !== "closed") {
+      events.push({ type: "pr.review_requested", sessionId, payload: { pr, reviewers } });
+    }
     return events;
   }
   const events: NewEvent[] = [];
@@ -122,9 +144,20 @@ export function diffPr(
       events.push({ type: "review.submitted", sessionId, payload: { pr, review } });
     }
   }
+  const reviewers = newReviewRequests(prev, next);
+  if (reviewers.length > 0) {
+    events.push({ type: "pr.review_requested", sessionId, payload: { pr, reviewers } });
+  }
   let changes: string[] = PR_FIELDS.filter(
-    (f) => JSON.stringify(prev[f]) !== JSON.stringify(next[f]),
+    (f) => JSON.stringify(prev[f] ?? null) !== JSON.stringify(next[f] ?? null),
   );
+  const removedRequest = (prev.requestedReviewers ?? []).some(
+    (r) => !(next.requestedReviewers ?? []).includes(r),
+  );
+  // Only additions: `pr.review_requested` already says so. Untracked before: not a change.
+  if ((reviewers.length > 0 && !removedRequest) || prev.requestedReviewers === undefined) {
+    changes = changes.filter((c) => c !== "requestedReviewers");
+  }
   if (prev.checks.state !== next.checks.state) changes.push("checks");
   const checksChanged = prev.checks.state !== next.checks.state || prev.headSha !== next.headSha;
   if (checksChanged && next.checks.state === "success") {

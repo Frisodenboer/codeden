@@ -27,6 +27,13 @@ fragment PrFields on PullRequest {
     } } } } }
   }
   reviews(last: 20) { nodes { id author { login } state body submittedAt url } }
+  reviewRequests(first: 20) { nodes { requestedReviewer {
+    __typename
+    ... on User { login }
+    ... on Bot { login }
+    ... on Mannequin { login }
+    ... on Team { combinedSlug }
+  } } }
 }`;
 
 /** PRs per GraphQL request (aliases in one query). */
@@ -74,6 +81,11 @@ export interface GqlPullRequest {
       };
     } | null>;
   };
+  reviewRequests?: {
+    nodes: Array<{
+      requestedReviewer: { __typename: string; login?: string; combinedSlug?: string } | null;
+    } | null>;
+  } | null;
   reviews: {
     nodes: Array<{
       id: string;
@@ -192,6 +204,17 @@ export function closingIssueNumbers(body: string): number[] {
   return [...out];
 }
 
+/** Logins and team slugs a PR's review is requested from, sorted and de-duplicated. */
+function requestedReviewers(node: GqlPullRequest): string[] {
+  const out = new Set<string>();
+  for (const r of node.reviewRequests?.nodes ?? []) {
+    const who = r?.requestedReviewer;
+    const name = who?.login ?? who?.combinedSlug;
+    if (name) out.add(name);
+  }
+  return [...out].sort();
+}
+
 /** Map a GraphQL PR to the projection entity. `sessionId` is resolved by the caller. */
 export function toGithubPr(
   projectId: string,
@@ -246,6 +269,7 @@ export function toGithubPr(
       })),
     mergeable,
     linkedIssues: [...linked].sort((a, b) => a - b),
+    requestedReviewers: requestedReviewers(node),
     commits: node.commits.nodes
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .map((c) => ({ sha: c.commit.oid, message: c.commit.messageHeadline })),

@@ -182,6 +182,36 @@ describe("github sync", () => {
     expect(env.repo.get(session.id).pr).toMatchObject({ number: 1 });
   });
 
+  it("emits issue.commented with the new comments and pr.review_requested", async () => {
+    env.gh.addIssue({ title: "Bug" });
+    env.gh.addPr("feature/r");
+    await env.service.syncNow(P);
+    env.gh.touch(1, (i) =>
+      i.comments.push({ id: 7, body: "Still broken on Windows", author: "lee", createdAt: "x" }),
+    );
+    env.gh.touch(2, (i) => {
+      if (i.pr) i.pr.requestedReviewers = ["lee"];
+    });
+    const mark = env.events.length;
+    await env.service.syncNow(P);
+    const commented = env.events.slice(mark).find((e) => e.type === "issue.commented");
+    expect(commented?.payload).toMatchObject({
+      issue: { number: 1, comments: 1 },
+      comments: [{ id: 7, author: "lee", body: "Still broken on Windows", fromCodeden: false }],
+    });
+    const requested = env.events.slice(mark).find((e) => e.type === "pr.review_requested");
+    expect(requested?.payload).toMatchObject({ reviewers: ["lee"], pr: { number: 2 } });
+    expect(env.service.listPrs(P)[0]?.requestedReviewers).toEqual(["lee"]);
+
+    // CodeDen's own comments carry a hidden marker and are flagged.
+    await env.service.commentOnIssue(P, 1, "Triage: ready");
+    const mark2 = env.events.length;
+    await env.service.syncNow(P);
+    const own = env.events.slice(mark2).find((e) => e.type === "issue.commented");
+    expect(own?.payload).toMatchObject({ comments: [{ fromCodeden: true }] });
+    expect(types(mark2)).not.toContain("pr.review_requested");
+  });
+
   it("backs off on rate limits", async () => {
     env.gh.rateLimited = true;
     await expect(env.service.syncNow(P)).rejects.toBeInstanceOf(GithubRateLimitError);

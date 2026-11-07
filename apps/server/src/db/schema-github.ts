@@ -54,6 +54,8 @@ export const githubPrs = sqliteTable(
     reviews: json<GithubReview[]>("reviews").notNull().default([]),
     mergeable: text("mergeable").notNull().default("unknown"),
     linkedIssues: json<number[]>("linked_issues").notNull().default([]),
+    /** Pending review requests (logins, `org/team`); null on rows synced before they were tracked. */
+    requestedReviewers: json<string[]>("requested_reviewers"),
     commits: json<Array<{ sha: string; message: string }>>("commits").notNull().default([]),
     createdAt: text("created_at"),
     updatedAt: text("updated_at").notNull(),

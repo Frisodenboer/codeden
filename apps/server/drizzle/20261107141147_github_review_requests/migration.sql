@@ -1,0 +1,1 @@
+ALTER TABLE `github_prs` ADD `requested_reviewers` text;

@@ -59,7 +59,7 @@ export async function getIssueDetails(
   const recentComments: GithubIssueComment[] = comments.map((c) => ({
     id: c.id,
     author: c.user?.login ?? null,
-    body: c.body ?? "",
+    body: withoutMarker(c.body ?? ""),
     createdAt: c.created_at,
     url: c.html_url,
   }));
@@ -86,6 +86,29 @@ export async function createIssue(
 }
 
 /** Comment on an issue or a PR conversation (PRs are issues for comments). */
+/**
+ * Hidden marker on every comment CodeDen posts, so the sync can tell them apart from people's
+ * comments (they are written with the user's own token) and never triggers on its own words.
+ */
+export const CODEDEN_COMMENT_MARKER = "<!-- codeden -->";
+
+/** True when a comment body was posted by CodeDen. */
+export function isCodedenComment(body: string): boolean {
+  return body.includes(CODEDEN_COMMENT_MARKER) || body.includes("<!-- codeden:");
+}
+
+/** A comment body without CodeDen's hidden marker (for briefs and the UI). */
+export function withoutMarker(body: string): string {
+  return body
+    .replace(
+      `
+
+${CODEDEN_COMMENT_MARKER}`,
+      "",
+    )
+    .replace(CODEDEN_COMMENT_MARKER, "");
+}
+
 export async function commentOnIssue(
   deps: Pick<IssueDeps, "client">,
   repo: GitHubRepo,
@@ -97,7 +120,11 @@ export async function commentOnIssue(
       owner: repo.owner,
       repo: repo.repo,
       issue_number: number,
-      body,
+      body: isCodedenComment(body)
+        ? body
+        : `${body}
+
+${CODEDEN_COMMENT_MARKER}`,
     });
     return { id: res.data.id, url: res.data.html_url };
   });

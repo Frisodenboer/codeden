@@ -87,6 +87,29 @@ describe("github contracts", () => {
         payload: { projectId: "p1", issues: [issue], prs: [pr] },
       }).type,
     ).toBe("github.synced");
+    const comment = {
+      id: 9,
+      author: "lee",
+      body: "Any update?",
+      createdAt: ts,
+      url: "https://github.com/acme/widgets/issues/3#issuecomment-9",
+      fromCodeden: false,
+    };
+    const commented = EventEnvelope.parse({
+      ...base,
+      sessionId: null,
+      type: "issue.commented",
+      payload: { issue, comments: [comment] },
+    });
+    expect(commented.type === "issue.commented" && commented.payload.comments).toEqual([comment]);
+    const requested = EventEnvelope.parse({
+      ...base,
+      type: "pr.review_requested",
+      payload: { pr: { ...pr, requestedReviewers: ["lee"] }, reviewers: ["lee"] },
+    });
+    expect(requested.type === "pr.review_requested" && requested.payload.reviewers).toEqual([
+      "lee",
+    ]);
   });
 
   it("builds and parses PR ids", () => {

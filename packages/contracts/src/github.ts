@@ -118,6 +118,11 @@ export const GithubPr = z.object({
   mergeable: Mergeable,
   /** Issues the PR closes (`Fixes #N` and linked issues). */
   linkedIssues: z.array(z.int().positive()),
+  /**
+   * Pending review requests: user logins and team slugs (`org/team`), sorted. Absent on rows
+   * synced before it was tracked, which tells the sync not to treat every request as new.
+   */
+  requestedReviewers: z.array(z.string()).optional(),
   /** Latest commits on the PR (up to 50), oldest first. */
   commits: z.array(z.object({ sha: z.string(), message: z.string() })),
   /** The CodeDen session that owns the PR (created it, or works on its head branch). */
@@ -162,6 +167,18 @@ export function parseGithubPrId(id: string): { projectId: string; number: number
 // ---------------------------------------------------------------- events
 
 const issuePayload = { issue: GithubIssue };
+
+/** A new comment on an issue, as carried by `issue.commented`. */
+export const GithubNewComment = z.object({
+  id: z.int(),
+  author: z.string().nullable(),
+  body: z.string(),
+  createdAt: Timestamp,
+  url: z.url(),
+  /** Posted by CodeDen itself (carries its hidden marker); never triggers automations. */
+  fromCodeden: z.boolean(),
+});
+export type GithubNewComment = z.infer<typeof GithubNewComment>;
 const prPayload = { pr: GithubPr };
 
 /**
@@ -179,8 +196,15 @@ export const GITHUB_EVENT_PAYLOADS = {
   "issue.labeled": z.object({ ...issuePayload, added: z.array(z.string()) }),
   /** Title, body, state or label removal changed. `changes` names the fields. */
   "issue.updated": z.object({ ...issuePayload, changes: z.array(z.string()) }),
+  /**
+   * The issue's comment count went up. `comments` are the new comments, oldest first (up to 10;
+   * empty when they could not be read).
+   */
+  "issue.commented": z.object({ ...issuePayload, comments: z.array(GithubNewComment) }),
   "pr.opened": z.object(prPayload),
   "pr.updated": z.object({ ...prPayload, changes: z.array(z.string()) }),
+  /** Reviews were requested from `reviewers` (logins or `org/team`) that were not before. */
+  "pr.review_requested": z.object({ ...prPayload, reviewers: z.array(z.string()) }),
   "pr.checks_passed": z.object(prPayload),
   "pr.checks_failed": z.object(prPayload),
   "pr.merged": z.object(prPayload),

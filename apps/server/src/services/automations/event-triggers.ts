@@ -2,6 +2,7 @@ import {
   type Automation,
   type AutomationEventName,
   type GithubIssue,
+  type GithubNewComment,
   type GithubPr,
   isFactoryMode,
   type Notice,
@@ -35,7 +36,8 @@ const PR_EVENTS = new Set(["pr.opened", "pr.merged", "pr.checks_failed"]);
 
 /**
  * Trigger events from a batch of committed events: GitHub sync events (`issue.opened`,
- * `issue.labeled`, `pr.opened`, `pr.merged`, `pr.checks_failed`) and session notices
+ * `issue.labeled`, `issue.commented`, `pr.opened`, `pr.review_requested`, `pr.merged`,
+ * `pr.checks_failed`) and session notices
  * (`session.finished`, `session.failed`, `session.needs_input`), which already carry the
  * project and are de-duplicated by the notice store.
  */
@@ -56,6 +58,38 @@ export function triggerEvents(
         branch: null,
         author: issue.author,
         sessionId: null,
+      });
+    } else if (e.type === "issue.commented") {
+      const { issue, comments } = e.payload as { issue: GithubIssue; comments: GithubNewComment[] };
+      // People's comments only: CodeDen's own (triage notes, merge links) never trigger.
+      const human = comments.filter((c) => !c.fromCodeden);
+      const latest = human.at(-1);
+      if (!latest) continue;
+      out.push({
+        event: "issue.commented",
+        projectId: issue.projectId,
+        vars: {
+          ...issueVars(issue),
+          "comment.author": latest.author ?? "",
+          "comment.body": latest.body,
+          "comment.url": latest.url,
+        },
+        issue,
+        labels: issue.labels,
+        branch: null,
+        author: latest.author,
+        sessionId: null,
+      });
+    } else if (e.type === "pr.review_requested") {
+      const { pr, reviewers } = e.payload as { pr: GithubPr; reviewers: string[] };
+      out.push({
+        event: "pr.review_requested",
+        projectId: pr.projectId,
+        vars: { ...prVars(pr), "pr.reviewers": reviewers.join(", ") },
+        labels: [],
+        branch: pr.headBranch,
+        author: pr.author,
+        sessionId: pr.sessionId,
       });
     } else if (PR_EVENTS.has(e.type)) {
       const { pr } = e.payload as { pr: GithubPr };

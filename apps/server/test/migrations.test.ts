@@ -104,7 +104,8 @@ describe("migrations", () => {
     const file = join(tempDir(), "previous-main.db");
     const old = openDatabase(
       file,
-      partialMigrations((n) => !n.endsWith("_factory_loop")),
+      // The main branch before the factory loop merged: up to automations, without it.
+      partialMigrations((n) => !n.endsWith("_factory_loop") && n.slice(0, 14) <= "20261107130421"),
     );
     old.client
       .prepare(
@@ -119,9 +120,10 @@ describe("migrations", () => {
           name: string;
         }[]
       ).map((m) => m.name);
-      // Applied by folder name, not timestamp: factory_loop runs last, after automations.
-      expect(order.at(-1)).toMatch(/_factory_loop$/);
-      expect(order.at(-2)).toMatch(/_automations$/);
+      // Missing migrations are applied by folder name: factory_loop runs after automations.
+      const at = (suffix: string) => order.findIndex((n) => n.endsWith(suffix));
+      expect(at("_factory_loop")).toBeGreaterThan(at("_automations"));
+      expect(at("_automations")).toBeGreaterThan(-1);
       expect(columns(database.client, "factory_items")).toContain("work_key");
       expect(database.client.prepare("SELECT project_id FROM automation_projects").all()).toEqual([
         { project_id: "p1" },
