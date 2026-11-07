@@ -134,9 +134,11 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
     case "ports.list":
       return { ports: await listPorts(command.probe) };
 
-    case "browser.open":
-    case "browser.navigate":
-    case "browser.close":
-      throw new CommandError("not_implemented", `${command.name} is not implemented yet`);
+    default: {
+      // --- browser.* (apps/runner/src/browser) --- only browser commands reach here (checked).
+      // Wire: return browserHandlers.execute(browserCommand) from createBrowserCommandHandlers.
+      const browserCommand: Extract<RunnerCommand, { name: `browser.${string}` }> = command;
+      throw new CommandError("not_implemented", `${browserCommand.name} is not implemented yet`);
+    }
   }
 }
