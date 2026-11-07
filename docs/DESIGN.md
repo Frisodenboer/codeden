@@ -128,7 +128,7 @@ codeden/
   docs/
 ```
 
-The published `codeden` npm package bundles the server, runner and CLI with tsdown, and includes the prebuilt web assets.
+The published `codeden` npm package bundles the server, runner and CLI with tsdown, and includes the prebuilt web assets. Pure-JS dependencies (including the Claude Agent SDK's JS entry) are inlined, so `npx codeden` installs only the native modules and `playwright-core`; the Claude adapter runs the user's installed `claude`, so the SDK's platform binaries are never installed.
 
 ## 6. Data and persistence
 

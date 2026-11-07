@@ -40,7 +40,7 @@ Fixtures replace the recording cwd with `<CWD>`, the session id with `<SESSION>`
 - Thinking blocks come back with empty text plus a signature on current models; they map to `reasoning` items with `redacted: true`.
 - `result.modelUsage` and `total_cost_usd` are cumulative for the whole query, so `usage.updated` reports session totals.
 - Steering pushes another user message into the streaming input; the CLI folds it in at the next tool boundary. If it ran as its own turn, the first `result` has `queued_turn_count > 0`, and the CodeDen turn stays open until it is 0.
-- Windows: the native installer provides `claude.exe`; npm `.cmd` shims are unwrapped to `node <cli.js>` (Node refuses to spawn `.cmd` without a shell). The SDK also installs a bundled platform binary as an optional dependency, which CodeDen never uses. The CLI keeps the cwd locked for a moment after `close()`.
+- Windows: the native installer provides `claude.exe`; npm `.cmd` shims are unwrapped to `node <cli.js>` (Node refuses to spawn `.cmd` without a shell). The SDK's platform binary packages (optional dependencies) are never used: the published `codeden` package inlines only the SDK's JS entry and does not install them. The CLI keeps the cwd locked for a moment after `close()`.
 
 **Codex app-server**
 - One JSON message per line, no `jsonrpc` field. Server-to-client request ids start at `0`, so never test them for truthiness.

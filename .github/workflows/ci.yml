@@ -37,6 +37,12 @@ jobs:
           mkdir "$RUNNER_TEMP/install-check" && cd "$RUNNER_TEMP/install-check"
           npm init -y > /dev/null
           npm install "$RUNNER_TEMP"/codeden-*.tgz
+          # Pure-JS deps are bundled; only native modules and playwright-core are installed.
+          du -sh node_modules
+          ls node_modules
+          if [ -e node_modules/@anthropic-ai ]; then
+            echo "::error::the packed CLI installed @anthropic-ai packages (they should be bundled)"; exit 1
+          fi
           npx codeden --version
           export CODEDEN_HOME="$RUNNER_TEMP/codeden-home"
           npx codeden doctor --home "$CODEDEN_HOME" | tee doctor.txt || true
