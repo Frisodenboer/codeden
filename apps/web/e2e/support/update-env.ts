@@ -15,7 +15,7 @@ import {
 } from "../../../cli/test/support/fake-registry";
 import { installPublishedCopy } from "../../../cli/test/support/published-install";
 
-export const NEXT_VERSION = "0.1.1-test";
+export const NEXT_VERSION = "99.0.0-test";
 
 export interface UpdateEnv {
   launchUrl: string;

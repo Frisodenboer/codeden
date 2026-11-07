@@ -4,6 +4,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-07
+
 ### Added
 
 - **One-click updates.** CodeDen checks npm on start and every 6 hours; a banner offers the new version with **What's new** (release notes), **Update now** and **Later**. Update now installs the version side by side into `~/.codeden/app/<version>/`, restarts CodeDen into it and reconnects the page; running sessions are drained and resumed. Progress, failures with Retry, and a manual restart command when CodeDen can't restart itself.

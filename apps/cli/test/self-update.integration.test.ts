@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_ROOT, type FakeRegistry, packCli, startFakeRegistry } from "./support/fake-registry";
 import { installPublishedCopy } from "./support/published-install";
 
-const NEXT = "0.1.1-test";
+const NEXT = "99.0.0-test";
 const built = existsSync(join(CLI_ROOT, "dist", "cli.js"));
 if (!built && process.env.CODEDEN_REQUIRE_CLI_DIST === "1") {
   throw new Error("apps/cli/dist is missing: run `pnpm build` first");
