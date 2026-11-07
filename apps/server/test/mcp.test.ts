@@ -112,11 +112,6 @@ describe("CodeDen MCP endpoint", () => {
       "message_orchestrator",
       "read_project_notes",
       "update_project_notes",
-      "list_issues",
-      "get_issue",
-      "triage_issue",
-      "create_issue",
-      "get_pr_status",
     ]);
     await pm.close();
   });

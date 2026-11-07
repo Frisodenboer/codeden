@@ -25,6 +25,10 @@ The long-lived CodeDen server (design §4.1): Hono HTTP API and UI WebSocket, th
 | `browser_evaluate` | agent | Guarded JS evaluation (5 s timeout, result size cap, can be disabled in the runner) |
 | `browser_open_dev_server` | agent | Open `localhost:<port>`; without a port, the only running dev server or a list |
 | `generate_image` | all | Images from the Settings engine into the worktree (see below); hidden when no engine is available |
+| `create_pull_request` | agent | Commit (optional), push the session branch through the runner, open or update its PR (see GitHub below) |
+| `attach_evidence` | agent | Files/artifacts to the `codeden/evidence` branch + one comment embedding them, with summary and test output |
+| `comment_on_issue` | agent, pm | Comment on an issue or PR (defaults to the session's issue, then PR) |
+| `get_pr_status` | agent, pm | Live state, checks, reviews, mergeability (defaults to the session's PR) |
 
 Browser tools always act on the caller's own session (from its token); no tool takes a session id. A handler can return `new ToolOutput(text, images)` to add MCP `image` content.
 
@@ -38,7 +42,7 @@ The question becomes a `user_question` item (`deferred: true`) in the current tu
 
 - **Role sessions.** One orchestrator (cwd `<home>/orchestrator/`) and one PM per project (cwd: the project root), created lazily and reused (resumed through the provider resume token). Provider/model/effort from `settings.providers.orchestrator|pm`. Both run with `SessionOptions.readOnly`: Claude gets no edit tools and a deny policy for writing commands, Codex a `read-only` sandbox. System prompts: `prompts.ts`.
 - **Status digest.** Every message to a role session (user, wake, `message_pm`, `ask_pm`, queued) gets a fresh `<codeden_status>` block and any undelivered notices prepended at send time (`SessionService.setInputDecorator`).
-- **Notices.** Session/inbox/automation events become typed `Notice` records (`notice.created`, table `notices`). Work started by a PM, the orchestrator or an automation wakes the PM after a 5 s debounce (30 s max wait), at most 6 wakes per 10 minutes per target (`WakeScheduler`). Delivered notices show as a `notice` item with `code: "orchestration_notices"` at the start of the wake turn. Other services call `orchestration.notify(...)` (e.g. `pr.checks_failed`).
+- **Notices.** Session/inbox/automation events become typed `Notice` records (`notice.created`, table `notices`). Work started by a PM, the orchestrator or an automation wakes the PM after a 5 s debounce (30 s max wait), at most 6 wakes per 10 minutes per target (`WakeScheduler`). Delivered notices show as a `notice` item with `code: "orchestration_notices"` at the start of the wake turn. GitHub sync events (`pr.opened`, `pr.checks_failed`, `pr.checks_passed`, `pr.merged`, `issue.opened`, `review.submitted`) become notices too (`github-notices.ts`): a session-owned PR wakes the PM like its session does, other PRs wake it for openings and reviews only, new issues always wake it. Other services call `orchestration.notify(...)`. The PM issue tools reach GitHub through `GithubPort`, implemented over `GithubService` by `GithubServicePort`.
 - **PM <-> orchestrator.** `ask_pm` waits (default 3 min) for the final message of the PM turn that handled the question; later answers arrive as a message. `message_orchestrator` with `informational: true` never wakes the orchestrator.
 - **Conflicts.** A user start that matches running work is persisted (`conflict.created`, table `conflicts`, inbox item kind `conflict`); `POST /api/sessions` answers 409 with `conflictId`.
 - **Ports.** `GithubPort` and `AutomationPort` (`ports.ts`) are stubs until the GitHub and automation services provide them (`createServices({ orchestration: { github, automation } })`).
@@ -54,7 +58,7 @@ The question becomes a `user_question` item (`deferred: true`) in the current tu
 | `POST /api/conflicts/:id/resolve` | `ConflictDecision` -> `ResolveConflictResponse` |
 | `PATCH /api/sessions/:id` | `UpdateSessionRequest` (model, effort, title) -> `Session`; model/effort apply on the next turn (`session.configure`) |
 
-Tools: orchestrator `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox`; PM `get_project_status`, `list_sessions`, `start_session`, `message_session`, `stop_session`, `list_scheduled_runs`, `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run`, `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `list_issues`, `get_issue`, `triage_issue`, `create_issue`, `get_pr_status`, plus `ask_user`. Awareness and core tools are always loaded.
+Tools: orchestrator `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox`; PM `get_project_status`, `list_sessions`, `start_session`, `message_session`, `stop_session`, `list_scheduled_runs`, `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run`, `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `list_issues`, `get_issue`, `triage_issue`, `create_issue`, plus `ask_user` and `get_pr_status` (shared with agents). Awareness and core tools are always loaded.
 
 ## Session browser (§12.2)
 
@@ -125,6 +129,33 @@ Opt-in proxies next to the browser's speech APIs (which stay the default). Keys 
 | `POST /api/tts` | `TtsRequest` -> streamed `audio/mpeg` (ElevenLabs `POST /v1/text-to-speech/{voice}/stream`; voice from the request, then `settings.voice.readAloud.voice`, then a stock voice; model `eleven_flash_v2_5`) |
 | `POST /api/stt?engine=&language=` | raw audio body (`audio/webm`, `audio/ogg`, ...) or multipart `file`, up to 25 MB -> `SttResponse`. ElevenLabs Scribe (`scribe_v2`) or OpenAI (`gpt-4o-mini-transcribe`); default from `settings.voice.dictation.engine` |
 
+## GitHub (§9)
+
+`GithubService` (`src/services/github/`) owns everything GitHub. Shapes: `@codeden/contracts` `github.ts`.
+
+- **Auth.** `gh auth token` is read at runtime and cached in memory only; a 401 asks `gh` again once (picks up a re-login). Fallback: a token in the keychain (`github.token`). Without either, reads return `connection.connected: false` with a hint and GitHub operations fail with `409 github_not_connected`. The token is never logged, stored or returned.
+- **Sync.** Per GitHub project: the issues listing (`state=all`, `since` cursor) with `If-None-Match` (a 304 is free), then one batched GraphQL query (20 PRs per request) for PRs that changed, have pending checks or unknown mergeability, belong to a session, or every 4th poll. Interval: 15 s while a session's PR is open, 60 s otherwise; exponential backoff on errors, rate limits wait for the reset, "not connected" retries after 5 min. `CODEDEN_GITHUB_SYNC=0` or `startServer({ github: { sync: false } })` turns polling off.
+- **Events and projections.** The first import is one silent `github.synced`. Afterwards: `issue.opened`, `issue.labeled` (`added`), `issue.updated` (`changes`), `pr.opened`, `pr.updated`, `pr.checks_passed`, `pr.checks_failed`, `pr.merged`, `pr.closed`, `review.submitted`. Each carries the full row and projects into `github_issues` / `github_prs` (checks summary, review decision, mergeable, linked issues, commits, linked session). PR events carry the linked session as `sessionId`. ETags and cursors live in `github_sync_state` (not event-sourced).
+- **Session linkage.** A PR belongs to the session that opened it or whose branch is its head. Every `pr.*` event updates `session.pr`; `pr.merged` stops an idle session's provider, marks it `completed` and comments "Resolved by #N" on the linked issues. When a session-owned PR is open, out of draft and its checks passed (or it has none), a `pr_review` inbox item (`inbox:pr_review:<projectId>:<n>`) asks the user to review it; merging or closing the PR resolves it (`review-inbox.ts`).
+- **Pull requests.** `create_pull_request` refuses uncommitted changes unless `commitMessage` is given, pushes with the runner's `git.push`, then creates the PR (or updates the open one for the branch). The body gets `Fixes #<issue>` and a footer naming the session (`<!-- codeden:session=<id> -->`).
+- **Evidence.** Files are committed with the Git Data API (blobs, tree on the branch's tree, commit, ref) to the orphan branch `codeden/evidence` under `<pr-N|issue-N>/<sessionId>/`, so no checkout is touched. Comments link `https://github.com/<o>/<r>/blob/<commit>/<path>?raw=true`: GitHub keeps that URL as the `<img src>` and serves it to signed-in readers, so images render in private repositories too (`raw.githubusercontent.com` links would not).
+- **Local-only projects:** list routes return empty lists with `connection.message`; everything else is `409 not_a_github_project`. No GitHub request is made.
+
+| Route | Body / response |
+|---|---|
+| `GET /api/github/connection` | -> `GithubConnection` |
+| `GET /api/projects/:id/github/issues?state=&limit=` | -> `GithubIssuesResponse` (projection + connection + sync status) |
+| `GET /api/projects/:id/github/prs?state=&limit=` | -> `GithubPrsResponse` |
+| `POST /api/projects/:id/github/sync` | -> `GithubSyncStatus` (sync now) |
+| `POST /api/projects/:id/github/issues` | `CreateGithubIssueRequest` -> `GithubIssue` (201) |
+| `GET /api/projects/:id/github/issues/:number` | -> `GithubIssueDetails` (fresh, with recent comments) |
+| `POST /api/projects/:id/github/issues/:number/comments` | `GithubCommentRequest` -> `GithubCommentResponse` (201) |
+| `POST /api/projects/:id/github/issues/:number/labels` | `GithubLabelRequest` -> `GithubIssue` |
+| `POST /api/projects/:id/github/issues/:number/triage` | `TriageIssueRequest` -> `TriageIssueResult` |
+| `GET /api/prs/:id` (`<projectId>:<number>`) | -> `GithubPrDetails` (live status, body, files) |
+| `POST /api/prs/:id/merge` | `MergePrRequest` (squash by default) -> `MergePrResponse` |
+| `GET /api/sessions/:id/github` | -> `SessionGithubResponse` |
+
 ## Tests
 
 ```sh
@@ -134,4 +165,4 @@ pnpm --filter @codeden/server test:live   # real Claude and Codex sessions end t
 
 Server tests run the runner without the real Claude/Codex adapters (`CODEDEN_BUILTIN_PROVIDERS=0`), so they never reach a live agent or the utility model.
 
-From the repo root, `pnpm test` runs the suites that drive real processes with timing-sensitive waits (Chromium, terminals, detached runners: `RUNNER_PROCESS_TESTS` / `SERVER_PROCESS_TESTS` in `vitest.config.ts`) after the parallel batch, one file at a time, so a loaded machine cannot starve their waits. `pnpm test:live` (`CODEDEN_LIVE=1`) also runs `test/live/workbench.live.test.ts`: a real Claude session drives the browser tools, and the Codex engine generates an image through `generate_image`.
+From the repo root, `pnpm test` runs the suites that drive real processes with timing-sensitive waits (Chromium, terminals, detached runners: `RUNNER_PROCESS_TESTS` / `SERVER_PROCESS_TESTS` in `vitest.config.ts`) after the parallel batch, one file at a time, so a loaded machine cannot starve their waits. `CODEDEN_LIVE=1 CODEDEN_LIVE_GITHUB=1 pnpm --filter @codeden/server test:live -- github` runs the GitHub flow against a new private `codeden-sandbox-<random>` repository (issue, PR from a Fake session, evidence, commit statuses as checks, squash merge, follow-up) and deletes it when the `gh` token has `delete_repo`; `CODEDEN_LIVE_GITHUB_REPO=codeden-sandbox-<id>` reuses a leftover one. Unit tests use a fake GitHub behind Octokit's `fetch` (`test/support/fake-github.ts`). `pnpm test:live` (`CODEDEN_LIVE=1`) also runs `test/live/workbench.live.test.ts`: a real Claude session drives the browser tools, and the Codex engine generates an image through `generate_image`.

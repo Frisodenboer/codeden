@@ -29,6 +29,7 @@ import {
   renderProjectDigest,
   sharedWork,
 } from "./digest";
+import { deriveGithubNotices, GITHUB_NOTICE_EVENTS } from "./github-notices";
 import { ProjectNotes } from "./notes";
 import { deriveNotices, type NoticeDraft, NoticeStore } from "./notices";
 import {
@@ -318,17 +319,22 @@ export class OrchestrationService {
         e.type === "agent.turn.started" ||
         e.type === "inbox.created" ||
         e.type === "session.updated" ||
-        e.type === "automation_run.updated",
+        e.type === "automation_run.updated" ||
+        GITHUB_NOTICE_EVENTS.has(e.type),
     );
     if (!relevant) return;
     setImmediate(() => {
       try {
         this.attachCards(events);
-        const derived = deriveNotices(events, {
-          session: (id) => this.deps.repo.find(id)?.session,
-          finalMessage: (sessionId, turnId) =>
-            finalAssistantMessage(this.deps.db, sessionId, turnId),
-        });
+        const session = (id: string) => this.deps.repo.find(id)?.session;
+        const derived = [
+          ...deriveNotices(events, {
+            session,
+            finalMessage: (sessionId, turnId) =>
+              finalAssistantMessage(this.deps.db, sessionId, turnId),
+          }),
+          ...deriveGithubNotices(events, session),
+        ];
         for (const { notice, wake } of derived) this.notify(notice, wake);
       } catch (error) {
         this.deps.log?.(`orchestration notices: ${errorMessage(error)}`);

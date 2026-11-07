@@ -44,6 +44,11 @@ export function wakesPm(session: Session): boolean {
   return session.startedBy.kind !== "user" || session.parentSessionId !== null;
 }
 
+/** The id of an opened PR's notice: the same whether it came from the session or GitHub sync. */
+export function prOpenedNoticeId(projectId: string, number: number): string {
+  return `pr.opened:${projectId}:${number}`;
+}
+
 function workRef(s: Session) {
   return { sessionId: s.id, workKey: s.workKey, purpose: s.purpose, startedBy: s.startedBy };
 }
@@ -118,7 +123,7 @@ export function deriveNotices(events: RawEventEnvelope[], lookup: NoticeLookup):
       out.push({
         wake: wakesPm(session),
         notice: {
-          id: `pr.opened:${session.id}:${session.pr.number}`,
+          id: prOpenedNoticeId(session.projectId, session.pr.number),
           type: "pr.opened",
           projectId: session.projectId,
           target: "pm",

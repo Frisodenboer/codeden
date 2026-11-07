@@ -167,7 +167,7 @@ describe("api routes", () => {
     const parsed = SecretsStatus.parse(status.json());
     expect(parsed.backend).toBe("memory");
     expect(parsed.keys.find((k) => k.key === "elevenlabs.apiKey")?.set).toBe(true);
-    expect((await call("PUT", "/secrets/github.token", { value: "x" })).status).toBe(400);
+    expect((await call("PUT", "/secrets/aws.secretKey", { value: "x" })).status).toBe(400);
     await call("DELETE", "/secrets/elevenlabs.apiKey");
     expect(
       SecretsStatus.parse((await call("GET", "/secrets")).json()).keys.every((k) => !k.set),

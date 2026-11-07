@@ -198,6 +198,14 @@ function noticeDetail(n: Notice): string {
       return ` · ${n.data.pr.url}`;
     case "pr.checks_failed":
       return ` · ${n.data.pr.url} · failed: ${n.data.failedChecks.join(", ") || "unknown"}`;
+    case "pr.checks_passed":
+      return ` · ${n.data.pr.url}`;
+    case "pr.merged":
+      return ` · ${n.data.pr.url}${n.data.linkedIssues.length ? ` · closes ${n.data.linkedIssues.map((i) => `#${i}`).join(", ")}` : ""}`;
+    case "review.submitted":
+      return ` · ${n.data.pr.url} · ${n.data.reviewer ?? "someone"}${n.data.body ? `: ${quote(n.data.body, 200)}` : ""}`;
+    case "issue.opened":
+      return ` · ${n.data.issue.url}${n.data.labels.length ? ` · labels: ${n.data.labels.join(", ")}` : ""} (triage it)`;
     case "automation.skipped":
       return ` · ${n.data.workKey} · reason: ${n.data.reason}`;
     case "conflict":

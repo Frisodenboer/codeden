@@ -1,61 +1,35 @@
-import type { Project, ScheduledRun } from "@codeden/contracts";
+import type {
+  GithubIssue,
+  GithubIssueDetails,
+  Project,
+  ScheduledRun,
+  TriageIssueRequest,
+  TriageIssueResult,
+} from "@codeden/contracts";
+import type { z } from "zod";
 import { ServiceError } from "../errors";
 
 /**
- * Seams the orchestration tools call for work owned elsewhere: GitHub (issues, PRs) and
- * automations (schedules, runs). The stubs here keep the PM tools honest until the real
- * implementations are wired into `createServices` (`githubPort`, `automationPort`).
+ * Seams the orchestration tools call for work owned elsewhere: GitHub issues (backed by
+ * `GithubService` through `GithubServicePort`) and automations (schedules, runs). The stubs
+ * keep the PM tools honest where no implementation is wired into `createServices`.
  */
 
-export interface GithubIssueSummary {
-  number: number;
-  title: string;
-  state: "open" | "closed";
-  labels: string[];
-  url: string;
-  author?: string;
-  updatedAt?: string;
-}
+/** Issue triage input (the PM's `triage_issue`); defaults are applied by the contract. */
+export type TriageRequest = z.input<typeof TriageIssueRequest>;
 
-export interface GithubIssueDetail extends GithubIssueSummary {
-  body: string;
-  comments: { author: string; body: string; createdAt: string }[];
-}
-
-/** Triage decision for an issue (§10 issue triage). */
-export type TriageDecision = "ready" | "needs_info" | "unsafe" | "out_of_scope" | "duplicate";
-
-export interface TriageRequest {
-  decision: TriageDecision;
-  labels?: string[];
-  comment?: string;
-  /** Close the issue (out of scope, duplicate). */
-  close?: boolean;
-}
-
-export interface GithubPrStatus {
-  number: number;
-  title: string;
-  url: string;
-  state: "draft" | "open" | "closed" | "merged";
-  mergeable: boolean | null;
-  checks: { name: string; state: "pending" | "pass" | "fail" }[];
-  reviews: { author: string; state: "approved" | "changes_requested" | "commented" }[];
-}
-
-/** GitHub operations the PM tools need. Only called for `github` projects. */
+/** GitHub issue operations the PM tools need. Only called for `github` projects. */
 export interface GithubPort {
   listIssues(
     project: Project,
     query: { state?: "open" | "closed" | "all"; labels?: string[]; limit?: number },
-  ): Promise<GithubIssueSummary[]>;
-  getIssue(project: Project, number: number): Promise<GithubIssueDetail>;
-  triageIssue(project: Project, number: number, triage: TriageRequest): Promise<GithubIssueSummary>;
+  ): Promise<GithubIssue[]>;
+  getIssue(project: Project, number: number): Promise<GithubIssueDetails>;
+  triageIssue(project: Project, number: number, triage: TriageRequest): Promise<TriageIssueResult>;
   createIssue(
     project: Project,
     issue: { title: string; body: string; labels?: string[] },
-  ): Promise<GithubIssueSummary>;
-  getPrStatus(project: Project, number: number): Promise<GithubPrStatus>;
+  ): Promise<GithubIssue>;
 }
 
 /** Automation scheduling the PM tools and the status digest need (§8.4, §10). */
@@ -74,19 +48,16 @@ const unavailable = (what: string, code: string) =>
 
 /** GitHub stub: every call fails with `github_unavailable`. */
 export class UnavailableGithubPort implements GithubPort {
-  async listIssues(): Promise<GithubIssueSummary[]> {
+  async listIssues(): Promise<GithubIssue[]> {
     throw unavailable("GitHub sync", "github_unavailable");
   }
-  async getIssue(): Promise<GithubIssueDetail> {
+  async getIssue(): Promise<GithubIssueDetails> {
     throw unavailable("GitHub sync", "github_unavailable");
   }
-  async triageIssue(): Promise<GithubIssueSummary> {
+  async triageIssue(): Promise<TriageIssueResult> {
     throw unavailable("GitHub sync", "github_unavailable");
   }
-  async createIssue(): Promise<GithubIssueSummary> {
-    throw unavailable("GitHub sync", "github_unavailable");
-  }
-  async getPrStatus(): Promise<GithubPrStatus> {
+  async createIssue(): Promise<GithubIssue> {
     throw unavailable("GitHub sync", "github_unavailable");
   }
 }

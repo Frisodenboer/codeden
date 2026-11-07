@@ -83,6 +83,11 @@ export interface StartServerOptions {
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
   /** Orchestration seams and timings (§8): GitHub/automation ports, wake debounce, ask_pm wait. */
   orchestration?: ServicesOptions["orchestration"];
+  /**
+   * GitHub (§9): API transport and poll intervals for tests, and `sync: false` to skip
+   * background polling (default on unless `CODEDEN_GITHUB_SYNC=0`).
+   */
+  github?: ServicesOptions["github"] & { sync?: boolean };
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
   log?: (message: string) => void;
@@ -147,12 +152,14 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     imageEngines: opts.imageEngines ?? (builtin ? undefined : new ImageEngineRegistry([])),
     voice: opts.voice,
     orchestration: opts.orchestration,
+    github: opts.github,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
   void services.images.refresh();
   services.lifecycle.start();
   services.orchestration.start();
+  services.github.start({ sync: opts.github?.sync ?? process.env.CODEDEN_GITHUB_SYNC !== "0" });
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -267,6 +274,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     closing ??= (async () => {
       services.lifecycle.stop();
       services.orchestration.stop();
+      services.github.stop();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();

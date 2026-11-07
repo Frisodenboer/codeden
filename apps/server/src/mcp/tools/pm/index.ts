@@ -1,5 +1,5 @@
 import type { AnyServerTool } from "../../define";
-import { createIssue, getIssue, getPrStatus, listIssues, triageIssue } from "./github";
+import { createIssue, getIssue, listIssues, triageIssue } from "./github";
 import { messageOrchestrator, readProjectNotes, updateProjectNotes } from "./notes";
 import { listSessions, messageSession, startSession, stopSession } from "./sessions";
 import {
@@ -11,7 +11,10 @@ import {
   skipNextRun,
 } from "./status";
 
-/** Project manager tools (§8.3, §8.4). `ask_user` is shared with agents (`../ask-user`). */
+/**
+ * Project manager tools (§8.3, §8.4). `ask_user` is shared with agents (`../ask-user`) and
+ * `get_pr_status` with agents (`../github`).
+ */
 export const pmTools: AnyServerTool[] = [
   getProjectStatus,
   listSessions,
@@ -30,5 +33,4 @@ export const pmTools: AnyServerTool[] = [
   getIssue,
   triageIssue,
   createIssue,
-  getPrStatus,
 ];

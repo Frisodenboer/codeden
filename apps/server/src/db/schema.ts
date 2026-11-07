@@ -230,42 +230,6 @@ export const automationRuns = sqliteTable(
   ],
 );
 
-export const githubIssues = sqliteTable(
-  "github_issues",
-  {
-    projectId: text("project_id").notNull(),
-    number: integer("number").notNull(),
-    title: text("title").notNull(),
-    state: text("state").notNull(),
-    url: text("url").notNull(),
-    labels: json<string[]>("labels").notNull(),
-    author: text("author"),
-    etag: text("etag"),
-    updatedAt: text("updated_at").notNull(),
-    syncedAt: text("synced_at").notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.projectId, t.number] })],
-);
-
-export const githubPrs = sqliteTable(
-  "github_prs",
-  {
-    projectId: text("project_id").notNull(),
-    number: integer("number").notNull(),
-    title: text("title").notNull(),
-    state: text("state").notNull(),
-    url: text("url").notNull(),
-    headBranch: text("head_branch").notNull(),
-    baseBranch: text("base_branch").notNull(),
-    checks: text("checks"),
-    sessionId: text("session_id"),
-    etag: text("etag"),
-    updatedAt: text("updated_at").notNull(),
-    syncedAt: text("synced_at").notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.projectId, t.number] })],
-);
-
 export const artifacts = sqliteTable("artifacts", {
   id: text("id").primaryKey(),
   kind: text("kind").notNull(),
@@ -337,3 +301,6 @@ export const mcpTokens = sqliteTable(
     index("mcp_tokens_session").on(t.sessionId),
   ],
 );
+
+// GitHub projections and sync state (§9) live in their own file.
+export * from "./schema-github";

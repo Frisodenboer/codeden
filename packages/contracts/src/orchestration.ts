@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GitHubPrRef, Id, JsonValue, Timestamp } from "./common";
+import { GitHubIssueRef, GitHubPrRef, Id, JsonValue, Timestamp } from "./common";
 import { InboxItemKind, InboxItemStatus } from "./entities/inbox";
 import { ConflictDecision, ScheduledRun, StartedBy, WorkKey, WorkSummary } from "./work";
 
@@ -20,6 +20,10 @@ export const NoticeType = z.enum([
   "session.failed",
   "pr.opened",
   "pr.checks_failed",
+  "pr.checks_passed",
+  "pr.merged",
+  "review.submitted",
+  "issue.opened",
   "automation.skipped",
   "conflict",
   "pm.message",
@@ -81,6 +85,42 @@ export const Notice = z.discriminatedUnion("type", [
       sessionId: Id.nullable(),
       pr: GitHubPrRef,
       failedChecks: z.array(z.string()),
+    }),
+  }),
+  z.object({
+    ...noticeBase,
+    type: z.literal("pr.checks_passed"),
+    data: z.object({ sessionId: Id.nullable(), pr: GitHubPrRef }),
+  }),
+  z.object({
+    ...noticeBase,
+    type: z.literal("pr.merged"),
+    data: z.object({
+      sessionId: Id.nullable(),
+      pr: GitHubPrRef,
+      /** Issues the PR closes. */
+      linkedIssues: z.array(z.int().positive()),
+    }),
+  }),
+  z.object({
+    ...noticeBase,
+    type: z.literal("review.submitted"),
+    data: z.object({
+      sessionId: Id.nullable(),
+      pr: GitHubPrRef,
+      reviewer: z.string().nullable(),
+      state: z.enum(["approved", "changes_requested", "commented", "dismissed", "pending"]),
+      /** Start of the review body. */
+      body: z.string(),
+    }),
+  }),
+  z.object({
+    ...noticeBase,
+    type: z.literal("issue.opened"),
+    data: z.object({
+      issue: GitHubIssueRef,
+      author: z.string().nullable(),
+      labels: z.array(z.string()),
     }),
   }),
   z.object({

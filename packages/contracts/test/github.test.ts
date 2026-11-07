@@ -1,0 +1,110 @@
+import { describe, expect, it } from "vitest";
+import {
+  EventEnvelope,
+  GITHUB_EVENT_TYPES,
+  GithubIssue,
+  GithubListQuery,
+  GithubPr,
+  githubPrId,
+  MergePrRequest,
+  parseGithubPrId,
+  SecretKey,
+  TriageIssueRequest,
+} from "../src";
+
+const ts = "2026-11-07T10:00:00.000Z";
+
+const issue: GithubIssue = {
+  projectId: "p1",
+  number: 3,
+  title: "Bug",
+  state: "open",
+  url: "https://github.com/acme/widgets/issues/3",
+  labels: ["bug"],
+  author: "octo",
+  body: null,
+  comments: 0,
+  createdAt: ts,
+  updatedAt: ts,
+  closedAt: null,
+  sessionIds: [],
+};
+
+const pr: GithubPr = {
+  id: "p1:4",
+  projectId: "p1",
+  number: 4,
+  title: "Fix bug",
+  state: "open",
+  url: "https://github.com/acme/widgets/pull/4",
+  author: "octo",
+  headBranch: "codeden/fix",
+  baseBranch: "main",
+  headSha: "abc",
+  checks: {
+    state: "failure",
+    total: 1,
+    passed: 0,
+    failed: 1,
+    pending: 0,
+    checks: [{ name: "ci", status: "completed", conclusion: "failure", url: null }],
+  },
+  reviewDecision: "review_required",
+  reviews: [],
+  mergeable: "mergeable",
+  linkedIssues: [3],
+  commits: [{ sha: "abc", message: "fix" }],
+  sessionId: "s1",
+  createdAt: ts,
+  updatedAt: ts,
+  mergedAt: null,
+  closedAt: null,
+};
+
+describe("github contracts", () => {
+  it("round-trips entities", () => {
+    expect(GithubIssue.parse(JSON.parse(JSON.stringify(issue)))).toEqual(issue);
+    expect(GithubPr.parse(JSON.parse(JSON.stringify(pr)))).toEqual(pr);
+  });
+
+  it("parses every GitHub domain event in the envelope union", () => {
+    expect(GITHUB_EVENT_TYPES).toContain("pr.checks_failed");
+    const base = { seq: 1, sessionId: "s1", ts };
+    const parsed = EventEnvelope.parse({ ...base, type: "pr.checks_failed", payload: { pr } });
+    expect(parsed.type).toBe("pr.checks_failed");
+    expect(
+      EventEnvelope.parse({
+        ...base,
+        sessionId: null,
+        type: "issue.labeled",
+        payload: { issue, added: ["bug"] },
+      }).type,
+    ).toBe("issue.labeled");
+    expect(
+      EventEnvelope.parse({
+        ...base,
+        type: "github.synced",
+        payload: { projectId: "p1", issues: [issue], prs: [pr] },
+      }).type,
+    ).toBe("github.synced");
+  });
+
+  it("builds and parses PR ids", () => {
+    expect(githubPrId("p:1-2", 7)).toBe("p:1-2:7");
+    expect(parseGithubPrId("p:1-2:7")).toEqual({ projectId: "p:1-2", number: 7 });
+    expect(parseGithubPrId("nope")).toBeNull();
+    expect(parseGithubPrId("p:0")).toBeNull();
+  });
+
+  it("applies request defaults", () => {
+    expect(MergePrRequest.parse({})).toEqual({ method: "squash" });
+    expect(GithubListQuery.parse({ limit: "5" })).toEqual({ state: "open", limit: 5 });
+    expect(TriageIssueRequest.parse({ decision: "needs_info" })).toEqual({
+      decision: "needs_info",
+      labels: [],
+      removeLabels: [],
+      close: false,
+    });
+    expect(SecretKey.options).toContain("github.token");
+  });
+});

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "../../define";
+import { inGithubProject } from "../github/available";
 import { githubProject } from "../shared/helpers";
 
 /** `list_issues` (§8.3). */
@@ -8,6 +9,7 @@ export const listIssues = defineTool({
   description: "List this project's GitHub issues (open by default), optionally by label.",
   roles: ["pm"],
   scope: "project",
+  isAvailable: inGithubProject,
   input: z.object({
     state: z.enum(["open", "closed", "all"]).optional(),
     labels: z.array(z.string()).optional(),
@@ -28,6 +30,7 @@ export const getIssue = defineTool({
   description: "One GitHub issue of this project with its body and comments.",
   roles: ["pm"],
   scope: "project",
+  isAvailable: inGithubProject,
   input: z.object({ number: z.int().positive() }),
   handler: async ({ number }, { services, projectId }) =>
     services.orchestration.github.getIssue(githubProject(services, projectId), number),
@@ -37,14 +40,16 @@ export const getIssue = defineTool({
 export const triageIssue = defineTool({
   name: "triage_issue",
   description:
-    "Record a triage decision on an issue: ready, needs_info, unsafe, out_of_scope or duplicate, with labels and an optional comment (close: true for out of scope or duplicates). Follow the project's policy; ask the user when unsure.",
+    "Record a triage decision on an issue: ready, needs_info, unsafe, out_of_scope or duplicate, with labels to add or remove and an optional comment (close: true for out of scope or duplicates). Follow the project's policy; ask the user when unsure.",
   roles: ["pm"],
   scope: "project",
+  isAvailable: inGithubProject,
   input: z.object({
     number: z.int().positive(),
     decision: z.enum(["ready", "needs_info", "unsafe", "out_of_scope", "duplicate"]),
     labels: z.array(z.string()).optional(),
-    comment: z.string().max(10_000).optional(),
+    removeLabels: z.array(z.string()).optional(),
+    comment: z.string().min(1).max(10_000).optional(),
     close: z.boolean().optional(),
   }),
   handler: async ({ number, ...triage }, { services, projectId }) =>
@@ -58,6 +63,7 @@ export const createIssue = defineTool({
     "Create a GitHub issue in this project (for planned work: include a work key and acceptance criteria in the body).",
   roles: ["pm"],
   scope: "project",
+  isAvailable: inGithubProject,
   input: z.object({
     title: z.string().trim().min(1).max(256),
     body: z.string().max(60_000),
@@ -65,16 +71,4 @@ export const createIssue = defineTool({
   }),
   handler: async (issue, { services, projectId }) =>
     services.orchestration.github.createIssue(githubProject(services, projectId), issue),
-});
-
-/** `get_pr_status` (§8.3): checks, reviews and mergeability. */
-export const getPrStatus = defineTool({
-  name: "get_pr_status",
-  description:
-    "Status of a pull request in this project: state, checks, reviews and whether it can merge.",
-  roles: ["pm"],
-  scope: "project",
-  input: z.object({ number: z.int().positive() }),
-  handler: async ({ number }, { services, projectId }) =>
-    services.orchestration.github.getPrStatus(githubProject(services, projectId), number),
 });

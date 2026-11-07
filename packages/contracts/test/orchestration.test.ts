@@ -65,6 +65,51 @@ describe("orchestration contracts (§8)", () => {
     expect(() => Notice.parse({ ...notice, type: "session.failed" })).toThrow();
   });
 
+  it("round-trips the GitHub notices (§8.2, §9)", () => {
+    const base = { projectId: "p1", target: "pm", createdAt: ts, deliveredAt: null } as const;
+    const pr = { number: 7, url: "https://github.com/o/r/pull/7", state: "open" } as const;
+    const list: Notice[] = [
+      {
+        ...base,
+        id: "n2",
+        type: "pr.checks_passed",
+        sessionId: "s1",
+        title: "Checks passed",
+        data: { sessionId: "s1", pr },
+      },
+      {
+        ...base,
+        id: "n3",
+        type: "pr.merged",
+        sessionId: null,
+        title: "Merged",
+        data: { sessionId: null, pr: { ...pr, state: "merged" }, linkedIssues: [3] },
+      },
+      {
+        ...base,
+        id: "n4",
+        type: "review.submitted",
+        sessionId: "s1",
+        title: "Review",
+        data: { sessionId: "s1", pr, reviewer: "ana", state: "changes_requested", body: "Fix" },
+      },
+      {
+        ...base,
+        id: "n5",
+        type: "issue.opened",
+        sessionId: null,
+        title: "Issue #3",
+        data: {
+          issue: { number: 3, url: "https://github.com/o/r/issues/3", title: "Bug" },
+          author: null,
+          labels: ["bug"],
+        },
+      },
+    ];
+    for (const n of list) expect(Notice.parse(n)).toEqual(n);
+    expect(() => Notice.parse({ ...list[3], type: "pr.merged" })).toThrow();
+  });
+
   it("round-trips conflict records and the conflict inbox kind", () => {
     const record: ConflictRecord = {
       id: "conflict:1",

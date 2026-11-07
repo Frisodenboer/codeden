@@ -168,7 +168,7 @@ describe("typed notices from events (§8.2 step 4)", () => {
       "session.finished:a1:u1",
       "session.needs_input:q1",
       "session.failed:f1",
-      "pr.opened:a1:5",
+      "pr.opened:p1:5",
     ]);
   });
 

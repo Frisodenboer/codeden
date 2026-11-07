@@ -2,7 +2,13 @@ import type { McpTokenClaims } from "@codeden/contracts";
 import { z } from "zod";
 import type { AppServices } from "../services/container";
 import { errorMessage, ServiceError } from "../services/errors";
-import { type AnyServerTool, ToolError, type ToolImage, ToolOutput } from "./define";
+import {
+  type AnyServerTool,
+  type ToolAvailabilityContext,
+  ToolError,
+  type ToolImage,
+  ToolOutput,
+} from "./define";
 
 /** A tool as listed over MCP (`tools/list`). */
 export interface ListedTool {
@@ -44,20 +50,20 @@ export class ToolRegistry {
     }
   }
 
-  /** Tools visible to a role, in registration order. */
-  forRole(role: McpTokenClaims["role"]): AnyServerTool[] {
+  /** Tools visible to a role (and caller, when known), in registration order. */
+  forRole(role: McpTokenClaims["role"], caller?: ToolAvailabilityContext): AnyServerTool[] {
     return [...this.byName.values()].filter(
-      (t) => t.roles.includes(role) && (t.isAvailable?.(this.services) ?? true),
+      (t) => t.roles.includes(role) && (t.isAvailable?.(this.services, caller) ?? true),
     );
   }
 
-  /** MCP `tools/list` entries for a role. */
-  list(role: McpTokenClaims["role"]): ListedTool[] {
-    return this.forRole(role).map((tool) => describeTool(tool));
+  /** MCP `tools/list` entries for a role (and caller, when known). */
+  list(role: McpTokenClaims["role"], caller?: ToolAvailabilityContext): ListedTool[] {
+    return this.forRole(role, caller).map((tool) => describeTool(tool));
   }
 
   async call(name: string, args: unknown, caller: ToolCaller): Promise<ToolCallResult> {
-    const tool = this.forRole(caller.role).find((t) => t.name === name);
+    const tool = this.forRole(caller.role, caller).find((t) => t.name === name);
     if (!tool) return { text: `Unknown tool: ${name}`, isError: true };
     const parsed = tool.input.safeParse(args ?? {});
     if (!parsed.success) {

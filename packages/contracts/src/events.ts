@@ -19,6 +19,7 @@ import { Automation, AutomationRun } from "./entities/automation";
 import { InboxItem } from "./entities/inbox";
 import { Project } from "./entities/project";
 import { Session } from "./entities/session";
+import { GITHUB_EVENT_PAYLOADS } from "./github";
 import { ConflictRecord, Notice } from "./orchestration";
 import { PtyId } from "./runner/commands";
 import { Settings } from "./settings";
@@ -111,6 +112,18 @@ export const EventEnvelope = z.discriminatedUnion("type", [
   globalEvent("conflict.created", z.object({ conflict: ConflictRecord })),
   /** A runner terminal exited. */
   globalEvent("pty.exited", z.object({ ptyId: PtyId, exitCode: z.int().nullable() })),
+  // GitHub sync (§9); `sessionId` is the PR's linked session when there is one.
+  globalEvent("github.synced", GITHUB_EVENT_PAYLOADS["github.synced"]),
+  globalEvent("issue.opened", GITHUB_EVENT_PAYLOADS["issue.opened"]),
+  globalEvent("issue.labeled", GITHUB_EVENT_PAYLOADS["issue.labeled"]),
+  globalEvent("issue.updated", GITHUB_EVENT_PAYLOADS["issue.updated"]),
+  globalEvent("pr.opened", GITHUB_EVENT_PAYLOADS["pr.opened"]),
+  globalEvent("pr.updated", GITHUB_EVENT_PAYLOADS["pr.updated"]),
+  globalEvent("pr.checks_passed", GITHUB_EVENT_PAYLOADS["pr.checks_passed"]),
+  globalEvent("pr.checks_failed", GITHUB_EVENT_PAYLOADS["pr.checks_failed"]),
+  globalEvent("pr.merged", GITHUB_EVENT_PAYLOADS["pr.merged"]),
+  globalEvent("pr.closed", GITHUB_EVENT_PAYLOADS["pr.closed"]),
+  globalEvent("review.submitted", GITHUB_EVENT_PAYLOADS["review.submitted"]),
 ]);
 export type EventEnvelope = z.infer<typeof EventEnvelope>;
 export type EventType = EventEnvelope["type"];

@@ -14,6 +14,7 @@ import { badRequest, notFound } from "../services/errors";
 import { previewRecord } from "../services/sessions/preview";
 import { agentConfigRoutes, sessionAgentConfigRoutes } from "./agent-config";
 import { browserRoutes, sessionBrowserRoutes } from "./browser";
+import { githubRoutes, projectGithubRoutes, prRoutes, sessionGithubRoutes } from "./github";
 import { imageRoutes } from "./images";
 import { inboxRoutes } from "./inbox";
 import { conflictRoutes, orchestrationRoutes } from "./orchestration";
@@ -55,6 +56,10 @@ export function createApi(ctx: ApiContext) {
     .get("/snapshot", (c) => c.json(buildSnapshot(ctx)))
     .get("/sessions/:id/snapshot", (c) => c.json(buildSessionSnapshot(s, c.req.param("id"))))
     .route("/projects", projectRoutes(s))
+    .route("/projects", projectGithubRoutes(s))
+    .route("/prs", prRoutes(s))
+    .route("/github", githubRoutes(s))
+    .route("/sessions", sessionGithubRoutes(s))
     .route("/sessions", sessionRoutes(s))
     .route("/sessions", workbenchRoutes(s))
     .route("/sessions", sessionBrowserRoutes(s))

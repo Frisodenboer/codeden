@@ -56,9 +56,21 @@ export class InboxService {
   }
 
   get(id: string): InboxItem {
+    const item = this.find(id);
+    if (!item) throw notFound(`No inbox item ${id}`, "inbox_not_found");
+    return item;
+  }
+
+  find(id: string): InboxItem | undefined {
     const row = this.db.select().from(inboxItems).where(eq(inboxItems.id, id)).get();
-    if (!row) throw notFound(`No inbox item ${id}`, "inbox_not_found");
-    return rowToInbox(row);
+    return row ? rowToInbox(row) : undefined;
+  }
+
+  /** Create an item, or replace the one with the same id. */
+  put(item: InboxItem): InboxItem {
+    const type = this.find(item.id) ? "inbox.updated" : "inbox.created";
+    this.store.append([{ type, sessionId: item.sessionId, payload: { item } }]);
+    return item;
   }
 
   /**

@@ -13,8 +13,10 @@ import { ArtifactService } from "./artifacts";
 import { BrowserService } from "./browser/browser-service";
 import { type Exec, runTool } from "./exec";
 import { ConfigFiles } from "./files/config-files";
+import { GithubService, type GithubServiceDeps } from "./github/github-service";
 import { ImageService } from "./images/image-service";
 import { InboxService } from "./inbox-service";
+import { GithubServicePort } from "./orchestration/github-port";
 import {
   type OrchestrationOptions,
   OrchestrationService,
@@ -56,6 +58,8 @@ export interface ServicesOptions {
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
   /** Orchestration seams and timings (§8): GitHub and automation ports, wake debounce. */
   orchestration?: OrchestrationOptions & { github?: GithubPort; automation?: AutomationPort };
+  /** GitHub API transport and poll intervals (tests point them at a fake GitHub). */
+  github?: Pick<GithubServiceDeps, "fetch" | "baseUrl" | "idleIntervalMs" | "activeIntervalMs">;
   log?: (message: string) => void;
 }
 
@@ -92,6 +96,8 @@ export interface AppServices {
   agentConfig: AgentConfigService;
   /** Orchestrator and PM sessions, digests, notices, conflicts (§8). */
   orchestration: OrchestrationService;
+  /** GitHub connection, issue/PR sync, PRs and evidence (§9). */
+  github: GithubService;
   userHome: string;
 }
 
@@ -159,6 +165,19 @@ export function createServices(opts: ServicesOptions): AppServices {
     tokens: mcpTokens,
     log: opts.log,
   });
+  const github = new GithubService({
+    db: opts.db,
+    store: opts.store,
+    projects,
+    repo: sessionRepo,
+    runner: opts.runner,
+    artifacts,
+    inbox,
+    exec,
+    secrets: opts.secrets,
+    ...opts.github,
+    log: opts.log,
+  });
   const services: AppServices = {
     db: opts.db,
     store: opts.store,
@@ -204,6 +223,7 @@ export function createServices(opts: ServicesOptions): AppServices {
       backupDir: join(opts.paths.backups, "agent-config"),
       mcpProxyUrl: () => opts.runner.mcpProxyUrl(),
     }),
+    github,
     orchestration: new OrchestrationService({
       db: opts.db,
       store: opts.store,
@@ -211,7 +231,7 @@ export function createServices(opts: ServicesOptions): AppServices {
       sessions,
       projects,
       inbox,
-      github: opts.orchestration?.github,
+      github: opts.orchestration?.github ?? new GithubServicePort(github),
       automation: opts.orchestration?.automation,
       options: opts.orchestration,
       log: opts.log,
