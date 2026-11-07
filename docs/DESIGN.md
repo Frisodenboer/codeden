@@ -482,6 +482,31 @@ Any agent can generate images through the `generate_image` MCP tool, whatever it
   - API keys are stored in the OS keychain
 - **Unavailable engine.** If no engine is available, the tool is hidden from agents rather than failing at call time.
 
+### 12.6 Usage and cost reports
+
+Detailed, trustworthy reports on spend and usage across every provider, project and kind of work.
+
+- **Ledger.** Every turn records a **usage delta**. It's computed from the provider's own figures: Claude reports cumulative session totals, so CodeDen stores the per-turn difference. Each delta holds:
+  - input, output, cache-read and cache-write tokens
+  - reasoning tokens where reported
+  - cost in USD as reported by the provider
+  - session, project, provider, model, role (orchestrator, PM or agent), `startedBy`, automation id and timestamp
+- **Cost sources are labelled honestly.** Each figure is marked `reported` (the provider returned a USD cost) or `estimated` (tokens multiplied by a bundled, user-editable price table per model).
+  - **API-key users** see actual spend.
+  - **Subscription users** (a claude.ai or ChatGPT login) see an **"API-equivalent cost"**, clearly labelled as such, so they know what the same work would cost on API credits.
+- **Rate limits.** CodeDen records each provider's limit status as it reports it: Claude's 5-hour and weekly windows, and Codex rate-limit snapshots from `app-server`. It shows how much of each window is used and when it resets, and can warn before a limit is reached.
+- **Reports screen:**
+  - a time range (today, 7 or 30 days, custom) and a total
+  - stacked charts by day for provider, model, project and role
+  - top sessions by cost
+  - an automation and factory spend breakdown
+  - cache hit rate
+  - average cost per merged PR and per session
+  - drill-down from any bar to the sessions behind it
+  - CSV export
+- **In context.** Cost and tokens appear on each session header and turn footer, a per-project spend card sits on project home, and the dark-factory budget meter (§10.1) reads from the same ledger.
+- **Budgets and alerts.** Optional daily or monthly spend alerts globally and per project, delivered as inbox items and notifications. Factory limits enforce the same figures.
+
 ## 13. UI
 
 - **Left sidebar.** The orchestrator chat is pinned at the top. Below it, the **Inbox** with a count, then projects. Each project expands to show its PM and its sessions, with status dots (running, waiting on you, done, failed) and linked issue and PR badges. Automations sit under each project.
@@ -568,7 +593,7 @@ Known gap: browser speech recognition doesn't work inside Electron, so the speec
 |---|---|---|
 | M0 | Foundations | Monorepo, server, runner, web skeleton, runner protocol and lifecycle, DB and migrations, security token, first-run setup and detection, CI |
 | M1 | Daily driver (private use starts here) | Projects (GitHub and local), sessions on Claude and Codex, worktrees and setup scripts, transcript with tool calls and subagent threads, approvals and autonomy levels, checkpoints and diffs, terminal, browser with agent tools and screenshot sharing, memory/skills/subagents/MCP editors, voice, notifications, image generation tool, utility model and follow-up prompts |
-| M2 | Orchestration | Orchestrator and PMs, the MCP tool registry by role, typed notices and wake-ups, inbox, GitHub issue and PR flow, evidence branch, PR and check sync |
+| M2 | Orchestration | Usage and cost reports (§12.6), orchestrator and PMs, the MCP tool registry by role, typed notices and wake-ups, inbox, GitHub issue and PR flow, evidence branch, PR and check sync |
 | M3 | Automations | Scheduler, event triggers, guards, the template library, issue triage, per-project toggles, custom automations |
 | M3b | Autonomy modes (experimental) | Project autonomy modes, the vision editor, the factory loop, merge checks with cross-provider review, automatic merge and revert, limits and kill switch, factory panel and daily digest (§10.1) |
 | v1.0 | Public launch | Polish, docs, `npx codeden` release |
