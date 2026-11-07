@@ -8,6 +8,7 @@ import type {
   SessionOptions,
   UserInput,
 } from "@codeden/contracts";
+import type { UtilityModel } from "./utility";
 
 /**
  * A provider adapter (§7.1), loaded by the runner. One instance per provider; it opens any
@@ -25,6 +26,8 @@ export interface ProviderAdapter {
   /** Models the provider offers. */
   models(): ModelInfo[];
   openSession(opts: SessionOptions): Promise<ProviderSession>;
+  /** One-shot, tool-less model calls for side jobs (§7.4), when the provider supports them. */
+  utilityModel?(): UtilityModel;
 }
 
 /** A live provider session. */
