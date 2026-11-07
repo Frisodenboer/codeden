@@ -13,6 +13,7 @@ import { ArtifactService } from "./artifacts";
 import { BrowserService } from "./browser/browser-service";
 import { type Exec, runTool } from "./exec";
 import { ConfigFiles } from "./files/config-files";
+import { GithubService, type GithubServiceDeps } from "./github/github-service";
 import { ImageService } from "./images/image-service";
 import { InboxService } from "./inbox-service";
 import { ProjectService } from "./projects/project-service";
@@ -49,6 +50,8 @@ export interface ServicesOptions {
   imageEngines?: ImageEngineRegistry;
   /** Cloud voice API base URLs (tests point them at a local stub). */
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
+  /** GitHub API transport and poll intervals (tests point them at a fake GitHub). */
+  github?: Pick<GithubServiceDeps, "fetch" | "baseUrl" | "idleIntervalMs" | "activeIntervalMs">;
   log?: (message: string) => void;
 }
 
@@ -83,6 +86,8 @@ export interface AppServices {
   configFiles: ConfigFiles;
   /** Provider memory, skills, subagents and MCP servers (§12.4). */
   agentConfig: AgentConfigService;
+  /** GitHub connection, issue/PR sync, PRs and evidence (§9). */
+  github: GithubService;
   userHome: string;
 }
 
@@ -194,6 +199,19 @@ export function createServices(opts: ServicesOptions): AppServices {
       repo: sessionRepo,
       backupDir: join(opts.paths.backups, "agent-config"),
       mcpProxyUrl: () => opts.runner.mcpProxyUrl(),
+    }),
+    github: new GithubService({
+      db: opts.db,
+      store: opts.store,
+      projects,
+      repo: sessionRepo,
+      runner: opts.runner,
+      artifacts,
+      inbox,
+      exec,
+      secrets: opts.secrets,
+      ...opts.github,
+      log: opts.log,
     }),
     userHome,
     questions,

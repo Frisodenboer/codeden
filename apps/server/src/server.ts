@@ -24,7 +24,7 @@ import { findWebDir, mountWeb } from "./routes/static";
 import { RunnerClient } from "./runner/client";
 import { defaultRunnerLaunch, type RunnerLaunchConfig } from "./runner/launcher";
 import { loopbackOrigins, securityMiddleware } from "./security";
-import { type AppServices, createServices } from "./services/container";
+import { type AppServices, createServices, type ServicesOptions } from "./services/container";
 import type { Exec } from "./services/exec";
 import { runnerPort } from "./services/runner-port";
 import { createSecretStore, MemorySecretStore, type SecretStore } from "./services/secrets";
@@ -81,6 +81,11 @@ export interface StartServerOptions {
   imageEngines?: ImageEngineRegistry;
   /** Cloud voice API base URLs (tests). */
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
+  /**
+   * GitHub (§9): API transport and poll intervals for tests, and `sync: false` to skip
+   * background polling (default on unless `CODEDEN_GITHUB_SYNC=0`).
+   */
+  github?: ServicesOptions["github"] & { sync?: boolean };
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
   log?: (message: string) => void;
@@ -144,11 +149,13 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     askUserWaitMs: opts.askUserWaitMs,
     imageEngines: opts.imageEngines ?? (builtin ? undefined : new ImageEngineRegistry([])),
     voice: opts.voice,
+    github: opts.github,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
   void services.images.refresh();
   services.lifecycle.start();
+  services.github.start({ sync: opts.github?.sync ?? process.env.CODEDEN_GITHUB_SYNC !== "0" });
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -262,6 +269,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   async function close(closeOpts: { stopRunner?: boolean } = {}): Promise<void> {
     closing ??= (async () => {
       services.lifecycle.stop();
+      services.github.stop();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();
