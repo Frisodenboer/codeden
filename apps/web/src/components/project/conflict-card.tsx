@@ -1,96 +1,122 @@
-import type { ConflictDecision } from "@codeden/contracts";
+import type {
+  ConflictDecision,
+  ConflictRecord,
+  StartSessionRequestInit,
+  StartSessionResponse,
+} from "@codeden/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Clock, GitMerge, ListPlus, SkipForward, Swords, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { StatusDot } from "@/components/common/status-dot";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useClient } from "@/lib/api";
-import type { ConflictCase } from "@/lib/api/types";
+import { type CodeDenClient, useClient } from "@/lib/api";
 import { ago } from "@/lib/format";
 
 const startedBy = {
-  user: "you",
-  orchestrator: "the orchestrator",
-  pm: "the PM",
-  automation: "an automation",
+  user: "You",
+  orchestrator: "The orchestrator",
+  pm: "The PM",
+  automation: "An automation",
 };
 
+const doneText: Record<ConflictDecision["resolution"], string> = {
+  wait: "Queued behind the running work",
+  skip: "Skipped",
+  join: "Sent to the running session",
+  force: "Started anyway",
+};
+
+/** Conflicts not persisted by the server (no `conflictId`) are retried with a fresh start. */
+export const LOCAL_CONFLICT_PREFIX = "local:";
+
+async function decide(
+  client: CodeDenClient,
+  conflict: ConflictRecord,
+  decision: ConflictDecision,
+): Promise<StartSessionResponse> {
+  if (!conflict.id.startsWith(LOCAL_CONFLICT_PREFIX))
+    return (await client.resolveConflict(conflict.id, decision)).result;
+  const start = conflict.start as StartSessionRequestInit;
+  return client.startSession({ ...start, conflict: decision });
+}
+
 /**
- * A start request that matched running work (§8.4). The same four choices as the agents get:
+ * A start request that matched running work (§8.4). The same four choices the agents get:
  * wait (queue behind), skip, join (send as a follow-up) or force (with a recorded reason).
  */
 export function ConflictCard({
   conflict,
   onResolved,
 }: {
-  conflict: ConflictCase;
-  onResolved?: () => void;
+  conflict: ConflictRecord;
+  onResolved?: (result: StartSessionResponse) => void;
 }) {
   const client = useClient();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [forcing, setForcing] = useState(false);
   const [reason, setReason] = useState("");
   const existing = conflict.existing[0];
   const resolve = useMutation({
-    mutationFn: (decision: ConflictDecision) => client.resolveConflict(conflict, decision),
-    onSuccess: (_d, decision) => {
-      toast.success(
-        {
-          wait: "Queued behind the running work",
-          skip: "Skipped",
-          join: "Sent to the running session",
-          force: "Started anyway",
-        }[decision.resolution],
-      );
+    mutationFn: (decision: ConflictDecision) => decide(client, conflict, decision),
+    onSuccess: (result, decision) => {
+      toast.success(doneText[decision.resolution]);
       void queryClient.invalidateQueries({ queryKey: ["conflicts"] });
-      onResolved?.();
+      onResolved?.(result);
+      if (result.status === "started" || result.status === "joined" || result.status === "queued")
+        void navigate({ to: "/sessions/$sessionId", params: { sessionId: result.sessionId } });
     },
+    onError: (e) => toast.error("Couldn't resolve the conflict", { description: e.message }),
   });
 
   return (
-    <div className="overflow-hidden rounded-xl border border-chart-5/30 bg-card">
+    <div
+      className="overflow-hidden rounded-xl border border-chart-5/30 bg-card"
+      data-testid="conflict-card"
+    >
       <div className="flex items-center gap-2 border-b border-chart-5/15 bg-chart-5/[0.06] px-3.5 py-2">
         <Swords className="size-4 text-chart-5" />
         <span className="text-2xs font-semibold tracking-wider text-chart-5 uppercase">
           Already running
         </span>
+        <span className="text-3xs text-muted-foreground">{ago(conflict.createdAt)}</span>
         <code className="ml-auto rounded bg-background/60 px-1.5 py-px font-mono text-3xs text-muted-foreground">
           {conflict.request.workKey}
         </code>
       </div>
       <div className="space-y-3 px-3.5 py-3">
         <p className="text-[13px]">
-          <span className="font-medium">{conflict.request.requestedBy}</span> asked to{" "}
+          <span className="font-medium">{startedBy[conflict.request.startedBy.kind]}</span> asked to{" "}
           <span className="font-medium">“{conflict.request.purpose}”</span>, but matching work is
           already in progress:
         </p>
-        {existing && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-border bg-surface px-3 py-2">
-            <StatusDot
-              tone={existing.status === "running" ? "running" : "waiting"}
-              className="mt-1"
-            />
+        {conflict.existing.map((work) => (
+          <div
+            key={work.id}
+            className="flex items-start gap-2.5 rounded-lg border border-border bg-surface px-3 py-2"
+          >
+            <StatusDot tone={work.status === "running" ? "running" : "waiting"} className="mt-1" />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium">{existing.purpose}</div>
+              <div className="text-[13px] font-medium">{work.purpose}</div>
               <div className="text-2xs text-muted-foreground">
-                Started by {startedBy[existing.startedBy.kind]} · {ago(existing.startedAt)}
-                {existing.progress && ` · ${existing.progress.text}`}
+                {startedBy[work.startedBy.kind]} · {work.status} · {ago(work.startedAt)}
+                {work.progress && ` · ${work.progress.text}`}
               </div>
             </div>
-            {existing.sessionId && (
+            {work.sessionId && (
               <Link
                 to="/sessions/$sessionId"
-                params={{ sessionId: existing.sessionId }}
+                params={{ sessionId: work.sessionId }}
                 className="shrink-0 text-2xs text-primary hover:underline"
               >
                 Open
               </Link>
             )}
           </div>
-        )}
+        ))}
         {forcing ? (
           <div className="flex items-center gap-2">
             <Input
@@ -98,13 +124,14 @@ export function ConflictCard({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why start a duplicate? (recorded)"
+              aria-label="Reason to start anyway"
               className="h-8 text-[13px]"
             />
             <Button
               size="sm"
               variant="destructive"
               disabled={!reason.trim() || resolve.isPending}
-              onClick={() => resolve.mutate({ resolution: "force", reason })}
+              onClick={() => resolve.mutate({ resolution: "force", reason: reason.trim() })}
             >
               Start anyway
             </Button>

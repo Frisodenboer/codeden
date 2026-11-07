@@ -16,14 +16,9 @@ import { type SendMode, useClient } from "@/lib/api";
 import { useSnapshotData } from "@/lib/queries";
 import { matchesCombo, shortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import {
-  type ComposerAttachment,
-  getDraft,
-  type TurnOptions,
-  useComposerStore,
-} from "@/stores/composer";
+import { type ComposerAttachment, getDraft, useComposerStore } from "@/stores/composer";
 import { AttachmentStrip, filesToAttachments } from "./attachments";
-import { AutonomyPicker, EffortPicker, ModelPicker } from "./pickers";
+import { SessionOptions } from "./session-options";
 import { SuggestionMenu } from "./suggestion-menu";
 import { applyTrigger } from "./trigger";
 import { useSuggestions } from "./use-suggestions";
@@ -54,26 +49,14 @@ export function Composer({ session, running }: { session: Session; running: bool
   const providers = useSnapshotData((s) => s.runner.providers, []);
   const dictationLanguage = useSnapshotData((s) => s.settings.voice.dictation.language, null);
   const draft = useComposerStore((s) => getDraft(s, session.id));
-  const stored = useComposerStore((s) => s.options[session.id]);
   const focusToken = useComposerStore((s) => s.focusToken);
-  const { setText, addAttachments, removeAttachment, clear, setOptions } =
-    useComposerStore.getState();
+  const { setText, addAttachments, removeAttachment, clear } = useComposerStore.getState();
   const ref = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [mode, setMode] = useState<Exclude<SendMode, "send">>("queue");
 
-  const fallback: TurnOptions = {
-    provider: session.provider,
-    model: session.model,
-    effort: session.effort,
-    autonomy: session.autonomy,
-  };
-  const options = stored ?? fallback;
-  const provider = providers.find((p) => p.id === options.provider);
-  const model =
-    provider?.models.find((m) => m.id === options.model) ??
-    provider?.models.find((m) => m.isDefault);
+  const provider = providers.find((p) => p.id === session.provider);
   const canSteer = provider?.capabilities.steer ?? false;
   const suggestions = useSuggestions(session.id, draft.text, caret);
 
@@ -86,12 +69,17 @@ export function Composer({ session, running }: { session: Session; running: bool
   }, [focusToken]);
 
   const send = useMutation({
-    mutationFn: (sendMode: SendMode) =>
-      client.sendMessage(
-        session.id,
-        { text: draft.text.trim(), attachments: toInput(draft.attachments) },
-        sendMode,
-      ),
+    mutationFn: async (sendMode: SendMode) => {
+      const input = { text: draft.text.trim(), attachments: toInput(draft.attachments) };
+      // Role sessions go through orchestration, which adds the fresh status digest (§8.4).
+      if (session.role === "agent") return client.sendMessage(session.id, input, sendMode);
+      await client.orchestration.send(
+        session.role,
+        session.projectId,
+        input,
+        sendMode === "steer" ? "steer" : "queue",
+      );
+    },
     onMutate: () => clear(session.id),
     onSuccess: (_d, sendMode) => {
       if (sendMode === "queue")
@@ -240,25 +228,7 @@ export function Composer({ session, running }: { session: Session; running: bool
               </TooltipTrigger>
               <TooltipContent>Attach files or paste an image</TooltipContent>
             </Tooltip>
-            <ModelPicker
-              providers={providers}
-              provider={options.provider}
-              model={options.model ?? model?.id ?? null}
-              onChange={(p, m) => setOptions(session.id, { provider: p, model: m }, fallback)}
-            />
-            {provider?.capabilities.reasoningEffort && (
-              <EffortPicker
-                efforts={model?.efforts ?? []}
-                value={options.effort ?? model?.defaultEffort ?? null}
-                onChange={(effort) => setOptions(session.id, { effort }, fallback)}
-              />
-            )}
-            {session.role === "agent" && (
-              <AutonomyPicker
-                value={options.autonomy}
-                onChange={(autonomy) => setOptions(session.id, { autonomy }, fallback)}
-              />
-            )}
+            <SessionOptions session={session} running={running} />
             <div className="ml-auto flex items-center gap-1">
               {running && canSteer && (
                 <div
