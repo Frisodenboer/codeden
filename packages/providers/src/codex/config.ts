@@ -43,7 +43,11 @@ export function mcpOverride(server: McpServerConfig): Record<string, JsonValue> 
   const key = `mcp_servers.${server.name}`;
   if (server.transport === "http") {
     return {
-      [key]: { url: server.url, ...(server.headers ? { http_headers: server.headers } : {}) },
+      [key]: {
+        url: server.url,
+        ...(server.headers ? { http_headers: server.headers } : {}),
+        ...(server.toolTimeoutSec ? { tool_timeout_sec: server.toolTimeoutSec } : {}),
+      },
     };
   }
   return {

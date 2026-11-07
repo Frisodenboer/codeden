@@ -223,6 +223,11 @@ export const UserQuestionItem = z.object({
   questions: z.array(UserQuestion).min(1),
   /** Answers keyed by question id, once answered. */
   answers: z.record(z.string(), z.array(z.string())).optional(),
+  /**
+   * Asked through CodeDen's `ask_user` tool rather than the provider: stays open after its
+   * turn ends, and an answer that arrives after the tool returned is sent as a new message.
+   */
+  deferred: z.boolean().optional(),
 });
 
 /** A subagent run; its transcript lives in the child thread `childThreadId` (§7.3). */

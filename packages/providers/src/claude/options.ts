@@ -43,6 +43,16 @@ export function claudeMcpServers(
   return out;
 }
 
+/** Allow every tool of trusted MCP servers (CodeDen's own) without permission prompts. */
+export function trustedMcpTools(
+  servers: readonly McpServerConfig[],
+): Pick<Options, "allowedTools"> {
+  const allowed = servers
+    .filter((s) => s.transport === "http" && s.trusted)
+    .map((s) => `mcp__${s.name}`);
+  return allowed.length > 0 ? { allowedTools: allowed } : {};
+}
+
 /** Point the SDK at the user's installed `claude` (native binary or JS entry point). */
 export function executableOptions(
   cmd: ResolvedCommand,
@@ -93,6 +103,7 @@ export function buildQueryOptions(input: QueryOptionsInput): Options {
     forwardSubagentText: true,
     ...(input.resume ? { resume: input.resume } : {}),
     mcpServers: claudeMcpServers(session.mcpServers),
+    ...trustedMcpTools(session.mcpServers),
     systemPrompt: {
       type: "preset",
       preset: "claude_code",

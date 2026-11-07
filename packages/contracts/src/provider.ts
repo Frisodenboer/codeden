@@ -97,6 +97,10 @@ export const McpServerConfig = z.discriminatedUnion("transport", [
     name: z.string(),
     url: z.url(),
     headers: z.record(z.string(), z.string()).optional(),
+    /** Max seconds one tool call may take (long-running tools such as `ask_user`). */
+    toolTimeoutSec: z.int().positive().max(86_400).optional(),
+    /** Tools of this server run without approval prompts (CodeDen's own tools). */
+    trusted: z.boolean().optional(),
   }),
   z.object({
     transport: z.literal("stdio"),

@@ -1,0 +1,184 @@
+import { InboxItem } from "@codeden/contracts";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { type Harness, startHarness, TOKEN, waitUntil } from "./support/harness";
+
+let h: Harness;
+let sessionId: string;
+let token: string;
+
+beforeAll(async () => {
+  h = await startHarness({ askUserWaitMs: 1_500 });
+  sessionId = await h.startFakeSession();
+  token = h.server.services.mcpTokens.mint({
+    role: "agent",
+    sessionId,
+    projectId: h.projectId,
+  });
+}, 60_000);
+
+afterAll(async () => {
+  await h?.close();
+});
+
+/** An MCP client talking to the runner's local proxy, as agents do (§4.4). */
+async function connect(bearer: string): Promise<Client> {
+  const url = h.server.runner?.mcpProxyUrl;
+  if (!url) throw new Error("no proxy url");
+  const client = new Client({ name: "test", version: "0.0.0" });
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: { headers: { Authorization: `Bearer ${bearer}` } },
+    }),
+  );
+  return client;
+}
+
+const text = (result: Awaited<ReturnType<Client["callTool"]>>) =>
+  (result.content as Array<{ type: string; text: string }>)[0]?.text ?? "";
+
+const initialize = (bearer?: string) =>
+  fetch(`${h.server.url}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "t", version: "0" },
+      },
+    }),
+  });
+
+describe("CodeDen MCP endpoint", () => {
+  it("rejects requests without a valid session token, including the install token", async () => {
+    expect((await initialize()).status).toBe(401);
+    expect((await initialize(TOKEN)).status).toBe(401);
+    expect((await initialize("cdm_not-a-real-token")).status).toBe(401);
+    expect((await initialize(token)).status).toBe(200);
+  });
+
+  it("lists the tools of the caller's role, core tools marked always-loaded", async () => {
+    const client = await connect(token);
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).toEqual([
+      "report_progress",
+      "ask_user",
+      "share_to_chat",
+      "suggest_followups",
+      "finish",
+    ]);
+    expect(tools[0]?._meta).toEqual({ "anthropic/alwaysLoad": true });
+    await client.close();
+
+    const pmToken = h.server.services.mcpTokens.mint({
+      role: "pm",
+      sessionId: "pm-session",
+      projectId: h.projectId,
+    });
+    const pm = await connect(pmToken);
+    expect((await pm.listTools()).tools.map((t) => t.name)).toEqual(["ask_user", "share_to_chat"]);
+    await pm.close();
+  });
+
+  it("records progress, follow-ups, shared images and the result", async () => {
+    const client = await connect(token);
+    await client.callTool({ name: "report_progress", arguments: { text: "Writing tests" } });
+    await client.callTool({
+      name: "suggest_followups",
+      arguments: { suggestions: ["Add docs", "Run the linter"] },
+    });
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const shared = await client.callTool({
+      name: "share_to_chat",
+      arguments: { imageBase64: png.toString("base64"), mediaType: "image/png", caption: "Dot" },
+    });
+    expect(text(shared)).toMatch(/Shared image\.png/);
+    await client.callTool({
+      name: "finish",
+      arguments: { outcome: "success", summary: "All done" },
+    });
+    const bad = await client.callTool({
+      name: "suggest_followups",
+      arguments: { suggestions: [] },
+    });
+    expect(bad.isError).toBe(true);
+    await client.close();
+
+    const d = await h.detail(sessionId);
+    expect(d.session.progress?.text).toBe("Writing tests");
+    expect(d.session.result).toMatchObject({ outcome: "success", summary: "All done" });
+    expect(d.followups?.source).toBe("agent");
+    expect(d.followups?.suggestions.map((s) => s.prompt)).toEqual(["Add docs", "Run the linter"]);
+    const artifacts = h.server.services.artifacts.list({ sessionId });
+    expect(artifacts[0]).toMatchObject({ kind: "image", mediaType: "image/png" });
+  });
+
+  it("asks the user and returns the answer given within the wait", async () => {
+    const client = await connect(token);
+    const call = client.callTool({
+      name: "ask_user",
+      arguments: { question: "Which colour?", options: [{ label: "Red" }, { label: "Blue" }] },
+    });
+    const question = await waitUntil(async () => {
+      const items = ((await h.api("GET", `/inbox?sessionId=${sessionId}`)).body as unknown[]).map(
+        (i) => InboxItem.parse(i),
+      );
+      return items.find((i) => i.kind === "question" && i.status === "open");
+    });
+    const res = await h.api("POST", `/sessions/${sessionId}/respond`, {
+      requestId: question.requestId,
+      response: { kind: "answer", answers: { q1: ["Blue"] } },
+    });
+    expect(res.status).toBe(200);
+    expect(text(await call)).toContain("A: Blue");
+    await client.close();
+  });
+
+  it("returns pending after the wait and delivers a late answer as a message", async () => {
+    const client = await connect(token);
+    const result = await client.callTool({ name: "ask_user", arguments: { question: "Ship it?" } });
+    expect(text(result)).toMatch(/^pending/);
+    await client.close();
+    const question = await waitUntil(async () => {
+      const items = ((await h.api("GET", `/inbox?sessionId=${sessionId}`)).body as unknown[]).map(
+        (i) => InboxItem.parse(i),
+      );
+      return items.find((i) => i.kind === "question" && i.status === "open");
+    });
+    await h.api("POST", `/sessions/${sessionId}/respond`, {
+      requestId: question.requestId,
+      response: { kind: "answer", answers: { q1: ["Yes"] } },
+    });
+    // The Fake provider echoes the message it received.
+    const snapshot = await waitUntil(async () => {
+      const snap = (await h.api("GET", `/sessions/${sessionId}/snapshot`)).body as {
+        items: Array<{ item: { kind: string; text?: string } }>;
+      };
+      return snap.items.some(
+        (i) =>
+          i.item.kind === "assistant_message" &&
+          i.item.text?.includes("Answer to your earlier question"),
+      )
+        ? snap
+        : undefined;
+    });
+    expect(snapshot).toBeTruthy();
+  }, 30_000);
+
+  it("revokes the session's tokens when it stops", async () => {
+    await h.api("POST", `/sessions/${sessionId}/stop`);
+    await waitUntil(async () => ((await initialize(token)).status === 401 ? true : undefined));
+  });
+});

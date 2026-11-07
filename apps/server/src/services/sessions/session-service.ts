@@ -20,6 +20,7 @@ import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port
 import { derivePurpose, deriveWorkKey, findConflicts } from "./conflicts";
 import type { SessionLauncher } from "./launcher";
 import type { Outbox } from "./outbox";
+import type { QuestionBroker } from "./questions";
 import type { SessionRepo, StoredStartMeta } from "./repo";
 
 export interface SessionServiceDeps {
@@ -31,6 +32,7 @@ export interface SessionServiceDeps {
   settings: SettingsStore;
   launcher: SessionLauncher;
   outbox: Outbox;
+  questions: QuestionBroker;
 }
 
 /** Preferred providers when the choice is `auto` (first ready one wins). */
@@ -175,6 +177,8 @@ export class SessionService {
 
   async respond(id: string, req: RespondRequest): Promise<void> {
     this.deps.repo.get(id);
+    // Questions asked through CodeDen's ask_user tool are answered here, not by the provider.
+    if (await this.deps.questions.respond(id, req.requestId, req.response)) return;
     await this.deps.runner
       .request({
         name: "session.respond",

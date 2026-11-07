@@ -15,6 +15,8 @@ export interface RunnerPort {
   isConnected(): boolean;
   runnerId(): string | null;
   providers(): ProviderInfo[];
+  /** Agent-facing MCP proxy URL on the runner (§4.4), once configured. */
+  mcpProxyUrl(): string | null;
   /** Resolve true once connected, false after `timeoutMs`. */
   waitForConnection(timeoutMs: number): Promise<boolean>;
   request<N extends RunnerCommandName>(
@@ -50,6 +52,7 @@ export function runnerPort(get: () => RunnerClient | undefined): RunnerPort {
     isConnected: () => get()?.status.state === "connected",
     runnerId: () => get()?.status.runnerId ?? null,
     providers: () => get()?.status.providers ?? [],
+    mcpProxyUrl: () => get()?.mcpProxyUrl ?? null,
     waitForConnection: async (timeoutMs) => {
       const client = get();
       if (!client) return false;

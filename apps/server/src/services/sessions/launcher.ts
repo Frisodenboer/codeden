@@ -1,12 +1,15 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type McpServerConfig,
   type Project,
   type Session,
   SessionOptions,
   type UserInput,
   type WorkspaceRequest,
 } from "@codeden/contracts";
+import { codedenSystemPrompt, MCP_SERVER_NAME } from "../../mcp/prompt";
+import type { McpTokenStore } from "../../mcp/tokens";
 import { errorMessage, ServiceError } from "../errors";
 import type { InboxService } from "../inbox-service";
 import type { ProjectService } from "../projects/project-service";
@@ -23,6 +26,8 @@ export interface LauncherDeps {
   worktreesDir: string;
   /** `<home>/orchestrator`: the orchestrator's working directory (§8.1). */
   orchestratorDir: string;
+  /** Issues the per-session MCP token handed to the agent (§8.3). */
+  tokens: McpTokenStore;
   log?: (message: string) => void;
   /** How long to wait for the runner before failing a start. */
   connectTimeoutMs?: number;
@@ -129,7 +134,29 @@ export class SessionLauncher {
     this.deps.inbox.raiseRunFailed(session, key, message);
   }
 
+  /**
+   * Provider options for a start or resume: model, effort, autonomy, cwd, the CodeDen system
+   * prompt, and CodeDen's MCP server through the runner's local proxy with a freshly minted
+   * session token (minting revokes the previous one).
+   */
   sessionOptions(session: Session): SessionOptions {
+    const proxyUrl = this.deps.runner.mcpProxyUrl();
+    const mcpServers: McpServerConfig[] = [];
+    if (proxyUrl) {
+      const token = this.deps.tokens.mint({
+        role: session.role,
+        sessionId: session.id,
+        projectId: session.projectId,
+      });
+      mcpServers.push({
+        transport: "http",
+        name: MCP_SERVER_NAME,
+        url: proxyUrl,
+        headers: { Authorization: `Bearer ${token}` },
+        toolTimeoutSec: 600,
+        trusted: true,
+      });
+    }
     return SessionOptions.parse({
       sessionId: session.id,
       role: session.role,
@@ -138,6 +165,8 @@ export class SessionLauncher {
       effort: session.effort ?? undefined,
       autonomy: session.autonomy,
       resumeToken: session.resumeToken ?? undefined,
+      systemPrompt: codedenSystemPrompt(session.role),
+      mcpServers,
     });
   }
 

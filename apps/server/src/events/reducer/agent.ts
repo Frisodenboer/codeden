@@ -137,6 +137,8 @@ function onTurnEnded(
   // Requests left open by the turn can no longer be answered.
   for (const record of d.openRequestItems(sessionId)) {
     if (record.turnId !== event.turnId || !isRequestItem(record.item)) continue;
+    // CodeDen `ask_user` questions outlive the turn; late answers arrive as messages.
+    if (record.item.kind === "user_question" && record.item.deferred) continue;
     putItem(d, sessionId, record.threadId, record.turnId, cancelRequest(record.item), ts);
   }
 
@@ -194,9 +196,13 @@ function syncRequest(d: Draft, record: ItemRecord & { item: RequestItem }, ts: s
   const inboxId = requestInboxId(session.id, item.id);
   const existing = d.getInbox(inboxId);
 
+  // A deferred `ask_user` question can outlive its turn: it only blocks a running turn.
+  const turnRunning = d.getTurn(session.id, record.turnId)?.status === "running";
   if (item.status === "in_progress") {
     if (!existing) d.putInbox(inboxForRequest(session, record, ts));
-    setStatus(d, session.id, "waiting", ts);
+    if (turnRunning || !(item.kind === "user_question" && item.deferred)) {
+      setStatus(d, session.id, "waiting", ts);
+    }
     return;
   }
 
@@ -207,7 +213,7 @@ function syncRequest(d: Draft, record: ItemRecord & { item: RequestItem }, ts: s
   }
   const current = d.getSession(session.id)?.session;
   if (current?.status === "waiting" && d.openRequestItems(session.id).length === 0) {
-    setStatus(d, session.id, "running", ts);
+    setStatus(d, session.id, turnRunning ? "running" : "idle", ts);
   }
 }
 

@@ -7,6 +7,7 @@ import { WebSocketServer } from "ws";
 import { type Database, openDatabase } from "./db/client";
 import { EventStore } from "./events/store";
 import { writeJsonFile } from "./json-file";
+import { createMcpHandler } from "./mcp/endpoint";
 import { ensureHome, type HomePaths } from "./paths";
 import { WsHub } from "./realtime/hub";
 import { createApi } from "./routes/api";
@@ -55,6 +56,8 @@ export interface StartServerOptions {
   userHome?: string;
   /** Where clones go by default (`~/codeden-projects`). */
   projectsDir?: string;
+  /** How long `ask_user` waits for an answer before returning "pending" (default 4 min). */
+  askUserWaitMs?: number;
   /** Batching window for live UI updates (default 40ms). */
   realtimeFlushMs?: number;
   /** Run first-run detection in the background on launch (default true). */
@@ -116,6 +119,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     utility: opts.utility,
     userHome: opts.userHome,
     projectsDir: opts.projectsDir,
+    askUserWaitMs: opts.askUserWaitMs,
     log,
   });
   services.lifecycle.start();
@@ -128,7 +132,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       token: opts.token,
       cookieName: () => `codeden_token_${port}`,
       allowedOrigins: () => origins,
-      publicPaths: new Set(["/api/health"]),
+      // `/mcp` authenticates agents with per-session tokens instead of the install token.
+      publicPaths: new Set(["/api/health", "/mcp"]),
     }),
   );
   const api = createApi({
@@ -143,6 +148,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     },
   });
   app.route("/api", api);
+  const mcp = createMcpHandler({ tokens: services.mcpTokens, registry: services.tools, log });
+  app.all("/mcp", (c) => mcp(c.req.raw));
   app.get(
     "/ws",
     upgradeWebSocket(() => hub.handlers()),

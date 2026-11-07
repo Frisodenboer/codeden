@@ -9,6 +9,7 @@ import type { Db } from "../../db/client";
 import { rowToItemRecord } from "../../db/rows";
 import { items } from "../../db/schema";
 import type { EventStore } from "../../events/store";
+import type { McpTokenStore } from "../../mcp/tokens";
 import type { SettingsStore } from "../../settings-store";
 import { errorMessage } from "../errors";
 import type { UtilityService } from "../utility";
@@ -23,8 +24,12 @@ export interface LifecycleDeps {
   sessions: SessionService;
   settings: SettingsStore;
   utility: UtilityService;
+  tokens: McpTokenStore;
   log?: (message: string) => void;
 }
+
+/** Session statuses after which its MCP tokens are revoked (§8.3). */
+const ENDED = new Set(["stopped", "completed", "failed"]);
 
 /**
  * Reacts to committed events: starts queued sessions whose blockers finished (§8.4 `wait`),
@@ -65,6 +70,7 @@ export class SessionLifecycle {
       if (e.type === "session.created" || e.type === "session.updated") {
         sessionsChanged = true;
         const { session } = e.payload as { session: Session };
+        if (ENDED.has(session.status)) this.deps.tokens.revokeSession(session.id);
         if (session.status === "idle" && this.deps.sessions.hasOutbox(session.id)) {
           setImmediate(() => void this.deps.sessions.flushOutbox(session.id));
         }
