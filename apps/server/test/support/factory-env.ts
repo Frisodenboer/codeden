@@ -1,0 +1,217 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  FactoryLimits,
+  type Notice,
+  type Project,
+  type ProviderInfo,
+  type Session,
+  type StartSessionRequest,
+  type StartSessionResponse,
+} from "@codeden/contracts";
+import { type Database, openDatabase } from "../../src/db/client";
+import { EventStore } from "../../src/events/store";
+import type { Exec, ExecResult } from "../../src/services/exec";
+import { FactoryService } from "../../src/services/factory/factory-service";
+import { VISION_TEMPLATE } from "../../src/services/factory/vision";
+import { InboxService } from "../../src/services/inbox-service";
+import type { NoticeDraft } from "../../src/services/orchestration/notices";
+import { ProjectService } from "../../src/services/projects/project-service";
+import type { RunnerPort } from "../../src/services/runner-port";
+import { SessionRepo } from "../../src/services/sessions/repo";
+import type { SessionService } from "../../src/services/sessions/session-service";
+import { SettingsStore } from "../../src/settings-store";
+import { sampleSession } from "../helpers";
+import { FakeFactoryGithub } from "./fake-factory-github";
+
+/**
+ * The factory loop over a real SQLite database and event log, with a scripted session service
+ * (sessions are rows the test moves through statuses), a scripted GitHub and a fixed clock.
+ * No runner, no providers: the state machine and its limits are what is under test.
+ */
+export interface FactoryEnv {
+  dir: string;
+  db: Database;
+  store: EventStore;
+  repo: SessionRepo;
+  inbox: InboxService;
+  settings: SettingsStore;
+  gh: FakeFactoryGithub;
+  factory: FactoryService;
+  project: Project;
+  /** Start requests the factory made, in order. */
+  starts: StartSessionRequest[];
+  /** Messages sent to sessions. */
+  messages: Array<{ sessionId: string; text: string }>;
+  stopped: string[];
+  notices: NoticeDraft[];
+  spend: { usd: number; tokens: number };
+  providers: string[];
+  /** Shift of the factory clock against real time (day rollover, CI grace). */
+  clock: { offsetMs: number };
+  now: () => Date;
+  /** Set a session's status a few ms later (so `updatedAt` moves past earlier nudges). */
+  setStatus: (sessionId: string, status: Session["status"]) => Promise<void>;
+  /** Recreate the service over the same database (a server restart). */
+  restart: () => FactoryService;
+  updateProject: (patch: Partial<Project>) => Project;
+  close: () => void;
+}
+
+export function createFactoryEnv(
+  opts: { limits?: Partial<FactoryLimits>; providers?: string[] } = {},
+): FactoryEnv {
+  const dir = mkdtempSync(join(tmpdir(), "codeden-factory-"));
+  const db = openDatabase(join(dir, "codeden.db"));
+  const store = new EventStore(db.db);
+  const repo = new SessionRepo(db.db, store);
+  const inbox = new InboxService(db.db, store, () => async () => {});
+  const settings = new SettingsStore(join(dir, "settings.json"));
+  const exec: Exec = async (): Promise<ExecResult> => ({
+    code: 0,
+    stdout: "",
+    stderr: "",
+    notFound: false,
+    timedOut: false,
+    path: null,
+  });
+  const projects = new ProjectService({ db: db.db, store, exec, projectsDir: dir });
+  const gh = new FakeFactoryGithub();
+  const repoDir = join(dir, "repo");
+  mkdirSync(join(repoDir, ".codeden"), { recursive: true });
+  writeFileSync(join(repoDir, ".codeden", "VISION.md"), VISION_TEMPLATE);
+  const now = new Date();
+  const project = {
+    id: "p-app",
+    name: "app",
+    slug: "app",
+    path: repoDir,
+    kind: "github",
+    github: {
+      owner: "acme",
+      repo: "app",
+      remoteUrl: "https://github.com/acme/app.git",
+      defaultBranch: "main",
+    },
+    defaultBranch: "main",
+    defaultProvider: null,
+    autonomy: null,
+    autonomyMode: "assisted",
+    visionPath: ".codeden/VISION.md",
+    factoryLimits: FactoryLimits.parse({ dailyBudget: { usd: 10 }, ...opts.limits }),
+    killSwitch: false,
+    timezone: null,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    archivedAt: null,
+  } as Project;
+  store.append([{ type: "project.created", sessionId: null, payload: { project } }]);
+  gh.githubProjects.add(project.id);
+
+  const env = {
+    dir,
+    db,
+    store,
+    repo,
+    inbox,
+    settings,
+    gh,
+    project,
+    starts: [],
+    messages: [],
+    stopped: [],
+    notices: [],
+    spend: { usd: 0, tokens: 0 },
+    providers: opts.providers ?? ["claude", "codex"],
+    clock: { offsetMs: 0 },
+  } as unknown as FactoryEnv;
+
+  const sessions = {
+    start: async (req: StartSessionRequest): Promise<StartSessionResponse> => {
+      env.starts.push(req);
+      const provider =
+        req.provider && req.provider !== "auto" ? req.provider : (env.providers[0] ?? "fake");
+      const session: Session = {
+        ...sampleSession,
+        id: randomUUID(),
+        projectId: req.projectId,
+        role: "agent",
+        startedBy: req.startedBy,
+        purpose: req.purpose ?? "work",
+        workKey: req.workKey ?? "request:work",
+        scope: { projectId: req.projectId, ...req.scope },
+        provider,
+        status: "running",
+        issue: req.issue ?? null,
+        worktreePath: join(dir, "wt", randomUUID().slice(0, 6)),
+        branch: "codeden/x",
+        pr: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      repo.create(session, {
+        workspaceMode: "worktree",
+        workspaceFallback: null,
+        forced: null,
+        queuedBehind: [],
+      });
+      return { status: "started", sessionId: session.id };
+    },
+    send: async (sessionId: string, req: { input: { text: string } }) => {
+      env.messages.push({ sessionId, text: req.input.text });
+      repo.update(sessionId, (s) => ({ ...s, status: "running" }));
+      return { status: "sent" };
+    },
+    stop: async (sessionId: string) => {
+      env.stopped.push(sessionId);
+      return repo.update(sessionId, (s) => ({ ...s, status: "stopped" }));
+    },
+  } as unknown as SessionService;
+  const runner = {
+    providers: () => env.providers.map((id) => ({ id }) as ProviderInfo),
+  } as unknown as RunnerPort;
+
+  const build = () =>
+    new FactoryService({
+      db: db.db,
+      store,
+      projects,
+      repo,
+      sessions,
+      runner,
+      usage: { spendSince: () => env.spend },
+      inbox,
+      notify: (draft) => {
+        env.notices.push(draft);
+        return undefined as unknown as Notice;
+      },
+      settings,
+      exec,
+      github: gh,
+      options: { autoTick: false, now: () => env.now(), ciGraceMs: 60_000 },
+    });
+  env.factory = build();
+  env.restart = () => {
+    env.factory.stop();
+    env.factory = build();
+    return env.factory;
+  };
+  env.now = () => new Date(Date.now() + env.clock.offsetMs);
+  env.setStatus = async (sessionId, status) => {
+    await new Promise((r) => setTimeout(r, 5));
+    repo.update(sessionId, (s) => ({ ...s, status }));
+  };
+  env.updateProject = (patch) => {
+    const next = { ...projects.get(project.id), ...patch } as Project;
+    store.append([{ type: "project.updated", sessionId: null, payload: { project: next } }]);
+    return next;
+  };
+  env.close = () => {
+    env.factory.stop();
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  };
+  return env;
+}
