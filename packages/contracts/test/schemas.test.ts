@@ -163,7 +163,7 @@ describe("entities", () => {
     const parsed = Automation.parse(rest);
     expect(parsed.enabled).toBe(false);
     expect(parsed.guards).toEqual({
-      noOverlap: true,
+      overlapPolicy: "skip-if-running",
       maxConcurrent: 1,
       maxPerDay: null,
       quietHours: null,

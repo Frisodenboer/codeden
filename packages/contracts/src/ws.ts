@@ -7,6 +7,7 @@ import { ItemRecord, Session, Thread, Turn } from "./entities/session";
 import { RawEventEnvelope } from "./events";
 import { ProviderInfo } from "./provider";
 import { Settings } from "./settings";
+import { ScheduledRun } from "./work";
 
 /**
  * Server <-> UI realtime protocol (§6 "Realtime to the UI").
@@ -38,6 +39,8 @@ export const Snapshot = z.object({
   sessions: z.array(Session),
   inbox: z.array(InboxItem),
   automations: z.array(Automation),
+  /** Upcoming scheduled runs across projects (§8.4 Now / Next). */
+  scheduled: z.array(ScheduledRun).default([]),
   runner: RunnerConnectionStatus,
 });
 export type Snapshot = z.infer<typeof Snapshot>;

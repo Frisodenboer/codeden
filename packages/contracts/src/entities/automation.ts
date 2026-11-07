@@ -8,6 +8,7 @@ import {
   ReasoningEffort,
   Timestamp,
 } from "../common";
+import { OverlapPolicy, workFields } from "../work";
 
 /** Events an automation can be triggered by (§10). */
 export const AutomationEventName = z.enum([
@@ -77,8 +78,8 @@ export type AutomationTarget = z.infer<typeof AutomationTarget>;
 
 /** Safety rails on automation runs (§10). */
 export const AutomationGuards = z.object({
-  /** Skip a run while the previous one is still going. */
-  noOverlap: z.boolean().default(true),
+  /** What a trigger does while previous work with the same workKey is still going (§8.4). */
+  overlapPolicy: OverlapPolicy.default("skip-if-running"),
   maxConcurrent: z.int().positive().default(1),
   maxPerDay: z.int().positive().nullable().default(null),
   quietHours: QuietHours.nullable().default(null),
@@ -132,16 +133,34 @@ export const AutomationRunStatus = z.enum([
 export type AutomationRunStatus = z.infer<typeof AutomationRunStatus>;
 
 /** One execution of an automation. Every run is a normal session or PM turn (§10). */
-export const AutomationRun = z.object({
-  id: Id,
-  automationId: Id,
-  projectId: Id.nullable(),
-  status: AutomationRunStatus,
-  triggeredBy: z.enum(["cron", "event", "manual", "catch_up"]),
-  skipReason: z.enum(["overlap", "concurrency", "quiet_hours", "daily_cap", "disabled"]).nullable(),
-  sessionId: Id.nullable(),
-  startedAt: Timestamp,
-  finishedAt: Timestamp.nullable(),
-  error: ErrorInfo.nullable(),
-});
+export const AutomationRun = z
+  .object({
+    id: Id,
+    automationId: Id,
+    projectId: Id.nullable(),
+    status: AutomationRunStatus,
+    triggeredBy: z.enum(["cron", "event", "manual", "catch_up"]),
+    /** Who/why/what (§8.4): startedBy, purpose, workKey, scope, progress. */
+    ...workFields,
+    /** Set when `status` is `skipped`. */
+    skipReason: z
+      .enum([
+        "overlap",
+        "concurrency",
+        "quiet_hours",
+        "daily_cap",
+        "disabled",
+        "skipped_by_pm",
+        "conflict_skip",
+      ])
+      .nullable(),
+    sessionId: Id.nullable(),
+    startedAt: Timestamp,
+    finishedAt: Timestamp.nullable(),
+    error: ErrorInfo.nullable(),
+  })
+  .refine((run) => (run.status === "skipped") === (run.skipReason !== null), {
+    message: "skipReason is required exactly when status is skipped",
+    path: ["skipReason"],
+  });
 export type AutomationRun = z.infer<typeof AutomationRun>;

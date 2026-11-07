@@ -263,6 +263,7 @@ defineTool({
 
 - **Scoping.** Each session gets an MCP bearer token encoding its role, project and session. The token is revoked when the session ends. Tools outside the caller's role aren't listed at all.
 - **Tool loading.** A small set of core tools is always loaded; the rest are deferred behind tool search so large tool sets don't fill the context window.
+- **Situational-awareness tools** (§8.4) are core tools for the orchestrator and PMs and are always loaded.
 - **Initial tool set** (to be extended):
   - **Orchestrator:** `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `get_overview`, `list_inbox`.
   - **PM:**
@@ -276,6 +277,32 @@ defineTool({
     - Results: `create_pull_request`, `suggest_followups`, `finish` (with a structured result).
     - Browser tools (§12.2).
   - **All roles:** `generate_image` (§12.5).
+
+### 8.4 Situational awareness and conflict handling
+
+The orchestrator must always know what's happening across all projects, and each PM must know everything running in its project, including scheduled work that hasn't started yet. Starting work must never silently duplicate work already running.
+
+- **Every unit of work is described in data.** Each session and automation run records:
+  - `startedBy` (user, orchestrator, pm or automation, with the id)
+  - `purpose` (one line)
+  - `workKey`, a stable identifier of *what* the work is: for example `automation:security-audit`, `issue:142` or `pr:57`, or one derived from the request
+  - `scope` (project, paths or area)
+  - status, progress (the last `report_progress` call) and timestamps
+- **Status digest injected on every wake.** Each time the orchestrator or a PM wakes, CodeDen adds a compact, up-to-date digest to its context, so it knows the current state without spending a tool call:
+  - **PM digest:** running and queued sessions (`workKey`, purpose, status, progress, age); the next scheduled runs of the project's automations; open inbox items; recent finishes and failures.
+  - **Orchestrator digest:** the same, rolled up per project.
+- **Awareness tools** (always loaded):
+  - **Orchestrator:** `get_overview` (every project: running work, upcoming scheduled runs, inbox counts, recent outcomes).
+  - **PM:** `get_project_status`, `list_sessions` (filter by status, `workKey`, startedBy), `list_scheduled_runs` (upcoming runs per automation), `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run`, `stop_session`.
+- **Conflict detection is built into starting work.** `start_session`, `run_automation` and scheduled triggers first check for running or queued work with the same `workKey`, or an overlapping `scope` for the same kind of work, in that project.
+  - **When there's a match,** the call returns `conflict` with the existing work's details instead of starting anything.
+  - **The caller then picks one of:** `wait` (queue behind it), `skip`, `join` (send the request to the existing session as a follow-up), or `force` (start anyway, with a reason that's recorded).
+  - **Example:** you ask the orchestrator for a security audit. It asks that project's PM, which sees `automation:security-audit` already running and replies with its progress and the options. Nothing is duplicated.
+- **Scheduled triggers when the previous run is still going.** The default guard is `skip-if-running`. Each automation can instead choose `queue` or `run-anyway`.
+  - **Skipped runs** are recorded as `automation_run` rows with status `skipped` and the reason, and a notice wakes the PM, which may choose to take over or adjust the schedule.
+  - **The PM can act ahead of time,** for example skipping the next cron run because an audit started by hand will still be going.
+- **Cross-project view.** The orchestrator's overview flags work running in several projects at once, including conflicts it can't resolve itself; those go to your inbox.
+- **UI:** each project shows a **Now / Next** strip (running work and upcoming scheduled runs). A conflict surfaces as a card with the same `wait`, `skip`, `join` and `force` actions.
 
 ## 9. Git and GitHub
 
@@ -293,7 +320,7 @@ defineTool({
 - **What an automation is:** a **trigger**, an **action**, a **target** and **guards**.
   - **Triggers:** `cron` (croner, in the project's timezone), `event` (`session.finished`, `pr.opened`, `pr.merged`, `pr.checks_failed`, `issue.opened`, `issue.labeled`, …), or `manual`.
   - **Actions:** start an agent session with a prompt template, message the PM, or run triage.
-  - **Guards:** no overlapping runs, a concurrency cap, quiet hours, a maximum per day, and catching up missed runs after downtime.
+  - **Guards:** an overlap policy (`skip-if-running`, the default, or `queue` or `run-anyway`, using the `workKey` conflict check from §8.4), a concurrency cap, quiet hours, a maximum per day, and catching up missed runs after downtime.
 - **Templates** are Markdown files with YAML frontmatter (trigger, provider, autonomy, prompt), so they're readable and editable. Built-in templates:
   - security audit
   - refactor sweep

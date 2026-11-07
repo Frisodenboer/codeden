@@ -11,10 +11,12 @@ import {
   Timestamp,
 } from "../common";
 import { Item } from "../items";
+import { workFields } from "../work";
 
 /**
  * Session lifecycle.
  * - `created`: row exists, nothing started on a runner yet.
+ * - `queued`: waiting behind conflicting work (§8.4 `wait`).
  * - `starting`: workspace prepared / provider process launching.
  * - `running`: a turn is in progress.
  * - `waiting`: blocked on the user (approval or question).
@@ -24,6 +26,7 @@ import { Item } from "../items";
  */
 export const SessionStatus = z.enum([
   "created",
+  "queued",
   "starting",
   "running",
   "waiting",
@@ -43,6 +46,8 @@ export const Session = z.object({
   role: Role,
   /** The session that started this one (PM for agents, orchestrator for PMs). */
   parentSessionId: Id.nullable(),
+  /** Who/why/what (§8.4): startedBy, purpose, workKey, scope, progress. */
+  ...workFields,
   title: z.string().nullable(),
   provider: ProviderId,
   model: z.string().nullable(),
