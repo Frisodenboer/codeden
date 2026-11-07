@@ -1,23 +1,29 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import {
   CODEDEN_VERSION,
   RUNNER_PROTOCOL_VERSION,
   type RunnerEvent,
-  RunnerLock,
+  type RunnerLock,
+  type RunnerStream,
 } from "@codeden/contracts";
 import { FakeProvider, type ProviderAdapter, ProviderRegistry } from "@codeden/providers";
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
-import { connectionHandlers, type RunnerCore, type ServerConnection } from "./connection";
+import type { RunnerCore } from "./commands";
+import { connectionHandlers, type ServerConnection } from "./connection";
 import { Journal } from "./journal";
+import { assertSingleInstance, removeOwnLock } from "./lock";
+import { HttpMcpUpstream, handleMcpRequest, type McpUpstream } from "./mcp/proxy";
+import { ProcessSupervisor } from "./process/supervisor";
+import { TerminalHost } from "./pty/terminal-host";
 import { SessionHost } from "./session-host";
 
 export interface StartRunnerOptions {
-  /** CodeDen data directory; the runner uses `<home>/runner/`. */
+  /** CodeDen data directory; the runner uses `<home>/runner/` and `<home>/wt/`. */
   home: string;
   /** Load the scripted Fake provider (development and tests). */
   enableFakeProvider?: boolean;
@@ -25,7 +31,13 @@ export interface StartRunnerOptions {
   adapters?: ProviderAdapter[];
   /** Port to listen on (127.0.0.1); 0 = random. */
   port?: number;
-  /** Called after `runner.shutdown` has closed everything (the CLI exits the process). */
+  /** Initial MCP proxy upstream (the server's `/mcp`); also set by `runner.configure`. */
+  mcpUpstreamUrl?: string;
+  /** Version reported in the handshake and lock file. Default `CODEDEN_VERSION` (tests override). */
+  version?: string;
+  /** On close, also kill leftover descendants of this process (the real runner process). */
+  sweepDescendants?: boolean;
+  /** Called after `runner.shutdown` or a drain-and-exit closed everything (the CLI exits). */
   onShutdown?: () => void;
   log?: (message: string) => void;
 }
@@ -34,46 +46,26 @@ export interface RunningRunner {
   port: number;
   token: string;
   lockFile: string;
+  /** Agent-facing MCP proxy URL. */
+  mcpUrl: string;
   close(): Promise<void>;
 }
 
 const LOOPBACK = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/** Lock files owned by runners in this process. */
-const activeLocks = new Set<string>();
-
-/** Throw when another live runner owns this home. */
-function assertSingleInstance(lockFile: string): void {
-  if (activeLocks.has(lockFile)) throw new Error("Another runner is already running for this home");
-  try {
-    const lock = RunnerLock.parse(JSON.parse(readFileSync(lockFile, "utf8")));
-    if (lock.pid !== process.pid && isAlive(lock.pid)) {
-      throw new Error(`Another runner (pid ${lock.pid}) is already running for this home`);
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Another runner")) throw error;
-  }
-}
+const DEFAULT_DRAIN_TIMEOUT = 5 * 60_000;
 
 /**
  * Start the runner (§4.2): WebSocket server on 127.0.0.1, lock file with port/token/pid,
- * provider sessions and a durable journal. Survives server restarts.
+ * provider sessions, terminals, git/worktree operations, the local MCP proxy and a durable
+ * journal. Survives server restarts.
  */
 export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunner> {
   const log = opts.log ?? (() => {});
+  const version = opts.version ?? CODEDEN_VERSION;
   const dir = join(opts.home, "runner");
   mkdirSync(dir, { recursive: true });
   const lockFile = join(dir, "runner.json");
-  assertSingleInstance(lockFile);
+  await assertSingleInstance(lockFile);
 
   const token = randomBytes(32).toString("hex");
   const journal = new Journal(dir);
@@ -84,32 +76,65 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   const connections = new Set<ServerConnection>();
   let attached: ServerConnection | undefined;
   let draining = false;
+  let drainExit: Promise<void> | undefined;
   let closing: Promise<void> | undefined;
+  let mcpUpstream: McpUpstream | undefined = opts.mcpUpstreamUrl
+    ? new HttpMcpUpstream(opts.mcpUpstreamUrl)
+    : undefined;
+  let port = 0;
 
+  let stopped = false;
   const emit = (event: RunnerEvent) => {
+    if (stopped) return; // late callbacks after close (killed processes)
     const msg = journal.append(event);
     attached?.deliver(msg);
   };
-  const host = new SessionHost(registry, emit);
+  const stream = (data: RunnerStream) => {
+    attached?.deliver({ type: "stream", ts: new Date().toISOString(), stream: data });
+  };
+  const supervisor = new ProcessSupervisor();
+  const host = new SessionHost(registry, emit, { log });
+  const terminals = new TerminalHost({ supervisor, emit, stream });
+  const finish = () => void close().then(() => opts.onShutdown?.());
+
   const core: RunnerCore = {
+    home: opts.home,
+    version,
     journal,
     host,
+    terminals,
+    supervisor,
     registry,
     startedAt: new Date().toISOString(),
+    emit,
     isDraining: () => draining,
-    drain: (reason) => {
-      // TODO(M1): finish or pause running turns, then restart (§4.2).
-      draining = true;
-      emit({ kind: "runner.draining", reason });
+    drain: ({ reason, timeoutMs, exitWhenDrained }) => {
+      if (!draining) {
+        draining = true;
+        log(`draining: ${reason}`);
+        emit({ kind: "runner.draining", reason });
+      }
+      if (exitWhenDrained && !drainExit) {
+        drainExit = host.drain(timeoutMs ?? DEFAULT_DRAIN_TIMEOUT).then(finish);
+      }
+    },
+    configureMcp: (url) => {
+      mcpUpstream = url ? new HttpMcpUpstream(url) : undefined;
+      return url ? `http://127.0.0.1:${port}/mcp` : null;
     },
     shutdown: () => {
-      setTimeout(() => void close().then(() => opts.onShutdown?.()), 50);
+      setTimeout(finish, 50);
     },
   };
 
   const app = new Hono();
   app.use("*", async (c, next) => {
     if (!LOOPBACK.test(c.req.header("host") ?? "")) return c.text("Forbidden host", 403);
+    return next();
+  });
+  // Agents authenticate with their session-scoped token, validated by the server.
+  app.all("/mcp", (c) => handleMcpRequest(c.req.raw, mcpUpstream));
+  app.use("*", async (c, next) => {
     const auth = c.req.header("authorization") ?? "";
     const given = Buffer.from(auth.replace(/^Bearer\s+/i, ""));
     const expected = Buffer.from(token);
@@ -118,7 +143,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
     }
     return next();
   });
-  app.get("/health", (c) => c.json({ ok: true, version: CODEDEN_VERSION }));
+  app.get("/health", (c) => c.json({ ok: true, version, runnerId: journal.runnerId }));
   app.get(
     "/runner",
     upgradeWebSocket(() =>
@@ -147,13 +172,13 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
     );
     s.once("error", reject);
   });
-  const port = (server.address() as AddressInfo).port;
+  port = (server.address() as AddressInfo).port;
 
   const lock: RunnerLock = {
     pid: process.pid,
     port,
     token,
-    version: CODEDEN_VERSION,
+    version,
     protocolVersion: RUNNER_PROTOCOL_VERSION,
     runnerId: journal.runnerId,
     startedAt: core.startedAt,
@@ -162,34 +187,30 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   const tmp = `${lockFile}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
   renameSync(tmp, lockFile);
-  activeLocks.add(lockFile);
   log(`runner ${journal.runnerId} listening on 127.0.0.1:${port}`);
 
-  function removeLock(): void {
-    try {
-      const current = RunnerLock.parse(JSON.parse(readFileSync(lockFile, "utf8")));
-      if (current.pid === process.pid) rmSync(lockFile, { force: true });
-    } catch {
-      // already gone
-    }
-  }
+  const removeLock = () => removeOwnLock(lockFile);
   process.once("exit", removeLock);
 
   async function close(): Promise<void> {
     closing ??= (async () => {
+      // Stop advertising first so a new server spawns a fresh runner instead of reconnecting.
+      removeLock();
       await host.closeAll();
+      await terminals.closeAll();
+      await supervisor.killAll(opts.sweepDescendants ?? false);
       for (const conn of connections) conn.close("runner stopping");
       wss.close();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
         if ("closeAllConnections" in server) server.closeAllConnections();
       });
-      removeLock();
-      activeLocks.delete(lockFile);
       process.off("exit", removeLock);
+      stopped = true;
+      log("runner stopped");
     })();
     return closing;
   }
 
-  return { port, token, lockFile, close };
+  return { port, token, lockFile, mcpUrl: `http://127.0.0.1:${port}/mcp`, close };
 }

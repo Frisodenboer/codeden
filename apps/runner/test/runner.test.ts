@@ -165,7 +165,7 @@ describe("runner", () => {
     server.send({ type: "hello", protocolVersion: 999, serverVersion: "future" });
     const reject = await server.waitFor((m) => m.type === "reject");
     expect(reject).toMatchObject({ reason: "protocol_mismatch" });
-    server.send({ type: "command", id: "x", command: { name: "git.status", cwd: home } });
+    server.send({ type: "command", id: "x", command: { name: "browser.close", sessionId: "s" } });
     const result = await server.waitFor((m) => m.type === "result");
     expect(result).toMatchObject({ ok: false, error: { code: "not_implemented" } });
     server.send(sessionStart("s2"));

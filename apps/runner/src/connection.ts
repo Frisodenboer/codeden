@@ -1,27 +1,14 @@
 import {
-  CODEDEN_VERSION,
   RUNNER_PROTOCOL_VERSION,
-  type RunnerCommand,
-  type RunnerCommandResult,
   type RunnerToServerMessage,
   type ServerToRunnerMessage,
   ServerToRunnerMessage as ServerToRunnerSchema,
 } from "@codeden/contracts";
-import type { ProviderRegistry } from "@codeden/providers";
 import type { WSContext, WSEvents } from "hono/ws";
-import type { Journal } from "./journal";
-import { CommandError, type SessionHost } from "./session-host";
+import { executeCommand, type RunnerCore } from "./commands";
+import { CommandError } from "./errors";
 
-export interface RunnerCore {
-  journal: Journal;
-  host: SessionHost;
-  registry: ProviderRegistry;
-  startedAt: string;
-  isDraining: () => boolean;
-  drain: (reason: string) => void;
-  /** Exit the process shortly after the current result is sent. */
-  shutdown: () => void;
-}
+export type { RunnerCore };
 
 /**
  * One server connection. Handshake (`hello` -> `welcome` -> `resume`), then commands, acks
@@ -40,7 +27,7 @@ export class ServerConnection {
     return this.attached;
   }
 
-  /** Deliver a freshly journaled event if attached (otherwise it waits in the journal). */
+  /** Deliver a freshly journaled event or stream message if attached. */
   deliver(msg: RunnerToServerMessage): void {
     if (this.attached) this.send(msg);
   }
@@ -73,10 +60,15 @@ export class ServerConnection {
           type: "welcome",
           protocolVersion: RUNNER_PROTOCOL_VERSION,
           runnerId: this.core.journal.runnerId,
-          runnerVersion: CODEDEN_VERSION,
+          runnerVersion: this.core.version,
           pid: process.pid,
           startedAt: this.core.startedAt,
-          capabilities: { pty: false, browser: false, git: false, mcpProxy: false },
+          capabilities: {
+            pty: this.core.terminals.available,
+            browser: false,
+            git: true,
+            mcpProxy: true,
+          },
           providers: this.core.registry.info(),
           sessions: this.core.host.list(),
           journal: { lastSeq: this.core.journal.lastSeq, unacked: this.core.journal.unacked },
@@ -95,7 +87,7 @@ export class ServerConnection {
         return;
       case "command":
         try {
-          const result = await this.execute(msg.command);
+          const result = await executeCommand(this.core, msg.command);
           this.send({ type: "result", id: msg.id, ok: true, result });
         } catch (error) {
           const code = error instanceof CommandError ? error.code : "command_failed";
@@ -108,74 +100,6 @@ export class ServerConnection {
         return;
       case "pong":
         return;
-    }
-  }
-
-  private async execute(
-    command: RunnerCommand,
-  ): Promise<RunnerCommandResult<RunnerCommand["name"]>> {
-    const { host, journal, registry } = this.core;
-    switch (command.name) {
-      case "runner.status":
-        return {
-          sessions: host.list(),
-          ptys: [],
-          journal: { lastSeq: journal.lastSeq, unacked: journal.unacked },
-          draining: this.core.isDraining(),
-        };
-      case "runner.drain":
-        this.core.drain(command.reason);
-        return {};
-      case "runner.shutdown":
-        this.core.shutdown();
-        return {};
-      case "provider.detect": {
-        const adapters = command.providerId
-          ? registry.list().filter((a) => a.id === command.providerId)
-          : registry.list();
-        return { statuses: await Promise.all(adapters.map((a) => a.detect())) };
-      }
-      case "session.start":
-        if (this.core.isDraining()) throw new CommandError("draining", "Runner is draining");
-        return host.start(command);
-      case "session.send":
-        await host.send(command);
-        return {};
-      case "session.steer":
-        await host.steer(command);
-        return {};
-      case "session.interrupt":
-        await host.interrupt(command.sessionId);
-        return {};
-      case "session.respond":
-        await host.respond(command);
-        return {};
-      case "session.stop":
-        await host.stop(command.sessionId);
-        return {};
-      // TODO(M1): worktrees, node-pty terminals, Chromium/CDP browser and git checkpoints.
-      case "workspace.prepare":
-      case "pty.open":
-      case "pty.input":
-      case "pty.resize":
-      case "pty.close":
-      case "browser.open":
-      case "browser.navigate":
-      case "browser.close":
-      case "git.checkpoint":
-      case "git.status":
-      case "git.diff":
-      case "runner.configure":
-      case "workspace.remove":
-      case "pty.attach":
-      case "git.branches":
-      case "git.commit":
-      case "git.push":
-      case "checkpoint.list":
-      case "checkpoint.diff":
-      case "checkpoint.restoreFiles":
-      case "ports.list":
-        throw new CommandError("not_implemented", `${command.name} is not implemented yet`);
     }
   }
 
