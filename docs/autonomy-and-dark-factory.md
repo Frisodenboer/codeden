@@ -6,7 +6,7 @@ Each project has an **autonomy mode**, a ladder you climb one step at a time. (T
 
 | Mode | Who finds work | Who merges | You |
 |---|---|---|---|
-| **Manual** | You | You | Drive every session. Triage never starts a session on its own |
+| **Manual** | You | You | Drive every session. Automations only run when you (or a PM) start them: schedules and event triggers are paused |
 | **Assisted** (default) | You, the PM (triage) and automations | You | Review PRs and answer the inbox |
 | **Autopilot** *(experimental)* | The factory loop: new issues and failed checks on the default branch | CodeDen, when every merge check passes; anything else comes to you | Check the daily digest and handle exceptions |
 | **Dark factory** *(experimental)* | The factory loop as above, plus improvement finders scored against the vision | CodeDen, when every merge check passes | Set the vision and the limits, then step away |

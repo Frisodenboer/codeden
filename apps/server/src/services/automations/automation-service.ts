@@ -169,6 +169,14 @@ export class AutomationService implements AutomationPort {
     return override ?? automation.enabled;
   }
 
+  /**
+   * Whether scheduled and event automations fire on their own in this project. In Manual
+   * mode (§10.1) they don't: only runs someone starts (the user or a PM) happen.
+   */
+  firesOnItsOwn(project: Project): boolean {
+    return project.autonomyMode !== "manual";
+  }
+
   /** Projects an automation applies to. */
   targets(automation: Automation): Project[] {
     if (automation.target.type === "project") {
@@ -185,7 +193,7 @@ export class AutomationService implements AutomationPort {
       const trigger = automation.trigger;
       if (trigger.type !== "cron") continue;
       for (const project of this.targets(automation)) {
-        if (!this.isEnabled(automation, project)) continue;
+        if (!this.isEnabled(automation, project) || !this.firesOnItsOwn(project)) continue;
         if (this.schedules.get(automation.id, project.id)?.paused) continue;
         out.push({
           automation,
@@ -218,7 +226,8 @@ export class AutomationService implements AutomationPort {
   state(automation: Automation, project: Project): AutomationState {
     const row = this.schedules.get(automation.id, project.id);
     const enabled = this.isEnabled(automation, project);
-    const live = enabled && !row?.paused && automation.trigger.type === "cron";
+    const live =
+      enabled && !row?.paused && automation.trigger.type === "cron" && this.firesOnItsOwn(project);
     return {
       projectId: project.id,
       enabled,
@@ -403,7 +412,7 @@ export class AutomationService implements AutomationPort {
       for (const automation of all) {
         if (!triggerMatches(automation, event)) continue;
         if (!this.targets(automation).some((p) => p.id === project.id)) continue;
-        if (!this.isEnabled(automation, project)) continue;
+        if (!this.isEnabled(automation, project) || !this.firesOnItsOwn(project)) continue;
         if (this.schedules.get(automation.id, project.id)?.paused) continue;
         if (startedByAutomation(automation, event, session)) continue;
         const req = this.fireRequest(automation, project, "event", event.vars);

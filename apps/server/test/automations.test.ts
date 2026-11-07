@@ -273,6 +273,57 @@ describe("automations (§10): scheduler, guards, runs, PM tools, files", () => {
     expect((await upcoming()).length).toBeGreaterThanOrEqual(4);
   });
 
+  it("in Manual mode, only runs someone starts happen", async () => {
+    expect((await upcoming()).length).toBeGreaterThan(0);
+    const manual = await h.api("PUT", `/projects/${h.projectId}/autonomy`, { mode: "manual" });
+    expect(manual.status).toBe(200);
+    await waitUntil(async () => ((await upcoming()).length === 0 ? true : undefined));
+    expect((await list()).automations.every((i) => i.states.every((st) => !st.nextRunAt))).toBe(
+      true,
+    );
+    // An event automation does not fire on its own...
+    const onFinish = await create({
+      name: "After sessions",
+      enabled: true,
+      trigger: { type: "event", event: "session.failed" },
+      action: { type: "message_pm", message: "A session failed" },
+    });
+    const sessionId = h.server.services.sessionRepo.list({ projectId: h.projectId })[0]?.id ?? "";
+    expect(sessionId).not.toBe("");
+    const failedNotice = (id: string) =>
+      h.server.services.store.append([
+        {
+          type: "notice.created",
+          sessionId: null,
+          payload: {
+            notice: {
+              id,
+              type: "session.failed",
+              projectId: h.projectId,
+              target: "pm",
+              sessionId,
+              title: "x",
+              data: {},
+              createdAt: new Date().toISOString(),
+              deliveredAt: null,
+            },
+          },
+        } as never,
+      ]);
+    failedNotice("n-manual-1");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await runs(onFinish)).toEqual([]);
+    // ...but a manual run still does.
+    const ran = await h.api("POST", `/automations/${onFinish}/run`, { projectId: h.projectId });
+    expect((ran.body as { status: string }).status).toBe("started");
+    const back = await h.api("PUT", `/projects/${h.projectId}/autonomy`, { mode: "assisted" });
+    expect(back.status).toBe(200);
+    await waitUntil(async () => ((await upcoming()).length > 0 ? true : undefined));
+    // Back in Assisted mode the same event fires on its own.
+    failedNotice("n-manual-2");
+    await waitUntil(async () => ((await runs(onFinish)).length === 2 ? true : undefined));
+  });
+
   it("sets and clears a project override of an all-projects automation", async () => {
     const created = await h.api("POST", "/automations", {
       name: "Everywhere",

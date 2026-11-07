@@ -37,6 +37,8 @@ The templates are ordinary Markdown files (shipped in the package under `templat
 | **Event** | `type: event`, `event`, optional `filter` | See the event list below |
 | **Manual** | `type: manual` | Runs only when you (or a PM) start it |
 
+In a project in **Manual** [autonomy mode](autonomy-and-dark-factory.md), scheduled and event automations don't fire on their own (the Now / Next strip is empty); you can still run any automation by hand.
+
 **Events:**
 
 | Event | Fires when | Placeholders available |
