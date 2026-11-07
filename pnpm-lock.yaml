@@ -24,11 +24,19 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@24.19.2)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
 
+  apps/cli: {}
+
   packages/contracts:
     dependencies:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+
+  packages/providers:
+    dependencies:
+      '@codeden/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
 packages:
 
