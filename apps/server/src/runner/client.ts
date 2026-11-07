@@ -23,7 +23,7 @@ import type { Db } from "../db/client";
 import { runnerState } from "../db/schema";
 import type { EventStore } from "../events/store";
 import { type RunnerLaunchConfig, spawnRunner } from "./launcher";
-import { readLiveRunnerLock } from "./lock";
+import { probeRunnerLock, readLiveRunnerLock } from "./lock";
 
 export interface RunnerClientOptions {
   home: string;
@@ -39,6 +39,13 @@ export interface RunnerClientOptions {
   log?: (message: string) => void;
   /** Max time to wait for a spawned runner's lock file. Default 20s. */
   startTimeoutMs?: number;
+  /**
+   * The server's MCP endpoint (`http://127.0.0.1:<port>/mcp`). Pushed to the runner after
+   * every handshake so its local proxy (§4.4) forwards there.
+   */
+  mcpUpstreamUrl?: string;
+  /** How long a version-mismatch drain may wait for running turns. Default 5 minutes. */
+  drainTimeoutMs?: number;
 }
 
 interface Pending {
@@ -73,6 +80,7 @@ export class RunnerClient {
   private connectedWaiters: Array<() => void> = [];
   private runnerId: string | undefined;
   private lastAckedSeq = 0;
+  private proxyUrl: string | null = null;
   private current: RunnerConnectionStatus = {
     state: "starting",
     runnerId: null,
@@ -85,6 +93,11 @@ export class RunnerClient {
 
   get status(): RunnerConnectionStatus {
     return this.current;
+  }
+
+  /** Agent-facing MCP proxy URL on the runner, once configured. */
+  get mcpProxyUrl(): string | null {
+    return this.proxyUrl;
   }
 
   /** Ensure a runner is live and connect. Resolves once the handshake completed. */
@@ -167,7 +180,10 @@ export class RunnerClient {
 
   private async ensureRunner(): Promise<RunnerLock> {
     const existing = readLiveRunnerLock(this.opts.lockFile);
-    if (existing) return existing;
+    if (existing && (await probeRunnerLock(existing))) return existing;
+    if (existing) {
+      this.opts.log?.(`runner: pid ${existing.pid} does not answer; starting a new runner`);
+    }
     if (!this.opts.launch) throw new Error("No live runner and launching is disabled");
     this.opts.log?.("runner: starting a new runner process");
     spawnRunner(this.opts.launch, this.opts.home);
@@ -293,11 +309,36 @@ export class RunnerClient {
       providers: msg.providers,
       lastError: versionNote,
     });
-    // TODO(M1): on version mismatch, drain and restart the runner (§4.2).
     this.send({ type: "resume", lastAckedSeq: this.lastAckedSeq });
+    this.afterHandshake(msg);
     const waiters = this.connectedWaiters;
     this.connectedWaiters = [];
     for (const w of waiters) w();
+  }
+
+  /**
+   * Push runtime config, and on a version mismatch ask the runner to drain and exit
+   * (§4.2): it finishes or interrupts running turns, closes sessions (resumable through
+   * their resume tokens) and exits; the reconnect loop then starts a current runner.
+   */
+  private afterHandshake(msg: RunnerWelcome): void {
+    const log = this.opts.log;
+    if (this.opts.mcpUpstreamUrl) {
+      this.request({ name: "runner.configure", mcpUpstreamUrl: this.opts.mcpUpstreamUrl })
+        .then((r) => {
+          this.proxyUrl = r.mcpProxyUrl;
+        })
+        .catch((error: unknown) => log?.(`runner: configure failed: ${String(error)}`));
+    }
+    if (msg.runnerVersion !== CODEDEN_VERSION && this.opts.launch && !msg.draining) {
+      log?.(`runner: version ${msg.runnerVersion} != ${CODEDEN_VERSION}; draining for restart`);
+      this.request({
+        name: "runner.drain",
+        reason: `upgrade to ${CODEDEN_VERSION}`,
+        exitWhenDrained: true,
+        timeoutMs: this.opts.drainTimeoutMs,
+      }).catch((error: unknown) => log?.(`runner: drain failed: ${String(error)}`));
+    }
   }
 
   /** Persist a durable event and its ack position atomically, then ack. */
