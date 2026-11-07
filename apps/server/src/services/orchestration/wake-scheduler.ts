@@ -1,4 +1,7 @@
-/** Outcome of one wake attempt. `busy` retries after the debounce; `empty` drops the request. */
+/**
+ * Outcome of one wake attempt. `busy` retries with backoff (the debounce, doubling up to
+ * `maxRetryMs`) at most `maxBusyRetries` times; `empty` drops the request.
+ */
 export type WakeResult = "sent" | "busy" | "empty";
 
 export interface WakeSchedulerOptions {
@@ -10,6 +13,16 @@ export interface WakeSchedulerOptions {
   maxWakes?: number;
   /** Loop guard window (default 10 minutes). */
   windowMs?: number;
+  /** Longest wait between retries of a busy target (default 2 minutes). */
+  maxRetryMs?: number;
+  /**
+   * Busy retries before giving up (default 20, about half an hour with the defaults). The
+   * notices stay undelivered and ride along with the target's next message, or the next
+   * notice arms a fresh wake.
+   */
+  maxBusyRetries?: number;
+  /** Called when a wake is given up after `maxBusyRetries` busy attempts. */
+  onGaveUp?: (key: string) => void;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
@@ -21,6 +34,8 @@ interface Pending {
   firstAt: number;
   timer: unknown;
   suppressed: boolean;
+  /** Busy attempts so far. */
+  retries: number;
 }
 
 /**
@@ -32,8 +47,8 @@ interface Pending {
 export class WakeScheduler {
   private readonly pending = new Map<string, Pending>();
   private readonly history = new Map<string, number[]>();
-  private readonly opts: Required<Omit<WakeSchedulerOptions, "onSuppressed">> &
-    Pick<WakeSchedulerOptions, "onSuppressed">;
+  private readonly opts: Required<Omit<WakeSchedulerOptions, "onSuppressed" | "onGaveUp">> &
+    Pick<WakeSchedulerOptions, "onSuppressed" | "onGaveUp">;
 
   constructor(
     private readonly fire: (key: string) => Promise<WakeResult>,
@@ -44,6 +59,9 @@ export class WakeScheduler {
       maxWaitMs: opts.maxWaitMs ?? 30_000,
       maxWakes: opts.maxWakes ?? 6,
       windowMs: opts.windowMs ?? 10 * 60_000,
+      maxRetryMs: opts.maxRetryMs ?? 2 * 60_000,
+      maxBusyRetries: opts.maxBusyRetries ?? 20,
+      onGaveUp: opts.onGaveUp,
       now: opts.now ?? Date.now,
       setTimer: opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms)),
       clearTimer: opts.clearTimer ?? ((h) => clearTimeout(h as NodeJS.Timeout)),
@@ -57,6 +75,7 @@ export class WakeScheduler {
     const entry = this.pending.get(key);
     if (entry) {
       if (entry.suppressed) return;
+      entry.retries = 0; // fresh news: retry from the short delay again
       this.opts.clearTimer(entry.timer);
       const at = Math.min(now + this.opts.debounceMs, entry.firstAt + this.opts.maxWaitMs);
       entry.timer = this.arm(key, at - now);
@@ -66,6 +85,7 @@ export class WakeScheduler {
       firstAt: now,
       timer: this.arm(key, this.opts.debounceMs),
       suppressed: false,
+      retries: 0,
     });
   }
 
@@ -119,7 +139,14 @@ export class WakeScheduler {
     }
     if (result === "busy") {
       entry.suppressed = false;
-      entry.timer = this.arm(key, this.opts.debounceMs);
+      entry.retries++;
+      if (entry.retries > this.opts.maxBusyRetries) {
+        this.pending.delete(key);
+        this.opts.onGaveUp?.(key);
+        return;
+      }
+      const backoff = this.opts.debounceMs * 2 ** (entry.retries - 1);
+      entry.timer = this.arm(key, Math.min(backoff, this.opts.maxRetryMs));
       return;
     }
     this.pending.delete(key);

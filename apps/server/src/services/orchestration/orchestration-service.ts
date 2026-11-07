@@ -109,6 +109,10 @@ export class OrchestrationService {
         deps.log?.(
           `orchestration: loop guard holds wakes for ${key} until ${new Date(until).toISOString()}`,
         ),
+      onGaveUp: (key) =>
+        deps.log?.(
+          `orchestration: ${key} stayed busy; its notices wait for its next message or notice`,
+        ),
     });
   }
 

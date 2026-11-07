@@ -62,6 +62,29 @@ describe("wake scheduler (§8.2 batching, debounce, loop guard)", () => {
     expect(s.isPending("pm:p1")).toBe(false);
   });
 
+  it("backs off on a target that stays busy and gives up after maxBusyRetries", async () => {
+    const gaveUp: string[] = [];
+    const { s, fired } = scheduler(Array(10).fill("busy"), {
+      maxRetryMs: 20_000,
+      maxBusyRetries: 3,
+      onGaveUp: (key: string) => gaveUp.push(key),
+    });
+    s.request("pm:p1");
+    await vi.advanceTimersByTimeAsync(5_000); // first attempt: busy -> retry in 5 s
+    await vi.advanceTimersByTimeAsync(5_000); // second: busy -> retry in 10 s
+    expect(fired).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(fired).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1_000); // third: busy -> retry in 20 s (capped)
+    expect(fired).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(20_000); // fourth: busy -> gives up
+    expect(fired).toHaveLength(4);
+    expect(gaveUp).toEqual(["pm:p1"]);
+    expect(s.isPending("pm:p1")).toBe(false);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fired).toHaveLength(4);
+  });
+
   it("holds wakes beyond the loop guard until the window frees up", async () => {
     const suppressed: string[] = [];
     const { s, fired } = scheduler([], { onSuppressed: (key: string) => suppressed.push(key) });
