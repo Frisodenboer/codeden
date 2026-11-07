@@ -2,7 +2,7 @@ import type { McpTokenClaims } from "@codeden/contracts";
 import { z } from "zod";
 import type { AppServices } from "../services/container";
 import { errorMessage, ServiceError } from "../services/errors";
-import { type AnyServerTool, ToolError } from "./define";
+import { type AnyServerTool, ToolError, type ToolImage, ToolOutput } from "./define";
 
 /** A tool as listed over MCP (`tools/list`). */
 export interface ListedTool {
@@ -16,6 +16,8 @@ export interface ListedTool {
 export interface ToolCallResult {
   text: string;
   isError: boolean;
+  /** Images to return as MCP `image` content after the text. */
+  images?: ToolImage[];
 }
 
 /** Who is calling: an agent (claims from its MCP token) or an API handler. */
@@ -76,6 +78,9 @@ export class ToolRegistry {
         projectId: caller.projectId,
         services: this.services,
       } as never);
+      if (output instanceof ToolOutput) {
+        return { text: output.text, isError: false, images: output.images };
+      }
       return { text: typeof output === "string" ? output : JSON.stringify(output), isError: false };
     } catch (error) {
       if (error instanceof ToolError || error instanceof ServiceError) {

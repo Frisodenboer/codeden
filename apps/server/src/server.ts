@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import {
+  BrowserWsQuery,
   CODEDEN_VERSION,
   type RunnerConnectionStatus,
   type ServerLock,
@@ -14,6 +15,7 @@ import { EventStore } from "./events/store";
 import { writeJsonFile } from "./json-file";
 import { createMcpHandler } from "./mcp/endpoint";
 import { ensureHome, type HomePaths } from "./paths";
+import { BrowserBridge } from "./realtime/browser";
 import { WsHub } from "./realtime/hub";
 import { TerminalBridge } from "./realtime/terminals";
 import { createApi } from "./routes/api";
@@ -180,6 +182,15 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       return c.json({ error: { code: "bad_request", message: "Invalid terminal query" } }, 400);
     return upgradeWebSocket(() => terminals.handlers(query.data))(c, next);
   });
+  const browserBridge = new BrowserBridge({ browser: services.browser, log });
+  app.get("/ws/browser", async (c, next) => {
+    const query = BrowserWsQuery.safeParse(c.req.query());
+    if (!query.success)
+      return c.json({ error: { code: "bad_request", message: "Invalid browser query" } }, 400);
+    if (!services.sessionRepo.find(query.data.sessionId))
+      return c.json({ error: { code: "session_not_found", message: "No such session" } }, 404);
+    return upgradeWebSocket(() => browserBridge.handlers(query.data))(c, next);
+  });
   mountWeb(app, findWebDir(opts.webDir));
 
   const wss = new WebSocketServer({ noServer: true });
@@ -224,7 +235,10 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       launch,
       mcpUpstreamUrl: `${url}/mcp`,
       onStatus: (status) => hub.broadcastRunner(status),
-      onStream: (stream) => terminals.onStream(stream),
+      onStream: (stream) => {
+        if (stream.kind === "pty.output") terminals.onStream(stream);
+        else browserBridge.onStream(stream);
+      },
       onReady: () => void services.recovery.onRunnerReady(),
       log,
     });

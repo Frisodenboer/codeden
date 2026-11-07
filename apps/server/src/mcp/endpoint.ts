@@ -46,7 +46,7 @@ export function createMcpHandler(deps: McpEndpointDeps): (request: Request) => P
       {
         capabilities: { tools: { listChanged: false } },
         instructions:
-          "CodeDen tools: report progress, ask the user, share images, suggest follow-ups and finish.",
+          "CodeDen tools: report progress, ask the user, share images, drive the session browser, generate images, suggest follow-ups and finish.",
       },
     );
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -60,7 +60,12 @@ export function createMcpHandler(deps: McpEndpointDeps): (request: Request) => P
         caller: "mcp",
         signal: extra.signal,
       });
-      return { content: [{ type: "text", text: result.text }], isError: result.isError };
+      const images = (result.images ?? []).map((image) => ({
+        type: "image" as const,
+        data: image.data,
+        mimeType: image.mediaType,
+      }));
+      return { content: [{ type: "text", text: result.text }, ...images], isError: result.isError };
     });
 
     const transport = new WebStandardStreamableHTTPServerTransport({

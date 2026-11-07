@@ -8,6 +8,7 @@ import { allTools } from "../mcp/tools";
 import type { HomePaths } from "../paths";
 import type { SettingsStore } from "../settings-store";
 import { ArtifactService } from "./artifacts";
+import { BrowserService } from "./browser/browser-service";
 import { type Exec, runTool } from "./exec";
 import { ConfigFiles } from "./files/config-files";
 import { InboxService } from "./inbox-service";
@@ -64,6 +65,8 @@ export interface AppServices {
   workbench: WorkbenchService;
   inbox: InboxService;
   artifacts: ArtifactService;
+  /** Session browsers in the runner (§12.2), for the panel and the agent tools. */
+  browser: BrowserService;
   setup: SetupService;
   configFiles: ConfigFiles;
   userHome: string;
@@ -154,6 +157,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     }),
     inbox,
     artifacts,
+    browser: new BrowserService({ runner: opts.runner, repo: sessionRepo }),
     setup: new SetupService({ exec, settings: opts.settings }),
     configFiles: new ConfigFiles({
       projects,

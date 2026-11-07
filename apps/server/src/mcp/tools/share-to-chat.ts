@@ -1,11 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 import { MAX_ATTACHMENT_BYTES } from "../../services/artifacts";
 import { defineTool, ToolError } from "../define";
-import { currentTurn, putTurnItem } from "../transcript";
+import { postSharedArtifact } from "../transcript";
 
 const MEDIA_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -85,22 +84,7 @@ export const shareToChat = defineTool({
       projectId: session.projectId,
       sessionId,
     });
-    const turn = currentTurn(services, sessionId);
-    putTurnItem(services, sessionId, turn, {
-      id: `share-${randomUUID()}`,
-      kind: "notice",
-      status: "completed",
-      level: "info",
-      code: "shared_artifact",
-      message: input.caption ?? name,
-      data: {
-        artifactId: artifact.id,
-        name,
-        mediaType,
-        sizeBytes: artifact.sizeBytes,
-        url: `/api/artifacts/${artifact.id}`,
-      },
-    });
+    postSharedArtifact(services, sessionId, artifact, input.caption);
     return `Shared ${name} in the chat (artifact ${artifact.id}).`;
   },
 });

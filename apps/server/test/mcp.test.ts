@@ -75,6 +75,16 @@ describe("CodeDen MCP endpoint", () => {
       "share_to_chat",
       "suggest_followups",
       "finish",
+      "browser_navigate",
+      "browser_snapshot",
+      "browser_click",
+      "browser_type",
+      "browser_press",
+      "browser_screenshot",
+      "browser_logs",
+      "browser_wait",
+      "browser_evaluate",
+      "browser_open_dev_server",
     ]);
     expect(tools[0]?._meta).toEqual({ "anthropic/alwaysLoad": true });
     await client.close();

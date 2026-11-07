@@ -1,4 +1,5 @@
-import { agentEventToNewEvent, type Item } from "@codeden/contracts";
+import { randomUUID } from "node:crypto";
+import { type Artifact, agentEventToNewEvent, type Item } from "@codeden/contracts";
 import { and, desc, eq } from "drizzle-orm";
 import { turns } from "../db/schema";
 import type { AppServices } from "../services/container";
@@ -41,4 +42,29 @@ export function putTurnItem(
       item,
     }),
   ]);
+}
+
+/** Show a stored artifact inline in the session's current turn (`notice`, `shared_artifact`). */
+export function postSharedArtifact(
+  services: AppServices,
+  sessionId: string,
+  artifact: Artifact,
+  caption?: string,
+): void {
+  const turn = currentTurn(services, sessionId);
+  putTurnItem(services, sessionId, turn, {
+    id: `share-${randomUUID()}`,
+    kind: "notice",
+    status: "completed",
+    level: "info",
+    code: "shared_artifact",
+    message: caption ?? artifact.name,
+    data: {
+      artifactId: artifact.id,
+      name: artifact.name,
+      mediaType: artifact.mediaType,
+      sizeBytes: artifact.sizeBytes,
+      url: `/api/artifacts/${artifact.id}`,
+    },
+  });
 }

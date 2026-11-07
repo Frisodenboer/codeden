@@ -40,6 +40,21 @@ export function defineTool<TInput extends z.ZodType, S extends ToolScope>(
 // biome-ignore lint/suspicious/noExplicitAny: registries hold heterogeneous tools.
 export type AnyServerTool = ServerTool<any, ToolScope>;
 
+/** An image returned to the agent next to the text (MCP `image` content). */
+export interface ToolImage {
+  /** Base64 data. */
+  data: string;
+  mediaType: string;
+}
+
+/** A handler result with images, e.g. a browser screenshot the agent should see. */
+export class ToolOutput {
+  constructor(
+    readonly text: string,
+    readonly images: ToolImage[] = [],
+  ) {}
+}
+
 /** A tool failure reported to the agent as an MCP error result (not a protocol error). */
 export class ToolError extends Error {
   constructor(message: string) {
