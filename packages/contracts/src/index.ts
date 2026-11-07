@@ -26,5 +26,6 @@ export * from "./runner/messages";
 export * from "./settings";
 export * from "./tools";
 export * from "./version";
+export * from "./voice-api";
 export * from "./work";
 export * from "./ws";
