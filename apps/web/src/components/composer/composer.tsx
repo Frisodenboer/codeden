@@ -1,4 +1,4 @@
-import type { Attachment, Session } from "@codeden/contracts";
+import type { Attachment, Session, UserInputInit } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { ArrowUp, ListPlus, Paperclip, Square, Zap } from "lucide-react";
 import {
@@ -68,9 +68,9 @@ export function Composer({ session, running }: { session: Session; running: bool
     }
   }, [focusToken]);
 
+  // The input is captured at submit time: `onMutate` clears the draft before `mutationFn` runs.
   const send = useMutation({
-    mutationFn: async (sendMode: SendMode) => {
-      const input = { text: draft.text.trim(), attachments: toInput(draft.attachments) };
+    mutationFn: async ({ sendMode, input }: { sendMode: SendMode; input: UserInputInit }) => {
       // Role sessions go through orchestration, which adds the fresh status digest (§8.4).
       if (session.role === "agent") return client.sendMessage(session.id, input, sendMode);
       await client.orchestration.send(
@@ -81,19 +81,25 @@ export function Composer({ session, running }: { session: Session; running: bool
       );
     },
     onMutate: () => clear(session.id),
-    onSuccess: (_d, sendMode) => {
+    onSuccess: (_d, { sendMode }) => {
       if (sendMode === "queue")
         toast("Queued", { description: "Sends when the current turn finishes." });
       if (sendMode === "steer") toast("Sent to the running turn");
     },
-    onError: (e) => toast.error("Message not sent", { description: e.message }),
+    onError: (e, { input }) => {
+      setText(session.id, input.text);
+      toast.error("Message not sent", { description: e.message });
+    },
   });
   const stop = useMutation({ mutationFn: () => client.interrupt(session.id) });
 
   const canSend = draft.text.trim().length > 0 || draft.attachments.length > 0;
   const submit = (override?: SendMode) => {
     if (!canSend) return;
-    send.mutate(override ?? (running ? (canSteer ? mode : "queue") : "send"));
+    send.mutate({
+      sendMode: override ?? (running ? (canSteer ? mode : "queue") : "send"),
+      input: { text: draft.text.trim(), attachments: toInput(draft.attachments) },
+    });
   };
 
   const pick = (insert: string) => {

@@ -69,6 +69,22 @@ test("orchestrator and PM chats reply, with the status digest folded away", asyn
     await expect(disclosure.locator("pre")).toContainText("codeden_status");
   });
 
+  await test.step("follow-ups from the session composer keep their text", async () => {
+    // The Fake provider reacts to "[approval]" anywhere in its input, and the digest can name
+    // earlier "[approval]" work: approve until the first turn is done.
+    const approve = page.getByRole("button", { name: "Approve", exact: true });
+    await expect(async () => {
+      if (await approve.isVisible()) await approve.click();
+      await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 30_000 });
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill("And what is waiting on me?");
+    await composer.press("Enter");
+    await expect(page.getByText("And what is waiting on me?", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("digest-disclosure")).toHaveCount(2);
+    await expect(page.getByText(/^Echo: /)).toHaveCount(2, { timeout: 30_000 });
+  });
+
   await test.step("the PM chat works the same way", async () => {
     await page.goto(`${env("CODEDEN_E2E_URL")}/projects/${project}/pm`);
     const composer = page.getByRole("textbox", { name: "Message" });

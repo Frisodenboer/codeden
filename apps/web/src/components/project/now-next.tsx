@@ -17,6 +17,14 @@ const starterLabel = {
   automation: "automation",
 };
 
+/** Body text while the work has not reported progress yet. */
+function idleText(status: string): string {
+  if (status === "queued") return "Queued behind running work";
+  if (status === "waiting") return "Waiting for your answer in the inbox";
+  if (status === "starting" || status === "created") return "Starting…";
+  return "Working…";
+}
+
 function NowCard({ work, title }: { work: WorkSummary; title?: string | null }) {
   const Icon = starterIcon[work.startedBy.kind];
   const waiting = work.status === "waiting";
@@ -28,7 +36,7 @@ function NowCard({ work, title }: { work: WorkSummary; title?: string | null }) 
         <span className="truncate text-[13px] font-medium">{title ?? work.purpose}</span>
       </div>
       <p className="line-clamp-2 min-h-8 text-2xs leading-4 text-muted-foreground">
-        {work.progress?.text ?? (queued ? "Queued behind running work" : "Starting…")}
+        {work.progress?.text ?? idleText(work.status)}
       </p>
       <div className="flex items-center gap-1.5 text-3xs text-muted-foreground/80">
         <Icon className="size-3" aria-label={`Started by ${starterLabel[work.startedBy.kind]}`} />
