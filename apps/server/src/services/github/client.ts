@@ -129,7 +129,8 @@ export class GithubClient {
           userAgent: `codeden/${CODEDEN_VERSION}`,
           baseUrl: this.deps.baseUrl,
           log: silentLog,
-          request: this.deps.fetch ? { fetch: this.deps.fetch } : undefined,
+          // `request.log` silences @octokit/request's deprecation warnings too.
+          request: { log: silentLog, ...(this.deps.fetch ? { fetch: this.deps.fetch } : {}) },
         }),
       };
     }

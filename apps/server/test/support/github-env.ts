@@ -90,6 +90,10 @@ export function createGithubEnv(): GithubEnv {
         return { commit: "c0ffee1234567" };
       }
       if (command.name === "git.push") return { remote: "origin", branch: command.branch ?? "x" };
+      if (command.name === "session.stop") {
+        // Like the real runner: the provider exit is ingested before the request resolves.
+        env.repo.update(command.sessionId, (s) => ({ ...s, status: "stopped" }));
+      }
       return {};
     }) as RunnerPort["request"],
   };

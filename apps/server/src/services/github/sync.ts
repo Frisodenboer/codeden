@@ -99,6 +99,7 @@ export class GithubSync {
   }
 
   private tick(): void {
+    if (!this.timer) return; // stopped (the database may be closed)
     const now = this.now();
     for (const project of this.githubProjects()) {
       const schedule = this.schedule(project.id);

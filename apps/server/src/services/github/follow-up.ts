@@ -18,7 +18,6 @@ export interface FollowUpDeps {
 
 /** Statuses where no turn is in flight, so a merged session can be closed. */
 const SETTLED = new Set(["idle", "interrupted", "created", "queued"]);
-const ENDED = new Set(["completed", "failed", "stopped"]);
 
 /**
  * Keeps sessions in step with their PRs (§9): every `pr.*` event updates the session's PR link,
@@ -57,7 +56,8 @@ export class PrFollowUp {
     const closeIt = SETTLED.has(session.status);
     if (closeIt) await this.stopProcess(session.id);
     const updated = this.deps.repo.update(session.id, (s) => {
-      if (closeIt && !ENDED.has(s.status)) {
+      // The provider exit we just caused may already have marked it `stopped`; merged wins.
+      if (closeIt && s.status !== "failed" && s.status !== "completed") {
         return { ...s, pr: ref, status: "completed", endedAt: new Date().toISOString() };
       }
       return linkChanged(s) ? { ...s, pr: ref } : s;
