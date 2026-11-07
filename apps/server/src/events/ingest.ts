@@ -27,6 +27,9 @@ export function runnerEventToNewEvents(
     case "workspace.setup":
     case "pty.exited":
     case "runner.draining":
+    case "checkpoint.created":
+      return [];
+    default:
       return [];
   }
 }
