@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "../../define";
+import { inGithubProject } from "./available";
 
 /** `create_pull_request` (§8.3, §9): push the session branch and open or update its PR. */
 export const createPullRequestTool = defineTool({
@@ -8,6 +9,7 @@ export const createPullRequestTool = defineTool({
     "Push your branch and open a pull request for your work (or update the title/body of the one already open for your branch). The body gets `Fixes #<issue>` for your session's issue (or `issue`) and a link to this CodeDen session. Commit your changes first, or pass `commitMessage` to commit everything that is uncommitted. Use `draft: true` for work that is not ready for review. Only for GitHub projects.",
   roles: ["agent"],
   scope: "session",
+  isAvailable: inGithubProject,
   alwaysLoad: true,
   input: z.object({
     title: z.string().min(1).max(256).describe("Conventional, imperative title"),

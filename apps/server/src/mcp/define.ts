@@ -23,10 +23,19 @@ export interface ServerTool<TInput extends z.ZodType = z.ZodType, S extends Tool
   input: TInput;
   /** Core tools load upfront; the rest may be deferred behind the agent's tool search. */
   alwaysLoad?: boolean;
-  /** Hidden when false (e.g. a tool whose engine is not configured). */
-  isAvailable?: (services: AppServices) => boolean;
+  /**
+   * Hidden when false (e.g. a tool whose engine is not configured, or GitHub tools in a
+   * local-only project). `caller` is the token's project and session when known.
+   */
+  isAvailable?: (services: AppServices, caller?: ToolAvailabilityContext) => boolean;
   /** Returns text (or a JSON-serialisable value) for the agent. */
   handler: (input: z.output<TInput>, ctx: ServerToolContext<S>) => Promise<unknown>;
+}
+
+/** Who a tool list is for, so tools can hide themselves per project. */
+export interface ToolAvailabilityContext {
+  projectId: string | null;
+  sessionId: string | null;
 }
 
 /** Identity helper that infers a tool's input and scope types. */

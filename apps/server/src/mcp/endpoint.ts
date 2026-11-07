@@ -50,7 +50,10 @@ export function createMcpHandler(deps: McpEndpointDeps): (request: Request) => P
       },
     );
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: deps.registry.list(claims.role),
+      tools: deps.registry.list(claims.role, {
+        projectId: claims.projectId,
+        sessionId: claims.sessionId,
+      }),
     }));
     server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
       const result = await deps.registry.call(req.params.name, req.params.arguments, {

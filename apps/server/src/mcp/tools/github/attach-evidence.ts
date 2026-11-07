@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "../../define";
+import { inGithubProject } from "./available";
 
 /** `attach_evidence` (§8.3, §9): screenshots, files and test output on the PR or issue. */
 export const attachEvidenceTool = defineTool({
@@ -8,6 +9,7 @@ export const attachEvidenceTool = defineTool({
     "Attach evidence to your pull request (or issue): screenshots and files are committed to the repository's `codeden/evidence` branch and embedded in one comment (images render inline), with an optional Markdown summary and raw test output in a collapsed block. Files are paths in your worktree or artifact ids (e.g. from browser_screenshot). Defaults to your session's PR, then its issue.",
   roles: ["agent"],
   scope: "session",
+  isAvailable: inGithubProject,
   alwaysLoad: true,
   input: z
     .object({

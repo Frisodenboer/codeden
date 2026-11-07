@@ -203,6 +203,10 @@ describe("github routes", () => {
       },
     );
     expect(local).toMatchObject({ isError: true });
-    expect(local.text).toContain("local-only");
+    // GitHub tools are not even listed for local-only projects.
+    expect(local.text).toContain("Unknown tool");
+    expect(
+      server.services.tools.list("pm", { projectId: localId, sessionId: null }).map((t) => t.name),
+    ).not.toContain("get_pr_status");
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool, ToolError } from "../../define";
+import { inGithubProject } from "./available";
 
 /** `comment_on_issue` (§8.3): a comment on an issue or a PR conversation. */
 export const commentOnIssueTool = defineTool({
@@ -8,6 +9,7 @@ export const commentOnIssueTool = defineTool({
     "Post a Markdown comment on a GitHub issue or pull request in your project. `number` defaults to your session's issue, then its PR. Keep it short and factual; use attach_evidence for screenshots and test output.",
   roles: ["agent", "pm"],
   scope: "project",
+  isAvailable: inGithubProject,
   input: z.object({
     number: z.int().positive().optional().describe("Issue or PR number"),
     body: z.string().min(1).max(60_000),
