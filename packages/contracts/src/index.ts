@@ -31,6 +31,7 @@ export * from "./runner/messages";
 export * from "./session-files";
 export * from "./settings";
 export * from "./tools";
+export * from "./updates";
 export * from "./usage";
 export * from "./version";
 export * from "./vision";

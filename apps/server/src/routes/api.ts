@@ -7,6 +7,7 @@ import {
 } from "@codeden/contracts";
 import { asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { z } from "zod";
 import { rowToAutomation, rowToItemRecord, rowToSession, rowToThread, rowToTurn } from "../db/rows";
 import { automations, items, sessions, threads, turns } from "../db/schema";
 import type { AppServices } from "../services/container";
@@ -25,7 +26,7 @@ import { sessionFileRoutes } from "./session-files";
 import { sessionRoutes } from "./sessions";
 import { artifactRoutes, fileRoutes, secretRoutes, setupRoutes } from "./system";
 import { usageRoutes } from "./usage";
-import { errorResponse } from "./validate";
+import { errorResponse, queryOf } from "./validate";
 import { speechRoutes, voiceRoutes } from "./voice";
 import { utilityRoutes, workbenchRoutes } from "./workbench";
 
@@ -83,6 +84,9 @@ export function createApi(ctx: ApiContext) {
     .route("/projects", projectAutomationRoutes(s))
     .route("/usage", usageRoutes(s))
     .route("/setup", setupRoutes(s))
+    .get("/updates", queryOf(z.object({ refresh: z.enum(["1", "true"]).optional() })), async (c) =>
+      c.json(await s.updates.status({ refresh: c.req.valid("query").refresh !== undefined })),
+    )
     .route("/artifacts", artifactRoutes(s))
     .route("/secrets", secretRoutes(s))
     .route("/", fileRoutes(s))

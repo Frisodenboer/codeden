@@ -32,6 +32,7 @@ import type {
   TranscriptMessage,
   UiServerMessage,
   UpdateSessionRequest,
+  UpdateStatus,
   UserInputInit,
 } from "@codeden/contracts";
 import type { AutomationsApi } from "./automations-api";
@@ -119,6 +120,8 @@ export interface CodeDenClient {
   // First-run setup (§14).
   /** Detection results; `refresh` re-runs every check instead of using the cache. */
   getSetupStatus(opts?: { refresh?: boolean }): Promise<SetupStatus>;
+  /** The npm registry version check (`settings.updates.check`). */
+  getUpdates(opts?: { refresh?: boolean }): Promise<UpdateStatus>;
   loginCommand(tool: "claude" | "codex" | "gh"): Promise<LoginCommandResponse>;
   completeSetup(): Promise<void>;
   listDirectory(path: string | null, opts?: { showHidden?: boolean }): Promise<FsListResponse>;

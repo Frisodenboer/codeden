@@ -71,7 +71,7 @@ export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<
     {
       cwd: repoRoot,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CODEDEN_HOME: home },
+      env: { ...process.env, CODEDEN_HOME: home, CODEDEN_UPDATE_CHECK: "0" },
     },
   );
   let log = "";

@@ -18,6 +18,7 @@ import {
   Snapshot,
   SpeechSummaryResponse,
   StartSessionResponse,
+  UpdateStatus,
 } from "@codeden/contracts";
 import { httpAutomationsApi } from "./automations-api";
 import type { CodeDenClient, SendMode } from "./client";
@@ -99,6 +100,8 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     getSetupStatus: (o) =>
       get(`/setup/status${o?.refresh ? "?refresh=1" : ""}`, (v) => SetupStatus.parse(v)),
     loginCommand: (tool) => post(`/setup/login/${tool}`, {}, (v) => LoginCommandResponse.parse(v)),
+    getUpdates: (o) =>
+      get(`/updates${o?.refresh ? "?refresh=1" : ""}`, (v) => UpdateStatus.parse(v)),
     async completeSetup() {
       await post("/setup/complete");
     },

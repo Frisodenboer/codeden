@@ -1,4 +1,4 @@
-import type { DiffResult, SetupStatus } from "@codeden/contracts";
+import { CODEDEN_VERSION, type DiffResult, type SetupStatus } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { mockTerminal } from "./channels";
 import { ciFailureShot, contrastComparison, generatedIllustration } from "./fixtures/images";
@@ -24,6 +24,7 @@ const artifacts: Record<string, () => string> = {
 type WorkbenchApi = Pick<
   CodeDenClient,
   | "getSetupStatus"
+  | "getUpdates"
   | "loginCommand"
   | "completeSetup"
   | "listDirectory"
@@ -69,6 +70,16 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
 
   return {
     getSetupStatus: (opts) => delay(setupStatus(), opts?.refresh ? 900 : 400),
+    getUpdates: () =>
+      delay({
+        current: CODEDEN_VERSION,
+        latest: CODEDEN_VERSION,
+        updateAvailable: false,
+        enabled: true,
+        checkedAt: new Date().toISOString(),
+        error: null,
+        command: "npm i -g codeden@latest",
+      }),
     loginCommand: (tool) => {
       if (tool === "codex") codexFixed = true;
       const command = { claude: "claude auth login", codex: "codex login", gh: "gh auth login" }[

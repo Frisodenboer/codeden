@@ -77,19 +77,13 @@ export function GeneralSettings() {
         >
           <KillSwitchButton scope="global" on={settings.factory.killSwitch} size="xs" />
         </SettingRow>
-        <SettingRow label="Check for updates">
+        <SettingRow
+          label="Check for updates"
+          help="Asks the npm registry for the latest version once a day. Nothing else is sent."
+        >
           <Switch
             checked={settings.updates.check}
             onCheckedChange={(v) => update({ updates: { check: v } })}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Send crash reports"
-          help="Off by default. No other telemetry is ever collected."
-        >
-          <Switch
-            checked={settings.telemetry.crashReports}
-            onCheckedChange={(v) => update({ telemetry: { crashReports: v } })}
           />
         </SettingRow>
       </SettingsSection>

@@ -36,6 +36,7 @@ import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
 import { SetupService } from "./setup/setup-service";
+import { UpdateService } from "./updates";
 import { billingFromSetup } from "./usage/billing";
 import { UsageService } from "./usage/usage-service";
 import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
@@ -99,6 +100,8 @@ export interface AppServices {
   images: ImageService;
   /** Optional cloud text to speech and transcription (§11.3). */
   voice: VoiceService;
+  /** "Check for updates" against the npm registry (§16). */
+  updates: UpdateService;
   setup: SetupService;
   configFiles: ConfigFiles;
   /** Provider memory, skills, subagents and MCP servers (§12.4). */
@@ -264,6 +267,10 @@ export function createServices(opts: ServicesOptions): AppServices {
     inbox,
     artifacts,
     browser: new BrowserService({ runner: opts.runner, repo: sessionRepo }),
+    updates: new UpdateService({
+      enabled: () => opts.settings.get().updates.check && process.env.CODEDEN_UPDATE_CHECK !== "0",
+      log: opts.log,
+    }),
     images: new ImageService({
       registry: opts.imageEngines ?? defaultImageEngines(opts.secrets),
       settings: opts.settings,

@@ -7,6 +7,7 @@ import { useClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
 import { snapshotKey, useSnapshot } from "@/lib/queries";
 import { onLiveEvent } from "@/lib/realtime";
+import { dismissUpdate, updateDismissed, useUpdates } from "@/lib/updates";
 import { startReadAloud } from "@/lib/voice/read-aloud";
 
 const inboxVerb: Record<string, string> = {
@@ -33,6 +34,24 @@ export function LiveEffects() {
   const lastStatus = useRef(new Map<string, string>());
 
   useEffect(() => platform.setBadge(openCount), [openCount]);
+
+  // A newer CodeDen on npm: say so once per version (dismissed per browser).
+  const { data: updates } = useUpdates();
+  useEffect(() => {
+    const latest = updates?.updateAvailable ? updates.latest : null;
+    if (!latest || updateDismissed(latest)) return;
+    toast(`CodeDen ${latest} is available`, {
+      id: "codeden-update",
+      description: `Update with ${updates?.command}, then restart CodeDen.`,
+      duration: 15_000,
+      action: {
+        label: "Details",
+        onClick: () => void navigate({ to: "/settings/$section", params: { section: "about" } }),
+      },
+      onDismiss: () => dismissUpdate(latest),
+      onAutoClose: () => dismissUpdate(latest),
+    });
+  }, [updates, navigate]);
 
   useEffect(() => {
     return onLiveEvent((env) => {

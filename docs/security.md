@@ -66,4 +66,4 @@ Automatic merging only exists in the experimental Autopilot and Dark factory mod
 
 ## Data and telemetry
 
-Everything stays in `~/.codeden/` on your machine. CodeDen has no accounts and no hosted backend, and sends no telemetry. The only outbound traffic is your agents talking to their providers, GitHub through your `gh` login, and the optional image and voice engines you turn on.
+Everything stays in `~/.codeden/` on your machine. CodeDen has no accounts and no hosted backend, and sends no telemetry. The only outbound traffic is your agents talking to their providers, GitHub through your `gh` login, the optional image and voice engines you turn on, and, unless you switch off **Check for updates** in Settings > General, one request a day to the npm registry for the latest `codeden` version (nothing about you or your projects is sent).

@@ -27,6 +27,7 @@ import { ImageSettings } from "@/components/settings/sections-images";
 import { NotificationSettings } from "@/components/settings/sections-media";
 import { VoiceSettings } from "@/components/settings/sections-voice";
 import { SettingsSection } from "@/components/settings/settings-ui";
+import { UpdateCheck } from "@/components/settings/update-check";
 import { Logo } from "@/components/shell/logo";
 import { ShortcutList } from "@/components/shell/shortcuts";
 import { isMockMode } from "@/lib/api";
@@ -47,8 +48,9 @@ function About() {
           </div>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
             A local-first harness for coding agents. Open source under the MIT license. No accounts,
-            no telemetry by default.
+            no telemetry.
           </p>
+          <UpdateCheck />
           {isMockMode && (
             <p className="mt-1 text-2xs text-status-waiting">
               Running against the built-in mock server.

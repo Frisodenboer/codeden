@@ -193,6 +193,10 @@ Opt-in proxies next to the browser's speech APIs (which stay the default). Keys 
 | `POST /api/prs/:id/merge` | `MergePrRequest` (squash by default) -> `MergePrResponse` |
 | `GET /api/sessions/:id/github` | -> `SessionGithubResponse` |
 
+## Update check (§16)
+
+`GET /api/updates?refresh=1` -> `UpdateStatus`. `UpdateService` asks `https://registry.npmjs.org/codeden/latest` at most once a day (or on `refresh`), only while `settings.updates.check` is on; `CODEDEN_UPDATE_CHECK=0` turns it off (tests set it). The UI shows the result in Settings > About and a one-time toast per new version.
+
 ## Autonomy modes and the factory loop (§10.1, experimental)
 
 `FactoryService` (`src/services/factory/`) owns autonomy modes, the vision, kill switches, the factory loop, merge checks, digests and the factory panel status. Shapes: `@codeden/contracts` `factory.ts`, `factory-api.ts`. Mode, limits and the project kill switch live on the project row; the global kill switch is `settings.factory.killSwitch`; the loop, items (with merge-check results) and digests are event-sourced (`factory.loop.updated`, `factory.item.updated`, `factory.digest.created` -> `factory_loops`, `factory_items`, `factory_digests`), so a restart resumes the loop.

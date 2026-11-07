@@ -140,11 +140,6 @@ export const Settings = z.object({
       completedAt: z.iso.datetime().nullable().default(null),
     })
     .prefault({}),
-  telemetry: z
-    .object({
-      crashReports: z.boolean().default(false),
-    })
-    .prefault({}),
 });
 export type Settings = z.infer<typeof Settings>;
 /** Settings as accepted on input: any subset, defaults fill the rest. */
