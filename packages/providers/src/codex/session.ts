@@ -133,8 +133,8 @@ export class CodexSession implements ProviderSession {
     this.closed = true;
     this.broker.cancelAll();
     this.mapper.endTurn({ type: "interrupted" });
-    this.rpc?.close();
     this.events.close();
+    await this.rpc?.close();
   }
 
   // ---------------------------------------------------------------- internals
@@ -182,16 +182,33 @@ export class CodexSession implements ProviderSession {
     let res: ThreadStartResponse | ThreadResumeResponse | undefined;
     const resumeId = this.mapper.codexThreadId;
     if (resumeId) {
-      try {
-        res = await rpc.request<ThreadResumeResponse>("thread/resume", {
-          threadId: resumeId,
-          excludeTurns: true,
-          ...common,
-        });
-      } catch (error) {
-        this.noticeOutsideTurn(
-          `Could not resume Codex thread ${resumeId}; started a new one. ${(error as Error).message}`,
-        );
+      // A thread has a single writer: while a previous app-server is still shutting down,
+      // resume fails with "already has an active writer". Retry briefly, then give up loudly.
+      for (let attempt = 0; !res; attempt += 1) {
+        try {
+          res = await rpc.request<ThreadResumeResponse>("thread/resume", {
+            threadId: resumeId,
+            excludeTurns: true,
+            ...common,
+          });
+        } catch (error) {
+          const message = (error as Error).message;
+          if (/active writer/i.test(message)) {
+            if (attempt < 5) {
+              await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+              continue;
+            }
+            await rpc.close();
+            throw new ProviderSessionError(
+              "resume_conflict",
+              `Codex thread ${resumeId} is still open in another process`,
+            );
+          }
+          this.noticeOutsideTurn(
+            `Could not resume Codex thread ${resumeId}; started a new one. ${message}`,
+          );
+          break;
+        }
       }
     }
     res ??= await rpc.request<ThreadStartResponse>("thread/start", common);

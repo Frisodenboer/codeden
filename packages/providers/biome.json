@@ -3,6 +3,6 @@
   "root": false,
   "extends": "//",
   "files": {
-    "includes": ["**", "!src/codex/protocol", "!test/fixtures"]
+    "includes": ["**", "!**/dist", "!**/*.md", "!src/codex/protocol", "!test/fixtures"]
   }
 }

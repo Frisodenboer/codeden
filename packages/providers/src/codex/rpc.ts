@@ -75,9 +75,17 @@ export class CodexRpc {
     this.write(params === undefined ? { method } : { method, params });
   }
 
-  /** Stop the server: close stdin, then kill the process tree if it lingers. */
-  close(): void {
-    if (this.exited) return;
+  /**
+   * Stop the server: close stdin, then kill the process tree if it lingers. Resolves once the
+   * process has exited (a thread can only have one writer, so a resume must wait for this).
+   */
+  close(): Promise<void> {
+    if (this.exited) return Promise.resolve();
+    const exited = new Promise<void>((resolve) => {
+      this.child.once("exit", () => resolve());
+      const hardStop = setTimeout(() => resolve(), 5000);
+      hardStop.unref();
+    });
     try {
       this.child.stdin?.end();
     } catch {
@@ -86,6 +94,7 @@ export class CodexRpc {
     setTimeout(() => {
       if (!this.exited) killTree(this.child);
     }, 1500).unref();
+    return exited;
   }
 
   private write(message: object): void {
