@@ -185,7 +185,9 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       db: database.db,
       store,
       launch,
+      mcpUpstreamUrl: `${url}/mcp`,
       onStatus: (status) => hub.broadcastRunner(status),
+      onReady: () => void services.recovery.onRunnerReady(),
       log,
     });
     const started = runner.start();

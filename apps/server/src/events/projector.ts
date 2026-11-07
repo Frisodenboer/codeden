@@ -11,6 +11,7 @@ import {
 } from "../db/schema";
 import { applyMutations, DbProjectionReader, derivedEvents, type Tx } from "./projection-db";
 import { reduceAgentEvent } from "./reducer/agent";
+import { applyWorkbenchProjection } from "./workbench-projection";
 
 export type { Tx } from "./projection-db";
 export { applyDelta } from "./reducer/items";
@@ -74,9 +75,17 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
     case "artifact.created":
       tx.insert(artifacts).values(e.payload.artifact).onConflictDoNothing().run();
       return [];
+    case "session.setup":
+    case "checkpoint.created":
+    case "message.queued":
+    case "message.dequeued":
+      applyWorkbenchProjection(tx, e);
+      return [];
     case "settings.updated":
     case "runner.connected":
     case "runner.disconnected":
+    case "runner.draining":
+    case "pty.exited":
       return [];
     default: {
       const mutations = reduceAgentEvent(new DbProjectionReader(tx), e.sessionId, e.payload, e.ts);

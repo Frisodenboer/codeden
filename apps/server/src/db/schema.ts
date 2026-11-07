@@ -8,8 +8,10 @@ import type {
   GitHubRepo,
   Item,
   JsonValue,
+  SessionResult,
   StartedBy,
   Usage,
+  UserInput,
   WorkProgress,
   WorkScope,
 } from "@codeden/contracts";
@@ -102,6 +104,8 @@ export const sessions = sqliteTable(
     usage: json<Usage>("usage"),
     /** How the session was started (workspace fallback, forced conflict reason, queue). */
     startMeta: json<StoredStartMeta>("start_meta"),
+    /** Structured result from the agent's `finish` tool. */
+    result: json<SessionResult>("result"),
   },
   (t) => [
     index("sessions_project").on(t.projectId),
@@ -283,3 +287,53 @@ export const runnerState = sqliteTable("runner_state", {
   lastAckedSeq: integer("last_acked_seq").notNull().default(0),
   updatedAt: text("updated_at").notNull(),
 });
+
+/** Turn checkpoints (§9), projected from `checkpoint.created`; the source of turn diffs. */
+export const checkpoints = sqliteTable(
+  "checkpoints",
+  {
+    sessionId: text("session_id").notNull(),
+    index: integer("idx").notNull(),
+    ref: text("ref").notNull(),
+    commit: text("commit_sha").notNull(),
+    turnId: text("turn_id"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.index] }),
+    index("checkpoints_turn").on(t.sessionId, t.turnId),
+  ],
+);
+
+/** Messages queued behind a running turn (`message.queued` / `message.dequeued`). */
+export const queuedMessages = sqliteTable(
+  "queued_messages",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    input: json<UserInput>("input").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("queued_messages_session").on(t.sessionId, t.createdAt)],
+);
+
+/**
+ * Per-session MCP bearer tokens (§8.3, §15). Only a SHA-256 hash is stored; the token itself
+ * exists in memory and in the agent process config. Not event-sourced: tokens are secrets.
+ */
+export const mcpTokens = sqliteTable(
+  "mcp_tokens",
+  {
+    id: text("id").primaryKey(),
+    tokenHash: text("token_hash").notNull(),
+    role: text("role").notNull(),
+    sessionId: text("session_id").notNull(),
+    projectId: text("project_id"),
+    createdAt: text("created_at").notNull(),
+    revokedAt: text("revoked_at"),
+  },
+  (t) => [
+    uniqueIndex("mcp_tokens_hash").on(t.tokenHash),
+    index("mcp_tokens_session").on(t.sessionId),
+  ],
+);

@@ -9,7 +9,8 @@ const FINAL: ReadonlySet<SessionStatus> = new Set(["completed", "stopped", "fail
 
 /**
  * Provider process lifecycle (runner `session.process` events) -> projection changes. A crash
- * fails the session and raises a `run_failed` inbox item; a normal exit stops it. Either way,
+ * fails the session and raises a `run_failed` inbox item; a normal exit stops it; an exit
+ * because the runner is going away keeps it resumable (`interrupted` if a turn was cut off). Either way,
  * open questions and approvals can no longer be answered and are dismissed. Pure.
  */
 export function reduceProcessEvent(
@@ -27,6 +28,17 @@ export function reduceProcessEvent(
   for (const inbox of d.openInboxForSession(session.id)) {
     if (inbox.kind !== "approval" && inbox.kind !== "question") continue;
     d.putInbox(closeInbox(inbox, "dismissed", { status: "cancelled", reason: event.state }, ts));
+  }
+
+  if (event.state === "exited" && event.reason === "runner_exit") {
+    // The runner is draining or shutting down: the session stays resumable (§4.2). A turn
+    // that was cut off is marked interrupted so recovery continues it after the restart.
+    const cutOff =
+      event.interruptedTurn || session.status === "running" || session.status === "waiting";
+    if (cutOff && !FINAL.has(session.status) && session.status !== "interrupted") {
+      d.putSession({ ...session, status: "interrupted", updatedAt: ts }, record.usage);
+    }
+    return d.mutations();
   }
 
   if (event.state === "crashed") {

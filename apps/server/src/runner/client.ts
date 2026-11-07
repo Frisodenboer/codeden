@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
-  agentEventToNewEvent,
   CODEDEN_VERSION,
-  type NewEvent,
   RUNNER_PROTOCOL_VERSION,
   type RunnerCommand,
   type RunnerCommandName,
@@ -21,6 +19,7 @@ import { eq } from "drizzle-orm";
 import WebSocket from "ws";
 import type { Db } from "../db/client";
 import { runnerState } from "../db/schema";
+import { ingestRunnerEvent } from "../events/ingest";
 import type { EventStore } from "../events/store";
 import { type RunnerLaunchConfig, spawnRunner } from "./launcher";
 import { isProcessAlive, probeRunnerLock, readLiveRunnerLock } from "./lock";
@@ -46,6 +45,11 @@ export interface RunnerClientOptions {
   mcpUpstreamUrl?: string;
   /** How long a version-mismatch drain may wait for running turns. Default 5 minutes. */
   drainTimeoutMs?: number;
+  /**
+   * Called once a current, non-draining runner is connected and configured (MCP proxy set),
+   * e.g. to resume sessions interrupted by a runner restart.
+   */
+  onReady?: (runnerId: string) => void;
 }
 
 interface Pending {
@@ -349,14 +353,22 @@ export class RunnerClient {
    */
   private afterHandshake(msg: RunnerWelcome): void {
     const log = this.opts.log;
-    if (this.opts.mcpUpstreamUrl) {
-      this.request({ name: "runner.configure", mcpUpstreamUrl: this.opts.mcpUpstreamUrl })
-        .then((r) => {
-          this.proxyUrl = r.mcpProxyUrl;
-        })
-        .catch((error: unknown) => log?.(`runner: configure failed: ${String(error)}`));
+    const mismatch = msg.runnerVersion !== CODEDEN_VERSION && this.opts.launch !== null;
+    const configured = this.opts.mcpUpstreamUrl
+      ? this.request({ name: "runner.configure", mcpUpstreamUrl: this.opts.mcpUpstreamUrl })
+          .then((r) => {
+            this.proxyUrl = r.mcpProxyUrl;
+          })
+          .catch((error: unknown) => log?.(`runner: configure failed: ${String(error)}`))
+      : Promise.resolve();
+    if (!mismatch && !msg.draining) {
+      void configured.then(() => {
+        if (this.runnerId === msg.runnerId && this.current.state === "connected") {
+          this.opts.onReady?.(msg.runnerId);
+        }
+      });
     }
-    if (msg.runnerVersion !== CODEDEN_VERSION && this.opts.launch && !msg.draining) {
+    if (mismatch && !msg.draining) {
       log?.(`runner: version ${msg.runnerVersion} != ${CODEDEN_VERSION}; draining for restart`);
       this.request({
         name: "runner.drain",
@@ -372,16 +384,13 @@ export class RunnerClient {
     const runnerId = this.runnerId;
     if (!runnerId) return;
     if (msg.seq > this.lastAckedSeq) {
-      const now = new Date().toISOString();
-      this.opts.store.append(toNewEvents(msg), (tx) => {
-        tx.insert(runnerState)
-          .values({ runnerId, lastAckedSeq: msg.seq, updatedAt: now })
-          .onConflictDoUpdate({
-            target: runnerState.runnerId,
-            set: { lastAckedSeq: msg.seq, updatedAt: now },
-          })
-          .run();
-      });
+      try {
+        ingestRunnerEvent(this.opts.db, this.opts.store, runnerId, msg);
+      } catch (error) {
+        // Not acked: the runner keeps it journaled and redelivers it after a reconnect.
+        this.opts.log?.(`runner: failed to store event ${msg.seq}: ${String(error)}`);
+        return;
+      }
       this.lastAckedSeq = msg.seq;
     }
     this.send({ type: "ack", seq: msg.seq });
@@ -402,21 +411,5 @@ export class RunnerClient {
   private setStatus(status: RunnerConnectionStatus): void {
     this.current = status;
     this.opts.onStatus?.(status);
-  }
-}
-
-/** Map a durable runner event to the server events it produces. */
-export function toNewEvents(msg: RunnerEventMessage): NewEvent[] {
-  const event = msg.event;
-  switch (event.kind) {
-    case "agent":
-      return [agentEventToNewEvent(event.sessionId, event.event)];
-    // TODO(M1): map process/setup/pty lifecycle to session status updates and notices.
-    case "session.process":
-    case "workspace.setup":
-    case "pty.exited":
-    case "checkpoint.created":
-    case "runner.draining":
-      return [];
   }
 }

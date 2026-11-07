@@ -19,6 +19,7 @@ import type { ProjectService } from "../projects/project-service";
 import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port";
 import { derivePurpose, deriveWorkKey, findConflicts } from "./conflicts";
 import type { SessionLauncher } from "./launcher";
+import type { Outbox } from "./outbox";
 import type { SessionRepo, StoredStartMeta } from "./repo";
 
 export interface SessionServiceDeps {
@@ -29,6 +30,7 @@ export interface SessionServiceDeps {
   artifacts: ArtifactService;
   settings: SettingsStore;
   launcher: SessionLauncher;
+  outbox: Outbox;
 }
 
 /** Preferred providers when the choice is `auto` (first ready one wins). */
@@ -43,8 +45,6 @@ const NOT_STARTED = new Set(["created", "queued", "starting"]);
  * and shows up through the event stream.
  */
 export class SessionService {
-  /** Messages waiting for the current turn to end (in memory; lost on restart). */
-  private readonly outbox = new Map<string, UserInput[]>();
   /** Background launches, so tests and shutdown can await them. */
   readonly launching = new Map<string, Promise<void>>();
 
@@ -58,7 +58,7 @@ export class SessionService {
       usage: found.usage,
       followups: this.deps.repo.latestFollowups(found.session),
       startMeta: this.deps.repo.publicStartMeta(found.startMeta),
-      queuedMessages: this.outbox.get(id)?.length ?? 0,
+      queuedMessages: this.deps.outbox.count(id),
     };
   }
 
@@ -167,7 +167,7 @@ export class SessionService {
 
   async interrupt(id: string): Promise<void> {
     this.deps.repo.get(id);
-    this.outbox.delete(id);
+    this.deps.outbox.clear(id);
     await this.deps.runner.request({ name: "session.interrupt", sessionId: id }).catch((e) => {
       throw toServiceError(e);
     });
@@ -196,7 +196,7 @@ export class SessionService {
 
   async stop(id: string): Promise<Session> {
     const session = this.deps.repo.get(id);
-    this.outbox.delete(id);
+    this.deps.outbox.clear(id);
     if (session.status !== "queued" && session.status !== "created") {
       try {
         await this.deps.runner.request({ name: "session.stop", sessionId: id }, 15_000);
@@ -214,20 +214,33 @@ export class SessionService {
 
   /** Send the next queued message once a session is idle again. */
   async flushOutbox(id: string): Promise<void> {
-    const queue = this.outbox.get(id);
-    const next = queue?.shift();
-    if (!queue || !next) return;
-    if (queue.length === 0) this.outbox.delete(id);
+    const next = this.deps.outbox.peek(id);
+    if (!next) return;
     const session = this.deps.repo.get(id);
+    if (session.status !== "idle" && session.status !== "interrupted") return;
+    this.deps.outbox.remove(next, "sent");
     try {
-      await this.sendNow(session, next);
+      await this.sendNow(session, next.input);
     } catch (error) {
       this.deps.launcher.fail(id, `send-${Date.now()}`, error);
     }
   }
 
+  /**
+   * Re-open a session whose turn was cut off by a runner restart and tell the agent to carry
+   * on (§4.2). Resumes through the provider's resume token.
+   */
+  async continueAfterRestart(id: string, text: string): Promise<void> {
+    const session = this.deps.repo.get(id);
+    await this.sendNow(session, { text, attachments: [] });
+  }
+
+  sessionsWithQueuedMessages(): string[] {
+    return this.deps.outbox.sessionsWithMessages();
+  }
+
   hasOutbox(id: string): boolean {
-    return (this.outbox.get(id)?.length ?? 0) > 0;
+    return this.deps.outbox.count(id) > 0;
   }
 
   // ---------------------------------------------------------------- internals
@@ -253,9 +266,8 @@ export class SessionService {
   }
 
   private enqueue(id: string, input: UserInput): SendMessageResponse {
-    const queue = this.outbox.get(id) ?? [];
-    queue.push(input);
-    this.outbox.set(id, queue);
+    const session = this.deps.repo.get(id);
+    this.deps.outbox.push(id, this.externalize(session, input));
     return { status: "queued" };
   }
 

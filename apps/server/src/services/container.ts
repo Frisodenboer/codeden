@@ -13,6 +13,8 @@ import type { RunnerPort } from "./runner-port";
 import type { SecretStore } from "./secrets";
 import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
+import { Outbox } from "./sessions/outbox";
+import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
 import { SetupService } from "./setup/setup-service";
@@ -47,6 +49,7 @@ export interface AppServices {
   sessionRepo: SessionRepo;
   sessions: SessionService;
   lifecycle: SessionLifecycle;
+  recovery: SessionRecovery;
   inbox: InboxService;
   artifacts: ArtifactService;
   setup: SetupService;
@@ -66,6 +69,7 @@ export function createServices(opts: ServicesOptions): AppServices {
   });
   const sessionRepo = new SessionRepo(opts.db, opts.store);
   const artifacts = new ArtifactService(opts.db, opts.store, opts.paths.artifacts);
+  const outbox = new Outbox(opts.db, opts.store);
   let sessions: SessionService | undefined;
   const inbox = new InboxService(opts.db, opts.store, () => (sessionId, requestId, response) => {
     if (!sessions) throw new Error("Session service not ready");
@@ -88,6 +92,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     artifacts,
     settings: opts.settings,
     launcher,
+    outbox,
   });
   const lifecycle = new SessionLifecycle({
     db: opts.db,
@@ -110,6 +115,13 @@ export function createServices(opts: ServicesOptions): AppServices {
     sessionRepo,
     sessions,
     lifecycle,
+    recovery: new SessionRecovery({
+      repo: sessionRepo,
+      sessions,
+      launcher,
+      runner: opts.runner,
+      log: opts.log,
+    }),
     inbox,
     artifacts,
     setup: new SetupService({ exec, settings: opts.settings }),

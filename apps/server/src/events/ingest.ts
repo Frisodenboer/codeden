@@ -16,6 +16,7 @@ import type { EventStore } from "./store";
 export function runnerEventToNewEvents(
   reader: ProjectionReader,
   msg: RunnerEventMessage,
+  runnerId: string,
 ): NewEvent[] {
   const event = msg.event;
   switch (event.kind) {
@@ -23,14 +24,53 @@ export function runnerEventToNewEvents(
       return [agentEventToNewEvent(event.sessionId, event.event)];
     case "session.process":
       return derivedEvents(reduceProcessEvent(reader, event, msg.seq, msg.ts));
-    // Setup output, terminal exits and drains become notices in a later milestone.
     case "workspace.setup":
-    case "pty.exited":
-    case "runner.draining":
+      if (!reader.getSession(event.sessionId)) return [];
+      return [
+        {
+          type: "session.setup",
+          sessionId: event.sessionId,
+          payload: {
+            sessionId: event.sessionId,
+            step: {
+              command: event.command,
+              status: event.status,
+              output: event.output ?? "",
+              updatedAt: msg.ts,
+            },
+          },
+        },
+      ];
     case "checkpoint.created":
-      return [];
-    default:
-      return [];
+      if (!reader.getSession(event.sessionId)) return [];
+      return [
+        {
+          type: "checkpoint.created",
+          sessionId: event.sessionId,
+          payload: {
+            checkpoint: {
+              sessionId: event.sessionId,
+              index: event.index,
+              ref: event.ref,
+              commit: event.commit,
+              turnId: event.turnId ?? null,
+              createdAt: msg.ts,
+            },
+          },
+        },
+      ];
+    case "pty.exited":
+      return [
+        {
+          type: "pty.exited",
+          sessionId: null,
+          payload: { ptyId: event.ptyId, exitCode: event.exitCode },
+        },
+      ];
+    case "runner.draining":
+      return [
+        { type: "runner.draining", sessionId: null, payload: { runnerId, reason: event.reason } },
+      ];
   }
 }
 
@@ -65,7 +105,7 @@ export function ingestRunnerEvent(
   }
   const now = new Date().toISOString();
   const events = store.appendFrom(
-    (reader) => runnerEventToNewEvents(reader, msg),
+    (reader) => runnerEventToNewEvents(reader, msg, runnerId),
     (tx) => {
       tx.insert(runnerState)
         .values({ runnerId, lastAckedSeq: msg.seq, updatedAt: now })
