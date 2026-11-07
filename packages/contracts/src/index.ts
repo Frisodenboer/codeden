@@ -16,6 +16,7 @@ export * from "./input";
 export * from "./items";
 export * from "./project-config";
 export * from "./provider";
+export * from "./runner/browser";
 export * from "./runner/commands";
 export * from "./runner/events";
 export * from "./runner/messages";

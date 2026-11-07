@@ -3,6 +3,7 @@ import { Id, ProviderId } from "../common";
 import { UserInput } from "../input";
 import { ProjectConfigFile } from "../project-config";
 import { ProviderStatus, RuntimeResponse, SessionOptions } from "../provider";
+import { BrowserCommandResults, BrowserCommands } from "./browser";
 
 /** Terminal (node-pty) id, unique per runner. */
 export const PtyId = z.string().min(1).max(100);
@@ -133,10 +134,8 @@ export const RunnerCommand = z.discriminatedUnion("name", [
   z.object({ name: z.literal("pty.close"), ptyId: PtyId }),
   /** Scrollback and state of a terminal, for (re)attaching a view. */
   z.object({ name: z.literal("pty.attach"), ptyId: PtyId }),
-  /** Open (or reuse) the session's browser context. */
-  z.object({ name: z.literal("browser.open"), sessionId: Id, url: z.string().optional() }),
-  z.object({ name: z.literal("browser.navigate"), sessionId: Id, url: z.string() }),
-  z.object({ name: z.literal("browser.close"), sessionId: Id }),
+  /** `browser.*` (§12.2), defined in `./browser`. */
+  ...BrowserCommands,
   /** Snapshot the worktree into `refs/codeden/checkpoints/<session>/<n>` (§9). */
   z.object({
     name: z.literal("git.checkpoint"),
@@ -257,9 +256,7 @@ export const RunnerCommandResults = {
     exited: z.boolean(),
     exitCode: z.int().nullable(),
   }),
-  "browser.open": z.object({ cdpUrl: z.string().nullable() }),
-  "browser.navigate": Empty,
-  "browser.close": Empty,
+  ...BrowserCommandResults,
   "git.checkpoint": z.object({ ref: z.string(), commit: z.string() }),
   "git.status": z.object({
     branch: z.string().nullable(),

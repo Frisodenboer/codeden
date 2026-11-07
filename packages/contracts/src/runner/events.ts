@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AgentEvent } from "../agent-events";
 import { ErrorInfo, Id } from "../common";
+import { BrowserFrameMetadata, BrowserTab, BrowserTabId } from "./browser";
 import { CheckpointIndex, PtyId } from "./commands";
 
 /**
@@ -64,6 +65,12 @@ export const RunnerStream = z.discriminatedUnion("kind", [
     data: z.string(),
     width: z.int().positive(),
     height: z.int().positive(),
+    /** Tab the frame belongs to. */
+    tabId: BrowserTabId.optional(),
+    /** Viewport geometry at capture time, for mapping panel input onto the page. */
+    metadata: BrowserFrameMetadata.optional(),
   }),
+  /** The session's tabs changed (opened, closed, activated, navigated, retitled). */
+  z.object({ kind: z.literal("browser.tabs"), sessionId: Id, tabs: z.array(BrowserTab) }),
 ]);
 export type RunnerStream = z.infer<typeof RunnerStream>;
