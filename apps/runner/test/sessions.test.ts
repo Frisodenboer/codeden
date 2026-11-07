@@ -126,7 +126,7 @@ describe("session hosting", () => {
       index: 0,
     });
     expect(restored.deleted).toEqual(["agent-made.txt"]);
-  });
+  }, 30_000);
 
   it("fails cleanly for an unregistered provider and for unknown sessions", async () => {
     await expect(
@@ -245,5 +245,5 @@ describe("process supervision", () => {
     const result = await server.request({ name: "ports.list", probe: [port, 1] });
     expect(result.ports).toEqual([{ port, pid: process.pid, url: `http://localhost:${port}` }]);
     await new Promise((r) => http.close(r));
-  }, 30_000);
+  }, 60_000);
 });

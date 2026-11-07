@@ -109,3 +109,5 @@ pnpm --filter @codeden/server test:live   # real Claude and Codex sessions end t
 ```
 
 Server tests run the runner without the real Claude/Codex adapters (`CODEDEN_BUILTIN_PROVIDERS=0`), so they never reach a live agent or the utility model.
+
+From the repo root, `pnpm test` runs the suites that drive real processes with timing-sensitive waits (Chromium, terminals, detached runners: `RUNNER_PROCESS_TESTS` / `SERVER_PROCESS_TESTS` in `vitest.config.ts`) after the parallel batch, one file at a time, so a loaded machine cannot starve their waits. `pnpm test:live` (`CODEDEN_LIVE=1`) also runs `test/live/workbench.live.test.ts`: a real Claude session drives the browser tools, and the Codex engine generates an image through `generate_image`.

@@ -13,6 +13,8 @@ const server = await startServer({
   token,
   enableFakeProvider: true,
   waitForRunner: true,
+  // Tool detection spawns claude/codex/gh; not needed here and it slows a loaded machine.
+  checkSetupOnStart: false,
 });
 server.store.append([
   { type: "session.created", sessionId: "s1", payload: { session: sampleSession } },

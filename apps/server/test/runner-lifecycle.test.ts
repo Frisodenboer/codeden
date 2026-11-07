@@ -80,7 +80,13 @@ describe("runner lifecycle (real processes)", () => {
       .split("\n");
     expect(journaled.length).toBeGreaterThan(0);
 
-    server = await startServer({ port: 0, dataDir: home, token: TOKEN, waitForRunner: true });
+    server = await startServer({
+      port: 0,
+      dataDir: home,
+      token: TOKEN,
+      waitForRunner: true,
+      checkSetupOnStart: false,
+    });
     expect(readLiveRunnerLock(lockFile)?.pid).toBe(lock?.pid); // reattached, not respawned
     const store = server.store;
     await waitUntil(
@@ -92,7 +98,7 @@ describe("runner lifecycle (real processes)", () => {
               e.type === "agent.turn.completed" &&
               (e.payload as { threadId: string }).threadId === "s1:thread-root",
           ),
-      30_000,
+      60_000,
     );
     const res = await fetch(`${server.url}/api/sessions/s1/snapshot`, {
       headers: { authorization: `Bearer ${TOKEN}` },
@@ -104,7 +110,7 @@ describe("runner lifecycle (real processes)", () => {
     expect(reply?.item.kind === "assistant_message" && reply.item.text).toBe(`Echo: ${prompt}`);
     const status = await server.runner?.request({ name: "runner.status" });
     expect(status?.journal.unacked).toBe(0);
-  }, 90_000);
+  }, 150_000);
 
   it("drains and replaces a runner of a different version", async () => {
     const home = newHome();
@@ -118,6 +124,7 @@ describe("runner lifecycle (real processes)", () => {
       },
     });
     server = await startServer({
+      checkSetupOnStart: false,
       port: 0,
       dataDir: home,
       token: TOKEN,
@@ -157,6 +164,7 @@ describe("runner lifecycle (real processes)", () => {
     );
     const logs: string[] = [];
     server = await startServer({
+      checkSetupOnStart: false,
       port: 0,
       dataDir: home,
       token: TOKEN,
@@ -173,7 +181,8 @@ describe("runner lifecycle (real processes)", () => {
 
   it("stops a detached runner without a server (codeden stop)", async () => {
     const home = newHome();
-    const launch = defaultRunnerLaunch();
+    // No real providers: they only slow the start (as in every server test).
+    const launch = defaultRunnerLaunch(["--no-builtin"]);
     if (!launch) throw new Error("no runner launch config");
     spawnRunner(launch, home);
     const lockFile = join(home, "runner", "runner.json");
@@ -182,5 +191,5 @@ describe("runner lifecycle (real processes)", () => {
     expect(await stopRunner(lockFile)).toBe(pid);
     expect(isProcessAlive(pid ?? 0)).toBe(false);
     expect(existsSync(lockFile)).toBe(false);
-  }, 60_000);
+  }, 90_000);
 });

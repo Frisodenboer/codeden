@@ -44,7 +44,8 @@ export function parseLsof(output: string): ListeningSocket[] {
 
 function exec(file: string, args: string[]): Promise<string> {
   return new Promise((resolve) => {
-    execFile(file, args, { windowsHide: true, timeout: 10_000 }, (error, stdout) =>
+    // netstat can take several seconds on a busy Windows machine.
+    execFile(file, args, { windowsHide: true, timeout: 30_000 }, (error, stdout) =>
       resolve(error && !stdout ? "" : stdout),
     );
   });
@@ -59,8 +60,11 @@ export async function listeningSockets(): Promise<ListeningSocket[]> {
   return all.filter((s) => LOCAL.has(s.address));
 }
 
-/** True when something accepts TCP connections on 127.0.0.1:port. */
-export function probePort(port: number, timeoutMs = 300): Promise<boolean> {
+/**
+ * True when something accepts TCP connections on 127.0.0.1:port. A closed port is refused at
+ * once, so the timeout only bounds filtered ports; keep it generous for a busy event loop.
+ */
+export function probePort(port: number, timeoutMs = 2_000): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = connect({ host: "127.0.0.1", port });
     const done = (ok: boolean) => {
