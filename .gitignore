@@ -13,3 +13,5 @@ test-results/
 .screenshots/
 .claude/worktrees/
 .screenshots/
+# Copied from the root README at pack time (apps/cli/scripts/copy-readme.mjs)
+apps/cli/README.md
