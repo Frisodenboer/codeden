@@ -32,7 +32,8 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function SessionLink({ id, label }: { id: string | null; label: string }) {
-  if (!id) return <span className="text-muted-foreground">—</span>;
+  if (!id)
+    return <span className="text-muted-foreground">{label === "session" ? "—" : label}</span>;
   return (
     <Link
       to="/sessions/$sessionId"
@@ -186,8 +187,11 @@ export function FactoryItemPage({ projectId, itemId }: { projectId: string; item
             </section>
             <section>
               <SectionLabel className="mb-2">
-                Merge checks · {item.checks.filter((c) => c.state === "pass").length}/
-                {item.checks.length} passed
+                Merge checks · {item.checks.filter((c) => c.state === "pass").length} passed
+                {item.checks.some((c) => c.state === "skipped") &&
+                  `, ${item.checks.filter((c) => c.state === "skipped").length} skipped`}
+                {item.checks.some((c) => c.state === "fail") &&
+                  `, ${item.checks.filter((c) => c.state === "fail").length} failed`}
               </SectionLabel>
               {item.checks.length === 0 ? (
                 <p className="text-2xs text-muted-foreground">

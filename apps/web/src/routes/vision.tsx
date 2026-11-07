@@ -100,7 +100,9 @@ export function VisionPage({ projectId }: { projectId: string }) {
   const { data } = useVision(projectId);
   const [draft, setDraft] = useState<string | null>(null);
   const [review, setReview] = useState(false);
-  useEffect(() => setDraft(data?.contents ?? null), [data?.contents]);
+  // CodeMirror keeps LF line endings; compare and edit the file in that form.
+  const saved = data?.contents.replace(/\r\n/g, "\n");
+  useEffect(() => setDraft(saved ?? null), [saved]);
   const parsed = useMemo(() => parseVision(draft ?? ""), [draft]);
   const save = useMutation({
     mutationFn: () => client.factory.saveVision(projectId, draft ?? ""),
@@ -113,7 +115,7 @@ export function VisionPage({ projectId }: { projectId: string }) {
     onError: (e) => toast.error("Couldn't save the vision", { description: e.message }),
   });
   const exists = data?.exists ?? false;
-  const dirty = draft !== null && (draft !== data?.contents || !exists);
+  const dirty = draft !== null && (draft !== saved || !exists);
 
   return (
     <>
