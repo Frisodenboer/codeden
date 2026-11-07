@@ -53,7 +53,7 @@ export function TerminalDrawer({ sessionId }: { sessionId: string | null }) {
       <div className="relative min-h-0 flex-1">
         {tabs.map((t) => (
           <div key={t} className={cn("absolute inset-0", active !== t && "invisible")}>
-            <TerminalView sessionId={sessionId} />
+            <TerminalView sessionId={sessionId} slot={`drawer-${t}`} />
           </div>
         ))}
       </div>

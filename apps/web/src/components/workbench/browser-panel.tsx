@@ -13,6 +13,7 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
   const [url, setUrl] = useState("");
   const [owner, setOwner] = useState<"agent" | "user">("agent");
   const editing = useRef(false);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     const ch = client.openBrowser(sessionId);
@@ -21,8 +22,10 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
       setFrame(f);
       if (!editing.current) setUrl(f.url);
     });
+    const offUnavailable = ch.onUnavailable(() => setUnavailable(true));
     return () => {
       off();
+      offUnavailable();
       ch.close();
       channel.current = null;
     };
@@ -134,8 +137,10 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
             )}
           />
         ) : (
-          <div className="mt-20 text-xs text-muted-foreground">
-            Connecting to the session browser…
+          <div className="mt-20 max-w-xs text-center text-xs text-muted-foreground">
+            {unavailable
+              ? "The session browser isn't available on this server yet."
+              : "Connecting to the session browser…"}
           </div>
         )}
       </div>

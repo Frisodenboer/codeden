@@ -1,6 +1,6 @@
 import type { Project, Session, Snapshot } from "@codeden/contracts";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { useTranscriptsStore } from "@/stores/transcripts";
 import { useClient } from "./api";
 import type { TranscriptState } from "./transcript/reducer";
@@ -42,16 +42,31 @@ export function useTranscript(sessionId: string | undefined): {
   error: Error | null;
 } {
   const client = useClient();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => client.getSessionSnapshot(sessionId ?? ""),
     enabled: Boolean(sessionId),
     staleTime: Infinity,
   });
-  const load = useTranscriptsStore((s) => s.load);
+  const resynced = useRef(false);
   useEffect(() => {
-    if (query.data) load(query.data);
-  }, [query.data, load]);
+    if (!query.data) return;
+    useTranscriptsStore.getState().load(query.data, { replace: resynced.current });
+    resynced.current = false;
+  }, [query.data]);
+  // Live updates: watch the transcript from the snapshot's seq (§6).
+  const seq = query.data?.seq;
+  useEffect(() => {
+    if (!sessionId || seq === undefined) return;
+    return client.watchSession(sessionId, seq, (msg) => {
+      if (msg.type === "transcript") useTranscriptsStore.getState().applyTranscript(msg);
+      else {
+        resynced.current = true;
+        void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      }
+    });
+  }, [client, queryClient, sessionId, seq]);
   const transcript = useTranscriptsStore((s) => (sessionId ? s.byId[sessionId] : undefined));
   return { transcript, isLoading: query.isLoading, error: query.error };
 }

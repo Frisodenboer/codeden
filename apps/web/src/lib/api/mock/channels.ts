@@ -1,4 +1,4 @@
-import type { BrowserChannel, BrowserFrame, TerminalChannel } from "../types";
+import type { BrowserChannel, BrowserFrame, OpenTerminalOptions, TerminalChannel } from "../types";
 import { storefrontFrame } from "./fixtures/images";
 
 const c = {
@@ -31,10 +31,7 @@ const loginScript: Record<string, string[]> = {
 };
 
 /** A small fake shell: prompt, echo, and canned output for a few commands. */
-export function mockTerminal(opts: {
-  sessionId: string | null;
-  command?: string;
-}): TerminalChannel {
+export function mockTerminal(opts: OpenTerminalOptions): TerminalChannel {
   const listeners = new Set<(d: string) => void>();
   const timers: ReturnType<typeof setTimeout>[] = [];
   const cwd = opts.sessionId ? "~/.codeden/wt/storefront/fix-checkout-flake" : "~";
@@ -92,7 +89,16 @@ export function mockTerminal(opts: {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    onEvent(listener) {
+      const t = setTimeout(() => listener({ type: "opened", ptyId: "pty-mock", attached: false }));
+      timers.push(t);
+      return () => clearTimeout(t);
+    },
     close() {
+      for (const t of timers) clearTimeout(t);
+      listeners.clear();
+    },
+    kill() {
       for (const t of timers) clearTimeout(t);
       listeners.clear();
     },
@@ -128,6 +134,7 @@ export function mockBrowser(): BrowserChannel {
       listener(frame());
       return () => listeners.delete(listener);
     },
+    onUnavailable: () => () => {},
     navigate(next) {
       url = next;
       push();

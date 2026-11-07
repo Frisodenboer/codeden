@@ -4,6 +4,7 @@ import { duration, plural } from "@/lib/format";
 import type { TimelineRow as Row } from "@/lib/transcript/timeline";
 import { ApprovalCard } from "./cards/approval-card";
 import { QuestionCard } from "./cards/question-card";
+import { SharedArtifactCard, sharedArtifactOf } from "./cards/shared-artifact-card";
 import { ErrorCard, NoticeCard, PlanCard, TodoCard } from "./cards/simple-cards";
 import { SubagentCard } from "./cards/subagent-card";
 import { AssistantMessage, UserMessage } from "./messages";
@@ -83,8 +84,11 @@ export function TimelineRowView({ row, sessionId }: { row: Row; sessionId: strin
           return <PlanCard item={item} />;
         case "todo_list":
           return <TodoCard item={item} />;
-        case "notice":
+        case "notice": {
+          const artifact = sharedArtifactOf(item);
+          if (artifact) return <SharedArtifactCard item={item} artifact={artifact} />;
           return <NoticeCard item={item} />;
+        }
         case "error":
           return <ErrorCard item={item} sessionId={sessionId} />;
         default:

@@ -1,8 +1,9 @@
-import { Outlet, useParams, useRouterState } from "@tanstack/react-router";
+import { Outlet, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { AddProjectDialog } from "@/components/setup/add-project-dialog";
 import { RightPanel } from "@/components/workbench/right-panel";
 import { TerminalDrawer } from "@/components/workbench/terminal-drawer";
-import { useOrchestratorSession, useSession } from "@/lib/queries";
+import { useOrchestratorSession, useSession, useSnapshot } from "@/lib/queries";
 import { DRAWER, RIGHT, SIDEBAR, useLayoutStore } from "@/stores/layout";
 import { CommandPalette } from "./command-palette";
 import { LiveEffects } from "./live-effects";
@@ -21,6 +22,17 @@ export function useCurrentSessionId(): string | undefined {
   return undefined;
 }
 
+/** Send a fresh install to the first-run checklist (§14) once, from the home route. */
+function useFirstRunRedirect() {
+  const { data } = useSnapshot();
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pending = data ? !data.settings.setup.completed : false;
+  useEffect(() => {
+    if (pending && pathname === "/") void navigate({ to: "/setup" });
+  }, [pending, pathname, navigate]);
+}
+
 /** Sidebar · centre · right panel, with resizable dividers and an optional terminal drawer (§13). */
 export function AppShell() {
   const layout = useLayoutStore();
@@ -28,6 +40,7 @@ export function AppShell() {
   // The workbench panel belongs to sessions that own a worktree.
   const hasWorkbench = Boolean(useSession(sessionId)?.worktreePath);
   useGlobalShortcuts();
+  useFirstRunRedirect();
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">

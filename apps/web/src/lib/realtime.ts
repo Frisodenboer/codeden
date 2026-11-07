@@ -2,6 +2,7 @@ import {
   type EventEnvelope,
   EventEnvelope as EventEnvelopeSchema,
   isAgentEnvelope,
+  type Snapshot,
 } from "@codeden/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { useConnectionStore } from "@/stores/connection";
@@ -13,21 +14,38 @@ import { applyDomainEvent } from "./snapshot-reducer";
 type EnvelopeListener = (env: EventEnvelope) => void;
 const listeners = new Set<EnvelopeListener>();
 
-/** Subscribe to every parsed live event (toasts, notifications, read-aloud). */
+/** Subscribe to every parsed live event (toasts, notifications, cache invalidation). */
 export function onLiveEvent(listener: EnvelopeListener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
+/** Queries that depend on a session's working tree, refreshed when it changes. */
+function invalidateWorkbench(queryClient: QueryClient, env: EventEnvelope): void {
+  if (env.type === "checkpoint.created") {
+    const id = env.payload.checkpoint.sessionId;
+    for (const key of ["diff", "files", "file", "git-status"]) {
+      void queryClient.invalidateQueries({ queryKey: [key, id] });
+    }
+  }
+  if (env.type === "message.queued" || env.type === "message.dequeued") {
+    const id =
+      env.type === "message.queued" ? env.payload.message.sessionId : env.payload.sessionId;
+    void queryClient.invalidateQueries({ queryKey: ["session-detail", id] });
+  }
+}
+
 /**
- * Realtime (§6): load the snapshot, subscribe from its seq, route agent events into the
- * transcript store and domain events into the snapshot cache; reload on `resync`.
+ * Realtime (§6): load the snapshot, subscribe from its seq, apply domain events to the snapshot
+ * cache, and reload on `resync`. Transcripts are watched per session (`useTranscript`); the
+ * mock client also sends agent events here, which go to the transcript store.
  */
 export function startRealtime(client: CodeDenClient, queryClient: QueryClient): () => void {
   const conn = useConnectionStore.getState;
   let unsubscribe: (() => void) | undefined;
   let stopped = false;
   conn().setSocket("connecting");
+  const offState = client.onConnectionChange((state) => conn().setSocket(state));
 
   const apply = (raw: unknown) => {
     const parsed = EventEnvelopeSchema.safeParse(raw);
@@ -36,22 +54,26 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
     if (isAgentEnvelope(env)) {
       useTranscriptsStore.getState().apply(env.sessionId, env.payload, env.seq, env.ts);
     } else {
-      queryClient.setQueryData(
-        snapshotKey,
-        (s: Parameters<typeof applyDomainEvent>[0] | undefined) =>
-          s ? applyDomainEvent(s, env) : s,
+      queryClient.setQueryData(snapshotKey, (s: Snapshot | undefined) =>
+        s ? applyDomainEvent(s, env) : s,
       );
+      invalidateWorkbench(queryClient, env);
     }
-    conn().setSeq(env.seq);
+    if (env.seq > conn().seq) conn().setSeq(env.seq);
     for (const l of listeners) l(env);
   };
 
+  const load = () =>
+    queryClient.fetchQuery({
+      queryKey: snapshotKey,
+      queryFn: () => client.getSnapshot(),
+      staleTime: 0,
+    });
+
   const connect = (fromSeq: number) => {
+    unsubscribe?.();
     unsubscribe = client.subscribe(fromSeq, (msg) => {
       switch (msg.type) {
-        case "hello":
-          conn().setSocket("open");
-          break;
         case "runner":
           conn().setRunner(msg.runner);
           break;
@@ -59,8 +81,13 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
           for (const e of msg.events) apply(e);
           break;
         case "resync":
-          void queryClient.invalidateQueries();
-          conn().setSeq(msg.seq);
+          // The server can't replay the gap: reload everything and resubscribe.
+          void load().then((snap) => {
+            if (stopped) return;
+            conn().setSeq(snap.seq);
+            void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "snapshot" });
+            connect(snap.seq);
+          });
           break;
         default:
           break;
@@ -68,10 +95,10 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
     });
   };
 
-  queryClient
-    .fetchQuery({ queryKey: snapshotKey, queryFn: () => client.getSnapshot() })
+  load()
     .then((snap) => {
       if (stopped) return;
+      conn().setAuth("ok");
       conn().setSeq(snap.seq);
       conn().setRunner(snap.runner);
       connect(snap.seq);
@@ -80,6 +107,7 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
 
   return () => {
     stopped = true;
+    offState();
     unsubscribe?.();
   };
 }

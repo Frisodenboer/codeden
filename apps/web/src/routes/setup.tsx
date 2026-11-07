@@ -1,15 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import type { Snapshot } from "@codeden/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRight, BellRing, Check, Mic, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { useSettings } from "@/components/settings/settings-ui";
 import { ProjectSourcePicker } from "@/components/setup/add-project-dialog";
-import { SetupChecklist } from "@/components/setup/checklist";
+import { SetupChecklist, useSetupStatus } from "@/components/setup/checklist";
 import { Logo } from "@/components/shell/logo";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
+import { snapshotKey } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { stt, tts } from "@/lib/voice/engines";
 
@@ -88,12 +90,25 @@ function Extras() {
 /** First-run setup (§14): from `npx codeden` to a first session in under a minute. */
 export function SetupPage() {
   const client = useClient();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const status = useQuery({ queryKey: ["setup"], queryFn: () => client.getSetupStatus() });
+  const status = useSetupStatus();
   const ready = status.data?.ready ?? false;
   const finish = async (projectId?: string) => {
-    await client.completeSetup();
+    await client.completeSetup().catch(() => undefined);
+    // The server persists this without a live event; mirror it so "/" doesn't bounce back here.
+    queryClient.setQueryData<Snapshot>(snapshotKey, (s) =>
+      s
+        ? {
+            ...s,
+            settings: {
+              ...s.settings,
+              setup: { completed: true, completedAt: new Date().toISOString() },
+            },
+          }
+        : s,
+    );
     void navigate(projectId ? { to: "/projects/$projectId", params: { projectId } } : { to: "/" });
   };
 

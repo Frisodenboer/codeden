@@ -3,13 +3,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { useClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
 import { snapshotKey, useSnapshot } from "@/lib/queries";
 import { onLiveEvent } from "@/lib/realtime";
 import { finalAssistantText } from "@/lib/transcript/timeline";
 import { tts } from "@/lib/voice/engines";
 import { shouldReadAloud, stripForSpeech } from "@/lib/voice/speech-text";
-import { useTranscriptsStore } from "@/stores/transcripts";
+import { onTurnFinished, useTranscriptsStore } from "@/stores/transcripts";
 
 const inboxVerb: Record<string, string> = {
   approval: "Approval needed",
@@ -26,6 +27,7 @@ const inboxVerb: Record<string, string> = {
  * unread badge, and read-aloud of the final message when a turn completes (§11.1, §11.3).
  */
 export function LiveEffects() {
+  const client = useClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data } = useSnapshot();
@@ -73,16 +75,31 @@ export function LiveEffects() {
           });
         }
       }
-      if (env.type === "agent.turn.completed") {
-        const transcript = useTranscriptsStore.getState().byId[env.sessionId];
-        if (!transcript || transcript.rootThreadId !== env.payload.threadId) return;
-        if (!shouldReadAloud(snap.settings, { now: new Date(), focused: platform.isFocused() }))
-          return;
-        const text = finalAssistantText(transcript, env.payload.turnId);
-        if (text) tts.speak(stripForSpeech(text), { voice: snap.settings.voice.readAloud.voice });
-      }
     });
   }, [queryClient, navigate]);
+
+  // Read the final message aloud when a turn completes (§11.3), compressed by the utility model.
+  useEffect(() => {
+    return onTurnFinished(async ({ sessionId, turnId, status }) => {
+      if (status !== "completed") return;
+      const snap = queryClient.getQueryData<Snapshot>(snapshotKey);
+      if (!snap) return;
+      if (!shouldReadAloud(snap.settings, { now: new Date(), focused: platform.isFocused() }))
+        return;
+      const transcript = useTranscriptsStore.getState().byId[sessionId];
+      const text = transcript ? finalAssistantText(transcript, turnId) : null;
+      if (!text) return;
+      const plain = stripForSpeech(text);
+      let spoken = plain;
+      if (plain.length > 280 && snap.settings.utilityModel.jobs.readAloudSummary) {
+        spoken = await client
+          .speechSummary(text)
+          .then((r) => r.text)
+          .catch(() => plain);
+      }
+      tts.speak(spoken, { voice: snap.settings.voice.readAloud.voice });
+    });
+  }, [client, queryClient]);
 
   return null;
 }

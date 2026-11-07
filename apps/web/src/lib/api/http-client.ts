@@ -1,199 +1,201 @@
 import {
-  type InboxItem,
-  type Project,
-  ServerToClientMessage,
+  type ConflictDecision,
+  CreateProjectResponse,
+  DiffResult,
+  FsListResponse,
+  GitCommitResponse,
+  GitPushResponse,
+  GitStatusResponse,
+  InboxItem,
+  LoginCommandResponse,
+  RestoreFilesResponse,
+  type SendMessageRequestInit,
+  SessionDetail,
+  SessionFileContent,
+  SessionFileList,
   SessionSnapshot,
   Settings,
-  Snapshot,
-  type StartWorkResult,
-} from "@codeden/contracts";
-import type { CodeDenClient } from "./client";
-import type {
-  BrowserChannel,
-  ConflictCase,
-  DiffResult,
-  DirListing,
-  FactoryStatus,
-  FileContent,
-  FileNode,
-  LoadedContext,
-  McpServerEntry,
-  MemoryFile,
-  MentionCandidate,
-  PrDetails,
   SetupStatus,
-  SkillEntry,
-  SlashCommand,
-  SubagentEntry,
-  TerminalChannel,
-} from "./types";
+  Snapshot,
+  SpeechSummaryResponse,
+  StartSessionResponse,
+} from "@codeden/contracts";
+import type { CodeDenClient, SendMode } from "./client";
+import { createFetcher } from "./http";
+import { configApi } from "./http-unwired";
+import { RealtimeSocket } from "./realtime-socket";
+import { openTerminalSocket } from "./terminal-channel";
+import type { ConflictCase, MentionCandidate } from "./types";
+
+const whenBusy: Record<SendMode, SendMessageRequestInit["whenBusy"]> = {
+  send: "queue",
+  queue: "queue",
+  steer: "steer",
+};
+
+export interface HttpClientOptions {
+  /** Called when the server answers 401 (missing or expired cookie). */
+  onUnauthorized?: () => void;
+}
 
 /**
- * Real client: fetch + WebSocket against the CodeDen server. Paths follow the planned HTTP API;
- * the integration step swaps these for the typed Hono RPC client once `api.ts` lands in
- * contracts. Auth rides on the HttpOnly cookie set by the launch URL (§15).
+ * Real client: fetch + WebSocket against the CodeDen server's `/api`, `/ws` and `/ws/pty`.
+ * Request and response shapes come from `@codeden/contracts`; responses are validated.
  */
-export function createHttpClient(origin: string): CodeDenClient {
-  const base = `${origin}/api`;
-
-  async function call<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    parse?: (v: unknown) => T,
-  ): Promise<T> {
-    const res = await fetch(`${base}${path}`, {
-      method,
-      credentials: "include",
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`${method} ${path} failed (${res.status})`);
-    if (res.status === 204) return undefined as T;
-    const json: unknown = await res.json();
-    return parse ? parse(json) : (json as T);
-  }
-  const get = <T>(path: string, parse?: (v: unknown) => T) =>
-    call<T>("GET", path, undefined, parse);
-  const post = <T = void>(path: string, body?: unknown) => call<T>("POST", path, body ?? {});
-  const q = (v: string | null) => (v ? `?projectId=${encodeURIComponent(v)}` : "");
-
-  function socketChannel(path: string): WebSocket {
-    return new WebSocket(`${origin.replace(/^http/, "ws")}${path}`);
-  }
+export function createHttpClient(origin: string, opts: HttpClientOptions = {}): CodeDenClient {
+  const http = createFetcher(origin, opts.onUnauthorized ?? (() => {}));
+  const { get, post, call } = http;
+  const wsBase = origin.replace(/^http/, "ws");
+  const socket = new RealtimeSocket(`${wsBase}/ws`);
+  const enc = encodeURIComponent;
+  const conflicts = new Map<string, ConflictCase>();
+  const fileCache = new Map<string, { at: number; list: SessionFileList }>();
 
   return {
     kind: "http",
     getSnapshot: () => get("/snapshot", (v) => Snapshot.parse(v)),
-    getSessionSnapshot: (id) => get(`/sessions/${id}/snapshot`, (v) => SessionSnapshot.parse(v)),
-    subscribe(fromSeq, onMessage) {
-      let ws: WebSocket | undefined;
-      let stopped = false;
-      let delay = 500;
-      let lastSeq = fromSeq;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const open = () => {
-        ws = socketChannel("/ws");
-        ws.onopen = () => {
-          delay = 500;
-          ws?.send(JSON.stringify({ type: "subscribe", fromSeq: lastSeq }));
-        };
-        ws.onmessage = (event) => {
-          const parsed = ServerToClientMessage.safeParse(JSON.parse(String(event.data)));
-          if (!parsed.success) return;
-          const msg = parsed.data;
-          if (msg.type === "events") lastSeq = msg.events.at(-1)?.seq ?? lastSeq;
-          if (msg.type === "resync") lastSeq = msg.seq;
-          onMessage(msg);
-        };
-        ws.onclose = () => {
-          if (stopped) return;
-          timer = setTimeout(open, delay);
-          delay = Math.min(delay * 2, 10_000);
-        };
-      };
-      open();
-      return () => {
-        stopped = true;
-        if (timer) clearTimeout(timer);
-        ws?.close();
-      };
+    getSessionSnapshot: (id) =>
+      get(`/sessions/${enc(id)}/snapshot`, (v) => SessionSnapshot.parse(v)),
+    subscribe: (fromSeq, onMessage) => socket.subscribe(fromSeq, onMessage),
+    watchSession: (id, fromSeq, onMessage) => socket.watch(id, fromSeq, onMessage),
+    onConnectionChange: (listener) => socket.onState(listener),
+
+    getSessionDetail: (id) => get(`/sessions/${enc(id)}`, (v) => SessionDetail.parse(v)),
+    async sendMessage(id, input, mode) {
+      const body: SendMessageRequestInit = { input, whenBusy: whenBusy[mode] };
+      await post(`/sessions/${enc(id)}/messages`, body);
+    },
+    async interrupt(id) {
+      await post(`/sessions/${enc(id)}/interrupt`);
+    },
+    async respond(id, requestId, response) {
+      await post(`/sessions/${enc(id)}/respond`, { requestId, response });
+    },
+    async startSession(input) {
+      const res = await fetchStart(origin, input);
+      if (res.status === "conflict") {
+        const id = `conflict-${Date.now()}`;
+        conflicts.set(id, {
+          id,
+          projectId: input.projectId,
+          request: {
+            purpose: input.purpose ?? input.input?.text.split("\n")[0] ?? "New session",
+            workKey: input.workKey ?? "",
+            requestedBy: "You",
+          },
+          existing: res.existing,
+          createdAt: new Date().toISOString(),
+          start: input,
+        });
+      }
+      return res;
+    },
+    async stopSession(id) {
+      await post(`/sessions/${enc(id)}/stop`);
     },
 
-    sendMessage: (id, input, mode) => post(`/sessions/${id}/messages`, { input, mode }),
-    interrupt: (id) => post(`/sessions/${id}/interrupt`),
-    respond: (id, requestId, response) => post(`/sessions/${id}/requests/${requestId}`, response),
-    startSession: (input) => post<StartWorkResult>("/sessions", input),
-    stopSession: (id) => post(`/sessions/${id}/stop`),
-    listConflicts: () => get<ConflictCase[]>("/conflicts"),
-    resolveConflict: (id, decision) => post(`/conflicts/${id}/resolve`, decision),
-    resolveInbox: (id, resolution) => post<InboxItem>(`/inbox/${id}/resolve`, resolution),
+    listConflicts: async () => [...conflicts.values()],
+    async resolveConflict(conflict: ConflictCase, decision: ConflictDecision) {
+      conflicts.delete(conflict.id);
+      if (!conflict.start) return;
+      await post("/sessions", { ...conflict.start, conflict: decision }, (v) =>
+        StartSessionResponse.parse(v),
+      );
+    },
+    resolveInbox: (id, resolution) =>
+      post(`/inbox/${enc(id)}/resolve`, resolution, (v) => InboxItem.parse(v)),
 
-    createProject: (input) => post<Project>("/projects", input),
-    setAutomationEnabled: (id, enabled) => call("PATCH", `/automations/${id}`, { enabled }),
-    skipNextRun: (id) => post(`/automations/${id}/skip-next`),
-    getFactoryStatus: (id) => get<FactoryStatus>(`/projects/${id}/factory`),
-    setKillSwitch: (scope, on) =>
-      scope === "global"
-        ? post("/factory/kill-switch", { on })
-        : post(`/projects/${scope.projectId}/kill-switch`, { on }),
-    readVision: (id) => get<{ contents: string }>(`/projects/${id}/vision`).then((r) => r.contents),
-    writeVision: (id, contents) => call("PUT", `/projects/${id}/vision`, { contents }),
+    createProject: (input) => post("/projects", input, (v) => CreateProjectResponse.parse(v)),
+    async setAutomationEnabled(id, enabled) {
+      await call("PATCH", `/automations/${enc(id)}`, { enabled });
+    },
+    async skipNextRun(id) {
+      await post(`/automations/${enc(id)}/skip-next`);
+    },
+    getFactoryStatus: (id) => get(`/projects/${enc(id)}/factory`),
+    async setKillSwitch(scope, on) {
+      if (scope === "global") await post("/factory/kill-switch", { on });
+      else await post(`/projects/${enc(scope.projectId)}/kill-switch`, { on });
+    },
+    readVision: (id) =>
+      get<{ contents: string }>(`/projects/${enc(id)}/vision`).then((r) => r.contents),
+    async writeVision(id, contents) {
+      await call("PUT", `/projects/${enc(id)}/vision`, { contents });
+    },
 
     updateSettings: (patch) => call("PATCH", "/settings", patch, (v) => Settings.parse(v)),
-    setSecret: (name, value) => call("PUT", `/secrets/${name}`, { value }),
+    async setSecret(name, value) {
+      await call("PUT", `/secrets/${enc(name)}`, { value });
+    },
 
-    getSetupStatus: () => get<SetupStatus>("/setup"),
-    recheckSetup: (id) => post<SetupStatus>("/setup/recheck", { id }),
-    completeSetup: () => post("/setup/complete"),
-    listDirectory: (path) =>
-      get<DirListing>(`/fs/list${path ? `?path=${encodeURIComponent(path)}` : ""}`),
-
-    getDiff: (id, scope) => post<DiffResult>(`/sessions/${id}/diff`, scope),
-    listFiles: (id) => get<FileNode[]>(`/sessions/${id}/files`),
-    readFile: (id, path) =>
-      get<FileContent>(`/sessions/${id}/files/content?path=${encodeURIComponent(path)}`),
-    getPrDetails: (id) => get<PrDetails>(`/sessions/${id}/github`),
-    getLoadedContext: (id) => get<LoadedContext>(`/sessions/${id}/context`),
-    searchMentions: (id, query) =>
-      get<MentionCandidate[]>(`/sessions/${id}/mentions?q=${encodeURIComponent(query)}`),
-    listSlashCommands: (id) => get<SlashCommand[]>(`/sessions/${id}/commands`),
-    openTerminal(opts): TerminalChannel {
+    getSetupStatus: (o) =>
+      get(`/setup/status${o?.refresh ? "?refresh=1" : ""}`, (v) => SetupStatus.parse(v)),
+    loginCommand: (tool) => post(`/setup/login/${tool}`, {}, (v) => LoginCommandResponse.parse(v)),
+    async completeSetup() {
+      await post("/setup/complete");
+    },
+    listDirectory(path, o) {
       const params = new URLSearchParams();
-      if (opts.sessionId) params.set("sessionId", opts.sessionId);
-      if (opts.command) params.set("command", opts.command);
-      const ws = socketChannel(`/ws/pty?${params}`);
-      const listeners = new Set<(d: string) => void>();
-      ws.onmessage = (e) => {
-        for (const l of listeners) l(String(e.data));
-      };
-      const send = (msg: unknown) =>
-        ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
-      return {
-        write: (data) => send({ type: "input", data }),
-        resize: (cols, rows) => send({ type: "resize", cols, rows }),
-        onData: (l) => {
-          listeners.add(l);
-          return () => listeners.delete(l);
-        },
-        close: () => ws.close(),
-      };
+      if (path) params.set("path", path);
+      if (o?.showHidden) params.set("showHidden", "1");
+      const qs = params.size ? `?${params}` : "";
+      return get(`/fs/list${qs}`, (v) => FsListResponse.parse(v));
     },
-    openBrowser(sessionId): BrowserChannel {
-      const ws = socketChannel(`/ws/browser?sessionId=${encodeURIComponent(sessionId)}`);
-      const listeners = new Set<Parameters<BrowserChannel["onFrame"]>[0]>();
-      ws.onmessage = (e) => {
-        const frame = JSON.parse(String(e.data));
-        for (const l of listeners) l(frame);
-      };
-      const send = (msg: unknown) =>
-        ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
-      return {
-        onFrame: (l) => {
-          listeners.add(l);
-          return () => listeners.delete(l);
-        },
-        navigate: (url) => send({ type: "navigate", url }),
-        back: () => send({ type: "back" }),
-        forward: () => send({ type: "forward" }),
-        reload: () => send({ type: "reload" }),
-        setControl: (owner) => send({ type: "control", owner }),
-        click: (x, y) => send({ type: "click", x, y }),
-        close: () => ws.close(),
-      };
-    },
-    artifactUrl: (id) => `${base}/artifacts/${encodeURIComponent(id)}`,
 
-    listMemoryFiles: (projectId) => get<MemoryFile[]>(`/agent-config/memory${q(projectId)}`),
-    readConfigFile: (path) =>
-      get<{ contents: string }>(`/agent-config/file?path=${encodeURIComponent(path)}`).then(
-        (r) => r.contents,
+    getDiff: (id, scope) => post(`/sessions/${enc(id)}/diff`, scope, (v) => DiffResult.parse(v)),
+    restoreFiles: (id, req) =>
+      post(`/sessions/${enc(id)}/restore`, req, (v) => RestoreFilesResponse.parse(v)),
+    gitStatus: (id) => get(`/sessions/${enc(id)}/git/status`, (v) => GitStatusResponse.parse(v)),
+    gitCommit: (id, req) =>
+      post(`/sessions/${enc(id)}/git/commit`, req, (v) => GitCommitResponse.parse(v)),
+    gitPush: (id, req) =>
+      post(`/sessions/${enc(id)}/git/push`, req, (v) => GitPushResponse.parse(v)),
+    listFiles: (id) => get(`/sessions/${enc(id)}/files`, (v) => SessionFileList.parse(v)),
+    readFile: (id, path) =>
+      get(`/sessions/${enc(id)}/files/content?path=${enc(path)}`, (v) =>
+        SessionFileContent.parse(v),
       ),
-    writeConfigFile: (path, contents) => call("PUT", "/agent-config/file", { path, contents }),
-    listSkills: (projectId) => get<SkillEntry[]>(`/agent-config/skills${q(projectId)}`),
-    setSkillEnabled: (id, enabled) => call("PATCH", `/agent-config/skills/${id}`, { enabled }),
-    listSubagents: (projectId) => get<SubagentEntry[]>(`/agent-config/subagents${q(projectId)}`),
-    listMcpServers: (projectId) => get<McpServerEntry[]>(`/agent-config/mcp${q(projectId)}`),
-    testMcpServer: (id) => post<{ ok: boolean; message: string }>(`/agent-config/mcp/${id}/test`),
+    async searchMentions(id, query) {
+      const cached = fileCache.get(id);
+      const list =
+        cached && Date.now() - cached.at < 30_000
+          ? cached.list
+          : await get(`/sessions/${enc(id)}/files`, (v) => SessionFileList.parse(v));
+      fileCache.set(id, { at: cached?.list === list ? cached.at : Date.now(), list });
+      return rankMentions(list, query);
+    },
+    openTerminal: (o) => openTerminalSocket(wsBase, o),
+    artifactUrl: (id) => `${origin}/api/artifacts/${enc(id)}`,
+    speechSummary: (text) =>
+      post("/utility/speech-summary", { text }, (v) => SpeechSummaryResponse.parse(v)),
+
+    ...configApi(http, wsBase),
   };
+}
+
+/** `@` mention candidates: paths containing the query, shortest first. */
+export function rankMentions(list: SessionFileList, query: string): MentionCandidate[] {
+  const q = query.toLowerCase();
+  return list.entries
+    .filter((e) => e.path.toLowerCase().includes(q))
+    .sort((a, b) => a.path.length - b.path.length)
+    .slice(0, 8)
+    .map((e) => ({ path: e.path, kind: e.kind }));
+}
+
+/** `POST /api/sessions` answers 409 for a conflict; that body is a result, not an error. */
+async function fetchStart(origin: string, input: unknown): Promise<StartSessionResponse> {
+  const res = await fetch(`${origin}/api/sessions`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(input),
+  });
+  const json: unknown = await res.json().catch(() => null);
+  const parsed = StartSessionResponse.safeParse(json);
+  if (parsed.success) return parsed.data;
+  const message =
+    (json as { error?: { message?: string } } | null)?.error?.message ??
+    `Couldn't start the session (${res.status})`;
+  throw new Error(message);
 }

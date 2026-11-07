@@ -1,3 +1,4 @@
+import type { CreateProjectRequest } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderOpen, GitBranch } from "lucide-react";
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useClient } from "@/lib/api";
-import type { CreateProjectInput } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
 import { FolderBrowser } from "./folder-browser";
@@ -32,19 +32,26 @@ export function ProjectSourcePicker({
   const [folder, setFolder] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const create = useMutation({
-    mutationFn: (input: CreateProjectInput) => client.createProject(input),
-    onSuccess: (p) => {
-      toast.success(`Added ${p.name}`, {
-        description: "Detected pnpm · suggested setup script: pnpm install",
+    mutationFn: (input: CreateProjectRequest) => client.createProject(input),
+    onSuccess: ({ project, detected }) => {
+      const facts = [
+        detected.github ? `GitHub ${detected.github.owner}/${detected.github.repo}` : null,
+        detected.packageManager ? `Detected ${detected.packageManager}` : null,
+        detected.suggestedSetupCommands.length
+          ? `suggested setup: ${detected.suggestedSetupCommands.join(" && ")}`
+          : null,
+      ].filter(Boolean);
+      toast.success(`Added ${project.name}`, {
+        description: facts.length ? facts.join(" · ") : undefined,
       });
-      onCreated(p.id);
+      onCreated(project.id);
     },
     onError: (e) => toast.error("Couldn't add the project", { description: e.message }),
   });
   const valid =
     source === "folder"
       ? Boolean(folder)
-      : /^(https:\/\/|git@)github\.com[:/].+\/.+/.test(url.trim());
+      : /^((https:\/\/|git@)github\.com[:/].+\/.+|[\w.-]+\/[\w.-]+)$/.test(url.trim());
 
   return (
     <div className="space-y-4">
@@ -104,8 +111,8 @@ export function ProjectSourcePicker({
           onClick={() =>
             create.mutate(
               source === "folder"
-                ? { source: "folder", path: folder ?? "" }
-                : { source: "clone", url: url.trim() },
+                ? { source: { type: "local", path: folder ?? "" } }
+                : { source: { type: "clone", url: url.trim() } },
             )
           }
         >

@@ -33,6 +33,8 @@ export interface ItemEntry {
   item: Item;
   turnId: string;
   threadId: string;
+  /** Order within the thread, when known from the server projection. */
+  position?: number;
 }
 
 /** Client-side transcript of one session, built from a snapshot plus live agent events. */
@@ -87,7 +89,12 @@ export function transcriptFromSnapshot(snap: SessionSnapshot): TranscriptState {
   }
   const records = [...snap.items].sort((a, b) => a.position - b.position);
   for (const r of records) {
-    state.items[r.item.id] = { item: r.item, turnId: r.turnId, threadId: r.threadId };
+    state.items[r.item.id] = {
+      item: r.item,
+      turnId: r.turnId,
+      threadId: r.threadId,
+      position: r.position,
+    };
     ensureThread(state, r.threadId).itemIds.push(r.item.id);
   }
   if (!state.rootThreadId) {
