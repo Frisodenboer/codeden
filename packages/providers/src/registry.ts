@@ -1,5 +1,7 @@
 import type { ProviderInfo } from "@codeden/contracts";
 import { type ProviderAdapter, providerInfo } from "./adapter";
+import { ClaudeAdapter } from "./claude/adapter";
+import { CodexAdapter } from "./codex/adapter";
 
 /** The set of adapters a runner has loaded, keyed by id. */
 export class ProviderRegistry {
@@ -27,4 +29,27 @@ export class ProviderRegistry {
   info(): ProviderInfo[] {
     return this.list().map(providerInfo);
   }
+}
+
+/** Fresh instances of the built-in real providers (Claude Code, Codex). */
+export function builtinProviders(): ProviderAdapter[] {
+  return [new ClaudeAdapter(), new CodexAdapter()];
+}
+
+let defaultRegistry: ProviderRegistry | undefined;
+
+/** Process-wide registry of the built-in providers, created on first use. */
+export function defaultProviderRegistry(): ProviderRegistry {
+  defaultRegistry ??= new ProviderRegistry(builtinProviders());
+  return defaultRegistry;
+}
+
+/** A built-in provider by id (`claude`, `codex`). */
+export function getProvider(id: string): ProviderAdapter | undefined {
+  return defaultProviderRegistry().get(id);
+}
+
+/** All built-in providers. Check `detect()` for which are installed and logged in. */
+export function listProviders(): ProviderAdapter[] {
+  return defaultProviderRegistry().list();
 }

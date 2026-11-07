@@ -1,0 +1,343 @@
+{
+ "version": 1,
+ "provider": "claude",
+ "scenario": "approval",
+ "recordedAt": "2026-11-07T09:45:01.265Z",
+ "cliVersion": "2.1.318",
+ "autonomy": "supervised",
+ "model": "haiku",
+ "capabilities": {
+  "resume": true,
+  "steer": true,
+  "interrupt": true,
+  "approvals": true,
+  "userQuestions": true,
+  "subagents": true,
+  "rollback": false,
+  "fork": false,
+  "images": true,
+  "planMode": true,
+  "reasoningEffort": true,
+  "mcp": true,
+  "skills": true
+ },
+ "preamble": [],
+ "turns": [
+  {
+   "input": {
+    "text": "Run the shell command `echo approved` and tell me exactly what it printed.",
+    "attachments": []
+   },
+   "events": [
+    {
+     "type": "thread.started",
+     "thread": {
+      "id": "<SESSION>:thread-root"
+     }
+    },
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "user-32b99d1e-7ec4-4eed-a046-af6e15587a22-mw67vzzz",
+      "kind": "user_message",
+      "status": "completed",
+      "input": {
+       "text": "Run the shell command `echo approved` and tell me exactly what it printed.",
+       "attachments": []
+      }
+     }
+    },
+    {
+     "type": "session.updated",
+     "resumeToken": "1c5e73f1-e00d-4877-9934-d72515eceb27",
+     "model": "claude-haiku-5-5"
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Bash",
+      "input": {},
+      "toolKind": "command",
+      "command": "",
+      "cwd": "<CWD>",
+      "title": "Bash"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "{\"command\": \"echo approved"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\", \"description\": \"Print"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": " the word"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": " approved"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+     "delta": {
+      "type": "tool_input",
+      "partialJson": "\"}"
+     }
+    },
+    {
+     "type": "item.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Bash",
+      "input": {
+       "command": "echo approved",
+       "description": "Print the word approved"
+      },
+      "toolKind": "command",
+      "command": "echo approved",
+      "cwd": "<CWD>",
+      "title": "Print the word approved"
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "resetsAt": "2026-11-10T04:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "approval-e281e76d-1376-420d-a3b9-7b35a387d20c",
+      "kind": "approval_request",
+      "status": "in_progress",
+      "requestId": "e281e76d-1376-420d-a3b9-7b35a387d20c",
+      "action": "command",
+      "title": "Run `echo approved`",
+      "reason": "Supervised mode: every edit and command needs approval",
+      "toolName": "Bash",
+      "toolInput": {
+       "command": "echo approved",
+       "description": "Print the word approved"
+      },
+      "toolCallItemId": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+      "options": [
+       "allow_once",
+       "allow_session",
+       "deny"
+      ],
+      "command": "echo approved",
+      "cwd": "<CWD>"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "approval-e281e76d-1376-420d-a3b9-7b35a387d20c",
+      "kind": "approval_request",
+      "status": "completed",
+      "requestId": "e281e76d-1376-420d-a3b9-7b35a387d20c",
+      "action": "command",
+      "title": "Run `echo approved`",
+      "reason": "Supervised mode: every edit and command needs approval",
+      "toolName": "Bash",
+      "toolInput": {
+       "command": "echo approved",
+       "description": "Print the word approved"
+      },
+      "toolCallItemId": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+      "options": [
+       "allow_once",
+       "allow_session",
+       "deny"
+      ],
+      "command": "echo approved",
+      "cwd": "<CWD>",
+      "decision": "allow_once",
+      "decidedBy": "user"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "toolu_01JbtzAQoU6nnTa9tps43Z3k",
+      "kind": "tool_call",
+      "status": "completed",
+      "toolName": "Bash",
+      "input": {
+       "command": "echo approved",
+       "description": "Print the word approved"
+      },
+      "toolKind": "command",
+      "command": "echo approved",
+      "cwd": "<CWD>",
+      "title": "Print the word approved",
+      "output": {
+       "text": "approved\nShell cwd was reset to <CWD>",
+       "truncated": false,
+       "totalBytes": 78
+      },
+      "durationMs": 1177
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "msg_011CgoMQxZfgWovGmmyKfqo8:0",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "msg_011CgoMQxZfgWovGmmyKfqo8:0",
+     "delta": {
+      "type": "text",
+      "text": "The command"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "msg_011CgoMQxZfgWovGmmyKfqo8:0",
+     "delta": {
+      "type": "text",
+      "text": " "
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "msg_011CgoMQxZfgWovGmmyKfqo8:0",
+     "delta": {
+      "type": "text",
+      "text": "ran and printed ex"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "msg_011CgoMQxZfgWovGmmyKfqo8:0",
+     "delta": {
+      "type": "text",
+      "text": "actly:\n\n```\napproved"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "itemId": "msg_011CgoMQxZfgWovGmmyKfqo8:0",
+     "delta": {
+      "type": "text",
+      "text": "\n```"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "item": {
+      "id": "msg_011CgoMQxZfgWovGmmyKfqo8:0",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "The command ran and printed exactly:\n\n```\napproved\n```"
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "usage": {
+      "inputTokens": 4,
+      "outputTokens": 96,
+      "cachedInputTokens": 77238,
+      "cacheWriteTokens": 22925,
+      "contextTokens": 53264,
+      "contextWindow": 1000000,
+      "costUsd": 0.00540578
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "32b99d1e-7ec4-4eed-a046-af6e15587a22",
+     "stopReason": "end_turn"
+    }
+   ],
+   "responses": {
+    "e281e76d-1376-420d-a3b9-7b35a387d20c": {
+     "kind": "approval",
+     "decision": "allow_once"
+    }
+   }
+  }
+ ]
+}

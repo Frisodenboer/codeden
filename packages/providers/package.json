@@ -9,9 +9,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "codex:protocol": "node scripts/generate-codex-protocol.mjs",
+    "record:claude": "tsx scripts/record.ts claude",
+    "record:codex": "tsx scripts/record.ts codex",
+    "test:live": "node scripts/test-live.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.318",
     "@codeden/contracts": "workspace:*"
   }
 }

@@ -1,0 +1,311 @@
+{
+ "version": 1,
+ "provider": "claude",
+ "scenario": "subagent",
+ "recordedAt": "2026-11-07T09:45:19.522Z",
+ "cliVersion": "2.1.318",
+ "autonomy": "auto",
+ "model": "haiku",
+ "capabilities": {
+  "resume": true,
+  "steer": true,
+  "interrupt": true,
+  "approvals": true,
+  "userQuestions": true,
+  "subagents": true,
+  "rollback": false,
+  "fork": false,
+  "images": true,
+  "planMode": true,
+  "reasoningEffort": true,
+  "mcp": true,
+  "skills": true
+ },
+ "preamble": [],
+ "turns": [
+  {
+   "input": {
+    "text": "Use the Agent tool to spawn exactly one general-purpose subagent that runs the shell command `echo from-subagent` and reports what it printed. Wait for it, then tell me the result in one sentence.",
+    "attachments": []
+   },
+   "events": [
+    {
+     "type": "thread.started",
+     "thread": {
+      "id": "<SESSION>:thread-root"
+     }
+    },
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "item": {
+      "id": "user-0848369f-9223-4c65-96b9-709f79ed29f7-mw67w8u3",
+      "kind": "user_message",
+      "status": "completed",
+      "input": {
+       "text": "Use the Agent tool to spawn exactly one general-purpose subagent that runs the shell command `echo from-subagent` and reports what it printed. Wait for it, then tell me the result in one sentence.",
+       "attachments": []
+      }
+     }
+    },
+    {
+     "type": "session.updated",
+     "resumeToken": "a3db2dc5-be36-4a26-aa2d-b1b964d10a8e",
+     "model": "claude-haiku-5-5"
+    },
+    {
+     "type": "thread.started",
+     "thread": {
+      "id": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+      "parentThreadId": "<SESSION>:thread-root",
+      "parentItemId": "toolu_01NKA1P42wHi3y1vnnrQUMc4",
+      "agentType": "general-purpose",
+      "title": "Run echo from-subagent"
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "item": {
+      "id": "toolu_01NKA1P42wHi3y1vnnrQUMc4",
+      "kind": "subagent",
+      "status": "in_progress",
+      "childThreadId": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+      "agentType": "general-purpose",
+      "description": "Run echo from-subagent",
+      "prompt": "Run the shell command `echo from-subagent` using your shell tool, then report exactly what it printed. Do not run any other commands."
+     }
+    },
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+     "turnId": "35acebda-b779-4ca3-ba9f-17c725d4c3d5"
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "resetsAt": "2026-11-10T04:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+     "turnId": "35acebda-b779-4ca3-ba9f-17c725d4c3d5",
+     "item": {
+      "id": "toolu_01HpUNib4MnkM8e6qBHAH7sg",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "Bash",
+      "input": {
+       "command": "echo from-subagent",
+       "description": "Print the requested test string"
+      },
+      "toolKind": "command",
+      "command": "echo from-subagent",
+      "cwd": "<CWD>",
+      "title": "Print the requested test string"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+     "turnId": "35acebda-b779-4ca3-ba9f-17c725d4c3d5",
+     "item": {
+      "id": "toolu_01HpUNib4MnkM8e6qBHAH7sg",
+      "kind": "tool_call",
+      "status": "completed",
+      "toolName": "Bash",
+      "input": {
+       "command": "echo from-subagent",
+       "description": "Print the requested test string"
+      },
+      "toolKind": "command",
+      "command": "echo from-subagent",
+      "cwd": "<CWD>",
+      "title": "Print the requested test string",
+      "output": {
+       "text": "from-subagent",
+       "truncated": false,
+       "totalBytes": 13
+      },
+      "durationMs": 852
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+     "turnId": "35acebda-b779-4ca3-ba9f-17c725d4c3d5",
+     "item": {
+      "id": "msg_011CgoMSCnTeWgeMUtRWH9FA:21af696f",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "The command `echo from-subagent` printed:\n\n```\nfrom-subagent\n```"
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+     "turnId": "35acebda-b779-4ca3-ba9f-17c725d4c3d5",
+     "stopReason": "end_turn"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "item": {
+      "id": "toolu_01NKA1P42wHi3y1vnnrQUMc4",
+      "kind": "subagent",
+      "status": "completed",
+      "childThreadId": "<SESSION>:thread-toolu_01NKA1P42wHi3y1vnnrQUMc4",
+      "agentType": "general-purpose",
+      "description": "Run echo from-subagent",
+      "prompt": "Run the shell command `echo from-subagent` using your shell tool, then report exactly what it printed. Do not run any other commands.",
+      "summary": "The command `echo from-subagent` printed:\n\n```\nfrom-subagent\n```"
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "item": {
+      "id": "msg_011CgoMSKDfvcMMCBKZW3Ka1:0",
+      "kind": "reasoning",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "item": {
+      "id": "msg_011CgoMSKDfvcMMCBKZW3Ka1:0",
+      "kind": "reasoning",
+      "status": "completed",
+      "text": "",
+      "redacted": true
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "item": {
+      "id": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "itemId": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+     "delta": {
+      "type": "text",
+      "text": "The subagent ran"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "itemId": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+     "delta": {
+      "type": "text",
+      "text": " `"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "itemId": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+     "delta": {
+      "type": "text",
+      "text": "echo from-subagent`"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "itemId": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+     "delta": {
+      "type": "text",
+      "text": " and re"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "itemId": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+     "delta": {
+      "type": "text",
+      "text": "ported that it printed `from-"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "itemId": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+     "delta": {
+      "type": "text",
+      "text": "subagent`."
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "item": {
+      "id": "msg_011CgoMSKDfvcMMCBKZW3Ka1:1",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "The subagent ran `echo from-subagent` and reported that it printed `from-subagent`."
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "usage": {
+      "inputTokens": 8,
+      "outputTokens": 427,
+      "cachedInputTokens": 121384,
+      "cacheWriteTokens": 77154,
+      "reasoningTokens": 117,
+      "contextTokens": 58181,
+      "contextWindow": 1000000,
+      "costUsd": 0.013160539999999998
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "0848369f-9223-4c65-96b9-709f79ed29f7",
+     "stopReason": "end_turn"
+    }
+   ],
+   "responses": {}
+  }
+ ]
+}

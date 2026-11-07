@@ -1,0 +1,481 @@
+{
+ "version": 1,
+ "provider": "codex",
+ "scenario": "approval",
+ "recordedAt": "2026-11-07T09:46:05.402Z",
+ "cliVersion": "0.160.1",
+ "autonomy": "supervised",
+ "model": null,
+ "capabilities": {
+  "resume": true,
+  "steer": true,
+  "interrupt": true,
+  "approvals": true,
+  "userQuestions": true,
+  "subagents": false,
+  "rollback": false,
+  "fork": false,
+  "images": true,
+  "planMode": false,
+  "reasoningEffort": true,
+  "mcp": true,
+  "skills": true
+ },
+ "preamble": [],
+ "turns": [
+  {
+   "input": {
+    "text": "Run the shell command `echo approved` and tell me exactly what it printed.",
+    "attachments": []
+   },
+   "events": [
+    {
+     "type": "thread.started",
+     "thread": {
+      "id": "<SESSION>:thread-root"
+     }
+    },
+    {
+     "type": "session.updated",
+     "resumeToken": "01a1b566-7714-7393-944c-642e6e0fb5ed",
+     "model": "gpt-6-astra"
+    },
+    {
+     "type": "turn.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1"
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "01a1b566-89b3-7df2-95fb-676b4af7cf17",
+      "kind": "user_message",
+      "status": "completed",
+      "input": {
+       "text": "Run the shell command `echo approved` and tell me exactly what it printed.",
+       "attachments": []
+      }
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": "I"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": "’ll"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": " run"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": " `"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": "echo"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": " approved"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": "`"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": " and"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": " report"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": " its"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": " output"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+     "delta": {
+      "type": "text",
+      "text": "."
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "msg_0e7748ef90f4c240016aeef3567fe887d2a7f7cc03db66d7bb",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "I’ll run `echo approved` and report its output."
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "kind": "tool_call",
+      "status": "in_progress",
+      "toolName": "shell",
+      "input": {
+       "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'echo approved'",
+       "commandActions": [
+        {
+         "type": "unknown",
+         "command": "echo approved"
+        }
+       ]
+      },
+      "toolKind": "command",
+      "command": "echo approved",
+      "cwd": "<CWD>",
+      "exitCode": null,
+      "title": "Run echo approved"
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "approval-exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "kind": "approval_request",
+      "status": "in_progress",
+      "requestId": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "action": "command",
+      "title": "Run `echo approved`",
+      "command": "echo approved",
+      "cwd": "<CWD>",
+      "toolName": "shell",
+      "toolCallItemId": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "options": [
+       "allow_once",
+       "allow_session",
+       "deny"
+      ]
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "approval-exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "kind": "approval_request",
+      "status": "completed",
+      "requestId": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "action": "command",
+      "title": "Run `echo approved`",
+      "command": "echo approved",
+      "cwd": "<CWD>",
+      "toolName": "shell",
+      "toolCallItemId": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "options": [
+       "allow_once",
+       "allow_session",
+       "deny"
+      ],
+      "decision": "allow_once",
+      "decidedBy": "user"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+     "delta": {
+      "type": "tool_output",
+      "text": "approved"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+     "delta": {
+      "type": "tool_output",
+      "text": "\r\n"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006",
+      "kind": "tool_call",
+      "status": "completed",
+      "toolName": "shell",
+      "input": {
+       "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'echo approved'",
+       "commandActions": [
+        {
+         "type": "unknown",
+         "command": "echo approved"
+        }
+       ]
+      },
+      "output": {
+       "text": "approved\r\n",
+       "truncated": false,
+       "totalBytes": 10
+      },
+      "durationMs": 100,
+      "toolKind": "command",
+      "command": "echo approved",
+      "cwd": "<CWD>",
+      "exitCode": 0,
+      "title": "Run echo approved"
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "usage": {
+      "inputTokens": 21808,
+      "outputTokens": 47,
+      "cachedInputTokens": 7296,
+      "cacheWriteTokens": 0,
+      "reasoningTokens": 0,
+      "contextTokens": 21855,
+      "contextWindow": 258400
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "usedPercent": 0,
+        "resetsAt": "2026-11-12T06:35:15.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "item.started",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+      "kind": "assistant_message",
+      "status": "in_progress",
+      "text": ""
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+     "delta": {
+      "type": "text",
+      "text": "```"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+     "delta": {
+      "type": "text",
+      "text": "text"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+     "delta": {
+      "type": "text",
+      "text": "\n"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+     "delta": {
+      "type": "text",
+      "text": "approved"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+     "delta": {
+      "type": "text",
+      "text": "\n"
+     }
+    },
+    {
+     "type": "item.delta",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "itemId": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+     "delta": {
+      "type": "text",
+      "text": "```"
+     }
+    },
+    {
+     "type": "item.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "item": {
+      "id": "msg_0e7748ef90f4c240016aeef359ed1c87d2bdc1daf6271de4e8",
+      "kind": "assistant_message",
+      "status": "completed",
+      "text": "```text\napproved\n```"
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "usage": {
+      "inputTokens": 43688,
+      "outputTokens": 57,
+      "cachedInputTokens": 28928,
+      "cacheWriteTokens": 0,
+      "reasoningTokens": 0,
+      "contextTokens": 21890,
+      "contextWindow": 258400
+     }
+    },
+    {
+     "type": "usage.updated",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "usage": {
+      "rateLimits": [
+       {
+        "id": "weekly",
+        "status": "ok",
+        "usedPercent": 0,
+        "resetsAt": "2026-11-12T06:35:15.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "type": "turn.completed",
+     "threadId": "<SESSION>:thread-root",
+     "turnId": "01a1b566-7d18-70f3-aa1d-f0f36d3510c1",
+     "stopReason": "end_turn"
+    }
+   ],
+   "responses": {
+    "exec-4d9c9a96-bc63-41d8-b7d6-bd154c228006": {
+     "kind": "approval",
+     "decision": "allow_once"
+    }
+   }
+  }
+ ]
+}

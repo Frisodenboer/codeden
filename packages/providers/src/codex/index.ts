@@ -1,11 +1,16 @@
 /**
- * Codex adapter (M1). Will start `codex app-server` and speak JSON-RPC (§7.2), with protocol
- * types generated from the installed Codex version:
- * - threads/turns/items -> normalized AgentEvents
- * - sandbox + approval policies mapped from autonomy levels (§11.2)
- * - CodeDen's MCP server injected through config overrides
- *
- * TODO(M1): implement `CodexAdapter implements ProviderAdapter` in small modules
- * (detect.ts, rpc.ts, session.ts, events.ts, approvals.ts) with Replay fixtures.
+ * Codex adapter: `codex app-server` JSON-RPC over stdio, with protocol types generated from
+ * the installed CLI into `./protocol` (`pnpm --filter @codeden/providers codex:protocol`).
  */
-export const CODEX_PROVIDER_ID = "codex";
+export {
+  CODEX_PROVIDER_ID,
+  CodexAdapter,
+  type CodexAdapterOptions,
+  modelInfoFromCodex,
+} from "./adapter";
+export { codexConfigOverrides, codexPolicy } from "./config";
+export { CODEX_MIN_VERSION, detectCodex, parseCodexLoginStatus } from "./detect";
+export { CodexEventMapper } from "./mapper";
+export { CODEX_UTILITY_MODEL, CodexUtilityModel } from "./one-shot";
+export { CODEX_PROTOCOL_VERSION } from "./protocol/VERSION";
+export { CodexSession } from "./session";
