@@ -30,19 +30,14 @@ import type {
   UiServerMessage,
   UserInputInit,
 } from "@codeden/contracts";
+import type { AgentConfigApi, BrowserApi, ImagesApi, SecretsApi, VoiceApi } from "./feature-apis";
 import type {
-  BrowserChannel,
   ConflictCase,
   FactoryStatus,
-  LoadedContext,
-  McpServerEntry,
-  MemoryFile,
   MentionCandidate,
   OpenTerminalOptions,
   PrDetails,
-  SkillEntry,
   SlashCommand,
-  SubagentEntry,
   TerminalChannel,
 } from "./types";
 
@@ -113,8 +108,8 @@ export interface CodeDenClient {
 
   // Settings.
   updateSettings(patch: SettingsPatch): Promise<Settings>;
-  /** Store a secret (e.g. ElevenLabs key) in the OS keychain. Never echoed back. */
-  setSecret(name: string, value: string): Promise<void>;
+  /** OS keychain secrets (API keys). Values are never echoed back. */
+  readonly secrets: SecretsApi;
 
   // First-run setup (§14).
   /** Detection results; `refresh` re-runs every check instead of using the cache. */
@@ -132,23 +127,18 @@ export interface CodeDenClient {
   listFiles(sessionId: string): Promise<SessionFileList>;
   readFile(sessionId: string, path: string): Promise<SessionFileContent>;
   getPrDetails(sessionId: string): Promise<PrDetails>;
-  getLoadedContext(sessionId: string): Promise<LoadedContext>;
   searchMentions(sessionId: string, query: string): Promise<MentionCandidate[]>;
   listSlashCommands(sessionId: string): Promise<SlashCommand[]>;
   openTerminal(opts: OpenTerminalOptions): TerminalChannel;
-  openBrowser(sessionId: string): BrowserChannel;
+  /** The session browser: live viewer socket, tabs, navigation, dev servers (§12.2). */
+  readonly browser: BrowserApi;
   /** URL for an artifact's bytes (screenshots, generated images, attachments). */
   artifactUrl(artifactId: string): string;
   /** Compress a final message for read-aloud with the utility model (§11.3). */
   speechSummary(text: string): Promise<SpeechSummaryResponse>;
 
-  // Agent configuration (§12.4).
-  listMemoryFiles(projectId: string | null): Promise<MemoryFile[]>;
-  readConfigFile(path: string): Promise<string>;
-  writeConfigFile(path: string, contents: string): Promise<void>;
-  listSkills(projectId: string | null): Promise<SkillEntry[]>;
-  setSkillEnabled(skillId: string, enabled: boolean): Promise<void>;
-  listSubagents(projectId: string | null): Promise<SubagentEntry[]>;
-  listMcpServers(projectId: string | null): Promise<McpServerEntry[]>;
-  testMcpServer(serverId: string): Promise<{ ok: boolean; message: string }>;
+  // Agent configuration (§12.4), image generation (§12.5), cloud voice (§11.3).
+  readonly agentConfig: AgentConfigApi;
+  readonly images: ImagesApi;
+  readonly voice: VoiceApi;
 }

@@ -1,12 +1,13 @@
 import type { Session } from "@codeden/contracts";
-import { useQuery } from "@tanstack/react-query";
-import { Brain, FileText, Plug, Sparkles } from "lucide-react";
+import { Brain } from "lucide-react";
 import type { ReactNode } from "react";
 import { ProviderMark } from "@/components/common/bits";
 import { AutonomyBadge } from "@/components/thread/autonomy";
-import { useClient } from "@/lib/api";
+import { Switch } from "@/components/ui/switch";
 import { ago, compact, statusLabel, usd } from "@/lib/format";
 import { useTranscriptsStore } from "@/stores/transcripts";
+import { useVoiceStore } from "@/stores/voice";
+import { LoadedConfig } from "./loaded-config";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -26,12 +27,9 @@ const startedByLabel = {
 
 /** Session metadata, usage and what's loaded into its context (§8.4, §12.4). */
 export function DetailsPanel({ session }: { session: Session }) {
-  const client = useClient();
   const usage = useTranscriptsStore((s) => s.byId[session.id]?.usage ?? null);
-  const loaded = useQuery({
-    queryKey: ["loaded", session.id],
-    queryFn: () => client.getLoadedContext(session.id),
-  });
+  const muted = useVoiceStore((s) => Boolean(s.muted[session.id]));
+  const setMuted = useVoiceStore((s) => s.setMuted);
   const ctxPct =
     usage?.contextTokens && usage.contextWindow
       ? (usage.contextTokens / usage.contextWindow) * 100
@@ -99,35 +97,24 @@ export function DetailsPanel({ session }: { session: Session }) {
         </div>
       </section>
 
-      <section className="space-y-2">
-        <h3 className="text-2xs font-medium tracking-wider text-muted-foreground uppercase">
-          What's loaded
-        </h3>
-        <LoadedList icon={<FileText />} title="Memory" items={loaded.data?.memory ?? []} />
-        <LoadedList icon={<Sparkles />} title="Skills" items={loaded.data?.skills ?? []} />
-        <LoadedList icon={<Plug />} title="MCP servers" items={loaded.data?.mcpServers ?? []} />
-      </section>
+      <LoadedConfig sessionId={session.id} projectId={session.projectId} />
+      <div className="flex items-center justify-between gap-3 text-[13px]">
+        <span>
+          Read this session aloud
+          <span className="block text-2xs text-muted-foreground">
+            When read-aloud is on in Settings › Voice
+          </span>
+        </span>
+        <Switch
+          checked={!muted}
+          onCheckedChange={(on) => setMuted(session.id, !on)}
+          aria-label="Read this session aloud"
+        />
+      </div>
       <p className="flex items-center gap-1.5 text-3xs text-muted-foreground/70">
         <Brain className="size-3" /> Session {session.id} · resumable
         {session.resumeToken ? "" : " after first turn"}
       </p>
-    </div>
-  );
-}
-
-function LoadedList({ icon, title, items }: { icon: ReactNode; title: string; items: string[] }) {
-  return (
-    <div className="rounded-lg border border-border">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-2xs text-muted-foreground [&_svg]:size-3.5">
-        {icon} {title} <span className="ml-auto tabular-nums">{items.length}</span>
-      </div>
-      <div className="px-3 py-1.5">
-        {items.map((i) => (
-          <div key={i} className="truncate py-0.5 font-mono text-[11.5px] text-foreground/80">
-            {i}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

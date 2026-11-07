@@ -7,10 +7,7 @@ import { useClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
 import { snapshotKey, useSnapshot } from "@/lib/queries";
 import { onLiveEvent } from "@/lib/realtime";
-import { finalAssistantText } from "@/lib/transcript/timeline";
-import { tts } from "@/lib/voice/engines";
-import { shouldReadAloud, stripForSpeech } from "@/lib/voice/speech-text";
-import { onTurnFinished, useTranscriptsStore } from "@/stores/transcripts";
+import { startReadAloud } from "@/lib/voice/read-aloud";
 
 const inboxVerb: Record<string, string> = {
   approval: "Approval needed",
@@ -78,28 +75,8 @@ export function LiveEffects() {
     });
   }, [queryClient, navigate]);
 
-  // Read the final message aloud when a turn completes (§11.3), compressed by the utility model.
-  useEffect(() => {
-    return onTurnFinished(async ({ sessionId, turnId, status }) => {
-      if (status !== "completed") return;
-      const snap = queryClient.getQueryData<Snapshot>(snapshotKey);
-      if (!snap) return;
-      if (!shouldReadAloud(snap.settings, { now: new Date(), focused: platform.isFocused() }))
-        return;
-      const transcript = useTranscriptsStore.getState().byId[sessionId];
-      const text = transcript ? finalAssistantText(transcript, turnId) : null;
-      if (!text) return;
-      const plain = stripForSpeech(text);
-      let spoken = plain;
-      if (plain.length > 280 && snap.settings.utilityModel.jobs.readAloudSummary) {
-        spoken = await client
-          .speechSummary(text)
-          .then((r) => r.text)
-          .catch(() => plain);
-      }
-      tts.speak(spoken, { voice: snap.settings.voice.readAloud.voice });
-    });
-  }, [client, queryClient]);
+  // Read the final message aloud when any session's turn completes (§11.3).
+  useEffect(() => startReadAloud(client, queryClient), [client, queryClient]);
 
   return null;
 }

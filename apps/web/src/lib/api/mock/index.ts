@@ -1,6 +1,7 @@
 import { type Project, Settings, type SettingsPatch } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { startAmbient } from "./ambient";
+import { mockFeatureApis } from "./feature-apis";
 import { makeSession } from "./fixtures/helpers";
 import { defaultFactoryLimits, factoryFor, visionDoc } from "./fixtures/ops";
 import { type Script, scriptedTurn, uid } from "./live";
@@ -302,8 +303,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       world.emitDomain({ type: "settings.updated", sessionId: null, payload: { settings } });
       return settings;
     },
-    setSecret: () => delay(undefined, 300),
-
     ...workbenchApi(world),
+    ...mockFeatureApis(world),
   };
 }

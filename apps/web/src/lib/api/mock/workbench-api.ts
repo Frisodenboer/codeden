@@ -1,7 +1,6 @@
 import type { DiffResult, SetupStatus } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
-import { mockBrowser, mockTerminal } from "./channels";
-import { configContents, mcpServers, memoryFiles, skills, subagents } from "./fixtures/config";
+import { mockTerminal } from "./channels";
 import { ciFailureShot, contrastComparison, generatedIllustration } from "./fixtures/images";
 import { listDir, setupChecks } from "./fixtures/ops";
 import {
@@ -38,26 +37,15 @@ type WorkbenchApi = Pick<
   | "listFiles"
   | "readFile"
   | "getPrDetails"
-  | "getLoadedContext"
   | "searchMentions"
   | "listSlashCommands"
   | "openTerminal"
-  | "openBrowser"
   | "artifactUrl"
-  | "listMemoryFiles"
-  | "readConfigFile"
-  | "writeConfigFile"
-  | "listSkills"
-  | "setSkillEnabled"
-  | "listSubagents"
-  | "listMcpServers"
-  | "testMcpServer"
 >;
 
 /** Setup, workbench and agent-configuration parts of the mock client. */
 export function workbenchApi(world: MockWorld): WorkbenchApi {
   let codexFixed = false;
-  const skillState = new Map(skills.map((s) => [s.id, s.enabled]));
 
   const setupStatus = (): SetupStatus => {
     const checks = setupChecks.map((check) =>
@@ -138,17 +126,6 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
       return delay({ path, content, sizeBytes: content.length, binary: false, truncated: false });
     },
     getPrDetails: (sessionId) => delay(prDetails[sessionId] ?? { issue: null, pr: null }),
-    getLoadedContext: () =>
-      delay({
-        memory: [
-          "~/.claude/CLAUDE.md",
-          "CLAUDE.md",
-          ".claude/rules/testing.md",
-          ".claude/rules/ui.md",
-        ],
-        skills: ["frontend-design", "playwright-e2e"],
-        mcpServers: ["codeden", "playwright"],
-      }),
     searchMentions: (_sessionId, query) => {
       const q = query.toLowerCase();
       const hits = allPaths()
@@ -159,36 +136,6 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
     },
     listSlashCommands: () => delay(slashCommands, 20),
     openTerminal: (opts) => mockTerminal(opts),
-    openBrowser: () => mockBrowser(),
     artifactUrl: (id) => artifacts[id]?.() ?? generatedIllustration(id.length),
-
-    listMemoryFiles: () => delay(memoryFiles),
-    readConfigFile: (path) =>
-      delay(world.files.get(`cfg:${path}`) ?? configContents[path] ?? `# ${path}\n\n`, 80),
-    writeConfigFile: (path, contents) => {
-      world.files.set(`cfg:${path}`, contents);
-      return delay(undefined, 250);
-    },
-    listSkills: () =>
-      delay(skills.map((s) => ({ ...s, enabled: skillState.get(s.id) ?? s.enabled }))),
-    setSkillEnabled: (id, enabled) => {
-      skillState.set(id, enabled);
-      return delay(undefined);
-    },
-    listSubagents: () => delay(subagents),
-    listMcpServers: () => delay(mcpServers),
-    testMcpServer: (id) => {
-      const server = mcpServers.find((s) => s.id === id);
-      const ok = server?.status !== "error";
-      return delay(
-        {
-          ok,
-          message: ok
-            ? `Connected · ${server?.toolCount ?? 0} tools`
-            : "401 Unauthorized: run the provider's login",
-        },
-        700,
-      );
-    },
   };
 }
