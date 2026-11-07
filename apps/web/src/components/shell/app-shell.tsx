@@ -1,9 +1,10 @@
 import { Outlet, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useRoleSession } from "@/components/orchestration/role-chat";
 import { AddProjectDialog } from "@/components/setup/add-project-dialog";
 import { RightPanel } from "@/components/workbench/right-panel";
 import { TerminalDrawer } from "@/components/workbench/terminal-drawer";
-import { useOrchestratorSession, useSession, useSnapshot } from "@/lib/queries";
+import { useSession, useSnapshot } from "@/lib/queries";
 import { DRAWER, RIGHT, SIDEBAR, useLayoutStore } from "@/stores/layout";
 import { CommandPalette } from "./command-palette";
 import { LiveEffects } from "./live-effects";
@@ -14,11 +15,13 @@ import { SidebarRail } from "./sidebar/sidebar-rail";
 
 /** The session shown in the centre, if the current route is a thread. */
 export function useCurrentSessionId(): string | undefined {
-  const params = useParams({ strict: false }) as { sessionId?: string };
+  const params = useParams({ strict: false }) as { sessionId?: string; projectId?: string };
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const orchestrator = useOrchestratorSession();
+  const orchestrator = useRoleSession("orchestrator", null);
+  const pm = useRoleSession("pm", params.projectId ?? null);
   if (params.sessionId) return params.sessionId;
   if (pathname === "/") return orchestrator?.id;
+  if (params.projectId && pathname.endsWith("/pm")) return pm?.id;
   return undefined;
 }
 

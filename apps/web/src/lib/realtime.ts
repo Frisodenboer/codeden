@@ -1,6 +1,7 @@
 import {
   type EventEnvelope,
   EventEnvelope as EventEnvelopeSchema,
+  GITHUB_EVENT_TYPES,
   isAgentEnvelope,
   type Snapshot,
 } from "@codeden/contracts";
@@ -12,6 +13,7 @@ import { snapshotKey } from "./queries";
 import { applyDomainEvent } from "./snapshot-reducer";
 
 type EnvelopeListener = (env: EventEnvelope) => void;
+const GITHUB_EVENTS = new Set<string>(GITHUB_EVENT_TYPES);
 const listeners = new Set<EnvelopeListener>();
 
 /** Subscribe to every parsed live event (toasts, notifications, cache invalidation). */
@@ -28,6 +30,17 @@ function invalidateWorkbench(queryClient: QueryClient, env: EventEnvelope): void
       void queryClient.invalidateQueries({ queryKey: [key, id] });
     }
   }
+  // Orchestration and GitHub views (§8.4, §9) are queries over server projections.
+  if (env.type === "conflict.created")
+    void queryClient.invalidateQueries({ queryKey: ["conflicts"] });
+  if (
+    (env.type === "inbox.created" || env.type === "inbox.updated") &&
+    env.payload.item.kind === "conflict"
+  )
+    void queryClient.invalidateQueries({ queryKey: ["conflicts"] });
+  if (env.type === "session.created" || env.type === "session.updated")
+    void queryClient.invalidateQueries({ queryKey: ["project-status"] });
+  if (GITHUB_EVENTS.has(env.type)) void queryClient.invalidateQueries({ queryKey: ["github"] });
   if (env.type === "message.queued" || env.type === "message.dequeued") {
     const id =
       env.type === "message.queued" ? env.payload.message.sessionId : env.payload.sessionId;

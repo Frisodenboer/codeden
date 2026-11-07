@@ -31,10 +31,6 @@ export function useProject(projectId: string | null | undefined): Project | unde
   return useSnapshotData((s) => s.projects.find((x) => x.id === projectId), undefined);
 }
 
-export function useOrchestratorSession(): Session | undefined {
-  return useSnapshotData((s) => s.sessions.find((x) => x.role === "orchestrator"), undefined);
-}
-
 /** Load a session transcript into the live store and return it. */
 export function useTranscript(sessionId: string | undefined): {
   transcript: TranscriptState | undefined;
