@@ -14,6 +14,7 @@ import { badRequest, notFound } from "../services/errors";
 import { previewRecord } from "../services/sessions/preview";
 import { inboxRoutes } from "./inbox";
 import { projectRoutes } from "./projects";
+import { sessionFileRoutes } from "./session-files";
 import { sessionRoutes } from "./sessions";
 import { artifactRoutes, fileRoutes, secretRoutes, setupRoutes } from "./system";
 import { errorResponse } from "./validate";
@@ -51,6 +52,7 @@ export function createApi(ctx: ApiContext) {
     .route("/projects", projectRoutes(s))
     .route("/sessions", sessionRoutes(s))
     .route("/sessions", workbenchRoutes(s))
+    .route("/sessions", sessionFileRoutes(s))
     .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))
     .route("/setup", setupRoutes(s))
