@@ -88,6 +88,8 @@ export interface StartServerOptions {
    * background polling (default on unless `CODEDEN_GITHUB_SYNC=0`).
    */
   github?: ServicesOptions["github"] & { sync?: boolean };
+  /** Automations (§10): clock, scheduler timings and file rescans for tests. */
+  automations?: ServicesOptions["automations"];
   /** Run first-run detection in the background on launch (default true). */
   checkSetupOnStart?: boolean;
   log?: (message: string) => void;
@@ -153,6 +155,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     voice: opts.voice,
     orchestration: opts.orchestration,
     github: opts.github,
+    automations: opts.automations,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
@@ -161,6 +164,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.orchestration.start();
   services.github.start({ sync: opts.github?.sync ?? process.env.CODEDEN_GITHUB_SYNC !== "0" });
   services.usage.start();
+  services.automations.start();
 
   let origins = new Set<string>();
   const app = new Hono();
@@ -277,6 +281,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.orchestration.stop();
       services.github.stop();
       services.usage.stop();
+      services.automations.stop();
       stopTerminalEvents();
       if (runner) {
         if (closeOpts.stopRunner) await runner.shutdownRunner();

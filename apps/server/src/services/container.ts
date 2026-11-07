@@ -10,6 +10,7 @@ import type { HomePaths } from "../paths";
 import type { SettingsStore } from "../settings-store";
 import { AgentConfigService } from "./agent-config/agent-config-service";
 import { ArtifactService } from "./artifacts";
+import { AutomationService, type AutomationServiceDeps } from "./automations/automation-service";
 import { BrowserService } from "./browser/browser-service";
 import { type Exec, runTool } from "./exec";
 import { ConfigFiles } from "./files/config-files";
@@ -62,6 +63,8 @@ export interface ServicesOptions {
   orchestration?: OrchestrationOptions & { github?: GithubPort; automation?: AutomationPort };
   /** GitHub API transport and poll intervals (tests point them at a fake GitHub). */
   github?: Pick<GithubServiceDeps, "fetch" | "baseUrl" | "idleIntervalMs" | "activeIntervalMs">;
+  /** Automation clock, scheduler timings and file rescans (tests). */
+  automations?: Pick<AutomationServiceDeps, "now" | "scheduler" | "templatesDir" | "rescanMs">;
   log?: (message: string) => void;
 }
 
@@ -102,6 +105,8 @@ export interface AppServices {
   github: GithubService;
   /** Usage and cost reports, budgets and rate limits (§12.6). */
   usage: UsageService;
+  /** Automations: definitions, scheduler, runs and issue triage (§10). */
+  automations: AutomationService;
   userHome: string;
 }
 
@@ -183,6 +188,19 @@ export function createServices(opts: ServicesOptions): AppServices {
     log: opts.log,
   });
   const setup = new SetupService({ exec, settings: opts.settings });
+  const automations = new AutomationService({
+    db: opts.db,
+    store: opts.store,
+    settings: opts.settings,
+    projects,
+    sessions,
+    repo: sessionRepo,
+    inbox,
+    orchestration: () => services.orchestration,
+    home: opts.paths.home,
+    ...opts.automations,
+    log: opts.log,
+  });
   const services: AppServices = {
     db: opts.db,
     store: opts.store,
@@ -244,10 +262,11 @@ export function createServices(opts: ServicesOptions): AppServices {
       projects,
       inbox,
       github: opts.orchestration?.github ?? new GithubServicePort(github),
-      automation: opts.orchestration?.automation,
+      automation: opts.orchestration?.automation ?? automations,
       options: opts.orchestration,
       log: opts.log,
     }),
+    automations,
     userHome,
     questions,
     mcpTokens,

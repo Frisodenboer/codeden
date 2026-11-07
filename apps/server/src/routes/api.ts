@@ -13,6 +13,7 @@ import type { AppServices } from "../services/container";
 import { badRequest, notFound } from "../services/errors";
 import { previewRecord } from "../services/sessions/preview";
 import { agentConfigRoutes, sessionAgentConfigRoutes } from "./agent-config";
+import { automationRoutes, projectAutomationRoutes } from "./automations";
 import { browserRoutes, sessionBrowserRoutes } from "./browser";
 import { githubRoutes, projectGithubRoutes, prRoutes, sessionGithubRoutes } from "./github";
 import { imageRoutes } from "./images";
@@ -75,6 +76,8 @@ export function createApi(ctx: ApiContext) {
     .route("/inbox", inboxRoutes(s))
     .route("/orchestration", orchestrationRoutes(s))
     .route("/conflicts", conflictRoutes(s))
+    .route("/automations", automationRoutes(s))
+    .route("/projects", projectAutomationRoutes(s))
     .route("/usage", usageRoutes(s))
     .route("/setup", setupRoutes(s))
     .route("/artifacts", artifactRoutes(s))
