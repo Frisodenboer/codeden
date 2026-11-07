@@ -2,7 +2,12 @@ import { z } from "zod";
 import { ErrorInfo, Id } from "./common";
 import { Item, ItemDelta } from "./items";
 
-/** Token/cost/rate-limit usage. Providers fill in what they report; everything is optional. */
+/**
+ * Token/cost/rate-limit usage. Providers fill in what they report; everything is optional.
+ * With a `turnId`, token counts and cost are that turn's own usage so far (never a running
+ * session total). `inputTokens` excludes cache reads and writes; `reasoningTokens` is
+ * already included in `outputTokens`.
+ */
 export const Usage = z.object({
   inputTokens: z.int().nonnegative().optional(),
   outputTokens: z.int().nonnegative().optional(),
