@@ -14,6 +14,7 @@ export * from "./entities/project";
 export * from "./entities/session";
 export * from "./events";
 export * from "./factory";
+export * from "./factory-api";
 export * from "./github";
 export * from "./images-api";
 export * from "./input";
