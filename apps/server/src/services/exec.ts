@@ -47,7 +47,8 @@ export function resolveExecutable(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
   if (isAbsolute(name)) return isFile(name) ? name : null;
-  const pathVar = env.PATH ?? env.Path ?? "";
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path");
+  const pathVar = (pathKey ? env[pathKey] : undefined) ?? "";
   const exts = isWindows
     ? extname(name)
       ? [""]
@@ -78,14 +79,40 @@ function quoteForCmd(arg: string): string {
  * spawned directly, so they run through `cmd.exe /d /s /c` with verbatim, quoted arguments.
  * Times out (killing the process tree) instead of hanging on an interactive prompt.
  */
+/**
+ * Merge environment overrides. Windows variable names are case-insensitive, so an override
+ * replaces every differently-cased copy (`Path` vs `PATH`) instead of duplicating it.
+ */
+export function mergeEnv(
+  base: NodeJS.ProcessEnv,
+  overrides: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (isWindows) {
+      for (const existing of Object.keys(out)) {
+        if (existing.toLowerCase() === key.toLowerCase()) delete out[existing];
+      }
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/** `cmd.exe`, found without relying on PATH (which callers may override). */
+function comspec(): string {
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+  return process.env.ComSpec ?? join(systemRoot, "System32", "cmd.exe");
+}
+
 export const runTool: Exec = (command, args, opts = {}) => {
-  const env = { ...process.env, ...opts.env };
+  const env = mergeEnv(process.env, opts.env);
   const resolved = resolveExecutable(command, env);
   const empty = { stdout: "", stderr: "", timedOut: false };
   if (!resolved) return Promise.resolve({ ...empty, code: null, notFound: true, path: null });
 
   const isShim = isWindows && /\.(cmd|bat)$/i.test(resolved);
-  const file = isShim ? (env.ComSpec ?? "cmd.exe") : resolved;
+  const file = isShim ? comspec() : resolved;
   let argv = args;
   if (isShim) {
     try {
@@ -104,7 +131,7 @@ export const runTool: Exec = (command, args, opts = {}) => {
     let settled = false;
     const child = spawn(file, argv, {
       cwd: opts.cwd,
-      env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0", GIT_TERMINAL_PROMPT: "0" },
+      env: mergeEnv(env, { NO_COLOR: "1", FORCE_COLOR: "0", GIT_TERMINAL_PROMPT: "0" }),
       windowsHide: true,
       windowsVerbatimArguments: isShim,
       stdio: ["ignore", "pipe", "pipe"],
@@ -126,7 +153,10 @@ export const runTool: Exec = (command, args, opts = {}) => {
     child.stderr.setEncoding("utf8").on("data", (d: string) => {
       if (stderr.length < max) stderr += d;
     });
-    child.on("error", () => finish(null));
+    child.on("error", (error) => {
+      stderr += error.message;
+      finish(null);
+    });
     child.on("close", (code) => finish(code));
   });
 };
