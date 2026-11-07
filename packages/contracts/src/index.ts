@@ -4,6 +4,7 @@
  */
 export * from "./agent-events";
 export * from "./api";
+export * from "./browser-api";
 export * from "./common";
 export * from "./entities/artifact";
 export * from "./entities/automation";
