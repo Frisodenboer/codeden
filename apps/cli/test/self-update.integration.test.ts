@@ -37,7 +37,8 @@ describe.skipIf(!built)("self-update with a fake registry (§16)", () => {
   beforeAll(async () => {
     base = realpathSync.native(mkdtempSync(join(tmpdir(), "codeden-self-update-")));
     home = join(base, "home");
-    entry = installPublishedCopy(base);
+    // Linked runtime deps in <base>/node_modules also serve the version installed under <base>/home.
+    entry = installPublishedCopy(base, { linkDeps: true });
     current = run(["--version"]);
     registry = await startFakeRegistry();
     registry.publish(NEXT, packCli({ version: NEXT, stripDependencies: true }));
@@ -84,7 +85,7 @@ describe.skipIf(!built)("self-update with a fake registry (§16)", () => {
     const doctor = spawnSync(process.execPath, [entry, "doctor", "--home", home], {
       encoding: "utf8",
     });
-    expect(doctor.stdout).toContain(`Installed versions   ${NEXT} (current)`);
+    expect(doctor.stdout, doctor.stderr).toContain(`Installed versions   ${NEXT} (current)`);
   }, 300_000);
 
   it("falls back to the launched copy when the pinned version is broken", () => {
