@@ -17,6 +17,7 @@ import { UserInput } from "./input";
 import { FollowupsItem } from "./items";
 import { RuntimeResponse } from "./provider";
 import { ConflictDecision, StartedBy, StartWorkResult, WorkKey } from "./work";
+import { SetupStep } from "./workbench";
 import { ClientSubscribe, ClientToServerMessage, ServerToClientMessage } from "./ws";
 
 /**
@@ -164,6 +165,8 @@ export const SessionStartMeta = z.object({
   workspaceFallback: z.string().nullable(),
   forced: z.object({ reason: z.string(), conflictsWith: z.array(Id) }).nullable(),
   queuedBehind: z.array(Id),
+  /** Worktree setup commands (`.codeden/project.json`) and their output, in order. */
+  setup: z.array(SetupStep).optional(),
 });
 export type SessionStartMeta = z.infer<typeof SessionStartMeta>;
 
@@ -476,3 +479,6 @@ export const UiServerMessage = z.discriminatedUnion("type", [
   TranscriptResyncMessage,
 ]);
 export type UiServerMessage = z.infer<typeof UiServerMessage>;
+
+// Workbench routes (diffs, checkpoints, git, terminal, utility) live in `workbench.ts`.
+export * from "./workbench";

@@ -64,8 +64,8 @@ export interface ToolDefinition<
   scope: S;
   input: TInput;
   output?: z.ZodType<TOutput>;
-  /** Core tools are always loaded; others are deferred behind tool search. */
-  core?: boolean;
+  /** Core tools are always loaded; others are deferred behind tool search (§8.3). */
+  alwaysLoad?: boolean;
   /** Hidden when the predicate is false (e.g. `generate_image` with no engine). */
   isAvailable?: () => boolean | Promise<boolean>;
   handler: (input: z.output<TInput>, ctx: ToolContext<S>) => Promise<TOutput>;

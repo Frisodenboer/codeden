@@ -19,7 +19,9 @@ import { Automation, AutomationRun } from "./entities/automation";
 import { InboxItem } from "./entities/inbox";
 import { Project } from "./entities/project";
 import { Session } from "./entities/session";
+import { PtyId } from "./runner/commands";
 import { Settings } from "./settings";
+import { Checkpoint, QueuedMessage, SetupStep } from "./workbench";
 
 /**
  * Untyped row of the append-only `events` table (§6): `seq, session_id, type, payload, ts`.
@@ -87,6 +89,21 @@ export const EventEnvelope = z.discriminatedUnion("type", [
     z.object({ runnerId: z.string(), version: z.string(), protocolVersion: z.int() }),
   ),
   globalEvent("runner.disconnected", z.object({ runnerId: z.string(), reason: z.string() })),
+  /** The runner started draining (upgrade or shutdown); its sessions resume afterwards. */
+  globalEvent("runner.draining", z.object({ runnerId: z.string(), reason: z.string() })),
+  /** Progress of a worktree setup command (projected into the session's start metadata). */
+  globalEvent("session.setup", z.object({ sessionId: Id, step: SetupStep })),
+  /** A turn checkpoint was written (projected into `checkpoints`, used for diffs). */
+  globalEvent("checkpoint.created", z.object({ checkpoint: Checkpoint })),
+  /** A message was queued behind the running turn. */
+  globalEvent("message.queued", z.object({ message: QueuedMessage })),
+  /** A queued message left the queue: delivered, or dropped (interrupt, stop). */
+  globalEvent(
+    "message.dequeued",
+    z.object({ sessionId: Id, messageId: Id, reason: z.enum(["sent", "dropped"]) }),
+  ),
+  /** A runner terminal exited. */
+  globalEvent("pty.exited", z.object({ ptyId: PtyId, exitCode: z.int().nullable() })),
 ]);
 export type EventEnvelope = z.infer<typeof EventEnvelope>;
 export type EventType = EventEnvelope["type"];

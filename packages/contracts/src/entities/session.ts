@@ -12,6 +12,7 @@ import {
 } from "../common";
 import { Item } from "../items";
 import { workFields } from "../work";
+import { SessionResult } from "../workbench";
 
 /**
  * Session lifecycle.
@@ -69,6 +70,8 @@ export const Session = z.object({
   automationRunId: Id.nullable(),
   /** The session's root thread, once the provider started it. */
   rootThreadId: Id.nullable(),
+  /** Structured result from the agent's `finish` tool, once reported. */
+  result: SessionResult.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   endedAt: Timestamp.nullable(),

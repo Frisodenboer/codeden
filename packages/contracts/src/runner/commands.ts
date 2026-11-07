@@ -48,6 +48,16 @@ export const RunnerCommand = z.discriminatedUnion("name", [
   z.object({ name: z.literal("runner.shutdown") }),
   /** Detect installed providers (all when `providerId` is omitted). */
   z.object({ name: z.literal("provider.detect"), providerId: ProviderId.optional() }),
+  /** One tool-less utility-model call (§7.4) through a provider's `utilityModel()`. */
+  z.object({
+    name: z.literal("provider.oneShot"),
+    providerId: ProviderId,
+    prompt: z.string().min(1),
+    system: z.string().optional(),
+    /** Provider model id; the provider's small default when omitted. */
+    model: z.string().optional(),
+    timeoutMs: z.int().positive().max(300_000).optional(),
+  }),
   /** Create or reuse the working directory for a session (worktree + setup commands). */
   z.object({
     name: z.literal("workspace.prepare"),
@@ -215,6 +225,7 @@ export const RunnerCommandResults = {
   "runner.configure": z.object({ mcpProxyUrl: z.string().nullable() }),
   "runner.shutdown": Empty,
   "provider.detect": z.object({ statuses: z.array(ProviderStatus) }),
+  "provider.oneShot": z.object({ text: z.string(), model: z.string() }),
   "workspace.prepare": z.object({
     cwd: z.string(),
     branch: z.string().nullable(),

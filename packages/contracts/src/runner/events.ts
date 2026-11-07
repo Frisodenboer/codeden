@@ -17,6 +17,13 @@ export const RunnerEvent = z.discriminatedUnion("kind", [
     state: z.enum(["starting", "ready", "exited", "crashed"]),
     exitCode: z.int().nullable().optional(),
     error: ErrorInfo.optional(),
+    /**
+     * Why an exited session closed: `stopped` (asked to), `runner_exit` (the runner is
+     * draining or shutting down; the session stays resumable), `ended` (provider ended it).
+     */
+    reason: z.enum(["stopped", "runner_exit", "ended"]).optional(),
+    /** True when a running turn was cut off by the runner exiting (resume and continue). */
+    interruptedTurn: z.boolean().optional(),
   }),
   /** Output of `workspace.prepare` setup commands. */
   z.object({
