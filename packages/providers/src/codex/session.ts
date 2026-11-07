@@ -1,0 +1,255 @@
+import type {
+  AgentEvent,
+  ReasoningEffort,
+  RuntimeResponse,
+  SessionOptions,
+  UserInput,
+} from "@codeden/contracts";
+import { type ProviderSession, ProviderSessionError } from "../adapter";
+import { ApprovalBroker } from "../approvals";
+import { AsyncQueue } from "../async-queue";
+import type { ResolvedCommand } from "../util/exec";
+import { handleServerRequest } from "./approvals";
+import { codexConfigOverrides, codexPolicy, toCodexInput } from "./config";
+import { CodexEventMapper } from "./mapper";
+import { startAppServer } from "./process";
+import type { ServerNotification } from "./protocol";
+import type {
+  Model,
+  ThreadResumeResponse,
+  ThreadStartResponse,
+  TurnStartResponse,
+} from "./protocol/v2";
+import type { CodexRpc } from "./rpc";
+
+export interface CodexSessionConfig {
+  executable: ResolvedCommand;
+  onModels?: (models: Model[]) => void;
+  interruptTimeoutMs?: number;
+}
+
+/** CodeDen effort -> Codex reasoning effort (Codex tops out at `xhigh`). */
+export function codexEffort(effort: ReasoningEffort | undefined): string | undefined {
+  if (!effort) return undefined;
+  return effort === "max" ? "xhigh" : effort;
+}
+
+/**
+ * A Codex session over `codex app-server` (§7.2): one app-server process and one thread per
+ * session. If the process exits, the next `send()` restarts it and resumes the thread.
+ */
+export class CodexSession implements ProviderSession {
+  readonly events = new AsyncQueue<AgentEvent>();
+  private readonly mapper: CodexEventMapper;
+  private readonly broker: ApprovalBroker;
+  private rpc: CodexRpc | undefined;
+  private starting: Promise<CodexRpc> | undefined;
+  private turnPending = false;
+  private closed = false;
+  private readonly filePaths = new Map<string, string[]>();
+
+  constructor(
+    private readonly opts: SessionOptions,
+    private readonly config: CodexSessionConfig,
+  ) {
+    const emit = (event: AgentEvent) => {
+      if (
+        (event.type === "turn.completed" ||
+          event.type === "turn.failed" ||
+          event.type === "turn.interrupted") &&
+        event.threadId === this.mapper.rootThreadId
+      ) {
+        this.turnPending = false;
+      }
+      this.events.push(event);
+    };
+    this.mapper = new CodexEventMapper(opts.sessionId, emit);
+    this.mapper.codexThreadId = opts.resumeToken;
+    this.broker = new ApprovalBroker(emit);
+  }
+
+  /** Start the app-server and the thread. Called by the adapter before returning the session. */
+  async start(): Promise<void> {
+    this.events.push({ type: "thread.started", thread: { id: this.mapper.rootThreadId } });
+    await this.ensureServer();
+  }
+
+  resumeToken(): string | undefined {
+    return this.mapper.codexThreadId;
+  }
+
+  async send(input: UserInput): Promise<void> {
+    if (this.closed) throw new ProviderSessionError("closed", "Session is closed");
+    if (this.turnPending || this.mapper.currentTurnId) {
+      throw new ProviderSessionError("turn_running", "A turn is already running");
+    }
+    this.turnPending = true;
+    try {
+      const rpc = await this.ensureServer();
+      const effort = codexEffort(this.opts.effort);
+      const res = await rpc.request<TurnStartResponse>("turn/start", {
+        threadId: this.threadId(),
+        input: toCodexInput(input),
+        ...(effort ? { effort } : {}),
+      });
+      this.mapper.beginTurn(res.turn.id);
+    } catch (error) {
+      this.turnPending = false;
+      throw error;
+    }
+  }
+
+  async steer(input: UserInput): Promise<void> {
+    const turnId = this.mapper.currentTurnId;
+    if (!turnId || !this.rpc) throw new ProviderSessionError("no_turn", "No turn is running");
+    await this.rpc.request("turn/steer", {
+      threadId: this.threadId(),
+      input: toCodexInput(input),
+      expectedTurnId: turnId,
+    });
+  }
+
+  async interrupt(): Promise<void> {
+    const turnId = this.mapper.currentTurnId;
+    if (!turnId || !this.rpc) return;
+    this.broker.cancelAll();
+    try {
+      await this.rpc.request("turn/interrupt", { threadId: this.threadId(), turnId });
+    } catch {
+      // Process gone or turn already over; the timeout below closes the turn.
+    }
+    setTimeout(() => {
+      if (this.mapper.currentTurnId === turnId)
+        this.mapper.endTurn({ type: "interrupted" }, turnId);
+    }, this.config.interruptTimeoutMs ?? 10_000).unref();
+  }
+
+  async respond(requestId: string, response: RuntimeResponse): Promise<void> {
+    this.broker.respond(requestId, response);
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    this.broker.cancelAll();
+    this.mapper.endTurn({ type: "interrupted" });
+    this.rpc?.close();
+    this.events.close();
+  }
+
+  // ---------------------------------------------------------------- internals
+
+  private threadId(): string {
+    const id = this.mapper.codexThreadId;
+    if (!id) throw new ProviderSessionError("not_started", "Codex thread is not started");
+    return id;
+  }
+
+  private ensureServer(): Promise<CodexRpc> {
+    if (this.rpc && !this.rpc.isClosed) return Promise.resolve(this.rpc);
+    this.starting ??= this.boot().finally(() => {
+      this.starting = undefined;
+    });
+    return this.starting;
+  }
+
+  private async boot(): Promise<CodexRpc> {
+    const { rpc } = await startAppServer(
+      this.config.executable,
+      {
+        onNotification: (n) => this.onNotification(n),
+        onRequest: (req) =>
+          handleServerRequest(req, {
+            broker: this.broker,
+            risk: { cwd: this.opts.cwd, extraRoots: this.opts.additionalDirectories },
+            ctx: (turnId) => ({ threadId: this.mapper.rootThreadId, turnId }),
+            filePaths: (itemId) => this.filePaths.get(itemId),
+          }),
+        onExit: (code, stderr) => this.onExit(code, stderr),
+      },
+      { env: this.opts.env, cwd: this.opts.cwd },
+    );
+    this.rpc = rpc;
+    const { approvalPolicy, sandbox } = codexPolicy(this.opts.autonomy);
+    const common = {
+      cwd: this.opts.cwd,
+      approvalPolicy,
+      sandbox,
+      config: codexConfigOverrides(this.opts),
+      ...(this.opts.model ? { model: this.opts.model } : {}),
+      ...(this.opts.systemPrompt ? { developerInstructions: this.opts.systemPrompt } : {}),
+    };
+    let res: ThreadStartResponse | ThreadResumeResponse | undefined;
+    const resumeId = this.mapper.codexThreadId;
+    if (resumeId) {
+      try {
+        res = await rpc.request<ThreadResumeResponse>("thread/resume", {
+          threadId: resumeId,
+          excludeTurns: true,
+          ...common,
+        });
+      } catch (error) {
+        this.noticeOutsideTurn(
+          `Could not resume Codex thread ${resumeId}; started a new one. ${(error as Error).message}`,
+        );
+      }
+    }
+    res ??= await rpc.request<ThreadStartResponse>("thread/start", common);
+    this.mapper.codexThreadId = res.thread.id;
+    this.events.push({ type: "session.updated", resumeToken: res.thread.id, model: res.model });
+    if (this.config.onModels) {
+      rpc.request<{ data: Model[] }>("model/list", {}).then(
+        (r) => this.config.onModels?.(r.data),
+        () => {},
+      );
+    }
+    return rpc;
+  }
+
+  private noticeOutsideTurn(message: string): void {
+    // Notices need a turn; surface resume problems at the start of the next turn instead.
+    this.pendingNotice = message;
+  }
+
+  private pendingNotice: string | undefined;
+
+  private onNotification(n: ServerNotification): void {
+    if (n.method === "item/started" && n.params.item.type === "fileChange") {
+      this.filePaths.set(
+        n.params.item.id,
+        n.params.item.changes.map((c) => c.path),
+      );
+    }
+    if (n.method === "turn/started" && this.pendingNotice) {
+      this.mapper.beginTurn(n.params.turn.id);
+      const message = this.pendingNotice;
+      this.pendingNotice = undefined;
+      this.events.push({
+        type: "item.completed",
+        threadId: this.mapper.rootThreadId,
+        turnId: n.params.turn.id,
+        item: {
+          id: `resume-${n.params.turn.id}`,
+          kind: "notice",
+          status: "completed",
+          level: "warning",
+          code: "resume_failed",
+          message,
+        },
+      });
+    }
+    this.mapper.handle(n);
+  }
+
+  private onExit(code: number | null, stderr: string): void {
+    if (this.closed) return;
+    this.broker.cancelAll();
+    this.mapper.endTurn({
+      type: "failed",
+      code: "provider_exited",
+      message: `codex app-server exited (code ${code ?? "unknown"})`,
+      ...(stderr ? { detail: stderr.slice(-2000) } : {}),
+    });
+    this.turnPending = false;
+  }
+}

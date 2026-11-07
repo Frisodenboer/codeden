@@ -1,0 +1,150 @@
+import type { ItemOf, RuntimeResponse, UserQuestion } from "@codeden/contracts";
+import type { ApprovalBroker, ItemCtx } from "../approvals";
+import { classifyCommand, type RiskContext } from "../policy/risk";
+import { shorten } from "../util/text";
+import type { ServerRequest } from "./protocol";
+import type {
+  CommandExecutionApprovalDecision,
+  FileChangeApprovalDecision,
+  ToolRequestUserInputResponse,
+} from "./protocol/v2";
+import { CodexRpcError } from "./rpc";
+
+export interface ApprovalContext {
+  broker: ApprovalBroker;
+  risk: RiskContext;
+  /** Context for an item: the thread/turn the request belongs to. */
+  ctx: (turnId: string) => ItemCtx;
+  /** Paths touched by a pending file change item, if known. */
+  filePaths: (itemId: string) => string[] | undefined;
+}
+
+const decisionOf = (r: RuntimeResponse) => (r.kind === "approval" ? r.decision : "cancel");
+
+/** Handle an app-server -> client request. Resolves with the JSON-RPC result. */
+export async function handleServerRequest(
+  req: ServerRequest,
+  ac: ApprovalContext,
+): Promise<unknown> {
+  switch (req.method) {
+    case "item/commandExecution/requestApproval": {
+      const p = req.params;
+      const command = p.commandActions?.length
+        ? p.commandActions.map((a) => a.command).join(" && ")
+        : (p.command ?? "");
+      const risk = classifyCommand(command, ac.risk);
+      const item: ItemOf<"approval_request"> = {
+        id: `approval-${p.approvalId ?? p.itemId}`,
+        kind: "approval_request",
+        status: "in_progress",
+        requestId: p.approvalId ?? p.itemId,
+        action: p.networkApprovalContext ? "network" : risk.risky ? risk.action : "command",
+        title: command ? `Run \`${shorten(command, 100)}\`` : "Run a command",
+        ...(p.reason || risk.risky
+          ? { reason: p.reason ?? (risk.risky ? risk.reason : undefined) }
+          : {}),
+        ...(command ? { command } : {}),
+        ...(p.cwd ? { cwd: p.cwd } : {}),
+        toolName: "shell",
+        toolCallItemId: p.itemId,
+        options: ["allow_once", "allow_session", "deny"],
+      };
+      const response = await ac.broker.request(ac.ctx(p.turnId), item);
+      const map: Record<string, CommandExecutionApprovalDecision> = {
+        allow_once: "accept",
+        allow_session: "acceptForSession",
+        deny: "decline",
+        cancel: "cancel",
+      };
+      return { decision: map[decisionOf(response)] ?? "cancel" };
+    }
+    case "item/fileChange/requestApproval": {
+      const p = req.params;
+      const paths = ac.filePaths(p.itemId) ?? [];
+      const item: ItemOf<"approval_request"> = {
+        id: `approval-${p.itemId}`,
+        kind: "approval_request",
+        status: "in_progress",
+        requestId: p.itemId,
+        action: p.grantRoot ? "outside_worktree" : "file_change",
+        title:
+          paths.length === 1
+            ? `Edit ${paths[0]}`
+            : paths.length
+              ? `Edit ${paths.length} files`
+              : "Apply a patch",
+        ...(p.reason ? { reason: p.reason } : {}),
+        ...(paths.length ? { paths } : {}),
+        toolName: "apply_patch",
+        toolCallItemId: p.itemId,
+        options: ["allow_once", "allow_session", "deny"],
+      };
+      const response = await ac.broker.request(ac.ctx(p.turnId), item);
+      const map: Record<string, FileChangeApprovalDecision> = {
+        allow_once: "accept",
+        allow_session: "acceptForSession",
+        deny: "decline",
+        cancel: "cancel",
+      };
+      return { decision: map[decisionOf(response)] ?? "cancel" };
+    }
+    case "item/permissions/requestApproval": {
+      const p = req.params;
+      const response = await ac.broker.request(ac.ctx(p.turnId), {
+        id: `approval-${p.itemId}`,
+        kind: "approval_request",
+        status: "in_progress",
+        requestId: p.itemId,
+        action: p.permissions.network ? "network" : "outside_worktree",
+        title: "Grant additional permissions",
+        ...(p.reason ? { reason: p.reason } : {}),
+        cwd: p.cwd,
+        toolInput: JSON.parse(JSON.stringify(p.permissions)),
+        options: ["allow_once", "allow_session", "deny"],
+      });
+      const decision = decisionOf(response);
+      if (decision === "allow_once" || decision === "allow_session") {
+        return {
+          permissions: {
+            ...(p.permissions.network ? { network: p.permissions.network } : {}),
+            ...(p.permissions.fileSystem ? { fileSystem: p.permissions.fileSystem } : {}),
+          },
+          scope: decision === "allow_session" ? "session" : "turn",
+        };
+      }
+      return { permissions: {}, scope: "turn" };
+    }
+    case "item/tool/requestUserInput": {
+      const p = req.params;
+      const questions: UserQuestion[] = p.questions.map((q) => ({
+        id: q.id,
+        header: q.header,
+        question: q.question,
+        options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description })),
+        multiSelect: false,
+        allowFreeText: q.isOther || !q.options?.length,
+      }));
+      const response = await ac.broker.request(ac.ctx(p.turnId), {
+        id: `question-${p.itemId}`,
+        kind: "user_question",
+        status: "in_progress",
+        requestId: p.itemId,
+        questions,
+      });
+      const answers: ToolRequestUserInputResponse["answers"] = {};
+      if (response.kind === "answer") {
+        for (const [id, values] of Object.entries(response.answers))
+          answers[id] = { answers: values };
+      }
+      return { answers };
+    }
+    case "mcpServer/elicitation/request":
+      return { action: "decline", content: null, _meta: null };
+    case "execCommandApproval":
+    case "applyPatchApproval":
+      // Legacy v1 approvals; v2 clients never receive them, but never leave the agent hanging.
+      return { decision: { denied: { rejection: "Unsupported approval request" } } };
+    default:
+      throw new CodexRpcError(-32601, `CodeDen does not handle ${req.method}`);
+  }
+}
