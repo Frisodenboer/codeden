@@ -564,7 +564,7 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
   - `codeden stop`
   - `codeden --port`, `--home`
 - **Updates.** An update check against the npm registry, with a notice in the UI. The runner drains and restarts after an upgrade (§4.2).
-- **Telemetry.** None by default; crash reports are opt-in.
+- **Telemetry.** None. CodeDen sends nothing anywhere; the only outbound check is an optional npm registry version lookup for update notices.
 - **Native dependencies.** Kept to `node-pty` and `@napi-rs/keyring`, both with prebuilt binaries. Installing through `npx` on Windows, macOS and Linux is checked in CI.
 
 ## 17. Electron (after v1)
