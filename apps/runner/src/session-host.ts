@@ -5,28 +5,32 @@ import type {
   RunnerSessionInfo,
 } from "@codeden/contracts";
 import type { ProviderRegistry, ProviderSession } from "@codeden/providers";
+import { CommandError } from "./errors";
+import { createCheckpoint, nextCheckpointIndex } from "./git/checkpoints";
+import { isWorkTree } from "./git/exec";
 
-/** Error with a machine-readable code, returned to the server as a failed result. */
-export class CommandError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "CommandError";
-  }
-}
+export { CommandError };
 
 interface Hosted {
   providerId: string;
   session: ProviderSession;
   state: RunnerSessionInfo["state"];
   rootThreadId: string | undefined;
+  cwd: string;
+  checkpoints: boolean;
+  /** Serializes checkpoint writes for this session. */
+  checkpointChain: Promise<void>;
+}
+
+export interface SessionHostOptions {
+  log?: (message: string) => void;
 }
 
 /**
  * Owns live provider sessions on this runner and pumps their normalized events into the
- * journal (via `emit`). Sessions outlive server connections.
+ * journal (via `emit`). Sessions outlive server connections. Any number run concurrently.
+ * When the cwd is a git work tree, the host writes turn checkpoints (§9): a baseline when
+ * the session starts and one after every root-thread turn ends.
  */
 export class SessionHost {
   private readonly sessions = new Map<string, Hosted>();
@@ -34,6 +38,7 @@ export class SessionHost {
   constructor(
     private readonly registry: ProviderRegistry,
     private readonly emit: (event: RunnerEvent) => void,
+    private readonly opts: SessionHostOptions = {},
   ) {}
 
   list(): RunnerSessionInfo[] {
@@ -45,30 +50,64 @@ export class SessionHost {
     }));
   }
 
+  /** Number of sessions with a running turn. */
+  get running(): number {
+    return [...this.sessions.values()].filter((h) => h.state === "running").length;
+  }
+
   async start(cmd: RunnerCommandOf<"session.start">): Promise<{ resumeToken: string | null }> {
     if (this.sessions.has(cmd.sessionId)) {
       throw new CommandError("session_exists", `Session ${cmd.sessionId} is already running`);
     }
     const adapter = this.registry.get(cmd.providerId);
-    if (!adapter)
-      throw new CommandError("unknown_provider", `Provider ${cmd.providerId} is not available`);
+    if (!adapter) {
+      const available = this.registry.list().map((a) => a.id);
+      throw new CommandError(
+        "unknown_provider",
+        `Provider ${cmd.providerId} is not available on this runner` +
+          (available.length > 0 ? ` (available: ${available.join(", ")})` : ""),
+      );
+    }
     this.emit({ kind: "session.process", sessionId: cmd.sessionId, state: "starting" });
-    const session = await adapter.openSession(cmd.options);
+    let session: ProviderSession;
+    try {
+      session = await adapter.openSession(cmd.options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emit({
+        kind: "session.process",
+        sessionId: cmd.sessionId,
+        state: "crashed",
+        error: { code: "open_failed", message },
+      });
+      throw new CommandError("open_failed", `Could not open the session: ${message}`);
+    }
+    const checkpoints = cmd.checkpoints !== false && (await isWorkTree(cmd.options.cwd));
     const hosted: Hosted = {
       providerId: cmd.providerId,
       session,
       state: "idle",
       rootThreadId: undefined,
+      cwd: cmd.options.cwd,
+      checkpoints,
+      checkpointChain: Promise.resolve(),
     };
     this.sessions.set(cmd.sessionId, hosted);
+    if (checkpoints) this.checkpoint(cmd.sessionId, hosted, undefined, true);
     this.emit({ kind: "session.process", sessionId: cmd.sessionId, state: "ready" });
     void this.pump(cmd.sessionId, hosted);
-    if (cmd.input) await session.send(cmd.input);
+    if (cmd.input) {
+      // The baseline must capture the tree before the first turn touches it.
+      await hosted.checkpointChain;
+      await session.send(cmd.input);
+    }
     return { resumeToken: session.resumeToken() ?? null };
   }
 
   async send(cmd: RunnerCommandOf<"session.send">): Promise<void> {
-    await this.get(cmd.sessionId).session.send(cmd.input);
+    const hosted = this.get(cmd.sessionId);
+    await hosted.checkpointChain;
+    await hosted.session.send(cmd.input);
   }
 
   async steer(cmd: RunnerCommandOf<"session.steer">): Promise<void> {
@@ -89,10 +128,30 @@ export class SessionHost {
     const hosted = this.get(sessionId);
     hosted.state = "closing";
     await hosted.session.close();
+    await hosted.checkpointChain;
   }
 
   async closeAll(): Promise<void> {
     await Promise.all([...this.sessions.keys()].map((id) => this.stop(id).catch(() => undefined)));
+  }
+
+  /**
+   * Let running turns finish (up to `timeoutMs`), interrupt whatever is still running,
+   * and wait for pending checkpoints. Sessions stay open (resumable) until `closeAll`.
+   */
+  async drain(timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.running > 0 && Date.now() < deadline) await sleep(100);
+    const stuck = [...this.sessions.values()].filter((h) => h.state === "running");
+    await Promise.all(stuck.map((h) => h.session.interrupt().catch(() => undefined)));
+    const settle = Date.now() + 5_000;
+    while (this.running > 0 && Date.now() < settle) await sleep(50);
+    await Promise.all([...this.sessions.values()].map((h) => h.checkpointChain));
+  }
+
+  /** Wait until every pending checkpoint of a session has been written (tests, drain). */
+  async settled(sessionId: string): Promise<void> {
+    await this.sessions.get(sessionId)?.checkpointChain;
   }
 
   private get(sessionId: string): Hosted {
@@ -101,12 +160,37 @@ export class SessionHost {
     return hosted;
   }
 
+  /**
+   * Queue a checkpoint. The baseline (index 0) is only written when the session has none
+   * yet, so a resumed session continues its numbering.
+   */
+  private checkpoint(sessionId: string, hosted: Hosted, turnId?: string, baseline = false): void {
+    hosted.checkpointChain = hosted.checkpointChain.then(async () => {
+      try {
+        const index = await nextCheckpointIndex(hosted.cwd, sessionId);
+        if (baseline && index > 0) return;
+        const cp = await createCheckpoint(hosted.cwd, sessionId, index, turnId);
+        this.emit({
+          kind: "checkpoint.created",
+          sessionId,
+          index: cp.index,
+          ref: cp.ref,
+          commit: cp.commit,
+          ...(turnId ? { turnId } : {}),
+        });
+      } catch (error) {
+        this.opts.log?.(`checkpoint failed for ${sessionId}: ${(error as Error).message}`);
+      }
+    });
+  }
+
   private async pump(sessionId: string, hosted: Hosted): Promise<void> {
     try {
       for await (const event of hosted.session.events) {
-        this.track(hosted, event);
         this.emit({ kind: "agent", sessionId, event });
+        this.track(sessionId, hosted, event);
       }
+      await hosted.checkpointChain;
       this.emit({ kind: "session.process", sessionId, state: "exited", exitCode: 0 });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -121,20 +205,24 @@ export class SessionHost {
     }
   }
 
-  private track(hosted: Hosted, event: AgentEvent): void {
+  private track(sessionId: string, hosted: Hosted, event: AgentEvent): void {
     if (event.type === "thread.started" && !event.thread.parentThreadId) {
       hosted.rootThreadId = event.thread.id;
     }
-    if (hosted.state === "closing") return;
     const onRoot = "threadId" in event && event.threadId === hosted.rootThreadId;
     if (!onRoot) return;
-    if (event.type === "turn.started") hosted.state = "running";
+    if (event.type === "turn.started" && hosted.state !== "closing") hosted.state = "running";
     if (
       event.type === "turn.completed" ||
       event.type === "turn.failed" ||
       event.type === "turn.interrupted"
     ) {
-      hosted.state = "idle";
+      if (hosted.state !== "closing") hosted.state = "idle";
+      if (hosted.checkpoints) this.checkpoint(sessionId, hosted, event.turnId);
     }
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }

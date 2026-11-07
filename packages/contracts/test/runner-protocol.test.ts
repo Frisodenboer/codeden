@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  devServerOf,
+  ProjectConfigFile,
   RUNNER_PROTOCOL_VERSION,
   RunnerCommand,
   RunnerCommandResults,
@@ -93,6 +95,59 @@ describe("runner protocol", () => {
     });
     roundTrip(ServerToRunnerMessage, { type: "ack", seq: 99 });
     expect(ServerToRunnerMessage.safeParse({ type: "ack", seq: 0 }).success).toBe(false);
+  });
+
+  it("round-trips workspace, git, checkpoint, pty and port commands", () => {
+    const commands: unknown[] = [
+      { name: "runner.configure", mcpUpstreamUrl: "http://127.0.0.1:4317/mcp" },
+      { name: "runner.drain", reason: "upgrade", exitWhenDrained: true, timeoutMs: 1000 },
+      {
+        name: "workspace.prepare",
+        sessionId: "s1",
+        repoPath: "/repo",
+        strategy: "worktree",
+        projectSlug: "demo",
+        fetch: true,
+      },
+      { name: "workspace.remove", repoPath: "/repo", path: "/wt/demo/s1", deleteBranch: "b" },
+      { name: "git.branches", cwd: "/repo" },
+      { name: "git.commit", cwd: "/repo", message: "feat: x", paths: ["a.ts"] },
+      { name: "git.push", cwd: "/repo", setUpstream: true },
+      { name: "checkpoint.list", cwd: "/repo", sessionId: "s1" },
+      { name: "checkpoint.diff", cwd: "/repo", sessionId: "s1", from: 0, to: 2 },
+      { name: "checkpoint.restoreFiles", cwd: "/repo", sessionId: "s1", index: 1 },
+      { name: "pty.attach", ptyId: "p1" },
+      { name: "ports.list", probe: [5173] },
+    ];
+    for (const command of commands) roundTrip(RunnerCommand, command);
+    expect(
+      RunnerCommand.safeParse({ name: "checkpoint.diff", cwd: "/r", sessionId: "s", from: -1 })
+        .success,
+    ).toBe(false);
+    roundTrip(RunnerCommandResults["checkpoint.diff"], {
+      diff: "diff --git a/x b/x",
+      files: [{ path: "x", status: "modified", additions: 1, deletions: 2, binary: false }],
+    });
+    roundTrip(RunnerCommandResults["workspace.prepare"], {
+      cwd: "/wt/demo/s1",
+      branch: "codeden/demo",
+      created: true,
+      config: { setup: ["pnpm install"], devServer: { command: "pnpm dev", port: 5173 } },
+      setup: [{ command: "pnpm install", exitCode: 0, ok: true }],
+    });
+    roundTrip(RunnerToServerMessage, {
+      type: "event",
+      seq: 1,
+      ts,
+      event: { kind: "checkpoint.created", sessionId: "s1", index: 1, ref: "r", commit: "c" },
+    });
+  });
+
+  it("parses .codeden/project.json", () => {
+    const config = ProjectConfigFile.parse({ devServer: "pnpm dev", other: 1 });
+    expect(config.setup).toEqual([]);
+    expect(devServerOf(config)).toEqual({ command: "pnpm dev" });
+    expect(ProjectConfigFile.safeParse({ setup: "pnpm install" }).success).toBe(false);
   });
 
   it("validates the lock file", () => {

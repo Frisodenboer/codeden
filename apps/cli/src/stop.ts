@@ -1,3 +1,4 @@
+import { stopRunner } from "@codeden/runner";
 import { ensureInstallToken, homePaths, isProcessAlive, readLiveRunnerLock } from "@codeden/server";
 import { findRunningServer } from "./running";
 
@@ -32,11 +33,8 @@ export async function stop(home: string): Promise<number> {
     );
   }
   if (runner) {
-    // The server asks the runner to exit; fall back to killing it.
-    if (!(await waitForExit(runner.pid, 5_000))) {
-      process.kill(runner.pid);
-      await waitForExit(runner.pid, 5_000);
-    }
+    // The server asks the runner to exit; otherwise ask it directly, then kill its process tree.
+    if (!(await waitForExit(runner.pid, 5_000))) await stopRunner(paths.runnerLock);
     console.log(`Stopped runner (pid ${runner.pid}).`);
   }
   return 0;

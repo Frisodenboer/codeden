@@ -13,6 +13,7 @@ export * from "./events";
 export * from "./factory";
 export * from "./input";
 export * from "./items";
+export * from "./project-config";
 export * from "./provider";
 export * from "./runner/commands";
 export * from "./runner/events";
