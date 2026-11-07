@@ -85,6 +85,18 @@ CodeDen doesn't ship the Claude Agent SDK. The first time it's needed (on the se
 
 npm uses your normal configuration (`.npmrc`, `npm_config_registry`, proxy settings). If the folder ends up broken, delete `~/.codeden/deps/` and retry. A `.install.lock` left by a crashed install is cleared automatically once its process is gone, or after 10 minutes.
 
+### An update failed or won't apply
+
+One-click updates install into `~/.codeden/app/<version>/` with npm, then CodeDen restarts into the new version (see [Updating](../README.md#updating)).
+
+- **"Couldn't update to X: npm install exited ..."**: npm's reason follows, usually a network, proxy or registry problem. npm uses your normal configuration (`.npmrc`, proxy settings). Fix it, then press **Retry**, or run `codeden update` to see npm's full output.
+- **"Update installed. Restart CodeDen to finish"**: CodeDen couldn't restart itself (it wasn't started by the `codeden` command, or the new version didn't answer within two minutes). Run `codeden stop`, then start it again the usual way; the new version starts.
+- **"CodeDen X exited before it started"**: the new version crashed on start, so CodeDen went back to the old one and shows the error. Check the terminal output, then retry or report it. `codeden update --rollback` (or **Roll back** in Settings > About) also goes back.
+- **"CodeDen X ... can't start (...); running Y instead"**: the installed version's files are incomplete (an interrupted install, cleaned folder or antivirus). Run `codeden update` to reinstall it, or delete `~/.codeden/app/<version>/` and `~/.codeden/app/current.json` to run the copy you launched.
+- **`codeden` still starts the old version**: run `codeden doctor` and look at *Launched copy*, *Installed versions* and *Current version*. A copy you launched that is newer than the installed one always wins (for example after `npm i -g codeden@latest`), and a source checkout never switches.
+- **`npx` keeps an old copy**: that's fine: the npx copy only launches the version in `~/.codeden/app`. To refresh npx's own copy, run `npx codeden@latest` once.
+- A `.install.lock` in `~/.codeden/app` left by a crashed install is cleared once its process is gone, or after 10 minutes. Old versions are pruned to the current and previous ones; a folder still in use on Windows is removed on a later update.
+
 ### "older than the tested minimum"
 
 CodeDen pins the Claude Agent SDK and the Codex protocol to versions it has been tested against, and reports CLIs that are too old (Claude Code 2.1.250+, Codex 0.160.0+). Update them:

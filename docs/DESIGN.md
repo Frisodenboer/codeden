@@ -561,11 +561,19 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
 
 - **Install.** `npx codeden` (or `npm i -g codeden`). The CLI subcommands:
   - `codeden` (start and open)
-  - `codeden doctor` (diagnostics)
+  - `codeden doctor` (diagnostics, including installed versions and which one starts)
+  - `codeden update` (install the latest version and switch to it), `codeden update --rollback`
   - `codeden stop`
   - `codeden --port`, `--home`
-- **Updates.** An update check against the npm registry, with a notice in the UI. The runner drains and restarts after an upgrade (§4.2).
-- **Telemetry.** None. CodeDen sends nothing anywhere; the only outbound check is an optional npm registry version lookup for update notices.
+- **Updates: one click, side by side.**
+  - **Check.** On server start and every 6 hours the server asks the npm registry for `codeden`'s `latest` dist-tag (only the package name is sent). The status is served at `GET /api/updates` and pushed live as an ephemeral `update` WebSocket message (like runner status, not in the event log). Setting `updates.mode`: `off`, `notify` (default) or `auto` (download in the background; it starts on the next launch, or now with "Restart now").
+  - **Install.** "Update now" runs `npm install codeden@<version> --omit=dev --no-audit --no-fund` into a staging folder under `<home>/app`, checks the result (package version, entry files, and the installed CLI answering `--version`), then renames it to `<home>/app/<version>/`. A lock file serialises installs (server and `codeden update`); progress lines stream to the UI. The running version's files are never touched (Windows locks loaded native modules). `<home>/app/current.json` (`AppPointer`: version, previous) then names the new version; older versions are pruned to the pinned one and its previous.
+  - **Launcher.** Every copy of the CLI (npx cache, global install, side-by-side version) runs a small launcher first: when `current.json` names a valid installed version newer than itself, that version's `dist/cli.js` is loaded with `import()` in the same process, so arguments, environment, signals and exit codes are unchanged and no extra process is left. A missing or broken pinned version falls back to the launched copy with a warning (stderr, About, `doctor`). A newer global install wins over an older pin. Builds from a source checkout (the package root still has `src/`) never switch; the UI says to pull and rebuild.
+  - **Version at runtime.** The published entries set the version from their own `package.json` before loading the bundle, so the package version is the single source of truth (`SOURCE_VERSION` in contracts is kept in sync for the workspace).
+  - **Restart.** After the install the server announces `restarting` and calls the CLI's restart hook: the CLI closes the server (the runner keeps running), starts the new version's CLI as a child in the same terminal with the original arguments plus the port in use and `--no-open`, and stays as a thin parent that passes on signals and the exit code. The new server finds the old runner, sees the version mismatch and drains it (§4.2), so interrupted turns resume through the existing path. The browser polls `/api/health`, reloads when the new version answers (same port and install token, so the cookie still works) and confirms "CodeDen updated to X". If the new version exits before answering, the CLI restores `current.json`, records the failure (`<home>/app/last-update.json`) and starts the old version again; the UI shows the error with Retry. A server not started by the CLI (development) cannot restart itself and shows "Update installed, restart CodeDen to finish" with the command.
+  - **Rollback.** About and `codeden update --rollback` point `current.json` back at the previous version (or clear it to run the launched copy) and restart.
+  - **Tests.** `CODEDEN_UPDATE_REGISTRY` and `CODEDEN_RELEASE_NOTES_URL` point the check, the install and the release notes at a local fake registry; they exist for tests only.
+- **Telemetry.** None. CodeDen sends nothing anywhere; the only outbound requests are the optional npm registry version lookup and, when you open "What's new", the release notes from GitHub.
 - **Native dependencies.** Kept to `node-pty` and `@napi-rs/keyring`, both with prebuilt binaries. Installing through `npx` on Windows, macOS and Linux is checked in CI.
 
 ## 17. Electron (after v1)

@@ -2,6 +2,20 @@
 
 All notable changes to CodeDen are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **One-click updates.** CodeDen checks npm on start and every 6 hours; a banner offers the new version with **What's new** (release notes), **Update now** and **Later**. Update now installs the version side by side into `~/.codeden/app/<version>/`, restarts CodeDen into it and reconnects the page; running sessions are drained and resumed. Progress, failures with Retry, and a manual restart command when CodeDen can't restart itself.
+- The `codeden` launcher: any copy you run (npx, global) starts the newest installed version from `~/.codeden/app/current.json`, in the same process. Source checkouts never switch.
+- `codeden update` and `codeden update --rollback`; **Roll back** in Settings > About; `codeden doctor` lists installed versions and which one starts.
+- Settings > General > **Updates**: Off, Notify me (default) or Install automatically (downloads in the background for the next launch).
+
+### Changed
+
+- The update check runs every 6 hours instead of once a day, and the "Check for updates" switch became the Updates setting (an existing "off" stays off).
+- The published entries read their version from `package.json` at runtime.
+
 ## [0.1.0] - first public release
 
 The first public release of CodeDen, a local-first harness for coding agents. Install with `npx codeden`.

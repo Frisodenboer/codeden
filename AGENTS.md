@@ -35,10 +35,10 @@ Node 24+ and pnpm 10 (`corepack enable`).
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm lint` / `pnpm format` | Biome check / Biome fix + format |
 | `pnpm test` | Vitest across all packages (includes a server -> runner -> Fake provider end-to-end test) |
-| `pnpm e2e` | Build the web app, then Playwright (`apps/web/e2e`) against a real server + runner with an isolated home and the Fake provider (first run: `pnpm --filter @codeden/web exec playwright install chromium`) |
+| `pnpm e2e` | Build the web app and the CLI, then Playwright (`apps/web/e2e`) against a real server + runner with an isolated home and the Fake provider; the update spec also runs the built CLI against a local fake npm registry (first run: `pnpm --filter @codeden/web exec playwright install chromium`) |
 | `VITE_CODEDEN_MOCK=1 pnpm --filter @codeden/web dev` | The UI against the in-memory mock client, no server needed (dev only; builds always use the real server) |
 | `pnpm db:generate` | Generate a Drizzle migration after editing a table file `apps/server/src/db/schema-*.ts` (`schema.ts` is the barrel that re-exports them) |
-| `node apps/cli/dist/cli.js --home <dir>` | Run the built CLI (`doctor`, `stop`, `--port`, `--no-open`) |
+| `node apps/cli/dist/cli.js --home <dir>` | Run the built CLI (`doctor`, `update`, `stop`, `--port`, `--no-open`). A repository build never switches versions; self-update is tested with the fake registry in `apps/cli/test/support/` |
 
 ## Conventions
 
