@@ -1,4 +1,19 @@
+import { realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { configDefaults, defineConfig } from "vitest/config";
+
+/**
+ * Tests make temp folders under `os.tmpdir()` and compare paths the server and runner
+ * canonicalise with `realpath`. On CI runners the temp dir is not canonical: macOS uses
+ * `/var/folders/...` (a symlink to `/private/var/...`) and Windows uses an 8.3 short name
+ * (`C:\Users\RUNNER~1\...`). Point every worker (and the processes they spawn) at the
+ * canonical temp dir so expectations and results agree. `os.tmpdir()` reads these variables
+ * on every call.
+ */
+const canonicalTmp = realpathSync.native(tmpdir());
+for (const name of process.platform === "win32" ? ["TEMP", "TMP"] : ["TMPDIR"]) {
+  process.env[name] = canonicalTmp;
+}
 
 /**
  * Suites that drive real processes with timing-sensitive waits: Chromium, terminals, Fake

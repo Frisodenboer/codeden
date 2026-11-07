@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type {
   RunnerCommandOf,
   RunnerCommandResult,
@@ -23,11 +23,42 @@ let cached: PtyModule | null | undefined;
 export function loadPty(): PtyModule | null {
   if (cached !== undefined) return cached;
   try {
-    cached = createRequire(import.meta.url)("node-pty") as PtyModule;
+    const require = createRequire(import.meta.url);
+    ensureSpawnHelperExecutable(require);
+    cached = require("node-pty") as PtyModule;
   } catch {
     cached = null;
   }
   return cached;
+}
+
+/**
+ * On macOS and Linux node-pty forks through a small `spawn-helper` binary next to its native
+ * module. Package managers do not always keep its executable bit when they extract the
+ * prebuilt tarball, and every terminal then fails with "posix_spawnp failed". Restore it.
+ */
+function ensureSpawnHelperExecutable(require: NodeJS.Require): void {
+  if (process.platform === "win32") return;
+  let root: string;
+  try {
+    root = dirname(require.resolve("node-pty/package.json"));
+  } catch {
+    return;
+  }
+  const dirs = ["build/Release", "build/Debug", `prebuilds/${process.platform}-${process.arch}`];
+  for (const dir of dirs) {
+    const helper = join(root, dir, "spawn-helper");
+    if (!existsSync(helper)) continue;
+    try {
+      accessSync(helper, constants.X_OK);
+    } catch {
+      try {
+        chmodSync(helper, 0o755);
+      } catch {
+        // read-only install; node-pty reports the spawn failure itself
+      }
+    }
+  }
 }
 
 /** Default interactive shell for this platform. */

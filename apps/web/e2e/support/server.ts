@@ -1,5 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -44,7 +44,9 @@ export function makeTempRepo(parent: string): string {
  * provider on and the real adapters off (unless `builtin`). Resolves once it is listening.
  */
 export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<E2eServer> {
-  const base = mkdtempSync(join(tmpdir(), "codeden-e2e-"));
+  // Canonical path: the server stores realpaths, and CI temp dirs are 8.3 short names on
+  // Windows and a symlink on macOS, so the specs could not find the project they added.
+  const base = realpathSync.native(mkdtempSync(join(tmpdir(), "codeden-e2e-")));
   const home = join(base, "home");
   const repo = makeTempRepo(base);
   const userHome = join(base, "user-home");

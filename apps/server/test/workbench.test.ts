@@ -113,7 +113,9 @@ describe("terminal channel", () => {
       `${"\u001b"}\\[[0-9;?]*[ -/]*[@-~]|${"\u001b"}\\][^${"\u0007"}]*${"\u0007"}`,
       "g",
     );
-    await waitUntil(() => /(^|\n)codeden-ready\r?\n/.test(output.replace(ansi, "")), 20_000);
+    // bash with bracketed paste emits `ESC[?2004l\r` before the command's output, so allow
+    // carriage returns at the start of the line.
+    await waitUntil(() => /(^|\n)\r*codeden-ready\r?\n/.test(output.replace(ansi, "")), 20_000);
     ws.send(JSON.stringify({ type: "kill" }));
     await waitUntil(() => controls.some((c) => c.type === "exited"), 20_000);
     ws.close();
