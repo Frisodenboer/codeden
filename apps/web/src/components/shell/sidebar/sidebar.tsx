@@ -160,9 +160,6 @@ export function Sidebar({ width }: { width: number }) {
               key={project.id}
               project={project}
               sessions={data.sessions.filter((s) => s.projectId === project.id)}
-              automations={data.automations.filter(
-                (a) => a.target.type === "project" && a.target.projectId === project.id,
-              )}
             />
           ))}
           {data && data.projects.length === 0 && (

@@ -111,6 +111,7 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
       applyFactoryProjection(tx, e);
       return [];
     case "settings.updated":
+    case "automation.updated":
     case "runner.connected":
     case "runner.disconnected":
     case "runner.draining":

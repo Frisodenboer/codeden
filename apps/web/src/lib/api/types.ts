@@ -1,57 +1,9 @@
 /**
  * Types the web client needs that are not in `@codeden/contracts`: UI-only shapes (file tree
- * nodes, live channels) and data for screens whose server APIs are not wired yet (factory).
+ * nodes, live channels).
  * Server shapes come from contracts.
  */
-import type {
-  AutonomyMode,
-  FactoryLimits,
-  FactoryLoopState,
-  GitHubIssueRef,
-  GitHubPrRef,
-  ProviderId,
-  WorkKey,
-} from "@codeden/contracts";
-
-// ------------------------------------------------------------------ factory panel (§10.1)
-
-export interface FactoryWorkItem {
-  id: string;
-  title: string;
-  workKey: WorkKey;
-  issue: GitHubIssueRef | null;
-  pr: GitHubPrRef | null;
-  score?: number;
-  sessionId?: string | null;
-  stage: "backlog" | "building" | "verifying" | "merged" | "reverted" | "rejected";
-}
-
-export type MergeCheckName = "ci" | "tests" | "review" | "security" | "ui_evidence" | "size";
-export interface MergeCheckResult {
-  prNumber: number;
-  title: string;
-  checks: {
-    name: MergeCheckName;
-    state: "pending" | "pass" | "fail" | "skipped";
-    detail?: string;
-  }[];
-}
-
-export interface FactoryStatus {
-  projectId: string;
-  mode: AutonomyMode;
-  loopState: FactoryLoopState;
-  killSwitch: boolean;
-  limits: FactoryLimits;
-  spendToday: { tokens: number; usd: number };
-  mergesToday: number;
-  consecutiveFailures: number;
-  backlog: FactoryWorkItem[];
-  inProgress: FactoryWorkItem[];
-  mergeChecks: MergeCheckResult[];
-  recent: FactoryWorkItem[];
-  visionExists: boolean;
-}
+import type { ProviderId } from "@codeden/contracts";
 
 // ------------------------------------------------------------------ workbench (§12)
 

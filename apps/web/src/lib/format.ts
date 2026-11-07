@@ -37,6 +37,9 @@ export function until(iso: string, now = Date.now()): string {
   const tomorrow = new Date(now + 86_400_000);
   if (target.toDateString() === today.toDateString()) return `today ${time}`;
   if (target.toDateString() === tomorrow.toDateString()) return `tomorrow ${time}`;
+  // A weekday alone is ambiguous from a week out.
+  if (mins >= 6 * 24 * 60)
+    return `${target.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
   return `${target.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 

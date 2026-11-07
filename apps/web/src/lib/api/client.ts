@@ -34,6 +34,8 @@ import type {
   UpdateSessionRequest,
   UserInputInit,
 } from "@codeden/contracts";
+import type { AutomationsApi } from "./automations-api";
+import type { FactoryApi } from "./factory-api";
 import type {
   AgentConfigApi,
   BrowserApi,
@@ -43,13 +45,7 @@ import type {
   SecretsApi,
   VoiceApi,
 } from "./feature-apis";
-import type {
-  FactoryStatus,
-  MentionCandidate,
-  OpenTerminalOptions,
-  SlashCommand,
-  TerminalChannel,
-} from "./types";
+import type { MentionCandidate, OpenTerminalOptions, SlashCommand, TerminalChannel } from "./types";
 
 /** How a message is delivered while a turn is running. */
 export type SendMode = "send" | "queue" | "steer";
@@ -109,14 +105,11 @@ export interface CodeDenClient {
   // Inbox (§11.1).
   resolveInbox(itemId: string, resolution: InboxResolution): Promise<InboxItem>;
 
-  // Projects, automations, factory.
+  // Projects, automations (§10), factory.
   createProject(input: CreateProjectRequest): Promise<CreateProjectResponse>;
-  setAutomationEnabled(automationId: string, enabled: boolean): Promise<void>;
-  skipNextRun(automationId: string): Promise<void>;
-  getFactoryStatus(projectId: string): Promise<FactoryStatus>;
-  setKillSwitch(scope: { projectId: string } | "global", on: boolean): Promise<void>;
-  readVision(projectId: string): Promise<string>;
-  writeVision(projectId: string, contents: string): Promise<void>;
+  readonly automations: AutomationsApi;
+  /** Autonomy modes, the vision, the factory panel and kill switches (§10.1, experimental). */
+  readonly factory: FactoryApi;
 
   // Settings.
   updateSettings(patch: SettingsPatch): Promise<Settings>;

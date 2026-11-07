@@ -1,7 +1,7 @@
-import { githubPrId, type InboxItem, type TriageDecision } from "@codeden/contracts";
+import { githubPrId, type InboxItem } from "@codeden/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ExternalLink, GitMerge, GitPullRequest, RotateCcw, X } from "lucide-react";
+import { ExternalLink, GitMerge, GitPullRequest, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { ChecksBadge, ReviewDecisionBadge } from "@/components/github/github-bits";
 import { Button } from "@/components/ui/button";
@@ -36,15 +36,7 @@ export function PrReviewStatus({ item }: { item: InboxItem }) {
   );
 }
 
-const triageText: Record<TriageDecision, string> = {
-  ready: "Accepted; the PM can start a session",
-  needs_info: "Asked for more info on the issue",
-  out_of_scope: "Declined",
-  unsafe: "Declined as unsafe",
-  duplicate: "Closed as a duplicate",
-};
-
-/** The in-place answer for non-mirrored inbox items (§11.1). */
+/** The in-place answer for non-mirrored inbox items (§11.1); triage has its own card. */
 export function InboxActions({ item }: { item: InboxItem }) {
   const client = useClient();
   const queryClient = useQueryClient();
@@ -70,16 +62,6 @@ export function InboxActions({ item }: { item: InboxItem }) {
       void queryClient.invalidateQueries({ queryKey: ["github"] });
     },
   });
-  const triage = useMutation({
-    mutationFn: async (decision: TriageDecision) => {
-      // Server-side triage (labels, comment) when the item names an issue; else just resolve.
-      if (item.projectId && item.issue)
-        await client.github.triage(item.projectId, item.issue.number, { decision });
-      await client.resolveInbox(item.id, { status: "resolved", note: decision });
-    },
-    onError: fail,
-    onSuccess: (_d, decision) => toast.success(triageText[decision]),
-  });
   const retry = useMutation({
     mutationFn: async () => {
       if (item.sessionId)
@@ -89,7 +71,7 @@ export function InboxActions({ item }: { item: InboxItem }) {
     onError: fail,
     onSuccess: () => toast.success("Retrying"),
   });
-  const busy = dismiss.isPending || merge.isPending || triage.isPending || retry.isPending;
+  const busy = dismiss.isPending || merge.isPending || retry.isPending;
   const dismissButton = (
     <Button
       size="sm"
@@ -137,31 +119,6 @@ export function InboxActions({ item }: { item: InboxItem }) {
             <RotateCcw /> Retry
           </Button>
           {dismissButton}
-        </>
-      );
-    case "triage":
-      return (
-        <>
-          <Button size="sm" onClick={() => triage.mutate("ready")} disabled={busy}>
-            <Check /> Accept
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => triage.mutate("needs_info")}
-            disabled={busy}
-          >
-            Needs info
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-muted-foreground"
-            onClick={() => triage.mutate("out_of_scope")}
-            disabled={busy}
-          >
-            <X /> Decline
-          </Button>
         </>
       );
     case "automation_result":

@@ -1,9 +1,11 @@
 import { type Project, Settings, type SettingsPatch } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { startAmbient } from "./ambient";
+import { mockAutomationsApi } from "./automations";
+import { mockFactoryApi } from "./factory";
 import { mockFeatureApis } from "./feature-apis";
 import { makeSession } from "./fixtures/helpers";
-import { defaultFactoryLimits, factoryFor, visionDoc } from "./fixtures/ops";
+import { defaultFactoryLimits } from "./fixtures/ops";
 import { type Script, scriptedTurn, uid } from "./live";
 import { mockOrchestration } from "./orchestration";
 import { respond } from "./responses";
@@ -238,58 +240,8 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
         400,
       );
     },
-    async setAutomationEnabled(id, enabled) {
-      const a = world.snapshot.automations.find((x) => x.id === id);
-      if (a)
-        world.emitDomain({
-          type: "automation.saved",
-          sessionId: null,
-          payload: { automation: { ...a, enabled } },
-        });
-    },
-    async skipNextRun(automationId) {
-      world.snapshot.scheduled = world.snapshot.scheduled.map((r) =>
-        r.automationId === automationId ? { ...r, skipped: !r.skipped } : r,
-      );
-    },
-    getFactoryStatus(projectId) {
-      const project = world.snapshot.projects.find((p) => p.id === projectId);
-      const cached = world.factory.get(projectId);
-      const status =
-        cached ??
-        factoryFor(
-          projectId,
-          project?.autonomyMode ?? "assisted",
-          project?.factoryLimits ?? defaultFactoryLimits,
-        );
-      world.factory.set(projectId, status);
-      return delay(status, 140);
-    },
-    async setKillSwitch(scope, on) {
-      if (scope === "global") {
-        const settings = deepMerge(world.snapshot.settings, { factory: { killSwitch: on } });
-        world.emitDomain({ type: "settings.updated", sessionId: null, payload: { settings } });
-        return;
-      }
-      const f = world.factory.get(scope.projectId);
-      if (f)
-        world.factory.set(scope.projectId, {
-          ...f,
-          killSwitch: on,
-          loopState: on ? "stopped" : "building",
-        });
-      const project = world.snapshot.projects.find((p) => p.id === scope.projectId);
-      if (project)
-        world.emitDomain({
-          type: "project.updated",
-          sessionId: null,
-          payload: { project: { ...project, killSwitch: on } },
-        });
-    },
-    readVision: (projectId) => delay(world.files.get(`vision:${projectId}`) ?? visionDoc),
-    async writeVision(projectId, contents) {
-      world.files.set(`vision:${projectId}`, contents);
-    },
+    automations: mockAutomationsApi(world),
+    factory: mockFactoryApi(world),
 
     async updateSettings(patch: SettingsPatch) {
       const settings = Settings.parse(deepMerge(world.snapshot.settings, patch));

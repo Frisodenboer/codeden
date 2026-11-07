@@ -9,6 +9,9 @@ import { AppShell } from "@/components/shell/app-shell";
 import { UnauthorizedScreen } from "@/components/shell/unauthorized";
 import { Toaster } from "@/components/ui/sonner";
 import { AgentsPage, type AgentTab } from "@/routes/agents";
+import { AutomationPage } from "@/routes/automation";
+import { AutomationsPage, type AutomationsTab } from "@/routes/automations";
+import { FactoryItemPage } from "@/routes/factory-item";
 import { HomePage } from "@/routes/home";
 import { InboxPage } from "@/routes/inbox";
 import { PmPage } from "@/routes/pm";
@@ -74,6 +77,39 @@ const pmRoute = createRoute({
   },
 });
 
+const AUTOMATION_TABS: AutomationsTab[] = ["automations", "runs", "templates"];
+const automationsRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/automations",
+  validateSearch: (s: Record<string, unknown>): { tab?: AutomationsTab } =>
+    AUTOMATION_TABS.includes(s.tab as AutomationsTab) && s.tab !== "automations"
+      ? { tab: s.tab as AutomationsTab }
+      : {},
+  component: function Automations() {
+    const { projectId } = automationsRoute.useParams();
+    const { tab } = automationsRoute.useSearch();
+    return <AutomationsPage key={projectId} projectId={projectId} tab={tab ?? "automations"} />;
+  },
+});
+
+const automationRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/automations/$automationId",
+  component: function AutomationDetail() {
+    const { projectId, automationId } = automationRoute.useParams();
+    return <AutomationPage key={automationId} projectId={projectId} automationId={automationId} />;
+  },
+});
+
+const factoryItemRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/factory/$itemId",
+  component: function FactoryItemDetail() {
+    const { projectId, itemId } = factoryItemRoute.useParams();
+    return <FactoryItemPage key={itemId} projectId={projectId} itemId={itemId} />;
+  },
+});
+
 const visionRoute = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId/vision",
@@ -125,6 +161,9 @@ const routeTree = rootRoute.addChildren([
     sessionRoute,
     projectRoute,
     pmRoute,
+    automationsRoute,
+    automationRoute,
+    factoryItemRoute,
     visionRoute,
     createRoute({
       getParentRoute: () => shell,

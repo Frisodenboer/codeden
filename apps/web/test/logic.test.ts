@@ -1,10 +1,11 @@
 import { defaultSettings, type EventEnvelope } from "@codeden/contracts";
 import { describe, expect, it } from "vitest";
+import { describeTrigger } from "@/components/automations/meta";
 import { applyTrigger, detectTrigger } from "@/components/composer/trigger";
-import { describeTrigger } from "@/components/project/lists";
 import { countLines, normalizePatch } from "@/lib/api/mock/fixtures/patches";
 import { inboxItems } from "@/lib/api/mock/fixtures/sessions";
 import { MockWorld } from "@/lib/api/mock/world";
+import { cronError, describeCron, nextRuns } from "@/lib/cron";
 import { ageShort, duration, until } from "@/lib/format";
 import { groupInbox, inboxCounts } from "@/lib/inbox";
 import { matchesCombo } from "@/lib/shortcuts";
@@ -128,9 +129,32 @@ describe("formatting", () => {
     expect(until("2026-11-07T12:38:00.000Z", now)).toBe("in 38 min");
   });
   it("describes automation triggers", () => {
-    expect(describeTrigger({ type: "cron", expression: "0 9 * * 1" })).toBe("Mons at 09:00");
-    expect(describeTrigger({ type: "cron", expression: "0 6 * * *" })).toBe("Daily at 06:00");
-    expect(describeTrigger({ type: "event", event: "pr.opened" })).toBe("On pr opened");
+    expect(describeTrigger({ type: "cron", expression: "0 9 * * 1" })).toBe(
+      "Every Monday at 09:00",
+    );
+    expect(describeTrigger({ type: "cron", expression: "0 6 * * *" })).toBe("Every day at 06:00");
+    expect(describeTrigger({ type: "event", event: "pr.opened" })).toBe(
+      "When a pull request opens",
+    );
+    expect(describeTrigger({ type: "manual" })).toBe("Manual only");
+  });
+  it("describes cron expressions in plain English", () => {
+    expect(describeCron("*/15 * * * *")).toBe("Every 15 minutes");
+    expect(describeCron("30 * * * *")).toBe("Every hour at :30");
+    expect(describeCron("0 */6 * * *")).toBe("Every 6 hours at :00");
+    expect(describeCron("30 9 * * 1-5")).toBe("Weekdays at 09:30");
+    expect(describeCron("0 3 * * 1,4")).toBe("Mondays and Thursdays at 03:00");
+    expect(describeCron("0 4 1 * *")).toBe("Monthly on the 1st at 04:00");
+    expect(describeCron("0 4 1,15 * *")).toBe("Monthly on the 1st and 15th at 04:00");
+    expect(describeCron("0 4 1 1 *")).toBe("Custom schedule");
+  });
+  it("validates cron expressions and previews the next runs", () => {
+    expect(cronError("0 3 * * 1")).toBeNull();
+    expect(cronError("not cron")).not.toBeNull();
+    const runs = nextRuns("0 3 * * *", "UTC", 2);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]?.getUTCHours()).toBe(3);
+    expect(nextRuns("bad", "UTC", 2)).toEqual([]);
   });
 });
 

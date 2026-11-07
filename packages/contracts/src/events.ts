@@ -85,6 +85,15 @@ export const EventEnvelope = z.discriminatedUnion("type", [
   globalEvent("automation.saved", z.object({ automation: Automation })),
   globalEvent("automation.deleted", z.object({ automationId: Id })),
   globalEvent("automation_run.updated", z.object({ run: AutomationRun })),
+  /**
+   * Scheduler state of an automation in a project changed (paused, resumed, next run skipped
+   * or advanced, per-project override), or a project's automation switch (`automationId` null).
+   * A hint for live views to refetch; the state itself is operational and not projected.
+   */
+  globalEvent(
+    "automation.updated",
+    z.object({ automationId: Id.nullable(), projectId: Id.nullable() }),
+  ),
   globalEvent("artifact.created", z.object({ artifact: Artifact })),
   globalEvent("settings.updated", z.object({ settings: Settings })),
   globalEvent(

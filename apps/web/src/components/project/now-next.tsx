@@ -1,11 +1,13 @@
 import type { ScheduledRun, WorkSummary } from "@codeden/contracts";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bot, CalendarClock, User, Workflow } from "lucide-react";
+import { Bot, CalendarClock, SkipForward, User, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import { SectionLabel } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import { useClient } from "@/lib/api";
+import { automationKeys, useUpcomingRuns } from "@/lib/automations";
+import { formatAt } from "@/lib/cron";
 import { ageShort, until } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -74,29 +76,72 @@ function NowCard({ work, title }: { work: WorkSummary; title?: string | null }) 
 
 function NextRow({ run }: { run: ScheduledRun }) {
   const client = useClient();
+  const queryClient = useQueryClient();
   const skip = useMutation({
-    mutationFn: () => client.skipNextRun(run.automationId),
-    onSuccess: () => toast(run.skipped ? "Next run restored" : "Next run skipped"),
+    mutationFn: () => client.automations.skipNext(run.automationId, run.projectId ?? ""),
+    onSuccess: (skipped) => {
+      toast.success(skipped ? `Skipped the ${formatAt(run.at)} run` : "Nothing left to skip");
+      void queryClient.invalidateQueries({ queryKey: automationKeys.all });
+    },
+    onError: (e) => toast.error("Couldn't skip the run", { description: e.message }),
   });
   return (
     <div
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px]",
-        run.skipped && "opacity-55",
+        "group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px]",
+        run.skipped && "opacity-60",
       )}
+      data-testid="next-run"
+      data-skipped={run.skipped || undefined}
+      title={`${run.workKey} · ${formatAt(run.at)}`}
     >
       <CalendarClock className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className={cn("truncate", run.skipped && "line-through")}>{run.name}</span>
+      {run.projectId ? (
+        <Link
+          to="/projects/$projectId/automations/$automationId"
+          params={{ projectId: run.projectId, automationId: run.automationId }}
+          className={cn("truncate hover:underline", run.skipped && "line-through")}
+        >
+          {run.name}
+        </Link>
+      ) : (
+        <span className={cn("truncate", run.skipped && "line-through")}>{run.name}</span>
+      )}
       <span className="ml-auto shrink-0 text-2xs text-muted-foreground tabular-nums">
         {until(run.at)}
       </span>
-      <button
-        type="button"
-        onClick={() => skip.mutate()}
-        className="shrink-0 rounded px-1.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        {run.skipped ? "Restore" : "Skip"}
-      </button>
+      {run.skipped ? (
+        <span className="shrink-0 px-1.5 text-3xs text-status-waiting">Skipped</span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => skip.mutate()}
+          disabled={skip.isPending || !run.projectId}
+          aria-label={`Skip the next ${run.name} run`}
+          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <SkipForward className="size-3" /> Skip
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Upcoming scheduled runs of a project, live from the scheduler, with skip-next inline. */
+export function NextRuns({ projectId, limit = 6 }: { projectId: string; limit?: number }) {
+  const { data, isLoading } = useUpcomingRuns(projectId);
+  const runs = data ?? [];
+  return (
+    <div className="rounded-xl border border-border bg-card p-1" data-testid="next-runs">
+      {runs.length === 0 ? (
+        <p className="px-3 py-5 text-center text-xs text-muted-foreground">
+          {isLoading
+            ? "Loading the schedule…"
+            : "No scheduled runs. Enabled scheduled automations show their next runs here."}
+        </p>
+      ) : (
+        runs.slice(0, limit).map((r) => <NextRow key={`${r.automationId}-${r.at}`} run={r} />)
+      )}
     </div>
   );
 }
@@ -107,11 +152,11 @@ function NextRow({ run }: { run: ScheduledRun }) {
  */
 export function NowNext({
   work,
-  scheduled,
+  projectId,
   titleOf,
 }: {
   work: WorkSummary[];
-  scheduled: ScheduledRun[];
+  projectId: string;
   /** Session titles from the live snapshot, when known. */
   titleOf?: (sessionId: string | null) => string | null;
 }) {
@@ -144,15 +189,7 @@ export function NowNext({
       </div>
       <div>
         <SectionLabel className="mb-2">Next</SectionLabel>
-        <div className="rounded-xl border border-border bg-card p-1">
-          {scheduled.length === 0 ? (
-            <p className="px-3 py-5 text-center text-xs text-muted-foreground">
-              No scheduled runs. Scheduled automations show their next runs here.
-            </p>
-          ) : (
-            scheduled.slice(0, 5).map((r) => <NextRow key={`${r.automationId}-${r.at}`} run={r} />)
-          )}
-        </div>
+        <NextRuns projectId={projectId} limit={5} />
       </div>
     </section>
   );

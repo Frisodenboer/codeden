@@ -56,6 +56,16 @@ test("M1 flow with the Fake provider", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "demo-repo" })).toBeVisible();
   });
 
+  await test.step("a new project gets the starter automations, all off", async () => {
+    const list = page.getByTestId("automations-list");
+    for (const name of ["Security audit", "Dependency updates", "Test coverage gaps"]) {
+      await expect(list.getByRole("switch", { name: `Enable ${name}` })).not.toBeChecked();
+    }
+    // GitHub-only templates (triage, stale PRs) are not offered to a local folder.
+    await expect(list.getByText("Issue triage")).toHaveCount(0);
+    await expect(page.getByTestId("next-runs")).toContainText("No scheduled runs");
+  });
+
   await test.step("start a Fake session and stream the transcript", async () => {
     await page.getByRole("button", { name: "New session" }).click();
     const dialog = page.getByRole("dialog");
