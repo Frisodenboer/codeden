@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AgentEvent } from "../agent-events";
 import { ErrorInfo, Id } from "../common";
-import { PtyId } from "./commands";
+import { CheckpointIndex, PtyId } from "./commands";
 
 /**
  * Durable runner -> server events. Journaled by the runner and delivered with a `seq`
@@ -27,6 +27,16 @@ export const RunnerEvent = z.discriminatedUnion("kind", [
     output: z.string().optional(),
   }),
   z.object({ kind: z.literal("pty.exited"), ptyId: PtyId, exitCode: z.int().nullable() }),
+  /** A turn checkpoint was written to `refs/codeden/checkpoints/<session>/<index>` (§9). */
+  z.object({
+    kind: z.literal("checkpoint.created"),
+    sessionId: Id,
+    index: CheckpointIndex,
+    ref: z.string(),
+    commit: z.string(),
+    /** The turn that ended (absent for the baseline checkpoint 0). */
+    turnId: Id.optional(),
+  }),
   /** The runner started draining (upgrade/shutdown). */
   z.object({ kind: z.literal("runner.draining"), reason: z.string() }),
 ]);

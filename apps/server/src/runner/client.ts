@@ -348,6 +348,7 @@ export function toNewEvents(msg: RunnerEventMessage): NewEvent[] {
     case "session.process":
     case "workspace.setup":
     case "pty.exited":
+    case "checkpoint.created":
     case "runner.draining":
       return [];
   }

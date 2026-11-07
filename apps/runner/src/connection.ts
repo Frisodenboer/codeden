@@ -165,6 +165,16 @@ export class ServerConnection {
       case "git.checkpoint":
       case "git.status":
       case "git.diff":
+      case "runner.configure":
+      case "workspace.remove":
+      case "pty.attach":
+      case "git.branches":
+      case "git.commit":
+      case "git.push":
+      case "checkpoint.list":
+      case "checkpoint.diff":
+      case "checkpoint.restoreFiles":
+      case "ports.list":
         throw new CommandError("not_implemented", `${command.name} is not implemented yet`);
     }
   }

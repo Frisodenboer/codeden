@@ -1,10 +1,26 @@
 import { z } from "zod";
 import { Id, ProviderId } from "../common";
 import { UserInput } from "../input";
+import { ProjectConfigFile } from "../project-config";
 import { ProviderStatus, RuntimeResponse, SessionOptions } from "../provider";
 
 /** Terminal (node-pty) id, unique per runner. */
 export const PtyId = z.string().min(1).max(100);
+
+/** Index of a turn checkpoint: 0 is the baseline at session start, n the end of turn n. */
+export const CheckpointIndex = z.int().nonnegative();
+
+/** Per-file change summary of a diff. */
+export const DiffFileStat = z.object({
+  path: z.string(),
+  /** Previous path for renames and copies. */
+  oldPath: z.string().optional(),
+  status: z.enum(["added", "modified", "deleted", "renamed", "copied", "type_changed"]),
+  additions: z.int().nonnegative(),
+  deletions: z.int().nonnegative(),
+  binary: z.boolean(),
+});
+export type DiffFileStat = z.infer<typeof DiffFileStat>;
 
 /**
  * Commands the server sends to a runner (§4.3), discriminated on `name`.
@@ -14,7 +30,20 @@ export const RunnerCommand = z.discriminatedUnion("name", [
   /** Report sessions, terminals and journal state. */
   z.object({ name: z.literal("runner.status") }),
   /** Finish or pause running turns, then stop accepting work (before an upgrade). */
-  z.object({ name: z.literal("runner.drain"), reason: z.string() }),
+  z.object({
+    name: z.literal("runner.drain"),
+    reason: z.string(),
+    /** Max time to wait for running turns before interrupting them. Default 5 minutes. */
+    timeoutMs: z.int().positive().optional(),
+    /** Exit the process once drained, so the server starts a fresh runner (upgrades). */
+    exitWhenDrained: z.boolean().optional(),
+  }),
+  /** Runtime configuration pushed by the server after each handshake. */
+  z.object({
+    name: z.literal("runner.configure"),
+    /** Where the local MCP proxy forwards to (the server's `/mcp`); `null` disables it. */
+    mcpUpstreamUrl: z.url().nullable(),
+  }),
   /** Exit the runner process after closing sessions and terminals. */
   z.object({ name: z.literal("runner.shutdown") }),
   /** Detect installed providers (all when `providerId` is omitted). */
@@ -30,6 +59,24 @@ export const RunnerCommand = z.discriminatedUnion("name", [
     branch: z.string().optional(),
     baseRef: z.string().optional(),
     setupCommands: z.array(z.string()).default([]),
+    /** Used for the default worktree path `<home>/wt/<projectSlug>/<sessionShort>`. */
+    projectSlug: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9-]{0,39}$/)
+      .optional(),
+    /** `git fetch origin` before branching (when an `origin` remote exists). */
+    fetch: z.boolean().optional(),
+    /** Run `.codeden/project.json` `setup` commands before `setupCommands`. Default true. */
+    runProjectSetup: z.boolean().optional(),
+  }),
+  /** Remove a session worktree (and optionally its branch). */
+  z.object({
+    name: z.literal("workspace.remove"),
+    repoPath: z.string().min(1),
+    path: z.string().min(1),
+    deleteBranch: z.string().optional(),
+    /** Remove even with uncommitted changes. */
+    force: z.boolean().optional(),
   }),
   /** Open a provider session; optionally start the first turn. */
   z.object({
@@ -38,6 +85,8 @@ export const RunnerCommand = z.discriminatedUnion("name", [
     providerId: ProviderId,
     options: SessionOptions,
     input: UserInput.optional(),
+    /** Snapshot the cwd at session start and every turn end (§9). Default true in git repos. */
+    checkpoints: z.boolean().optional(),
   }),
   /** Start a new turn. */
   z.object({ name: z.literal("session.send"), sessionId: Id, input: UserInput }),
@@ -72,6 +121,8 @@ export const RunnerCommand = z.discriminatedUnion("name", [
     rows: z.int().positive(),
   }),
   z.object({ name: z.literal("pty.close"), ptyId: PtyId }),
+  /** Scrollback and state of a terminal, for (re)attaching a view. */
+  z.object({ name: z.literal("pty.attach"), ptyId: PtyId }),
   /** Open (or reuse) the session's browser context. */
   z.object({ name: z.literal("browser.open"), sessionId: Id, url: z.string().optional() }),
   z.object({ name: z.literal("browser.navigate"), sessionId: Id, url: z.string() }),
@@ -84,11 +135,57 @@ export const RunnerCommand = z.discriminatedUnion("name", [
     index: z.int().nonnegative(),
   }),
   z.object({ name: z.literal("git.status"), cwd: z.string() }),
+  /** Unified diff `fromRef..toRef`; without `toRef`, against the working tree incl. untracked files. */
   z.object({
     name: z.literal("git.diff"),
     cwd: z.string(),
     fromRef: z.string(),
     toRef: z.string().optional(),
+  }),
+  z.object({
+    name: z.literal("git.branches"),
+    cwd: z.string(),
+    includeRemote: z.boolean().optional(),
+  }),
+  /** Stage (all changes, or `paths`) and commit. */
+  z.object({
+    name: z.literal("git.commit"),
+    cwd: z.string(),
+    message: z.string().min(1),
+    paths: z.array(z.string()).optional(),
+  }),
+  z.object({
+    name: z.literal("git.push"),
+    cwd: z.string(),
+    /** Default `origin`. */
+    remote: z.string().optional(),
+    /** Default: the current branch. */
+    branch: z.string().optional(),
+    /** Set the upstream (`-u`). Default true. */
+    setUpstream: z.boolean().optional(),
+    forceWithLease: z.boolean().optional(),
+  }),
+  z.object({ name: z.literal("checkpoint.list"), cwd: z.string(), sessionId: Id }),
+  /** Diff between two checkpoints; without `to`, against the current working tree. */
+  z.object({
+    name: z.literal("checkpoint.diff"),
+    cwd: z.string(),
+    sessionId: Id,
+    from: CheckpointIndex,
+    to: CheckpointIndex.optional(),
+  }),
+  /** Restore files (all, or `paths`) to their state at a checkpoint without touching the index. */
+  z.object({
+    name: z.literal("checkpoint.restoreFiles"),
+    cwd: z.string(),
+    sessionId: Id,
+    index: CheckpointIndex,
+    paths: z.array(z.string()).optional(),
+  }),
+  /** Listening localhost ports of processes started by this runner, plus `probe`d ports. */
+  z.object({
+    name: z.literal("ports.list"),
+    probe: z.array(z.int().min(1).max(65535)).optional(),
   }),
 ]);
 export type RunnerCommand = z.infer<typeof RunnerCommand>;
@@ -115,13 +212,21 @@ export const RunnerCommandResults = {
     draining: z.boolean(),
   }),
   "runner.drain": Empty,
+  "runner.configure": z.object({ mcpProxyUrl: z.string().nullable() }),
   "runner.shutdown": Empty,
   "provider.detect": z.object({ statuses: z.array(ProviderStatus) }),
   "workspace.prepare": z.object({
     cwd: z.string(),
     branch: z.string().nullable(),
     created: z.boolean(),
+    /** Parsed `.codeden/project.json`, when present and valid. */
+    config: ProjectConfigFile.nullable().optional(),
+    /** Setup commands that ran, in order (stops at the first failure). */
+    setup: z
+      .array(z.object({ command: z.string(), exitCode: z.int().nullable(), ok: z.boolean() }))
+      .optional(),
   }),
+  "workspace.remove": z.object({ removed: z.boolean() }),
   "session.start": z.object({ resumeToken: z.string().nullable() }),
   "session.send": Empty,
   "session.steer": Empty,
@@ -132,6 +237,15 @@ export const RunnerCommandResults = {
   "pty.input": Empty,
   "pty.resize": Empty,
   "pty.close": Empty,
+  "pty.attach": z.object({
+    pid: z.int(),
+    cols: z.int().positive(),
+    rows: z.int().positive(),
+    /** Bounded scrollback to replay into a fresh view. */
+    scrollback: z.string(),
+    exited: z.boolean(),
+    exitCode: z.int().nullable(),
+  }),
   "browser.open": z.object({ cdpUrl: z.string().nullable() }),
   "browser.navigate": Empty,
   "browser.close": Empty,
@@ -142,7 +256,46 @@ export const RunnerCommandResults = {
     behind: z.int().nonnegative(),
     files: z.array(z.object({ path: z.string(), status: z.string() })),
   }),
-  "git.diff": z.object({ diff: z.string() }),
+  "git.diff": z.object({ diff: z.string(), files: z.array(DiffFileStat).optional() }),
+  "git.branches": z.object({
+    current: z.string().nullable(),
+    defaultBranch: z.string().nullable(),
+    branches: z.array(
+      z.object({
+        name: z.string(),
+        remote: z.boolean(),
+        commit: z.string(),
+        upstream: z.string().nullable(),
+      }),
+    ),
+  }),
+  /** `commit` is null when there was nothing to commit. */
+  "git.commit": z.object({ commit: z.string().nullable() }),
+  "git.push": z.object({ remote: z.string(), branch: z.string() }),
+  "checkpoint.list": z.object({
+    checkpoints: z.array(
+      z.object({
+        index: CheckpointIndex,
+        ref: z.string(),
+        commit: z.string(),
+        createdAt: z.string(),
+      }),
+    ),
+  }),
+  "checkpoint.diff": z.object({ diff: z.string(), files: z.array(DiffFileStat) }),
+  "checkpoint.restoreFiles": z.object({
+    restored: z.array(z.string()),
+    deleted: z.array(z.string()),
+  }),
+  "ports.list": z.object({
+    ports: z.array(
+      z.object({
+        port: z.int().min(1).max(65535),
+        pid: z.int().nullable(),
+        url: z.string(),
+      }),
+    ),
+  }),
 } satisfies Record<RunnerCommandName, z.ZodType>;
 
 /** Result type of a command: `RunnerCommandResult<"session.start">`. */
