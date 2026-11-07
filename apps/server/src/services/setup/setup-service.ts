@@ -12,7 +12,7 @@ import { CHECKS, type CheckEnv, LOGIN_COMMANDS } from "./checks";
 
 export interface SetupServiceDeps {
   exec: Exec;
-  settings: SettingsStore;
+  settings: Pick<SettingsStore, "get" | "update">;
   /** Per-check timeout (default 20s); a slow CLI never blocks the checklist. */
   checkTimeoutMs?: number;
   /** Cached results are reused for this long unless a refresh is requested (default 5 min). */
