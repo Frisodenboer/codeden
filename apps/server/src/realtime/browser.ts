@@ -94,6 +94,10 @@ export class BrowserBridge {
     }
     if (stream.kind === "browser.tabs") {
       for (const v of this.viewers.get(stream.sessionId) ?? []) {
+        if (stream.tabs.length === 0) {
+          if (v.open) this.detach(v);
+          continue;
+        }
         if (!v.open) {
           // The agent (or another viewer) just opened the browser: start watching.
           v.open = true;
@@ -167,6 +171,17 @@ export class BrowserBridge {
       v.watching = false;
       this.sendState(v, []);
     }
+  }
+
+  /**
+   * The session's browser closed (agent, panel, another viewer or session stop): its screencast
+   * registrations went with it, so the viewer is detached and told with a closed `state`. It
+   * stays connected and watches again when the browser next opens.
+   */
+  private detach(v: Viewer): void {
+    v.open = false;
+    v.watching = false;
+    this.sendState(v, []);
   }
 
   private sendState(v: Viewer, tabs: BrowserTab[]): void {
