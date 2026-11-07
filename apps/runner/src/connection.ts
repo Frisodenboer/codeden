@@ -65,7 +65,7 @@ export class ServerConnection {
           startedAt: this.core.startedAt,
           capabilities: {
             pty: this.core.terminals.available,
-            browser: false,
+            browser: true,
             git: true,
             mcpProxy: true,
           },

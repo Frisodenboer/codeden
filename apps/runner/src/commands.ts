@@ -1,5 +1,6 @@
 import type { RunnerCommand, RunnerCommandResult, RunnerEvent } from "@codeden/contracts";
 import type { ProviderRegistry } from "@codeden/providers";
+import type { BrowserCommandHandlers } from "./browser";
 import { CommandError } from "./errors";
 import {
   createCheckpoint,
@@ -24,6 +25,8 @@ export interface RunnerCore {
   terminals: TerminalHost;
   supervisor: ProcessSupervisor;
   registry: ProviderRegistry;
+  /** `browser.*` handlers over the runner's `BrowserManager` (§12.2). */
+  browser: BrowserCommandHandlers;
   startedAt: string;
   emit: (event: RunnerEvent) => void;
   isDraining: () => boolean;
@@ -110,6 +113,8 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
       return {};
     case "session.stop":
       await host.stop(command.sessionId);
+      // The session's browser context (cookies, tabs) ends with the session.
+      await core.browser.closeSession(command.sessionId);
       return {};
 
     case "pty.open":
@@ -154,10 +159,9 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
       return { ports: await listPorts(command.probe) };
 
     default: {
-      // --- browser.* (apps/runner/src/browser) --- only browser commands reach here (checked).
-      // Wire: return browserHandlers.execute(browserCommand) from createBrowserCommandHandlers.
+      // Only `browser.*` commands reach here (checked by the type below).
       const browserCommand: Extract<RunnerCommand, { name: `browser.${string}` }> = command;
-      throw new CommandError("not_implemented", `${browserCommand.name} is not implemented yet`);
+      return core.browser.execute(browserCommand);
     }
   }
 }

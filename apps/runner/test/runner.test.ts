@@ -128,6 +128,7 @@ describe("runner", () => {
     server.send({ type: "hello", protocolVersion: RUNNER_PROTOCOL_VERSION, serverVersion: "test" });
     const welcome = await server.waitFor((m) => m.type === "welcome");
     expect(welcome.type === "welcome" && welcome.providers.map((p) => p.id)).toEqual(["fake"]);
+    expect(welcome.type === "welcome" && welcome.capabilities.browser).toBe(true);
     server.send({ type: "resume", lastAckedSeq: 0 });
 
     server.send(sessionStart("s1"));
@@ -165,9 +166,14 @@ describe("runner", () => {
     server.send({ type: "hello", protocolVersion: 999, serverVersion: "future" });
     const reject = await server.waitFor((m) => m.type === "reject");
     expect(reject).toMatchObject({ reason: "protocol_mismatch" });
-    server.send({ type: "command", id: "x", command: { name: "browser.close", sessionId: "s" } });
+    // Browser commands reach the browser engine; a session that never opened one has none.
+    server.send({
+      type: "command",
+      id: "x",
+      command: { name: "browser.tabs.list", sessionId: "s" },
+    });
     const result = await server.waitFor((m) => m.type === "result");
-    expect(result).toMatchObject({ ok: false, error: { code: "not_implemented" } });
+    expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
     server.send(sessionStart("s2"));
     const failed = await server.waitFor((m) => m.type === "result" && m.id === "start-s2");
     expect(failed).toMatchObject({ ok: false, error: { code: "unknown_provider" } });

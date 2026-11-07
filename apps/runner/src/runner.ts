@@ -20,6 +20,7 @@ import {
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
+import { BrowserManager, createBrowserCommandHandlers } from "./browser";
 import type { RunnerCore } from "./commands";
 import { connectionHandlers, type ServerConnection } from "./connection";
 import { Journal } from "./journal";
@@ -48,6 +49,8 @@ export interface StartRunnerOptions {
   version?: string;
   /** On close, also kill leftover descendants of this process (the real runner process). */
   sweepDescendants?: boolean;
+  /** Replace the browser engine (tests); by default one `BrowserManager` per runner. */
+  browser?: BrowserManager;
   /** Called after `runner.shutdown` or a drain-and-exit closed everything (the CLI exits). */
   onShutdown?: () => void;
   log?: (message: string) => void;
@@ -115,6 +118,9 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   const supervisor = new ProcessSupervisor();
   const host = new SessionHost(registry, emit, { log });
   const terminals = new TerminalHost({ supervisor, emit, stream });
+  // Chromium launches lazily on the first `browser.*` command (§12.2).
+  const browserManager = opts.browser ?? new BrowserManager({ stream, log });
+  const browser = createBrowserCommandHandlers({ manager: browserManager });
   const finish = () => void close().then(() => opts.onShutdown?.());
 
   const core: RunnerCore = {
@@ -125,6 +131,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
     terminals,
     supervisor,
     registry,
+    browser,
     startedAt: new Date().toISOString(),
     emit,
     isDraining: () => draining,
@@ -218,6 +225,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
       removeLock();
       await host.closeAll();
       await terminals.closeAll();
+      await browserManager.shutdown().catch((error: unknown) => log(`browser: ${String(error)}`));
       await supervisor.killAll(opts.sweepDescendants ?? false);
       for (const conn of connections) conn.close("runner stopping");
       wss.close();

@@ -27,6 +27,8 @@ export interface BrowserCommandHandlers {
   handlers: Handlers;
   /** Execute any `browser.*` command. */
   execute(command: BrowserCommand): Promise<RunnerCommandResult<BrowserCommandName>>;
+  /** Close a session's context if it has one (session stopped). Never throws. */
+  closeSession(sessionId: string): Promise<void>;
 }
 
 /**
@@ -120,6 +122,9 @@ export function createBrowserCommandHandlers(deps: BrowserCommandDeps): BrowserC
     execute(command) {
       const handler = handlers[command.name] as (c: BrowserCommand) => Promise<never>;
       return handler(command);
+    },
+    async closeSession(sessionId) {
+      if (manager.has(sessionId)) await manager.closeSession(sessionId).catch(() => undefined);
     },
   };
 }
