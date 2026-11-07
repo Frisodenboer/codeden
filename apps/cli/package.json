@@ -3,6 +3,15 @@
   "version": "0.0.0",
   "description": "A local-first harness for coding agents.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leonvanzyl/codeden.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://github.com/leonvanzyl/codeden#readme",
+  "bugs": {
+    "url": "https://github.com/leonvanzyl/codeden/issues"
+  },
   "type": "module",
   "bin": {
     "codeden": "./dist/cli.js"

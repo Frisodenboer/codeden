@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build and pack only (no npm publish, no GitHub Release)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: Check the tag matches the package version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./apps/cli/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match apps/cli/package.json version $version"
+              exit 1
+            fi
+          elif [ "$DRY_RUN" != "true" ]; then
+            echo "::error::A real release must run on a v*.*.* tag (got $GITHUB_REF_TYPE $GITHUB_REF_NAME)"
+            exit 1
+          fi
+          echo "Releasing codeden $version (dry run: $DRY_RUN)"
+
+      - name: Pack
+        id: pack
+        shell: bash
+        working-directory: apps/cli
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          echo "tarball=$RUNNER_TEMP/codeden-${{ steps.version.outputs.version }}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN secret is not set; skipping npm publish. Add it under Settings > Secrets and variables > Actions."
+            exit 0
+          fi
+          npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public
+
+      - name: Create GitHub Release
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.pack.outputs.tarball }}" \
+            --title "codeden ${{ steps.version.outputs.version }}" \
+            --generate-notes --verify-tag
+
+      - name: Upload the packed tarball (dry run)
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeden-${{ steps.version.outputs.version }}
+          path: ${{ steps.pack.outputs.tarball }}
