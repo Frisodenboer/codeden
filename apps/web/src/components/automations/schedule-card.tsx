@@ -1,7 +1,16 @@
 import type { AutomationListItem } from "@codeden/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { FileCode2, Pause, Play, RefreshCw, SkipForward, Trash2 } from "lucide-react";
+import {
+  Eraser,
+  FileCode2,
+  Pause,
+  Play,
+  RefreshCw,
+  SkipForward,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -133,14 +142,36 @@ export function ScheduleCard({
         >
           <Play /> Run now
         </Button>
-        {scheduled && state?.enabled && (
+        {scheduled &&
+          state?.enabled &&
+          (state.nextRunAt && state.skipNextAt === state.nextRunAt ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => actions.unskipNext.mutate(a.id)}
+              disabled={actions.unskipNext.isPending}
+            >
+              <Undo2 /> Undo skip
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => actions.skipNext.mutate(a.id)}
+              disabled={!state.nextRunAt || actions.skipNext.isPending}
+            >
+              <SkipForward /> Skip next
+            </Button>
+          ))}
+        {a.target.type === "all_projects" && state?.enabledOverride != null && (
           <Button
             size="sm"
-            variant="outline"
-            onClick={() => actions.skipNext.mutate(a.id)}
-            disabled={!state.nextRunAt || state.skipNextAt === state.nextRunAt}
+            variant="ghost"
+            onClick={() => actions.clearOverride.mutate(a.id)}
+            disabled={actions.clearOverride.isPending}
+            title="Follow the automation's own switch in this project again"
           >
-            <SkipForward /> Skip next
+            <Eraser /> Clear project override
           </Button>
         )}
         {state?.enabled && a.trigger.type !== "manual" && (

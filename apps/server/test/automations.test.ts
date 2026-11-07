@@ -161,6 +161,15 @@ describe("automations (§10): scheduler, guards, runs, PM tools, files", () => {
       ["2026-11-07T10:15:00.000Z", true],
       ["2026-11-07T10:20:00.000Z", false],
     ]);
+    // Undo the skip over HTTP, then skip again.
+    const undone = await h.api("POST", `/automations/${auditId}/unskip-next`, {
+      projectId: h.projectId,
+    });
+    expect(undone.body).toMatchObject({ next: { at: "2026-11-07T10:15:00.000Z", skipped: false } });
+    expect(
+      (await h.api("POST", `/automations/${auditId}/unskip-next`, { projectId: h.projectId })).body,
+    ).toEqual({ next: null });
+    await h.api("POST", `/automations/${auditId}/skip-next`, { projectId: h.projectId });
     await tick("2026-11-07T10:15:01Z");
     expect((await runs(auditId))[0]).toMatchObject({
       status: "skipped",
@@ -262,5 +271,35 @@ describe("automations (§10): scheduler, guards, runs, PM tools, files", () => {
     expect(await upcoming()).toEqual([]);
     await h.api("PATCH", `/projects/${h.projectId}/automations/settings`, { enabled: true });
     expect((await upcoming()).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("sets and clears a project override of an all-projects automation", async () => {
+    const created = await h.api("POST", "/automations", {
+      name: "Everywhere",
+      target: { type: "all_projects" },
+      trigger: { type: "manual" },
+      action: { type: "message_pm", message: "hi" },
+    });
+    expect(created.status).toBe(201);
+    const id = (created.body as { automation: { id: string } }).automation.id;
+    const state = (body: unknown) =>
+      (body as { states: { projectId: string; enabledOverride: boolean | null }[] }).states.find(
+        (st) => st.projectId === h.projectId,
+      );
+    const on = await h.api("POST", `/automations/${id}/enable`, { projectId: h.projectId });
+    expect(state(on.body)?.enabledOverride).toBe(true);
+    const cleared = await h.api("POST", `/automations/${id}/clear-override`, {
+      projectId: h.projectId,
+    });
+    expect(cleared.status).toBe(200);
+    expect(state(cleared.body)?.enabledOverride).toBeNull();
+    const projectOnly = (await h.api("GET", `/automations?projectId=${h.projectId}`)).body as {
+      automations: { automation: { id: string; target: { type: string } } }[];
+    };
+    const local = projectOnly.automations.find((a) => a.automation.target.type === "project");
+    const refused = await h.api("POST", `/automations/${local?.automation.id}/clear-override`, {
+      projectId: h.projectId,
+    });
+    expect(refused.status).toBe(409);
   });
 });

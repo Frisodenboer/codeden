@@ -12,6 +12,7 @@ import {
   StarterSetResponse,
   type TriageDecisionRequest,
   TriageDecisionResponse,
+  UnskipNextResponse,
   type UpdateAutomationRequest,
 } from "@codeden/contracts";
 import type { z } from "zod";
@@ -52,6 +53,10 @@ export interface AutomationsApi {
   pause(automationId: string, projectId: string): Promise<AutomationListItem>;
   resume(automationId: string, projectId: string): Promise<AutomationListItem>;
   skipNext(automationId: string, projectId: string): Promise<ScheduledRun | null>;
+  /** Undo a skip; the next run (now not skipped), or null when nothing was skipped. */
+  unskipNext(automationId: string, projectId: string): Promise<ScheduledRun | null>;
+  /** Drop the project's override of an all-projects automation. */
+  clearOverride(automationId: string, projectId: string): Promise<AutomationListItem>;
   runs(query?: AutomationRunsQuery): Promise<AutomationRun[]>;
   /** Queued runs only (409 `not_queued`). */
   cancelRun(runId: string): Promise<AutomationRun>;
@@ -92,6 +97,9 @@ export function httpAutomationsApi(http: Fetcher): AutomationsApi {
       post(`${path(id)}/skip-next`, { projectId }, (v) =>
         ScheduledRun.nullable().parse((v as { skipped: unknown }).skipped),
       ),
+    unskipNext: (id, projectId) =>
+      post(`${path(id)}/unskip-next`, { projectId }, (v) => UnskipNextResponse.parse(v).next),
+    clearOverride: (id, projectId) => post(`${path(id)}/clear-override`, { projectId }, one),
     runs: (q = {}) =>
       get(`/automations/runs${qs({ ...q })}`, (v) => AutomationRun.array().parse(v)),
     cancelRun: (runId) =>

@@ -228,6 +228,20 @@ export function mockAutomationsApi(world: MockWorld): AutomationsApi {
       touched(id, projectId);
       return skipped;
     },
+    async unskipNext(id, projectId) {
+      let next: ScheduledRun | null = null;
+      world.snapshot.scheduled = world.snapshot.scheduled.map((r) => {
+        if (r.automationId !== id || !r.skipped) return r;
+        next = { ...r, skipped: false };
+        return next;
+      });
+      touched(id, projectId);
+      return next;
+    },
+    async clearOverride(id, projectId) {
+      touched(id, projectId);
+      return item(find(id));
+    },
     runs: (q = {}) =>
       delay(
         runs.filter(

@@ -84,6 +84,7 @@ Tools: orchestrator `get_overview`, `list_projects`, `create_project`, `update_p
 | `POST /api/automations/:id/run` | `RunAutomationRequest` (`projectId`, `conflict?`, `context?`) -> `RunAutomationResponse` |
 | `POST /api/automations/:id/pause\|resume` | `AutomationProjectRequest` -> `AutomationListItem` |
 | `POST /api/automations/:id/skip-next` | `AutomationProjectRequest` -> `{ skipped: ScheduledRun \| null }` |
+| `POST /api/automations/:id/clear-override` | `AutomationProjectRequest` -> `AutomationListItem` (drops the project's override of an all-projects automation; 409 `no_override` otherwise) |
 | `POST /api/automations/:id/unskip-next` | `AutomationProjectRequest` -> `UnskipNextResponse` (`{ next: ScheduledRun \| null }`; undoes a skip, null when nothing was skipped) |
 | `GET /api/automations/runs?projectId=&automationId=&status=&limit=`, `GET .../runs/:runId` | -> `AutomationRun[]`, `AutomationRun` |
 | `POST /api/automations/runs/:runId/cancel` | -> `AutomationRun` (queued runs only, else 409 `not_queued`) |

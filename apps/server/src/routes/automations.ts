@@ -87,6 +87,12 @@ export function automationRoutes(s: AppServices) {
       a.refresh();
       return c.json(itemOf(s, updated, projectId));
     })
+    .post("/:id/clear-override", jsonBody(AutomationProjectRequest), (c) => {
+      const { projectId } = c.req.valid("json");
+      const updated = a.definitions.clearOverride(c.req.param("id"), projectId);
+      a.refresh();
+      return c.json(itemOf(s, updated, projectId));
+    })
     .post("/:id/run", jsonBody(RunAutomationRequest), async (c) =>
       c.json(await a.run(c.req.param("id"), c.req.valid("json"))),
     )

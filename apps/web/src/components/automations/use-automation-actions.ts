@@ -107,5 +107,33 @@ export function useAutomationActions(projectId: string) {
     onError: fail("Couldn't cancel the run"),
   });
 
-  return { toggle, pause, skipNext, run, cancelRun, conflict, setConflict };
+  const unskipNext = useMutation({
+    mutationFn: (id: string) => client.automations.unskipNext(id, projectId),
+    onSuccess: (next) => {
+      toast.success(next ? "The next run will happen" : "Nothing was skipped");
+      refresh();
+    },
+    onError: fail("Couldn't undo the skip"),
+  });
+
+  const clearOverride = useMutation({
+    mutationFn: (id: string) => client.automations.clearOverride(id, projectId),
+    onSuccess: () => {
+      toast.success("Follows the automation's own switch again");
+      refresh();
+    },
+    onError: fail("Couldn't clear the project override"),
+  });
+
+  return {
+    toggle,
+    pause,
+    skipNext,
+    unskipNext,
+    clearOverride,
+    run,
+    cancelRun,
+    conflict,
+    setConflict,
+  };
 }

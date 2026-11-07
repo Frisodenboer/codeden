@@ -150,6 +150,17 @@ export class AutomationDefinitions {
     return this.save({ ...a, enabled, updatedAt: new Date().toISOString() });
   }
 
+  /** Drop a project's override of an all-projects automation; it follows its own switch again. */
+  clearOverride(id: string, projectId: string): Automation {
+    const a = this.get(id);
+    this.deps.projects.get(projectId);
+    if (a.target.type !== "all_projects") {
+      throw conflict("Only automations for all projects have per-project overrides", "no_override");
+    }
+    this.deps.schedules.upsert(id, projectId, { enabledOverride: null });
+    return a;
+  }
+
   /**
    * Create the project's starter set (§10) from the starter templates that fit the project,
    * keeping existing ones; with `enable`, switch them all on.
