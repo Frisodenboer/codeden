@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
+import { clampZoom, ZOOM_DEFAULT } from "./zoom";
 
-/** The window's saved position and size (`<home>/desktop/window-state.json`). */
+/** The window's saved position, size and zoom (`<home>/desktop/window-state.json`). */
 export const WindowState = z.object({
   x: z.int(),
   y: z.int(),
   width: z.int().min(400),
   height: z.int().min(300),
   maximized: z.boolean().default(false),
+  /** Zoom factor (1 = 100%); missing (older files) or unreadable is 100%, never a lost window. */
+  zoomFactor: z.number().catch(ZOOM_DEFAULT).transform(clampZoom),
 });
 export type WindowState = z.infer<typeof WindowState>;
 
@@ -27,7 +30,7 @@ const MIN_VISIBLE = 120;
  * centred on the primary display (`x`/`y` undefined lets Electron centre it).
  */
 export function restoreBounds(
-  saved: WindowState | null,
+  saved: (Rect & { maximized: boolean }) | null,
   displays: readonly Rect[],
 ): { x?: number; y?: number; width: number; height: number; maximized: boolean } {
   const primary = displays[0];

@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { app, BrowserWindow, nativeTheme, type Rectangle, screen, shell } from "electron";
 import { allowPermission, externalUrl, isServerUrl } from "./security";
 import { readWindowState, restoreBounds, type WindowState } from "./window-state";
+import { WindowZoom, type ZoomCommand } from "./zoom";
 
 export interface MainWindowOptions {
   preload: string;
@@ -17,10 +18,12 @@ export interface MainWindowOptions {
 /**
  * The CodeDen window (§17): the server's own UI, sandboxed and context-isolated, with only the
  * preload bridge. It can't navigate away from the server's origin; links open in the system
- * browser. It remembers its bounds and hides to the tray on close when the setting says so.
+ * browser. It remembers its bounds and zoom, and hides to the tray on close when the setting
+ * says so.
  */
 export class MainWindow {
   readonly window: BrowserWindow;
+  private readonly zoomControl: WindowZoom;
   private origin: string | null = null;
   private quitting = false;
 
@@ -53,11 +56,23 @@ export class MainWindow {
       },
     });
     if (bounds.maximized) this.window.maximize();
+    this.zoomControl = new WindowZoom(this.window.webContents, saved?.zoomFactor, () =>
+      this.saveState(),
+    );
     this.window.once("ready-to-show", () => {
       if (opts.show) this.show();
     });
     this.guard();
     this.trackBounds();
+  }
+
+  /** Zoom the UI in or out a step, or back to 100% (View menu); saved with the window state. */
+  zoom(command: ZoomCommand): void {
+    if (!this.window.isDestroyed()) this.zoomControl.apply(command);
+  }
+
+  get zoomFactor(): number {
+    return this.zoomControl.factor;
   }
 
   /** Load the server's UI (the launch URL authenticates and is replaced by a redirect). */
@@ -142,7 +157,11 @@ export class MainWindow {
     const b: Rectangle = this.window.isMaximized()
       ? this.window.getNormalBounds()
       : this.window.getBounds();
-    const state: WindowState = { ...b, maximized: this.window.isMaximized() };
+    const state: WindowState = {
+      ...b,
+      maximized: this.window.isMaximized(),
+      zoomFactor: this.zoomControl.factor,
+    };
     try {
       writeFileSync(this.opts.stateFile, JSON.stringify(state));
     } catch (error) {

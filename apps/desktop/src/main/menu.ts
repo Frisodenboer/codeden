@@ -1,4 +1,5 @@
 import type { MenuItemConstructorOptions } from "electron";
+import type { ZoomCommand } from "./zoom";
 
 export interface MenuActions {
   openSettings: () => void;
@@ -7,11 +8,38 @@ export interface MenuActions {
   openDocs: () => void;
   openLogs: () => void;
   quit: () => void;
+  zoom: (command: ZoomCommand) => void;
 }
 
 /**
- * The application menu with the standard roles (so Cut/Copy/Paste, Undo, zoom, full screen
- * and window shortcuts work as users expect on each OS) plus CodeDen's own entries.
+ * The zoom items. The visible ones carry the unshifted keys (Ctrl+= on Windows and Linux,
+ * Cmd+= on macOS, where "+" usually needs Shift); hidden twins add Ctrl+Shift+= ("Plus"),
+ * Ctrl+Shift+- and the numpad keys. Accelerators fire for hidden items on every OS, and
+ * whether or not the menu bar is showing.
+ */
+function zoomItems(zoom: MenuActions["zoom"]): MenuItemConstructorOptions[] {
+  const item = (label: string, command: ZoomCommand, accelerator: string, visible = true) => ({
+    label,
+    accelerator,
+    click: () => zoom(command),
+    ...(visible ? {} : { visible: false, acceleratorWorksWhenHidden: true }),
+  });
+  return [
+    item("Actual Size", "reset", "CommandOrControl+0"),
+    item("Zoom In", "in", "CommandOrControl+="),
+    item("Zoom Out", "out", "CommandOrControl+-"),
+    item("Actual Size", "reset", "CommandOrControl+num0", false),
+    item("Zoom In", "in", "CommandOrControl+Plus", false),
+    item("Zoom In", "in", "CommandOrControl+numadd", false),
+    item("Zoom Out", "out", "CommandOrControl+_", false),
+    item("Zoom Out", "out", "CommandOrControl+numsub", false),
+  ];
+}
+
+/**
+ * The application menu with the standard roles (so Cut/Copy/Paste, Undo, full screen and
+ * window shortcuts work as users expect on each OS) plus CodeDen's own entries, including
+ * zoom (remembered with the window, see `WindowZoom`).
  */
 export function appMenuTemplate(
   platform: NodeJS.Platform,
@@ -68,9 +96,7 @@ export function appMenuTemplate(
       { role: "reload" },
       { role: "forceReload" },
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
-      { role: "zoomOut" },
+      ...zoomItems(actions.zoom),
       { type: "separator" },
       { role: "togglefullscreen" },
     ],
