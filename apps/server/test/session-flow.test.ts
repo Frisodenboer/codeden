@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,6 +14,7 @@ import {
 } from "@codeden/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isProcessAlive, type RunningServer, readLiveRunnerLock, startServer } from "../src";
+import { removeTree } from "./support/remove-tree";
 import { TestWsClient } from "./support/ws-client";
 
 const TOKEN = "f".repeat(64);
@@ -91,7 +92,7 @@ afterAll(async () => {
   while (lock && isProcessAlive(lock.pid) && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 50));
   }
-  rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await removeTree(home);
 });
 
 describe("project -> Fake session through a real runner", () => {

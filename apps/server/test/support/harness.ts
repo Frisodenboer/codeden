@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CreateProjectResponse, SessionDetail, StartSessionResponse } from "@codeden/contracts";
@@ -10,6 +10,7 @@ import {
   type StartServerOptions,
   startServer,
 } from "../../src";
+import { removeTree } from "./remove-tree";
 
 export const TOKEN = "d".repeat(64);
 
@@ -116,7 +117,7 @@ export async function startHarness(
       while (lock && isProcessAlive(lock.pid) && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 50));
       }
-      rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await removeTree(home);
     },
   };
 }

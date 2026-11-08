@@ -1,9 +1,10 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { type RunnerLaunchConfig, startRunnerProcess } from "../src/runner/launcher";
 import { isProcessAlive } from "../src/runner/lock";
+import { removeTree } from "./support/remove-tree";
 
 const homes: string[] = [];
 const pids: number[] = [];
@@ -21,18 +22,7 @@ afterEach(async () => {
       await new Promise((r) => setTimeout(r, 50));
     }
   }
-  for (const home of homes.splice(0)) {
-    // Windows releases a killed process's working directory a moment after it exits.
-    for (let attempt = 1; ; attempt++) {
-      try {
-        rmSync(home, { recursive: true, force: true });
-        break;
-      } catch (error) {
-        if (attempt === 40) throw error;
-        await new Promise((r) => setTimeout(r, 250));
-      }
-    }
-  }
+  for (const home of homes.splice(0)) await removeTree(home);
 });
 
 /** The error a start that must fail rejects with. */

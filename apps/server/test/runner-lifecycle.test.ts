@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CODEDEN_VERSION, SessionSnapshot } from "@codeden/contracts";
@@ -13,6 +13,7 @@ import {
   startServer,
 } from "../src";
 import { spawnRunner } from "../src/runner/launcher";
+import { removeTree } from "./support/remove-tree";
 
 const TOKEN = "f".repeat(64);
 const homes: string[] = [];
@@ -38,7 +39,7 @@ afterEach(async () => {
   for (const home of homes.splice(0)) {
     const lock = readLiveRunnerLock(join(home, "runner", "runner.json"));
     if (lock) await stopRunner(join(home, "runner", "runner.json"));
-    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await removeTree(home);
   }
 });
 

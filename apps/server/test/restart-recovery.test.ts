@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { isProcessAlive, type RunningServer, readLiveRunnerLock, startServer } from "../src";
 import { RESTART_CONTINUE_MESSAGE } from "../src/services/sessions/recovery";
+import { removeTree } from "./support/remove-tree";
 
 const TOKEN = "e".repeat(64);
 let home: string;
@@ -30,7 +31,7 @@ afterAll(async () => {
   while (lock && isProcessAlive(lock.pid) && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 50));
   }
-  rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await removeTree(home);
 });
 
 async function until<T>(check: () => T | undefined | false, timeoutMs = 30_000): Promise<T> {

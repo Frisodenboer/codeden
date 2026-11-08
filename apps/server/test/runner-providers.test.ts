@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,6 +16,7 @@ import { type RunningServer, startServer } from "../src";
 import type { Exec } from "../src/services/exec";
 import { type RunnerPort, redetectProviders } from "../src/services/runner-port";
 import { waitUntil } from "./support/harness";
+import { removeTree } from "./support/remove-tree";
 
 const TOKEN = "e".repeat(64);
 const auth = { authorization: `Bearer ${TOKEN}` };
@@ -92,7 +93,7 @@ describe("provider lists from the runner", () => {
   afterEach(async () => {
     await server.close();
     await runner.close();
-    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await removeTree(home);
   });
 
   it("keeps live clients and the snapshot current when models change", async () => {
