@@ -16,14 +16,56 @@ const digest = [
   "</codeden_status>",
 ].join("\n");
 const updates = "Updates since your last turn:\n- (session.finished) [demo] Add README finished";
+/** A PM message notice quoting several paragraphs, as the server renders it. */
+const pmUpdates = [
+  "Updates since your last turn:",
+  '- (pm.message) [demo] Update from the PM of demo · "The picker session asked the user a question in the inbox.',
+  "",
+  "My recommendation: say yes if the user wants it. It's small and fits the same PR.",
+  "",
+  "I've told the session to carry on meanwhile, so the question isn't blocking it.\"",
+].join("\n");
+const userText =
+  "In demo, the sidebar cuts off details when it is narrow.\n\nAlso, how does archiving work?";
+const tagged = (list: string) => `<codeden_updates>\n${list}\n</codeden_updates>`;
 
 describe("foldDigest", () => {
   it("splits the status digest and notices from what the sender wrote", () => {
-    const folded = foldDigest(`${digest}\n\n${updates}\n\nWhat's going on?`);
+    const folded = foldDigest(`${digest}\n\n${tagged(updates)}\n\nWhat's going on?`);
     expect(folded.status).toBe(digest);
     expect(folded.updates).toBe(updates);
     expect(folded.text).toBe("What's going on?");
     expect(folded.wake).toBe(false);
+  });
+
+  it("ends a delimited updates block at its closing tag, whatever the notices contain", () => {
+    const folded = foldDigest(`${digest}\n\n${tagged(pmUpdates)}\n\n${userText}`);
+    expect(folded.updates).toBe(pmUpdates);
+    expect(folded.text).toBe(userText);
+    // Quotes and blank lines in the sender's own text do not matter either.
+    const quoted = 'Reply "yes"\n\nThen "carry on';
+    expect(foldDigest(`${digest}\n\n${tagged(pmUpdates)}\n\n${quoted}`).text).toBe(quoted);
+  });
+
+  it("folds legacy single-paragraph updates at the first blank line", () => {
+    const folded = foldDigest(`${digest}\n\n${updates}\n\nWhat's going on?`);
+    expect(folded.updates).toBe(updates);
+    expect(folded.text).toBe("What's going on?");
+  });
+
+  it("folds legacy updates whose quoted notice spans paragraphs", () => {
+    // The shape that leaked the end of a PM message into the user's bubble.
+    const folded = foldDigest(`${digest}\n\n${pmUpdates}\n\n${userText}`);
+    expect(folded.status).toBe(digest);
+    expect(folded.updates).toBe(pmUpdates);
+    expect(folded.text).toBe(userText);
+  });
+
+  it("falls back to the first blank line when legacy quotes never balance", () => {
+    const stray = 'Updates since your last turn:\n- (pm.message) [demo] Note · "a 5" screen"';
+    const folded = foldDigest(`${stray}\n\nWhat now?`);
+    expect(folded.updates).toBe(stray);
+    expect(folded.text).toBe("What now?");
   });
 
   it("leaves ordinary messages alone and spots automatic wake-ups", () => {
@@ -58,6 +100,49 @@ describe("UserMessage", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(toggle);
     expect(screen.getByText(/Running: none/)).toBeTruthy();
+  });
+
+  it("shows only the sender's text for a legacy multi-paragraph PM update", () => {
+    renderWithClient(
+      <UserMessage
+        item={{
+          id: "u2",
+          kind: "user_message",
+          status: "completed",
+          input: { text: `${digest}\n\n${pmUpdates}\n\n${userText}`, attachments: [] },
+        }}
+      />,
+    );
+    expect(screen.queryByText(/carry on meanwhile/)).toBeNull();
+    expect(screen.getByText(/the sidebar cuts off details/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Status sent to agent.*· 1 update$/ })).toBeTruthy();
+  });
+
+  it("keeps a wake-up with attachments as a bubble with its thumbnails", () => {
+    const { client } = renderWithClient(
+      <UserMessage
+        item={{
+          id: "u3",
+          kind: "user_message",
+          status: "completed",
+          input: {
+            text: `${digest}\n\n${tagged(updates)}\n\nAutomatic wake-up for the updates above.`,
+            attachments: [
+              {
+                type: "image",
+                mediaType: "image/png",
+                name: "image.png",
+                source: { type: "artifact", artifactId: "art-1" },
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("wake-line")).toBeNull();
+    const img = screen.getByRole("img", { name: "image.png" });
+    expect(img.getAttribute("src")).toBe(client.artifactUrl("art-1"));
+    expect(screen.queryByText(/codeden_updates/)).toBeNull();
   });
 });
 

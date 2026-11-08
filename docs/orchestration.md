@@ -37,7 +37,9 @@ Every time the orchestrator or a PM wakes (you message it, a notice arrives, ano
 - **PM digest:** running and queued sessions (work key, purpose, status, last progress, age), the next scheduled automation runs, open inbox items, and recent finishes and failures.
 - **Orchestrator digest:** the same, rolled up per project.
 
-In the transcript this shows as a folded **Status sent to agent** marker you can expand.
+Undelivered notices follow as an "Updates since your last turn" list. Each block is wrapped in its own tags, `<codeden_status>…</codeden_status>` and then `<codeden_updates>…</codeden_updates>`, and everything after them is what you (or the waking role) actually wrote. The tags matter because a notice can quote a multi-paragraph message. If free text in a block contains one of these tag names, it is defused, so only CodeDen's own tags open and close a block.
+
+In the transcript both blocks fold into a **Status sent to agent** marker you can expand, and the message bubble shows only your own text.
 
 ## Notices
 
