@@ -1,4 +1,7 @@
-/** The version written into the source; kept in sync with `apps/cli/package.json` (tested). */
+/**
+ * The version written into the source; kept in sync with `apps/cli/package.json` and
+ * `apps/desktop/package.json` (tested).
+ */
 export const SOURCE_VERSION = "0.1.1";
 
 /**

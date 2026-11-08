@@ -4,3 +4,6 @@ packages:
 onlyBuiltDependencies:
   - esbuild
   - node-pty
+# Squirrel.Windows tooling pulled in by electron-builder; the app ships with NSIS instead.
+ignoredBuiltDependencies:
+  - electron-winstaller

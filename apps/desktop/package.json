@@ -1,0 +1,37 @@
+{
+  "name": "@codeden/desktop",
+  "version": "0.1.1",
+  "private": true,
+  "description": "CodeDen desktop app: an Electron shell that starts (or attaches to) the CodeDen server and loads the same UI.",
+  "license": "MIT",
+  "author": "Leon van Zyl",
+  "homepage": "https://github.com/leonvanzyl/codeden#readme",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsdown && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "node scripts/dev.mjs",
+    "package": "node scripts/package.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@napi-rs/keyring": "^2.1.2",
+    "node-pty": "1.1.0",
+    "playwright-core": "1.64.1"
+  },
+  "devDependencies": {
+    "@codeden/contracts": "workspace:*",
+    "@codeden/providers": "workspace:*",
+    "@codeden/runner": "workspace:*",
+    "@codeden/server": "workspace:*",
+    "@codeden/web": "workspace:*",
+    "@playwright/test": "1.64.1",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "electron-updater": "6.8.11",
+    "tsdown": "^0.23.7",
+    "zod": "^4.6.7"
+  }
+}
