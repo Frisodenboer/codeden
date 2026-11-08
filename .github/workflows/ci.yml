@@ -104,6 +104,18 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @codeden/web exec playwright install --with-deps chromium
       - run: pnpm e2e
+      # Electron downloads its ~100 MB binary from GitHub on first use; retry transient
+      # network errors (a 504 from github.com once failed a run) instead of failing the job.
+      - name: Download the Electron binary (with retries)
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node -e "require('electron')" > /dev/null; then exit 0; fi
+            echo "::warning::Electron download failed (attempt $attempt of 5); retrying"
+            sleep $((attempt * 15))
+          done
+          exit 1
       - name: Desktop app smoke test (unpacked build)
         shell: bash
         run: |
