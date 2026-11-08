@@ -26,13 +26,22 @@ import type { CodexRpc } from "./rpc";
 export interface CodexSessionConfig {
   executable: ResolvedCommand;
   onModels?: (models: Model[]) => void;
+  /** Reasoning efforts a model lists (from `model/list`), when known. */
+  modelEfforts?: (model: string) => readonly ReasoningEffort[] | undefined;
   interruptTimeoutMs?: number;
 }
 
-/** CodeDen effort -> Codex reasoning effort (Codex tops out at `xhigh`). */
-export function codexEffort(effort: ReasoningEffort | undefined): string | undefined {
+/**
+ * CodeDen effort -> Codex reasoning effort. `max` is sent only to models that list it
+ * (`supported`); older models top out at `xhigh`.
+ */
+export function codexEffort(
+  effort: ReasoningEffort | undefined,
+  supported?: readonly ReasoningEffort[],
+): string | undefined {
   if (!effort) return undefined;
-  return effort === "max" ? "xhigh" : effort;
+  if (effort !== "max") return effort;
+  return supported?.includes("max") ? "max" : "xhigh";
 }
 
 /**
@@ -49,6 +58,8 @@ export class CodexSession implements ProviderSession {
   /** Model/effort changes from `configure`, applied on every following turn. */
   private nextTurn: SessionConfigChange = {};
   private closed = false;
+  /** The model the thread started with (the user's Codex config when none was chosen). */
+  private threadModel: string | undefined;
   private readonly filePaths = new Map<string, string[]>();
 
   constructor(
@@ -94,10 +105,12 @@ export class CodexSession implements ProviderSession {
     this.turnPending = true;
     try {
       const rpc = await this.ensureServer();
+      const model = await this.turnModel(rpc);
+      const inUse = model ?? explicitModel(this.opts.model) ?? this.threadModel;
       const effort = codexEffort(
         this.nextTurn.effort !== undefined ? (this.nextTurn.effort ?? undefined) : this.opts.effort,
+        inUse ? this.config.modelEfforts?.(inUse) : undefined,
       );
-      const model = await this.turnModel(rpc);
       const res = await rpc.request<TurnStartResponse>("turn/start", {
         threadId: this.threadId(),
         input: toCodexInput(input),
@@ -226,6 +239,7 @@ export class CodexSession implements ProviderSession {
     }
     res ??= await rpc.request<ThreadStartResponse>("thread/start", common);
     this.mapper.codexThreadId = res.thread.id;
+    this.threadModel = res.model || undefined;
     this.events.push({ type: "session.updated", resumeToken: res.thread.id, model: res.model });
     if (this.config.onModels) {
       rpc.request<{ data: Model[] }>("model/list", {}).then(

@@ -114,6 +114,7 @@ export class CodexAdapter implements ProviderAdapter {
         const visible = visibleCodexModels(models);
         if (visible.length) this.setModels(visible);
       },
+      modelEfforts: (model) => this.catalog.list().find((m) => m.id === model)?.efforts,
     });
     try {
       await session.start();
