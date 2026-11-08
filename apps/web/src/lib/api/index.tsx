@@ -19,7 +19,10 @@ export const serverOrigin: string = import.meta.env.VITE_CODEDEN_SERVER ?? windo
 export function createClient(): CodeDenClient {
   if (isMockMode) return createMockClient({ ambient: true });
   return createHttpClient(serverOrigin, {
-    onUnauthorized: () => useConnectionStore.getState().setAuth("unauthorized"),
+    onUnauthorized: (code) =>
+      useConnectionStore
+        .getState()
+        .setAuth(code === "sign_in_required" ? "signin" : "unauthorized"),
   });
 }
 

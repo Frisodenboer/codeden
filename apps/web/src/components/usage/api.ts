@@ -34,7 +34,9 @@ function queryString(q: UsageQuery): string {
 }
 
 export function createHttpUsageApi(origin: string): UsageApi {
-  const http = createFetcher(origin, () => useConnectionStore.getState().setAuth("unauthorized"));
+  const http = createFetcher(origin, (code) =>
+    useConnectionStore.getState().setAuth(code === "sign_in_required" ? "signin" : "unauthorized"),
+  );
   const enc = encodeURIComponent;
   return {
     report: (q) => http.get(`/usage/report?${queryString(q)}`, (v) => UsageReport.parse(v)),

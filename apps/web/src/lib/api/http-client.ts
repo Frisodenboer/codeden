@@ -38,6 +38,7 @@ import {
 } from "./http-features";
 import { httpGithubApi, httpOrchestrationApi, httpSessionConflictApi } from "./http-orchestration";
 import { configApi } from "./http-unwired";
+import { httpAuthApi, httpNetworkApi } from "./network-api";
 import { httpQueueApi } from "./queue-api";
 import { RealtimeSocket } from "./realtime-socket";
 import { openTerminalSocket } from "./terminal-channel";
@@ -51,8 +52,11 @@ const whenBusy: Record<SendMode, SendMessageRequestInit["whenBusy"]> = {
 };
 
 export interface HttpClientOptions {
-  /** Called when the server answers 401 (missing or expired cookie). */
-  onUnauthorized?: () => void;
+  /**
+   * Called when the server answers 401 (missing or expired cookie), with the server's code:
+   * `sign_in_required` for a remote device that has to sign in with the password.
+   */
+  onUnauthorized?: (code: string) => void;
 }
 
 /**
@@ -114,6 +118,8 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
 
     updateSettings: (patch) => call("PATCH", "/settings", patch, (v) => Settings.parse(v)),
     secrets: httpSecretsApi(http),
+    network: httpNetworkApi(http),
+    auth: httpAuthApi(origin),
 
     getSetupStatus: (o) =>
       get(`/setup/status${o?.refresh ? "?refresh=1" : ""}`, (v) => SetupStatus.parse(v)),

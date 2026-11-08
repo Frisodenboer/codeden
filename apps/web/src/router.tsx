@@ -6,6 +6,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/shell/app-shell";
+import { SignInScreen } from "@/components/shell/sign-in";
 import { UnauthorizedScreen } from "@/components/shell/unauthorized";
 import { Toaster } from "@/components/ui/sonner";
 import { AgentsPage, type AgentTab } from "@/routes/agents";
@@ -27,6 +28,7 @@ import { useConnectionStore } from "@/stores/connection";
 function Root() {
   const auth = useConnectionStore((s) => s.auth);
   if (auth === "unauthorized") return <UnauthorizedScreen />;
+  if (auth === "signin") return <SignInScreen />;
   return (
     <>
       <Outlet />
