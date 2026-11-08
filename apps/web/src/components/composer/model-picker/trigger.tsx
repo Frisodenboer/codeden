@@ -55,11 +55,12 @@ export function PickerTrigger({
       size="sm"
       aria-label={label}
       title={label.replace("Provider and model: ", "")}
-      className={cn(TRIGGER_CLASS, "min-w-0", className)}
+      // Shrinks in a narrow composer: the model name truncates before anything overflows.
+      className={cn(TRIGGER_CLASS, "min-w-0 shrink", className)}
       {...props}
     >
       {providerId ? (
-        <span className="relative flex">
+        <span className="relative flex shrink-0">
           <ProviderMark provider={providerId} className="size-3.5 text-[8px]" />
           {!ready && (
             <span
@@ -69,16 +70,16 @@ export function PickerTrigger({
           )}
         </span>
       ) : (
-        <Sparkles className="size-3.5" aria-hidden />
+        <Sparkles className="size-3.5 shrink-0" aria-hidden />
       )}
-      <span className="max-w-44 truncate text-foreground/85">{text}</span>
+      <span className="min-w-0 max-w-44 truncate text-foreground/85">{text}</span>
       {effort && (
-        <span className="flex items-center gap-1.5 pl-0.5">
+        <span className="flex shrink-0 items-center gap-1.5 pl-0.5">
           <EffortGlyph level={levels.indexOf(effort) + 1} of={levels.length} />
           {EFFORT_NAME[effort]}
         </span>
       )}
-      <ChevronDown className="size-3 opacity-50" aria-hidden />
+      <ChevronDown className="size-3 shrink-0 opacity-50" aria-hidden />
     </Button>
   );
 }
