@@ -1,22 +1,15 @@
 import type { Attachment, QueuedMessage, Session } from "@codeden/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileText, ListOrdered, Pencil, SendHorizontal, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ImageGallery, ImageThumbnail } from "@/components/common/image-viewer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useClient } from "@/lib/api";
+import { attachmentGallery } from "@/lib/attachments";
 import { useSnapshotData } from "@/lib/queries";
 import { queueKey, queuePosition, senderLabel, useQueuedMessages } from "@/lib/queue";
-
-/** The image's URL, or `null` when it can only be shown by name (a file, an unmapped path). */
-function imageSrc(attachment: Attachment, artifactUrl: (id: string) => string): string | null {
-  if (attachment.type !== "image") return null;
-  const { source } = attachment;
-  if (source.type === "base64") return `data:${attachment.mediaType};base64,${source.data}`;
-  if (source.type === "artifact") return artifactUrl(source.artifactId);
-  return null;
-}
 
 function attachmentName(attachment: Attachment): string {
   if (attachment.type === "file") return attachment.name ?? attachment.path;
@@ -24,16 +17,25 @@ function attachmentName(attachment: Attachment): string {
   return attachment.name ?? "image";
 }
 
-function Thumbnail({ attachment }: { attachment: Attachment }) {
-  const client = useClient();
-  const src = imageSrc(attachment, client.artifactUrl);
-  if (src) {
+/** An image opens in the viewer (`image` is its place in the gallery); a file shows its name. */
+function Thumbnail({
+  attachment,
+  image,
+  src,
+}: {
+  attachment: Attachment;
+  image: number;
+  src: string | undefined;
+}) {
+  if (image >= 0 && src) {
     return (
-      <img
-        src={src}
-        alt={attachment.name ?? "Attached image"}
-        className="size-8 rounded-md border border-border object-cover"
-      />
+      <ImageThumbnail index={image} className="rounded-md">
+        <img
+          src={src}
+          alt={attachment.name ?? "Attached image"}
+          className="block size-8 rounded-md border border-border object-cover"
+        />
+      </ImageThumbnail>
     );
   }
   const name = attachmentName(attachment);
@@ -86,6 +88,10 @@ function QueuedRow({
     },
     onError,
   });
+  const gallery = useMemo(
+    () => attachmentGallery(message.input.attachments, client.artifactUrl),
+    [message.input.attachments, client],
+  );
   const busy = edit.isPending || remove.isPending || sendNow.isPending;
   const from = senderLabel(message.from);
   const save = () => {
@@ -135,12 +141,22 @@ function QueuedRow({
           </div>
         )}
         {message.input.attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {message.input.attachments.map((a, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: attachments have no ids and never reorder.
-              <Thumbnail key={i} attachment={a} />
-            ))}
-          </div>
+          <ImageGallery images={gallery.images}>
+            <div className="flex flex-wrap gap-1">
+              {message.input.attachments.map((a, i) => {
+                const image = gallery.positions[i] ?? -1;
+                return (
+                  <Thumbnail
+                    // biome-ignore lint/suspicious/noArrayIndexKey: attachments have no ids and never reorder.
+                    key={i}
+                    attachment={a}
+                    image={image}
+                    src={gallery.images[image]?.src}
+                  />
+                );
+              })}
+            </div>
+          </ImageGallery>
         )}
       </div>
       {draft === null && (

@@ -1,5 +1,6 @@
 import type { ItemOf } from "@codeden/contracts";
 import { Download, FileText } from "lucide-react";
+import { ImageGallery, ImageThumbnail } from "@/components/common/image-viewer";
 import { useClient } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 
@@ -38,20 +39,28 @@ export function SharedArtifactCard({
   const url = client.artifactUrl(artifact.artifactId);
   const caption = item.message && item.message !== artifact.name ? item.message : null;
   if (INLINE.test(artifact.mediaType)) {
+    const image = {
+      src: url,
+      name: artifact.name,
+      caption: caption ?? undefined,
+      downloadName: artifact.name,
+    };
     return (
-      <figure className="space-y-1.5" data-testid="shared-artifact">
-        <a href={url} target="_blank" rel="noreferrer" className="block">
-          <img
-            src={url}
-            alt={caption ?? artifact.name}
-            loading="lazy"
-            className="max-h-[28rem] w-auto max-w-full rounded-lg border border-border bg-muted/30 shadow-sm"
-          />
-        </a>
-        <figcaption className="text-2xs text-muted-foreground">
-          {caption ?? artifact.name}
-        </figcaption>
-      </figure>
+      <ImageGallery images={[image]}>
+        <figure className="space-y-1.5" data-testid="shared-artifact">
+          <ImageThumbnail index={0} className="block w-fit max-w-full rounded-lg">
+            <img
+              src={url}
+              alt={caption ?? artifact.name}
+              loading="lazy"
+              className="max-h-[28rem] w-auto max-w-full rounded-lg border border-border bg-muted/30 shadow-sm"
+            />
+          </ImageThumbnail>
+          <figcaption className="text-2xs text-muted-foreground">
+            {caption ?? artifact.name}
+          </figcaption>
+        </figure>
+      </ImageGallery>
     );
   }
   return (
