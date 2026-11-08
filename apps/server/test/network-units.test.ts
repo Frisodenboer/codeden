@@ -160,6 +160,9 @@ describe("listAddresses", () => {
       ],
       Ethernet: [iface("10.0.0.7"), iface("169.254.3.4")],
       wg0: [iface("10.8.0.2")],
+      "vEthernet (WSL (Hyper-V firewall))": [iface("172.20.0.1")],
+      docker0: [iface("172.17.0.1")],
+      "VirtualBox Host-Only Network": [iface("192.168.56.1")],
       utun3: [iface("100.64.0.9")],
     });
     expect(list.map((a) => [a.kind, a.label, a.url])).toEqual([

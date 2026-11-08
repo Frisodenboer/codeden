@@ -48,8 +48,15 @@ function isLinkLocal(address: string): boolean {
 const VPN_NAME = /tailscale|wireguard|wg\d|utun|zerotier|\bzt|tun\d|vpn/i;
 
 /**
+ * Host-only virtual adapters (Hyper-V/WSL, Docker, VirtualBox, VMware, libvirt): no phone can
+ * reach them, so they are neither listed nor accepted in `Host`/`Origin`.
+ */
+const VIRTUAL_NAME =
+  /^(vethernet|docker\d*|br-|veth|virbr|vmnet|vboxnet)|virtualbox|vmware|hyper-v/i;
+
+/**
  * Every address CodeDen answers on for `port`: this machine (`localhost`) first, then each
- * non-internal IPv4 address, LAN before VPN. Tailscale's range, and interfaces named like a VPN,
+ * non-internal IPv4 address, LAN before VPN, leaving out host-only virtual adapters. Tailscale's range, and interfaces named like a VPN,
  * count as `vpn`. Interfaces are injectable for tests.
  */
 export function listAddresses(
@@ -70,6 +77,7 @@ export function listAddresses(
       if (info.family !== "IPv4" || info.internal) continue;
       const host = info.address;
       if (seen.has(host) || isLinkLocal(host) || isLoopbackAddress(host)) continue;
+      if (VIRTUAL_NAME.test(name) && !isVpnRange(host)) continue;
       seen.add(host);
       const vpn = isVpnRange(host) || VPN_NAME.test(name);
       const tailscale = isVpnRange(host) || /tailscale/i.test(name);
