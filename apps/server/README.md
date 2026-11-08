@@ -56,7 +56,7 @@ The question becomes a `user_question` item (`deferred: true`) in the current tu
 | `GET /api/orchestration/roles`, `GET /api/orchestration/notices?projectId=&target=&limit=` | -> `RoleSessionsRef`, `Notice[]` |
 | `GET /api/conflicts?status=&projectId=`, `GET /api/conflicts/:id` | -> `ConflictRecord[]`, `ConflictRecord` |
 | `POST /api/conflicts/:id/resolve` | `ConflictDecision` -> `ResolveConflictResponse` |
-| `PATCH /api/sessions/:id` | `UpdateSessionRequest` (model, effort, title) -> `Session`; model/effort apply on the next turn (`session.configure`) |
+| `PATCH /api/sessions/:id` | `UpdateSessionRequest` (model, effort, autonomy, title) -> `Session`; model/effort apply on the next turn, autonomy is sent to the runner at once and applies from the next tool call (`liveAutonomy`) or the next turn (`session.configure`) |
 
 Tools: orchestrator `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox`; PM `get_project_status`, `list_sessions`, `start_session`, `message_session`, `stop_session`, `list_scheduled_runs`, `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run`, `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `list_issues`, `get_issue`, `triage_issue`, `create_issue`, `list_automations`, `run_automation`, `report_triage`, plus `ask_user` and `get_pr_status` (shared with agents). Awareness and core tools are always loaded.
 

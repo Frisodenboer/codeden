@@ -62,9 +62,9 @@ export class SessionService {
     this.inputDecorator = fn;
   }
 
-  /** Model, effort (applied on the next turn) or title. */
-  update(id: string, req: UpdateSessionRequest): Session {
-    return updateSession(this.deps.repo, id, req);
+  /** Model and effort (applied on the next turn), autonomy (pushed to the runner) or title. */
+  update(id: string, req: UpdateSessionRequest): Promise<Session> {
+    return updateSession(this.deps.repo, this.deps.runner, id, req);
   }
 
   detail(id: string): SessionDetail {

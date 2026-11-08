@@ -34,8 +34,8 @@ export function sessionRoutes(s: AppServices) {
         return c.json({ ...result, conflictId: record.id }, 409);
       })
       .get("/:id", (c) => c.json(s.sessions.detail(c.req.param("id"))))
-      .patch("/:id", jsonBody(UpdateSessionRequest), (c) =>
-        c.json(s.sessions.update(c.req.param("id"), c.req.valid("json"))),
+      .patch("/:id", jsonBody(UpdateSessionRequest), async (c) =>
+        c.json(await s.sessions.update(c.req.param("id"), c.req.valid("json"))),
       )
       .post("/:id/messages", jsonBody(SendMessageRequest), async (c) =>
         c.json(await s.sessions.send(c.req.param("id"), c.req.valid("json"))),
