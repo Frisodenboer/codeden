@@ -59,7 +59,9 @@ The shell is PowerShell on Windows and your `$SHELL` elsewhere. Set `CODEDEN_SHE
 
 ## Archiving and worktree cleanup
 
-**Archive session** in a session's **⋯** menu stops the session, hides it from the sidebar and removes its worktree. If the worktree has uncommitted changes it is kept, and the toast offers **Remove anyway**. Archiving a project cleans up the worktrees of its sessions that aren't working.
+**Archive** stops the session, hides it from the sidebar and removes its worktree. It's in the session's menu in the sidebar (right-click the row, use the **⋯** button that shows on hover, or press **Shift+F10** or the menu key) and in the **⋯** menu of the thread header. The same menu opens, renames, copies a link to, and stops the session. The toast offers **Undo**. If the worktree has uncommitted changes it is kept, and the toast also offers **Remove anyway**. Archiving a project cleans up the worktrees of its sessions that aren't working.
+
+Archived sessions live on the project home: an expanded project in the sidebar ends with an **N archived** row that opens the project's sessions on the **Archived** filter, where each one has **Unarchive**. The command palette (**Ctrl K**) still finds archived sessions and labels them **Archived**.
 
 CodeDen also removes worktrees on its own once a session has been inactive for 7 days, unless its pull request is still open or the worktree has uncommitted changes. Change the number of days, or switch this off, in **Settings → General → Worktrees**.
 
