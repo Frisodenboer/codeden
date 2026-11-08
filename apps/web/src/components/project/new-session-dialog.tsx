@@ -9,7 +9,8 @@ import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { AutonomyPicker, EffortPicker, ModelPicker } from "@/components/composer/pickers";
+import { ModelPicker } from "@/components/composer/model-picker/model-picker";
+import { AutonomyPicker } from "@/components/composer/pickers";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -180,21 +181,11 @@ export function NewSessionDialog({
               {provider ? (
                 <ModelPicker
                   providers={providers}
-                  provider={provider.id}
-                  model={model?.id ?? null}
-                  onChange={(p, m) =>
-                    setChoice((c) => ({ ...c, provider: p, model: m, effort: null }))
-                  }
+                  value={{ provider: provider.id, model: choice.model, effort: choice.effort }}
+                  onChange={(next) => setChoice((c) => ({ ...c, ...next }))}
                 />
               ) : (
                 <span className="px-2 text-xs text-muted-foreground">No agent provider ready</span>
-              )}
-              {provider?.capabilities.reasoningEffort && (
-                <EffortPicker
-                  efforts={model?.efforts ?? []}
-                  value={choice.effort ?? model?.defaultEffort ?? null}
-                  onChange={(effort) => setChoice((c) => ({ ...c, effort }))}
-                />
               )}
               <AutonomyPicker
                 value={autonomy}

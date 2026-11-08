@@ -28,6 +28,13 @@ export const RoleDefaults = z.object({
 });
 export type RoleDefaults = z.infer<typeof RoleDefaults>;
 
+/** A model named by its provider and the provider's model id. */
+export const ModelRef = z.object({
+  provider: ProviderId,
+  model: z.string().min(1),
+});
+export type ModelRef = z.infer<typeof ModelRef>;
+
 /**
  * User settings persisted in `<home>/settings.json` (non-secret; API keys live in the OS
  * keychain). Every field has a default, so `Settings.parse({})` yields a complete object and
@@ -66,6 +73,21 @@ export const Settings = z.object({
           noticeSummaries: z.boolean().default(true),
         })
         .prefault({}),
+    })
+    .prefault({}),
+  /** The model picker (§13). */
+  models: z
+    .object({
+      /**
+       * Starred models, listed in this order in the picker's Favourites section. Entries whose
+       * model a provider no longer lists are kept (it may come back) but not shown.
+       */
+      favorites: z.array(ModelRef).default([]),
+      /**
+       * Model ids left out of the picker, by provider id. A hidden model that is still chosen
+       * somewhere (a session, a default, an automation) keeps showing there.
+       */
+      hidden: z.record(ProviderId, z.array(z.string().min(1))).default({}),
     })
     .prefault({}),
   /** Follow-up prompt chips (§7.5). */

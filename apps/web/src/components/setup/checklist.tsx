@@ -1,5 +1,5 @@
 import type { SetupCheck, SetupStatus } from "@codeden/contracts";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   Copy,
@@ -24,6 +24,7 @@ import {
 import { TerminalView } from "@/components/workbench/terminal-view";
 import { useClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
+import { useSetupStatus } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { ClaudeSupportRow } from "./claude-support";
 
@@ -75,11 +76,8 @@ function StateIcon({ state }: { state: RowState }) {
   );
 }
 
-/** Live setup status, shared by the checklist and the setup page's Continue button. */
-export function useSetupStatus() {
-  const client = useClient();
-  return useQuery({ queryKey: ["setup"], queryFn: () => client.getSetupStatus() });
-}
+/** Live setup status, shared by the checklist, the setup page and the model picker. */
+export { useSetupStatus };
 
 /** First-run checklist (§14): parallel checks with live ticks; one fix per failed check. */
 export function SetupChecklist() {

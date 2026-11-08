@@ -1,19 +1,15 @@
-import type { ReasoningEffort, Role } from "@codeden/contracts";
+import type { Role } from "@codeden/contracts";
 import { ProviderMark } from "@/components/common/bits";
+import { PickerFooterChoice } from "@/components/composer/model-picker/footer";
+import { ModelPicker } from "@/components/composer/model-picker/model-picker";
 import { KillSwitchButton } from "@/components/factory/kill-switch";
 import { AUTONOMY } from "@/components/thread/autonomy";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { type ThemePreference, useThemeStore } from "@/stores/theme";
+import { ModelVisibilitySettings } from "./model-visibility";
 import { Segmented, SettingRow, SettingsSection, useSettings } from "./settings-ui";
 import { UpdateModeSetting } from "./update-mode";
 
@@ -150,74 +146,40 @@ export function ProviderSettings() {
       <SettingsSection title="Defaults per role" description="Each role can run on any provider.">
         {roles.map(({ role, label, help }) => {
           const current = settings.providers[role];
-          const provider = providers.find((p) => p.id === current.provider) ?? providers[0];
-          const model =
-            provider?.models.find((m) => m.id === current.model) ??
-            provider?.models.find((m) => m.isDefault);
+          const auto = current.provider === "auto";
           return (
             <SettingRow key={role} label={label} help={help}>
-              <div className="flex gap-2">
-                <Select
-                  value={current.provider}
-                  onValueChange={(v) =>
-                    update({ providers: { [role]: { provider: v, model: null } } })
+              <div className="rounded-lg border border-border px-1 py-0.5">
+                <ModelPicker
+                  providers={providers}
+                  align="end"
+                  placeholder="Auto"
+                  value={
+                    auto
+                      ? null
+                      : { provider: current.provider, model: current.model, effort: current.effort }
                   }
-                >
-                  <SelectTrigger size="sm" className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">Auto</SelectItem>
-                    {providers.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.displayName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={model?.id ?? ""}
-                  onValueChange={(v) => update({ providers: { [role]: { model: v } } })}
-                  disabled={current.provider === "auto"}
-                >
-                  <SelectTrigger size="sm" className="w-32">
-                    <SelectValue placeholder="Default" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {provider?.models.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={current.effort ?? "default"}
-                  onValueChange={(v) =>
-                    update({
-                      providers: {
-                        [role]: { effort: v === "default" ? null : (v as ReasoningEffort) },
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger size="sm" className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="default">Default effort</SelectItem>
-                    {(model?.efforts ?? []).map((e) => (
-                      <SelectItem key={e} value={e}>
-                        {e}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(next) => update({ providers: { [role]: next } })}
+                  footer={(close) => (
+                    <PickerFooterChoice
+                      active={auto}
+                      onClick={() => {
+                        update({
+                          providers: { [role]: { provider: "auto", model: null, effort: null } },
+                        });
+                        close();
+                      }}
+                    >
+                      Auto: the first ready provider and its default model
+                    </PickerFooterChoice>
+                  )}
+                />
               </div>
             </SettingRow>
           );
         })}
       </SettingsSection>
+      <ModelVisibilitySettings />
     </>
   );
 }
@@ -278,37 +240,44 @@ export function UtilitySettings() {
     ["sessionTitles", "Session titles", "Short titles from the first message."],
     ["noticeSummaries", "Notice summaries", "One-line summaries in PM wake-ups."],
   ] as const;
+  const utilityAuto = settings.utilityModel.provider === "auto";
   return (
     <SettingsSection
       title="Utility model"
       description="One small, cheap model for side jobs. Runs through an installed provider, no extra API key."
     >
       <SettingRow label="Model">
-        <Select
-          value={
-            settings.utilityModel.provider === "auto"
-              ? "auto"
-              : `${settings.utilityModel.provider}:${settings.utilityModel.model ?? ""}`
-          }
-          onValueChange={(v) => {
-            const [provider = "auto", model = null] = v === "auto" ? ["auto", null] : v.split(":");
-            update({ utilityModel: { provider, model } });
-          }}
-        >
-          <SelectTrigger size="sm" className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto">Auto (smallest available)</SelectItem>
-            {providers.flatMap((p) =>
-              p.models.map((m) => (
-                <SelectItem key={`${p.id}:${m.id}`} value={`${p.id}:${m.id}`}>
-                  {p.displayName} · {m.label}
-                </SelectItem>
-              )),
+        <div className="rounded-lg border border-border px-1 py-0.5">
+          <ModelPicker
+            providers={providers}
+            align="end"
+            effort={false}
+            placeholder="Auto (smallest available)"
+            value={
+              utilityAuto
+                ? null
+                : {
+                    provider: settings.utilityModel.provider,
+                    model: settings.utilityModel.model,
+                    effort: null,
+                  }
+            }
+            onChange={(next) =>
+              update({ utilityModel: { provider: next.provider, model: next.model } })
+            }
+            footer={(close) => (
+              <PickerFooterChoice
+                active={utilityAuto}
+                onClick={() => {
+                  update({ utilityModel: { provider: "auto", model: null } });
+                  close();
+                }}
+              >
+                Auto: the smallest available model
+              </PickerFooterChoice>
             )}
-          </SelectContent>
-        </Select>
+          />
+        </div>
       </SettingRow>
       {jobs.map(([key, label, help]) => (
         <SettingRow key={key} label={label} help={help}>
