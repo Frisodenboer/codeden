@@ -14,6 +14,10 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 - Network access keeps the runner and the agents' MCP endpoint on 127.0.0.1, never accepts the install token from another device, stores only a salted scrypt hash of the password and hashes of session tokens, throttles failed sign-ins per address (with a 15-minute lockout after ten), and keeps the `Host` and `Origin` checks, extended only to the computer's own network addresses while it's on.
 
+### Fixed
+
+- **Desktop update checks while a release is being published.** The GitHub Release now stays a draft until every installer and update file is attached, so the desktop app no longer reports "Couldn't check for updates … 404" during a release. A release that has no update file for your platform yet counts as up to date, and GitHub hiccups (5xx, timeouts) are retried twice before a plain "Couldn't reach GitHub" message.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added
