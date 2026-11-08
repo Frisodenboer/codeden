@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   CanUseTool,
   HookCallback,
@@ -50,6 +51,8 @@ export class ClaudeSession implements ProviderSession {
   private abort: AbortController | undefined;
   private stderrTail = "";
   private closed = false;
+  /** The shell's current directory from the latest PreToolUse hook, for relative paths. */
+  private shellDir: string | undefined;
 
   constructor(
     private readonly opts: SessionOptions,
@@ -156,6 +159,9 @@ export class ClaudeSession implements ProviderSession {
         string,
         unknown
       >;
+      // The shell's current directory: a `cd` in an earlier Bash call persists.
+      const cwd = str(hookInput, "cwd");
+      if (cwd && (path.isAbsolute(cwd) || path.win32.isAbsolute(cwd))) this.shellDir = cwd;
       const denied = this.policy.denial(name, toolInput);
       if (denied) {
         return {
@@ -166,7 +172,7 @@ export class ClaudeSession implements ProviderSession {
           },
         };
       }
-      const gate = this.policy.gate(name, toolInput);
+      const gate = this.policy.gate(name, toolInput, this.shellDir);
       if (!gate.ask) return {};
       return {
         hookSpecificOutput: {
@@ -233,7 +239,7 @@ export class ClaudeSession implements ProviderSession {
       return this.askQuestion(input, options.toolUseID, options.signal);
     const denied = this.policy.denial(toolName, input);
     if (denied) return { behavior: "deny", message: denied };
-    const gate = this.policy.needsUser(toolName, input);
+    const gate = this.policy.needsUser(toolName, input, this.shellDir);
     if (!gate.ask) return { behavior: "allow", updatedInput: input };
     const ctx = this.mapper.ctxForTool(options.toolUseID);
     const item: ItemOf<"approval_request"> = {

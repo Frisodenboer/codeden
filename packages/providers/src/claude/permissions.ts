@@ -19,7 +19,8 @@ export type Gate = { ask: false } | { ask: true; action: ApprovalAction; reason:
  * Native permission mode per autonomy level (§11.2):
  * - supervised -> `default`, and every edit/command is forced to ask via a PreToolUse hook
  * - auto       -> `acceptEdits`, plus the risky-action classifier
- * - full       -> `bypassPermissions`, asking only for writes outside the worktree
+ * - full       -> `bypassPermissions`, asking only for writes outside the worktree and the
+ *                 OS temp directory, and for secrets
  * Plan mode overrides all of them with `plan`.
  */
 export function permissionModeFor(autonomy: AutonomyLevel, planMode: boolean): PermissionMode {
@@ -28,6 +29,9 @@ export function permissionModeFor(autonomy: AutonomyLevel, planMode: boolean): P
   if (autonomy === "auto") return "acceptEdits";
   return "bypassPermissions";
 }
+
+/** Risky actions Full autonomy still asks about (§11.2). */
+const FULL_ASKS = new Set<ApprovalAction>(["outside_worktree", "secrets"]);
 
 /**
  * CodeDen's approval policy for Claude tool calls. `gate()` runs in a PreToolUse hook (so it
@@ -38,11 +42,20 @@ export class ClaudePolicy {
   private readonly sessionAllow = new Set<string>();
 
   constructor(
-    private readonly autonomy: AutonomyLevel,
+    private autonomy: AutonomyLevel,
     private readonly ctx: RiskContext,
     /** Read-only sessions (orchestrator, PMs): edits and writing commands are denied. */
     private readonly readOnly = false,
   ) {}
+
+  get level(): AutonomyLevel {
+    return this.autonomy;
+  }
+
+  /** Switch the level; the next `gate()` uses it. `allow_session` decisions are kept. */
+  setAutonomy(level: AutonomyLevel): void {
+    this.autonomy = level;
+  }
 
   /** Why a call is refused outright (read-only sessions), or undefined. */
   denial(toolName: string, input: Record<string, unknown>): string | undefined {
@@ -57,7 +70,11 @@ export class ClaudePolicy {
     return undefined;
   }
 
-  gate(toolName: string, input: Record<string, unknown>): Gate {
+  /**
+   * Decide one tool call. `dir` is the shell's current directory as Claude reports it (an
+   * earlier `cd` persists between Bash calls); relative paths resolve from it.
+   */
+  gate(toolName: string, input: Record<string, unknown>, dir?: string): Gate {
     if (toolName === QUESTION_TOOL) {
       return { ask: true, action: "other", reason: "The agent is asking a question" };
     }
@@ -65,7 +82,7 @@ export class ClaudePolicy {
       return { ask: true, action: "other", reason: "The agent finished planning" };
     }
     if (this.sessionAllow.has(this.key(toolName, input))) return { ask: false };
-    const risk = assessClaudeTool(toolName, input, this.ctx);
+    const risk = assessClaudeTool(toolName, input, dir ? { ...this.ctx, dir } : this.ctx);
     if (this.autonomy === "supervised") {
       if (risk.risky) return { ask: true, action: risk.action, reason: risk.reason };
       if (COMMAND_TOOLS.has(toolName) || EDIT_TOOLS.has(toolName)) {
@@ -78,7 +95,7 @@ export class ClaudePolicy {
       return { ask: false };
     }
     if (!risk.risky) return { ask: false };
-    if (this.autonomy === "full" && risk.action !== "outside_worktree") return { ask: false };
+    if (this.autonomy === "full" && !FULL_ASKS.has(risk.action)) return { ask: false };
     return { ask: true, action: risk.action, reason: risk.reason };
   }
 
@@ -86,8 +103,8 @@ export class ClaudePolicy {
    * Whether a `canUseTool` call (Claude's own permission prompt) needs the user. In supervised
    * mode everything Claude asks about goes to the user; otherwise only gated calls do.
    */
-  needsUser(toolName: string, input: Record<string, unknown>): Gate {
-    const gate = this.gate(toolName, input);
+  needsUser(toolName: string, input: Record<string, unknown>, dir?: string): Gate {
+    const gate = this.gate(toolName, input, dir);
     if (gate.ask || this.autonomy !== "supervised") return gate;
     if (this.sessionAllow.has(this.key(toolName, input))) return gate;
     return {

@@ -1,5 +1,7 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { isSecretPath } from "../src/policy/paths";
+import { isSecretPath, osTempRoots, tempRootsFrom } from "../src/policy/paths";
 import {
   classifyCommand,
   classifyFetch,
@@ -8,12 +10,18 @@ import {
   type RiskContext,
 } from "../src/policy/risk";
 
-const posix: RiskContext = { cwd: "/work/repo", platform: "linux", home: "/home/me" };
+const posix: RiskContext = {
+  cwd: "/work/repo",
+  platform: "linux",
+  home: "/home/me",
+  tempRoots: ["/tmp"],
+};
 const win: RiskContext = {
   cwd: "C:\\work\\repo",
   platform: "win32",
   home: "C:\\Users\\me",
   extraRoots: ["D:\\shared"],
+  tempRoots: ["C:\\Users\\me\\AppData\\Local\\Temp"],
 };
 
 const action = (command: string, ctx: RiskContext = posix) => {
@@ -121,7 +129,172 @@ describe("classifyCommand", () => {
     expect(action("cp build/app /usr/local/bin/app")).toBe("outside_worktree");
     expect(action("Copy-Item out.txt C:\\Users\\me\\Desktop", win)).toBe("outside_worktree");
     expect(action("git config --global user.name x")).toBe("outside_worktree");
+    expect(action("git log > /etc/x")).toBe("outside_worktree");
     expect(action("echo x > /dev/null")).toBeNull();
+    expect(action("pnpm test 2>&1 >/dev/null")).toBeNull();
+    expect(action("Copy-Item a.txt -Destination C:\\Users\\me\\x.txt", win)).toBe(
+      "outside_worktree",
+    );
+    expect(action("Set-Content -Value hi -Path C:\\Users\\me\\x.txt", win)).toBe(
+      "outside_worktree",
+    );
+  });
+
+  it("finds commands inside substitutions, subshells and inline shell scripts", () => {
+    expect(action('echo "$(rm -rf /)"')).toBe("outside_worktree");
+    expect(action("(cd build && rm -rf ../../other)")).toBe("outside_worktree");
+    expect(action("bash -lc 'cd src && rm -rf ../../other'")).toBe("outside_worktree");
+    expect(action('sh -c "echo x > /etc/profile"')).toBe("outside_worktree");
+    expect(action('pwsh -Command "Remove-Item -Recurse C:\\Users\\me\\x"', win)).toBe(
+      "outside_worktree",
+    );
+    expect(action("cmd /c del C:\\Users\\me\\x.txt", win)).toBe("outside_worktree");
+    expect(action("if true; then sudo rm -rf build; fi")).toBe("other");
+    expect(action("bash -c 'pnpm test && git status'")).toBeNull();
+  });
+});
+
+describe("quoting, heredocs and here-strings", () => {
+  it("keeps quoted text and heredoc bodies out of the command list", () => {
+    const commit = [
+      "git add -A && git commit -q -F - <<'EOF'",
+      "feat: write logs to > /etc/passwd and cat ~/.ssh/id_rsa",
+      "rm -rf /",
+      "EOF",
+      "git log --oneline -1",
+    ].join("\n");
+    expect(action(commit)).toBeNull();
+    const substituted = [
+      "git commit -m \"$(cat <<'EOF'",
+      'fix: say "rm -rf /" and > /etc/x without running them',
+      "",
+      "Co-Authored-By: someone",
+      "EOF",
+      ')"',
+    ].join("\n");
+    expect(action(substituted)).toBeNull();
+    expect(action("cat <<-EOF > notes.txt\n\trm -rf /\n\tEOF")).toBeNull();
+    expect(action("cat <<EOF > /etc/motd\nhello\nEOF")).toBe("outside_worktree");
+    expect(action('git commit -m "line one\nrm -rf /\nline > /etc/x"')).toBeNull();
+    expect(action("echo 'a; rm -rf / | sh' > out.txt")).toBeNull();
+    expect(action('grep -rn "a>b\\|c" src | head')).toBeNull();
+    expect(action("echo hi # > /etc/x")).toBeNull();
+  });
+
+  it("treats PowerShell here-strings as data", () => {
+    const ps = [
+      "$msg = @'",
+      "docs: mention <tag>...</tag>, and > C:\\Windows\\x",
+      "rm -rf /",
+      "'@",
+      "git commit -q -m $msg",
+    ].join("\n");
+    expect(action(ps, { ...win, shell: "powershell" })).toBeNull();
+    expect(
+      action('$m = @"\nRemove-Item C:\\x\n"@; git status', { ...win, shell: "powershell" }),
+    ).toBeNull();
+  });
+
+  it("does not read code or prose as secrets file names", () => {
+    expect(action("node -e 'const selected={row.key === k};\nconsole.log(selected)'")).toBeNull();
+    expect(action('node -e "process.stdout.write(1)" --env-file=.env')).toBe("secrets");
+    expect(action('cat "config/.env.local"')).toBe("secrets");
+  });
+});
+
+describe("relative paths after cd", () => {
+  it("resolves relative paths from where a cd moved", () => {
+    expect(action("cd apps/web && cp a.ts ../../a.ts.bak")).toBeNull();
+    expect(action("cd apps/web && rm ../../a.ts.bak")).toBeNull();
+    expect(action("cd apps && cp a.ts ../../a.ts.bak")).toBe("outside_worktree");
+    expect(action("cd /etc; rm hosts")).toBe("outside_worktree");
+    expect(action("cd ~ && rm -rf projects")).toBe("outside_worktree");
+    expect(action("pushd packages/x && echo x > ../../out.txt")).toBeNull();
+    expect(action("Set-Location -Path apps\\web; Copy-Item a ..\\..\\b", win)).toBeNull();
+  });
+
+  it("starts from the shell's current directory when known", () => {
+    const inWeb = { ...posix, dir: "/work/repo/apps/web" };
+    expect(action("cp a.ts ../../a.ts.bak", inWeb)).toBeNull();
+    expect(action("cp a.ts ../../../a.ts.bak", inWeb)).toBe("outside_worktree");
+  });
+
+  it("does not let a cd inside a subshell or substitution leak out", () => {
+    expect(action("(cd apps/web); cp a ../../b")).toBe("outside_worktree");
+    expect(action('echo "$(cd apps/web)"; rm -rf ../../b')).toBe("outside_worktree");
+  });
+});
+
+describe("the OS temp directory", () => {
+  it("lets agents write and delete inside temp", () => {
+    for (const cmd of [
+      "pnpm build > /tmp/build.log 2>&1",
+      "echo x > $TMPDIR/x.txt",
+      "cp dist/app.js /tmp/app.js",
+      "rm -rf /tmp/codeden-probe",
+      "tee /tmp/out.txt < in.txt",
+    ]) {
+      expect(action(cmd), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "Set-Content -Path $env:TEMP\\probe.txt -Value 1",
+      "echo 1 > %TEMP%\\probe.txt",
+      "Copy-Item a.txt C:\\Users\\me\\AppData\\Local\\Temp\\a.txt",
+      "pnpm build > /tmp/build.log",
+      "Remove-Item -Recurse c:\\users\\ME\\appdata\\local\\temp\\x",
+    ]) {
+      expect(action(cmd, win), cmd).toBeNull();
+    }
+    expect(classifyWrite("/tmp/codeden-probe/probe.ts", posix).risky).toBe(false);
+    expect(
+      classifyWrite("C:\\Users\\me\\AppData\\Local\\Temp\\codeden-probe\\probe.ts", win).risky,
+    ).toBe(false);
+  });
+
+  it("still asks for secrets in temp, the temp root itself and other folders", () => {
+    expect(classifyWrite("/tmp/.env", posix)).toMatchObject({ action: "secrets" });
+    expect(action("cp .env.production /tmp/x.env")).toBe("secrets");
+    expect(action("rm -rf /tmp")).toBe("outside_worktree");
+    expect(action("echo x > /var/tmp/x")).toBe("outside_worktree");
+    expect(action("echo x > /tmpfoo/x")).toBe("outside_worktree");
+    expect(action("echo x > C:\\Windows\\Temp\\x", win)).toBe("outside_worktree");
+    expect(action("echo x > /tmp/x", { ...posix, tempRoots: [] })).toBe("outside_worktree");
+  });
+
+  it("maps Git Bash paths on Windows", () => {
+    expect(action("cd /c/work/repo/apps && cp a ../b", win)).toBeNull();
+    expect(action("echo x > /c/Users/me/scratch/x.log", win)).toBe("outside_worktree");
+    expect(action("echo x > /tmp/x.log", { ...win, tempRoots: [] })).toBe("outside_worktree");
+  });
+});
+
+describe("temp roots", () => {
+  it("never accepts a filesystem root or the home directory as temp", () => {
+    expect(
+      tempRootsFrom(["/", "/home/me", "/home", "/tmp", "/tmp/", "rel"], "linux", "/home/me"),
+    ).toEqual(["/tmp"]);
+    expect(
+      tempRootsFrom(
+        [
+          "C:\\",
+          "C:\\Users\\me",
+          "C:\\Users\\me\\AppData\\Local\\Temp",
+          "c:\\users\\me\\appdata\\local\\temp",
+        ],
+        "win32",
+        "C:\\Users\\me",
+      ),
+    ).toEqual(["C:\\Users\\me\\AppData\\Local\\Temp"]);
+  });
+
+  it("finds the running platform's temp directory", () => {
+    const roots = osTempRoots();
+    expect(roots.length).toBeGreaterThan(0);
+    const probe = join(tmpdir(), "codeden-probe", "x.txt");
+    expect(classifyWrite(probe, { cwd: join(tmpdir(), "..", "not-temp-worktree") }).risky).toBe(
+      false,
+    );
+    expect(osTempRoots(process.platform === "win32" ? "linux" : "win32")).toEqual([]);
   });
 });
 
