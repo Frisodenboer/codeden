@@ -17,6 +17,8 @@ export type Gate = { ask: false } | { ask: true; action: ApprovalAction; reason:
 
 /**
  * Native permission mode per autonomy level (§11.2):
+ * - read_only  -> `default`; edits and writing commands are denied by the PreToolUse hook
+ *                 (`ClaudePolicy.denial`), so they never reach a prompt
  * - supervised -> `default`, and every edit/command is forced to ask via a PreToolUse hook
  * - auto       -> `acceptEdits`, plus the risky-action classifier
  * - full       -> `bypassPermissions`, asking only for writes outside the worktree (the OS
@@ -25,7 +27,7 @@ export type Gate = { ask: false } | { ask: true; action: ApprovalAction; reason:
  */
 export function permissionModeFor(autonomy: AutonomyLevel, planMode: boolean): PermissionMode {
   if (planMode) return "plan";
-  if (autonomy === "supervised") return "default";
+  if (autonomy === "read_only" || autonomy === "supervised") return "default";
   if (autonomy === "auto") return "acceptEdits";
   return "bypassPermissions";
 }
@@ -49,6 +51,14 @@ export class ClaudePolicy {
     return this.autonomy;
   }
 
+  /**
+   * True while edits and writing commands are refused: a read-only role (orchestrator, PMs),
+   * or the `read_only` permission level, which can change live with `setAutonomy`.
+   */
+  get isReadOnly(): boolean {
+    return this.readOnly || this.autonomy === "read_only";
+  }
+
   /** Switch the level; the next `gate()` uses it. `allow_session` decisions are kept. */
   setAutonomy(level: AutonomyLevel): void {
     this.autonomy = level;
@@ -56,12 +66,17 @@ export class ClaudePolicy {
 
   /** Why a call is refused outright (read-only sessions), or undefined. */
   denial(toolName: string, input: Record<string, unknown>): string | undefined {
-    if (!this.readOnly) return undefined;
+    if (!this.isReadOnly) return undefined;
     if (EDIT_TOOLS.has(toolName)) {
-      return "This session is read-only: it cannot edit files. Act through CodeDen tools instead.";
+      return this.readOnly
+        ? "This session is read-only: it cannot edit files. Act through CodeDen tools instead."
+        : "This session has read-only permissions: it cannot edit files, commit or push. Report what you found instead.";
     }
     if (COMMAND_TOOLS.has(toolName)) {
-      const reason = readOnlyCommandDenial(str(input, "command") ?? "");
+      // Agent sessions at `read_only` may run the project's checks; read-only roles may not.
+      const reason = readOnlyCommandDenial(str(input, "command") ?? "", {
+        allowChecks: !this.readOnly,
+      });
       return reason ? `This session is read-only: ${reason}.` : undefined;
     }
     return undefined;

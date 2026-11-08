@@ -2,7 +2,7 @@
 
 > **Experimental.** Autopilot and Dark factory ship in v1 marked experimental. They merge pull requests into your default branch without you. Try them on a sandbox repository first, set a budget and protected areas, and keep the kill switch in reach. **Assisted** remains the default for every new project.
 
-Each project has an **autonomy mode**, a ladder you climb one step at a time. (This is separate from the per-session [autonomy level](security.md#autonomy-levels), which decides which actions an agent must ask about.)
+Each project has an **autonomy mode**, a ladder you climb one step at a time. (This is separate from the per-session [permission level](security.md#permissions), which decides which actions an agent must ask about.)
 
 | Mode | Who finds work | Who merges | You |
 |---|---|---|---|

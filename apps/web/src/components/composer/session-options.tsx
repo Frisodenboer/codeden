@@ -2,14 +2,14 @@ import type { Session, Snapshot, UpdateSessionRequest } from "@codeden/contracts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { toast } from "sonner";
-import { AUTONOMY } from "@/components/thread/autonomy";
+import { AUTONOMY, supportsReadOnly } from "@/components/thread/autonomy";
 import { useClient } from "@/lib/api";
 import { snapshotKey, useSnapshotData } from "@/lib/queries";
 import { ModelPicker } from "./model-picker/model-picker";
 import { AutonomyPicker } from "./pickers";
 
 function changeSummary(patch: UpdateSessionRequest): string {
-  if (patch.autonomy !== undefined) return `Autonomy: ${AUTONOMY[patch.autonomy].label}`;
+  if (patch.autonomy !== undefined) return `Permissions: ${AUTONOMY[patch.autonomy].label}`;
   if (patch.model !== undefined && patch.effort !== undefined) return "Model and effort changed";
   return patch.model !== undefined ? "Model changed" : "Effort changed";
 }
@@ -40,8 +40,8 @@ export function SessionOptions({ session, running }: { session: Session; running
   const client = useClient();
   const queryClient = useQueryClient();
   const providers = useSnapshotData((s) => s.runner.providers, []);
-  const liveAutonomy =
-    providers.find((p) => p.id === session.provider)?.capabilities.liveAutonomy ?? false;
+  const providerInfo = providers.find((p) => p.id === session.provider);
+  const liveAutonomy = providerInfo?.capabilities.liveAutonomy ?? false;
   const update = useMutation({
     mutationFn: (patch: UpdateSessionRequest) => client.updateSession(session.id, patch),
     onSuccess: (updated, patch) => {
@@ -78,6 +78,7 @@ export function SessionOptions({ session, running }: { session: Session; running
       {session.role === "agent" && (
         <AutonomyPicker
           value={session.autonomy}
+          readOnlySupported={supportsReadOnly(providerInfo)}
           onChange={(autonomy) => {
             if (autonomy !== session.autonomy) save({ autonomy });
           }}

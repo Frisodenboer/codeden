@@ -9,10 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CRON_PRESETS, cronError, describeCron, formatAt, nextRuns, timezones } from "@/lib/cron";
 import { cn } from "@/lib/utils";
-import { Field, Segmented } from "./form-bits";
+import { Field } from "./form-bits";
 import { EVENT_LABEL } from "./meta";
+import { SchedulePicker } from "./schedule-picker";
 
 type EventTrigger = Extract<AutomationTrigger, { type: "event" }>;
 type Filter = NonNullable<EventTrigger["filter"]>;
@@ -36,91 +36,6 @@ const FILTER_HELP: Record<keyof Filter, string> = {
   branches: "Only for PRs into or from these branches.",
   authors: "Only for these GitHub users.",
 };
-
-function CronFields({
-  trigger,
-  onChange,
-  disabled,
-  projectTimezone,
-}: {
-  trigger: Extract<AutomationTrigger, { type: "cron" }>;
-  onChange: (t: AutomationTrigger) => void;
-  disabled?: boolean;
-  projectTimezone: string;
-}) {
-  const id = useId();
-  const tz = trigger.timezone || projectTimezone;
-  const error = cronError(trigger.expression, tz);
-  const upcoming = error ? [] : nextRuns(trigger.expression, tz, 3);
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-1">
-        {CRON_PRESETS.map((p) => (
-          <button
-            key={p.expression}
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange({ ...trigger, expression: p.expression })}
-            className={cn(
-              "rounded-full border border-border px-2 py-0.5 text-3xs text-muted-foreground hover:border-primary/40 hover:text-foreground",
-              trigger.expression === p.expression && "border-primary/50 bg-primary/8 text-primary",
-            )}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_260px]">
-        <Field label="Cron expression" htmlFor={`${id}-cron`}>
-          <Input
-            id={`${id}-cron`}
-            value={trigger.expression}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...trigger, expression: e.target.value })}
-            className="font-mono text-[13px]"
-            aria-invalid={Boolean(error)}
-            spellCheck={false}
-          />
-        </Field>
-        <Field label="Timezone" htmlFor={`${id}-tz`} help="Empty: the project's timezone.">
-          <Input
-            id={`${id}-tz`}
-            list={`${id}-tzs`}
-            value={trigger.timezone ?? ""}
-            placeholder={projectTimezone}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...trigger, timezone: e.target.value.trim() || undefined })}
-            className="text-[13px]"
-          />
-          <datalist id={`${id}-tzs`}>
-            {timezones().map((z) => (
-              <option key={z} value={z} />
-            ))}
-          </datalist>
-        </Field>
-      </div>
-      <div
-        className={cn(
-          "rounded-lg border px-3 py-2 text-2xs",
-          error ? "border-status-failed/30 bg-status-failed/5" : "border-border bg-surface",
-        )}
-        data-testid="cron-preview"
-      >
-        {error ? (
-          <span className="text-status-failed">{error}</span>
-        ) : (
-          <>
-            <span className="font-medium text-foreground">{describeCron(trigger.expression)}</span>
-            <span className="text-muted-foreground"> · {tz}</span>
-            <span className="mt-1 block text-muted-foreground">
-              Next: {upcoming.map((d) => formatAt(d, tz)).join("  ·  ")}
-            </span>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function EventFields({
   trigger,
@@ -147,13 +62,14 @@ function EventFields({
             onChange({ type: "event", event: event as AutomationEventName, filter: trigger.filter })
           }
         >
-          <SelectTrigger className="w-72" aria-label="Event">
+          <SelectTrigger className="w-80" aria-label="Event">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {(Object.keys(EVENT_LABEL) as AutomationEventName[]).map((e) => (
               <SelectItem key={e} value={e}>
-                {EVENT_LABEL[e]} <span className="font-mono text-3xs opacity-60">{e}</span>
+                When {EVENT_LABEL[e].charAt(0).toLowerCase()}
+                {EVENT_LABEL[e].slice(1)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -175,7 +91,26 @@ function EventFields({
   );
 }
 
-/** Trigger editor (§10): a cron schedule with a plain-English preview, an event, or manual. */
+const KINDS: {
+  id: AutomationTrigger["type"];
+  label: string;
+  help: string;
+  icon: typeof CalendarClock;
+}[] = [
+  {
+    id: "cron",
+    label: "On a schedule",
+    help: "Every few minutes, daily, weekly…",
+    icon: CalendarClock,
+  },
+  { id: "event", label: "When something happens", help: "A PR, an issue or a session", icon: Zap },
+  { id: "manual", label: "Only when I run it", help: "Run now, or the PM runs it", icon: Hand },
+];
+
+/**
+ * When an automation runs (§10): on a schedule (human choices, a plain-English summary and the
+ * next runs), when something happens (an event, in plain words), or only when run by hand.
+ */
 export function TriggerEditor({
   trigger,
   onChange,
@@ -190,28 +125,42 @@ export function TriggerEditor({
   /** Triage runs on issue events only. */
   allowCron?: boolean;
 }) {
-  const kinds = [
-    ...(allowCron ? [{ id: "cron" as const, label: "Schedule", icon: <CalendarClock /> }] : []),
-    { id: "event" as const, label: "Event", icon: <Zap /> },
-    { id: "manual" as const, label: "Manual", icon: <Hand /> },
-  ];
   const switchTo = (type: AutomationTrigger["type"]) => {
     if (type === trigger.type) return;
-    if (type === "cron") onChange({ type: "cron", expression: "0 3 * * 1" });
-    else if (type === "event") onChange({ type: "event", event: "issue.opened" });
+    if (type === "cron") onChange({ type: "cron", expression: "0 9 * * 1-5" });
+    else if (type === "event") onChange({ type: "event", event: "pr.checks_failed" });
     else onChange({ type: "manual" });
   };
   return (
     <div className="space-y-4">
-      <Segmented
-        label="Trigger type"
-        value={trigger.type}
-        options={kinds}
-        onChange={switchTo}
-        disabled={disabled}
-      />
+      <fieldset className="grid gap-2 sm:grid-cols-3" aria-label="When it runs">
+        {KINDS.filter((k) => allowCron || k.id !== "cron").map((k) => (
+          <button
+            key={k.id}
+            type="button"
+            aria-pressed={trigger.type === k.id}
+            disabled={disabled}
+            onClick={() => switchTo(k.id)}
+            className={cn(
+              "flex items-start gap-2.5 rounded-lg border border-border bg-surface px-3 py-2.5 text-left transition-colors hover:border-primary/40 disabled:pointer-events-none disabled:opacity-60",
+              trigger.type === k.id && "border-primary/60 bg-primary/[0.06] ring-1 ring-primary/30",
+            )}
+          >
+            <k.icon
+              className={cn(
+                "mt-0.5 size-4 shrink-0 text-muted-foreground",
+                trigger.type === k.id && "text-primary",
+              )}
+            />
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium">{k.label}</span>
+              <span className="block text-3xs text-muted-foreground">{k.help}</span>
+            </span>
+          </button>
+        ))}
+      </fieldset>
       {trigger.type === "cron" && (
-        <CronFields
+        <SchedulePicker
           trigger={trigger}
           onChange={onChange}
           disabled={disabled}
@@ -223,7 +172,7 @@ export function TriggerEditor({
       )}
       {trigger.type === "manual" && (
         <p className="text-2xs text-muted-foreground">
-          Runs only when you press Run now or the PM calls run_automation.
+          Runs only when you press Run now, or when the PM runs it.
         </p>
       )}
     </div>

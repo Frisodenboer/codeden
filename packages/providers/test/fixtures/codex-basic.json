@@ -20,7 +20,8 @@
   "reasoningEffort": true,
   "mcp": true,
   "skills": true,
-  "liveAutonomy": false
+  "liveAutonomy": false,
+  "readOnly": true
  },
  "preamble": [],
  "turns": [

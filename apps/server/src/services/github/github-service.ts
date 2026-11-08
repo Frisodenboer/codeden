@@ -299,6 +299,12 @@ export class GithubService {
     input: CreatePullRequestInput,
   ): Promise<CreatePullRequestResult> {
     const session = this.deps.repo.get(sessionId);
+    if (session.role === "agent" && session.autonomy === "read_only") {
+      throw conflict(
+        "This session has read-only permissions: it cannot commit, push or open a pull request",
+        "read_only",
+      );
+    }
     const repo = this.githubRepo(session.projectId);
     const result = await createPullRequest(this.prDeps(), session, repo, input);
     if (session.projectId) this.sync.soon(session.projectId);

@@ -1,4 +1,7 @@
 import {
+  AutomationExport,
+  AutomationImportPreviewResponse,
+  type AutomationImportSource,
   AutomationListItem,
   AutomationListResponse,
   AutomationProjectSettings,
@@ -6,6 +9,10 @@ import {
   type AutomationRunStatus,
   AutomationTemplate,
   type CreateAutomationRequest,
+  type DuplicateAutomationRequest,
+  ExportAutomationsResponse,
+  type ImportAutomationsRequest,
+  ImportAutomationsResponse,
   type RunAutomationRequest,
   RunAutomationResponse,
   ScheduledRun,
@@ -69,6 +76,16 @@ export interface AutomationsApi {
   setProjectEnabled(projectId: string, enabled: boolean): Promise<AutomationProjectSettings>;
   acceptTriage(itemId: string, req?: TriageDecisionRequest): Promise<TriageDecisionResponse>;
   declineTriage(itemId: string, req?: TriageDecisionRequest): Promise<TriageDecisionResponse>;
+  /** An editable copy (also of file-based automations), off. */
+  duplicate(automationId: string, req?: DuplicateAutomationRequest): Promise<AutomationListItem>;
+  /** One automation in the Markdown + frontmatter file format. */
+  exportOne(automationId: string): Promise<AutomationExport>;
+  /** A project's automations (all of them without a project) as a zip. */
+  exportAll(projectId?: string): Promise<ExportAutomationsResponse>;
+  /** Parse an import without saving anything. */
+  previewImport(source: AutomationImportSource): Promise<AutomationImportPreviewResponse>;
+  /** Create the selected files of an import, all off. */
+  importAutomations(req: ImportAutomationsRequest): Promise<ImportAutomationsResponse>;
 }
 
 const enc = encodeURIComponent;
@@ -124,5 +141,13 @@ export function httpAutomationsApi(http: Fetcher): AutomationsApi {
       post(`/automations/triage/${enc(itemId)}/decline`, req, (v) =>
         TriageDecisionResponse.parse(v),
       ),
+    duplicate: (id, req = {}) => post(`${path(id)}/duplicate`, req, one),
+    exportOne: (id) => get(`${path(id)}/export`, (v) => AutomationExport.parse(v)),
+    exportAll: (projectId) =>
+      get(`/automations/export${qs({ projectId })}`, (v) => ExportAutomationsResponse.parse(v)),
+    previewImport: (source) =>
+      post("/automations/import/preview", source, (v) => AutomationImportPreviewResponse.parse(v)),
+    importAutomations: (req) =>
+      post("/automations/import", req, (v) => ImportAutomationsResponse.parse(v)),
   };
 }

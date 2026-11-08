@@ -117,6 +117,27 @@ jobs:
             echo "::error::apps/desktop is $desktop but apps/cli is $cli"; exit 1
           fi
 
+      # Electron fetches its ~100 MB binary from GitHub releases on first use. Cache it per
+      # version and OS, and retry transient network errors (GitHub has returned 504s).
+      - name: Cache the Electron binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
+      - name: Download the Electron binary (with retries)
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node -e "require('electron')" > /dev/null; then exit 0; fi
+            echo "::warning::Electron download failed (attempt $attempt of 5); retrying"
+            sleep $((attempt * 30))
+          done
+          exit 1
       - name: Build the installers
         shell: bash
         env:

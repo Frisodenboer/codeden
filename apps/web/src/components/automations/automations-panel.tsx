@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, RefreshCw, Sparkles, Workflow } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw, Sparkles, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
@@ -122,8 +122,18 @@ export function AutomationsPanel({
             icon={<Workflow />}
             title="No automations yet"
             action={
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => starter.mutate()} disabled={starter.isPending}>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="sm" asChild>
+                  <Link to="/projects/$projectId/automations/new" params={{ projectId }}>
+                    <Plus /> New automation
+                  </Link>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => starter.mutate()}
+                  disabled={starter.isPending}
+                >
                   <Sparkles /> Add the starter set
                 </Button>
                 <Button size="sm" variant="outline" asChild>

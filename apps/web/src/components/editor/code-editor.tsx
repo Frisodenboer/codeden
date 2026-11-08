@@ -63,6 +63,13 @@ function languageFor(path: string): Extension {
   return markdown();
 }
 
+/** Imperative handle of a `CodeEditor`. */
+export interface CodeEditorApi {
+  /** Insert text at the cursor (replacing the selection) and focus the editor. */
+  insert(text: string): void;
+  focus(): void;
+}
+
 /** CodeMirror 6 editor for memory files, the vision and other text configs (§12.3, §12.4). */
 export function CodeEditor({
   value,
@@ -72,6 +79,7 @@ export function CodeEditor({
   placeholder,
   onSave,
   className,
+  apiRef,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -81,6 +89,8 @@ export function CodeEditor({
   placeholder?: string;
   onSave?: () => void;
   className?: string;
+  /** Receives an insert handle while the editor is mounted. */
+  apiRef?: { current: CodeEditorApi | null };
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -121,9 +131,27 @@ export function CodeEditor({
       ],
     });
     view.current = new EditorView({ state, parent: host.current });
+    if (apiRef) {
+      apiRef.current = {
+        insert(text) {
+          const v = view.current;
+          if (!v) return;
+          const { from, to } = v.state.selection.main;
+          v.dispatch({
+            changes: { from, to, insert: text },
+            selection: { anchor: from + text.length },
+          });
+          v.focus();
+        },
+        focus() {
+          view.current?.focus();
+        },
+      };
+    }
     return () => {
       view.current?.destroy();
       view.current = null;
+      if (apiRef) apiRef.current = null;
     };
   }, [docKey, path]);
 

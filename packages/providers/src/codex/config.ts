@@ -10,6 +10,7 @@ import type {
 
 /**
  * Native sandbox + approval policy per autonomy level (§11.2):
+ * - read_only  -> read-only sandbox + `never`: writes fail instead of asking, no network
  * - supervised -> `untrusted`: every command that isn't known-safe and every patch asks
  * - auto       -> workspace-write sandbox + `on-request`: the sandbox confines writes (to the
  *                 worktree, extra roots and the OS temp directory) and network; escaping it
@@ -25,8 +26,10 @@ export function codexPolicy(
   sandbox: SandboxMode;
   networkAccess: boolean;
 } {
-  // Read-only sessions (orchestrator, PMs, §11.2): the sandbox refuses every write.
-  if (readOnly) return { approvalPolicy: "never", sandbox: "read-only", networkAccess: false };
+  // Read-only sessions (orchestrator, PMs, and the `read_only` level, §11.2): the sandbox
+  // refuses every write, commits and pushes included; commands such as tests still run.
+  if (readOnly || autonomy === "read_only")
+    return { approvalPolicy: "never", sandbox: "read-only", networkAccess: false };
   if (autonomy === "supervised")
     return { approvalPolicy: "untrusted", sandbox: "workspace-write", networkAccess: false };
   if (autonomy === "auto")
@@ -45,7 +48,10 @@ export function codexWritableRoots(
   opts: PolicyOptions,
   tempRoots: readonly string[] = osTempRoots(),
 ): string[] {
-  const temp = opts.readOnly || opts.autonomy === "supervised" ? [] : tempRoots;
+  const temp =
+    opts.readOnly || opts.autonomy === "read_only" || opts.autonomy === "supervised"
+      ? []
+      : tempRoots;
   return [...new Set([...opts.additionalDirectories, ...temp])];
 }
 

@@ -86,12 +86,16 @@ export function rowToInbox(r: InboxRow): InboxItem {
 }
 
 export function automationToRow(a: Automation): AutomationRow {
-  return { ...a, workKey: a.workKey ?? null };
+  return { ...a, workKey: a.workKey ?? null, createdBy: a.createdBy ?? null };
 }
 
 export function rowToAutomation(r: AutomationRow): Automation {
-  const { workKey, ...rest } = r;
-  return Automation.parse(workKey === null ? rest : { ...rest, workKey });
+  const { workKey, createdBy, ...rest } = r;
+  return Automation.parse({
+    ...rest,
+    ...(workKey === null ? {} : { workKey }),
+    ...(createdBy === null ? {} : { createdBy }),
+  });
 }
 
 export function runToRow(run: AutomationRun): RunRow {

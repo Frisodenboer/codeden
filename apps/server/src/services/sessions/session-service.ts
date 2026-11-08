@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AutonomyLevel,
   JsonValue,
   ProviderInfo,
   QueueSender,
@@ -23,6 +24,7 @@ import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port
 import { derivePurpose, deriveWorkKey, findConflicts } from "./conflicts";
 import type { SessionLauncher } from "./launcher";
 import type { Outbox } from "./outbox";
+import { readOnlyUnsupported } from "./permissions";
 import type { QuestionBroker } from "./questions";
 import { applyPendingConfig, updateSession } from "./reconfigure";
 import type { SessionRepo, StoredStartMeta } from "./repo";
@@ -64,7 +66,17 @@ export class SessionService {
 
   /** Model and effort (applied on the next turn), autonomy (pushed to the runner) or title. */
   update(id: string, req: UpdateSessionRequest): Promise<Session> {
+    if (req.autonomy === "read_only") {
+      const session = this.deps.repo.get(id);
+      this.assertReadOnlySupported(session.role, session.provider, req.autonomy);
+    }
     return updateSession(this.deps.repo, this.deps.runner, id, req);
+  }
+
+  /** Reject the `read_only` level on a provider that cannot enforce it (§11.2). */
+  private assertReadOnlySupported(role: Session["role"], providerId: string, level: AutonomyLevel) {
+    const problem = readOnlyUnsupported(role, level, this.provider(providerId));
+    if (problem) throw badRequest(problem, "read_only_unsupported");
   }
 
   detail(id: string): SessionDetail {
@@ -364,6 +376,9 @@ export class SessionService {
     const settings = this.deps.settings.get();
     const roleDefaults = settings.providers[req.role];
     const now = new Date().toISOString();
+    const provider = this.resolveProvider(req, project ? projectDefaultProvider(project) : null);
+    const autonomy = req.autonomy ?? project?.autonomy ?? settings.autonomy.default;
+    this.assertReadOnlySupported(req.role, provider, autonomy);
     return {
       id: randomUUID(),
       projectId: req.projectId,
@@ -375,10 +390,10 @@ export class SessionService {
       scope: work.scope,
       progress: null,
       title: req.title ?? null,
-      provider: this.resolveProvider(req, project ? projectDefaultProvider(project) : null),
+      provider,
       model: req.model ?? roleDefaults.model,
       effort: req.effort ?? roleDefaults.effort,
-      autonomy: req.autonomy ?? project?.autonomy ?? settings.autonomy.default,
+      autonomy,
       status: work.queued ? "queued" : "starting",
       cwd: project?.path ?? ".",
       worktreePath: null,

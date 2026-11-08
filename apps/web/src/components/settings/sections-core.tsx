@@ -190,8 +190,8 @@ export function AutonomySettings() {
   const { settings, update } = useSettings();
   return (
     <SettingsSection
-      title="Default autonomy"
-      description="Mapped onto each provider's native enforcement. Override per project and per session."
+      title="Default permissions"
+      description="From Read-only to Full, mapped onto each provider's native enforcement. Override per project, per session and per automation."
     >
       <div className="grid gap-2 p-3">
         {(Object.keys(AUTONOMY) as (keyof typeof AUTONOMY)[]).map((level) => {

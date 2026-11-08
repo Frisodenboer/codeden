@@ -1,8 +1,15 @@
 import {
   type Automation,
+  type AutomationExport,
+  AutomationImportSource,
   AutomationProjectRequest,
   type AutomationProjectSettings,
   CreateAutomationRequest,
+  DuplicateAutomationRequest,
+  ExportAutomationsQuery,
+  type ExportAutomationsResponse,
+  ImportAutomationsRequest,
+  type ImportAutomationsResponse,
   ListAutomationRunsQuery,
   ListAutomationsQuery,
   RunAutomationRequest,
@@ -15,6 +22,9 @@ import {
   UpdateAutomationRequest,
 } from "@codeden/contracts";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { zipAutomations } from "../services/automations/import";
+import { exportAutomation } from "../services/automations/markdown";
 import type { AppServices } from "../services/container";
 import { jsonBody, queryOf } from "./validate";
 
@@ -25,6 +35,13 @@ function itemOf(s: AppServices, automation: Automation, projectId?: string) {
     .automations.find((i) => i.automation.id === automation.id);
   return found ?? { automation, states: [], lastRun: null, path: null, readOnly: true };
 }
+
+/** Imports are small text files; refuse bodies past 2 MB before parsing them (413). */
+const importLimit = bodyLimit({
+  maxSize: 2 * 1024 * 1024,
+  onError: (c) =>
+    c.json({ error: { code: "import_too_large", message: "The import is too large" } }, 413),
+});
 
 /**
  * `/api/automations` (§10): definitions, enable/disable, run now, pause/resume/skip, runs
@@ -40,6 +57,29 @@ export function automationRoutes(s: AppServices) {
       return c.json(itemOf(s, created), 201);
     })
     .get("/templates", (c) => c.json(a.sources.templates()))
+    .get("/export", queryOf(ExportAutomationsQuery), (c) => {
+      const { projectId } = c.req.valid("query");
+      const list = a.list(projectId).automations.map((i) => i.automation);
+      const body: ExportAutomationsResponse = {
+        fileName: "codeden-automations.zip",
+        zipBase64: zipAutomations(list),
+        count: list.length,
+      };
+      return c.json(body);
+    })
+    .post("/import/preview", importLimit, jsonBody(AutomationImportSource), (c) =>
+      c.json({ items: a.definitions.previewImport(c.req.valid("json")) }),
+    )
+    .post("/import", importLimit, jsonBody(ImportAutomationsRequest), (c) => {
+      const req = c.req.valid("json");
+      const result = a.definitions.importFrom(req);
+      a.refresh();
+      const body: ImportAutomationsResponse = {
+        created: result.created.map((x) => itemOf(s, x, req.projectId)),
+        failed: result.failed,
+      };
+      return c.json(body, 201);
+    })
     .get("/upcoming", queryOf(UpcomingRunsQuery), (c) => {
       const q = c.req.valid("query");
       return c.json(a.listScheduledRuns(q.projectId ?? null, q.limit));
@@ -69,6 +109,14 @@ export function automationRoutes(s: AppServices) {
       const updated = a.definitions.update(c.req.param("id"), c.req.valid("json"));
       a.refresh();
       return c.json(itemOf(s, updated));
+    })
+    .get("/:id/export", (c) =>
+      c.json<AutomationExport>(exportAutomation(a.definitions.get(c.req.param("id")))),
+    )
+    .post("/:id/duplicate", jsonBody(DuplicateAutomationRequest), (c) => {
+      const copy = a.definitions.duplicate(c.req.param("id"), c.req.valid("json"));
+      a.refresh();
+      return c.json(itemOf(s, copy), 201);
     })
     .delete("/:id", (c) => {
       a.definitions.remove(c.req.param("id"));

@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ModelPicker } from "@/components/composer/model-picker/model-picker";
 import { AutonomyPicker } from "@/components/composer/pickers";
+import { supportsReadOnly } from "@/components/thread/autonomy";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -189,6 +190,7 @@ export function NewSessionDialog({
               )}
               <AutonomyPicker
                 value={autonomy}
+                readOnlySupported={supportsReadOnly(provider)}
                 onChange={(a) => setChoice((c) => ({ ...c, autonomy: a }))}
               />
             </div>

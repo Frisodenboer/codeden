@@ -1,6 +1,18 @@
 import { z } from "zod";
-import { defineTool } from "../../define";
+import type { AppServices } from "../../../services/container";
+import { defineTool, type ToolAvailabilityContext } from "../../define";
 import { inGithubProject } from "./available";
+
+/** Listed in GitHub projects, except to sessions with read-only permissions (§11.2). */
+function available(services: AppServices, caller?: ToolAvailabilityContext): boolean {
+  if (!inGithubProject(services, caller)) return false;
+  if (!caller?.sessionId) return true;
+  try {
+    return services.sessions.detail(caller.sessionId).session.autonomy !== "read_only";
+  } catch {
+    return true;
+  }
+}
 
 /** `create_pull_request` (§8.3, §9): push the session branch and open or update its PR. */
 export const createPullRequestTool = defineTool({
@@ -9,7 +21,7 @@ export const createPullRequestTool = defineTool({
     "Push your branch and open a pull request for your work (or update the title/body of the one already open for your branch). The body gets `Fixes #<issue>` for your session's issue (or `issue`) and a link to this CodeDen session. Commit your changes first, or pass `commitMessage` to commit everything that is uncommitted. Use `draft: true` for work that is not ready for review. Only for GitHub projects.",
   roles: ["agent"],
   scope: "session",
-  isAvailable: inGithubProject,
+  isAvailable: available,
   alwaysLoad: true,
   input: z.object({
     title: z.string().min(1).max(256).describe("Conventional, imperative title"),

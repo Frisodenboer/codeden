@@ -1,4 +1,5 @@
 import type { AnyServerTool } from "../../define";
+import { createAutomation, updateAutomation } from "./automation-edit";
 import { listAutomations, reportTriage, runAutomation } from "./automations";
 import { createIssue, getIssue, listIssues, triageIssue } from "./github";
 import { messageOrchestrator, readProjectNotes, updateProjectNotes } from "./notes";
@@ -36,5 +37,7 @@ export const pmTools: AnyServerTool[] = [
   createIssue,
   listAutomations,
   runAutomation,
+  createAutomation,
+  updateAutomation,
   reportTriage,
 ];

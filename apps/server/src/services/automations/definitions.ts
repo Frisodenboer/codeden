@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import {
   Automation,
+  type AutomationCreator,
   AutomationGuards,
+  type AutomationImportPreviewItem,
   type AutomationTemplate,
   type CreateAutomationRequest,
+  type DuplicateAutomationRequest,
+  type ImportAutomationsRequest,
   type UpdateAutomationRequest,
-  WorkKey,
 } from "@codeden/contracts";
 import { eq } from "drizzle-orm";
 import type { Db } from "../../db/client";
@@ -14,9 +17,10 @@ import { automations } from "../../db/schema";
 import type { EventStore } from "../../events/store";
 import { badRequest, conflict, notFound } from "../errors";
 import type { ProjectService } from "../projects/project-service";
-import { cronError, isValidTimezone } from "./cron";
+import { previewImport } from "./import";
 import type { ScheduleStore } from "./schedule-store";
 import { type AutomationSources, templateFits } from "./sources";
+import { validateAutomation } from "./validate";
 
 export interface DefinitionsDeps {
   db: Db;
@@ -31,24 +35,13 @@ export function starterId(projectId: string, templateId: string): string {
   return `starter:${projectId}:${templateId}`;
 }
 
-/** Reject cron expressions croner cannot parse, unknown timezones and malformed work keys. */
-export function validateAutomation(a: Automation): void {
-  if (a.trigger.type === "cron") {
-    if (a.trigger.timezone && !isValidTimezone(a.trigger.timezone)) {
-      throw badRequest(`Unknown timezone ${a.trigger.timezone}`, "invalid_timezone");
-    }
-    const error = cronError(a.trigger.expression, a.trigger.timezone);
-    if (error) throw badRequest(`Invalid cron expression: ${error}`, "invalid_cron");
-  }
-  if (a.workKey && !a.workKey.includes("{{") && !WorkKey.safeParse(a.workKey).success) {
-    throw badRequest(
-      "workKey must look like <kind>:<id>, e.g. automation:audit",
-      "invalid_work_key",
-    );
-  }
-  if (a.action.type === "triage" && a.trigger.type === "cron") {
-    throw badRequest("Triage runs on issue events, not on a schedule", "invalid_trigger");
-  }
+export { validateAutomation } from "./validate";
+
+/** Options of `AutomationDefinitions.create`. */
+export interface CreateOptions {
+  id?: string;
+  /** Who creates it (`user` when omitted). */
+  createdBy?: AutomationCreator;
 }
 
 /**
@@ -74,7 +67,8 @@ export class AutomationDefinitions {
     return a;
   }
 
-  create(req: CreateAutomationRequest, id: string = randomUUID()): Automation {
+  create(req: CreateAutomationRequest, opts: CreateOptions = {}): Automation {
+    const id = opts.id ?? randomUUID();
     const template = req.templateId ? this.template(req.templateId) : undefined;
     if (req.projectId) this.deps.projects.get(req.projectId);
     const now = new Date().toISOString();
@@ -97,6 +91,7 @@ export class AutomationDefinitions {
         : { type: "all_projects" },
       guards: AutomationGuards.parse({ ...template?.guards, ...req.guards }),
       workKey: req.workKey ?? template?.workKey,
+      ...(opts.createdBy && opts.createdBy !== "user" ? { createdBy: opts.createdBy } : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -178,9 +173,74 @@ export class AutomationDefinitions {
         out.push(enable ? this.setEnabled(id, true) : existing);
         continue;
       }
-      out.push(this.create({ templateId: template.id, projectId, enabled: enable }, id));
+      out.push(this.create({ templateId: template.id, projectId, enabled: enable }, { id }));
     }
     return out;
+  }
+
+  /**
+   * An editable database copy of any automation (also file-based and built-in ones), off,
+   * named "<name> (copy)" unless a name is given. Targets `projectId`, else the original's
+   * target. The copy keeps the original's work key, so the two never run the same work at once.
+   */
+  duplicate(id: string, req: DuplicateAutomationRequest): Automation {
+    const a = this.get(id);
+    const projectId =
+      req.projectId ?? (a.target.type === "project" ? a.target.projectId : undefined);
+    return this.create({
+      projectId,
+      name: req.name ?? `${a.name} (copy)`.slice(0, 200),
+      description: a.description,
+      trigger: a.trigger,
+      action: a.action,
+      guards: a.guards,
+      workKey: a.workKey,
+      enabled: false,
+    });
+  }
+
+  /**
+   * Import shared automation files (§10): re-parse the source with the file parser, then
+   * create each selected valid file as a database automation, always off and marked
+   * `createdBy: import`. Nothing runs.
+   */
+  importFrom(req: ImportAutomationsRequest): {
+    created: Automation[];
+    failed: { fileName: string; error: string }[];
+  } {
+    if (req.projectId) this.deps.projects.get(req.projectId);
+    const select = req.select ? new Set(req.select) : null;
+    const items = previewImport(req.source).filter((i) => !select || select.has(i.fileName));
+    const created: Automation[] = [];
+    const failed: { fileName: string; error: string }[] = [];
+    for (const item of items) {
+      const draft = item.automation;
+      if (!draft) {
+        failed.push({ fileName: item.fileName, error: item.error ?? "Invalid file" });
+        continue;
+      }
+      created.push(
+        this.create(
+          {
+            projectId: req.projectId,
+            name: draft.name,
+            description: draft.description,
+            trigger: draft.trigger,
+            action: draft.action,
+            guards: draft.guards,
+            workKey: draft.workKey,
+            enabled: false,
+          },
+          { createdBy: "import" },
+        ),
+      );
+    }
+    return { created, failed };
+  }
+
+  /** Parse an import without saving anything. */
+  previewImport(req: ImportAutomationsRequest["source"]): AutomationImportPreviewItem[] {
+    return previewImport(req);
   }
 
   private template(id: string): AutomationTemplate {

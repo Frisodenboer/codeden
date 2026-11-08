@@ -32,7 +32,7 @@ function FromSnapshot({ id }: { id: string }) {
 }
 
 async function pickAutonomy(label: string) {
-  const trigger = screen.getByRole("button", { name: "Autonomy level" });
+  const trigger = screen.getByRole("button", { name: "Permissions" });
   fireEvent.keyDown(trigger, { key: "Enter" });
   fireEvent.click(await screen.findByRole("menuitem", { name: new RegExp(label) }));
 }
@@ -53,24 +53,24 @@ describe("SessionOptions autonomy (§11.2)", () => {
     await client.updateSession("s-checkout", { autonomy: "auto" });
     updateSession.mockClear();
     renderWithClient(<FromSnapshot id="s-checkout" />, client);
-    const trigger = await screen.findByRole("button", { name: "Autonomy level" });
+    const trigger = await screen.findByRole("button", { name: "Permissions" });
     expect(trigger.textContent).toContain("Auto");
 
     toast.success.mockClear();
-    await pickAutonomy("Full autonomy");
+    await pickAutonomy("Full");
     await waitFor(() =>
       expect(updateSession).toHaveBeenCalledWith("s-checkout", { autonomy: "full" }),
     );
     // Claude takes it from the next tool call, even in a running turn.
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith("Autonomy: Full autonomy", {
+      expect(toast.success).toHaveBeenCalledWith("Permissions: Full", {
         id: "session-options-s-checkout",
         description: "Applies from the next tool call.",
       }),
     );
     // The picker shows the session the server sent back.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Autonomy level" }).textContent).toContain("Full"),
+      expect(screen.getByRole("button", { name: "Permissions" }).textContent).toContain("Full"),
     );
   });
 
@@ -87,7 +87,7 @@ describe("SessionOptions autonomy (§11.2)", () => {
     toast.success.mockClear();
     await pickAutonomy("Supervised");
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith("Autonomy: Supervised", {
+      expect(toast.success).toHaveBeenCalledWith("Permissions: Supervised", {
         id: "session-options-s-checkout",
         description: "Applies from the next turn.",
       }),
@@ -98,7 +98,7 @@ describe("SessionOptions autonomy (§11.2)", () => {
     const client = createMockClient();
     const updateSession = vi.spyOn(client, "updateSession");
     renderWithClient(<SessionOptions session={agent({ autonomy: "auto" })} running />, client);
-    await pickAutonomy("Auto, risky actions ask");
+    await pickAutonomy("Auto");
     await new Promise((r) => setTimeout(r, 20));
     expect(updateSession).not.toHaveBeenCalled();
   });

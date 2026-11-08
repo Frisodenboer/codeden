@@ -100,7 +100,7 @@ function automation(
     name,
     description,
     enabled,
-    source: "builtin",
+    source: id === "a-sf-refactor-sweep" ? "project_file" : "database",
     templateId: id.replace(/^a-\w+-/, ""),
     trigger,
     action,
@@ -257,6 +257,7 @@ const caps = {
   reasoningEffort: true,
   mcp: true,
   skills: true,
+  readOnly: true,
 };
 
 export const providers: ProviderInfo[] = [

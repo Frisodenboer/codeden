@@ -18,6 +18,22 @@ export interface ParsedAutomationFile {
   action: AutomationAction;
   guards: AutomationGuards;
   workKey: string;
+  /**
+   * Frontmatter keys the format does not know (`guards.maxPerDya`), dotted. Files in the
+   * automation folders ignore them; imports refuse them, so a typo never goes unnoticed.
+   */
+  unknownFields: string[];
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Keys of `raw` that parsing dropped, at any depth, as dotted paths. */
+export function unknownKeys(raw: unknown, parsed: unknown, prefix = ""): string[] {
+  if (!isPlainObject(raw) || !isPlainObject(parsed)) return [];
+  return Object.keys(raw).flatMap((key) =>
+    key in parsed ? unknownKeys(raw[key], parsed[key], `${prefix}${key}.`) : [`${prefix}${key}`],
+  );
 }
 
 const FRONTMATTER = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/;
@@ -57,6 +73,7 @@ export function parseAutomationMarkdown(text: string, id: string): ParsedAutomat
     action: buildAction(fm, body),
     guards: AutomationGuards.parse(fm.guards ?? {}),
     workKey: fm.workKey ?? `automation:${id}`,
+    unknownFields: unknownKeys(raw, fm),
   };
 }
 

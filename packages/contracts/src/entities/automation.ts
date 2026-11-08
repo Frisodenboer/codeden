@@ -121,6 +121,10 @@ export const AutomationGuards = z.object({
 });
 export type AutomationGuards = z.infer<typeof AutomationGuards>;
 
+/** Who created a database automation (§10). */
+export const AutomationCreator = z.enum(["user", "pm", "import"]);
+export type AutomationCreator = z.infer<typeof AutomationCreator>;
+
 /** An automation: trigger + action + target + guards. Off by default. */
 export const Automation = z.object({
   id: Id,
@@ -141,6 +145,11 @@ export const Automation = z.object({
    * `automation:<template id or name slug>`.
    */
   workKey: z.string().min(1).max(200).optional(),
+  /**
+   * Who created a database automation: the user in the UI (`user`, the default when absent),
+   * a PM through `create_automation` (`pm`), or an import of shared files (`import`).
+   */
+  createdBy: AutomationCreator.optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });

@@ -36,6 +36,7 @@ const capabilities: ProviderCapabilities = {
   mcp: false,
   skills: false,
   liveAutonomy: true,
+  readOnly: true,
 };
 
 /**

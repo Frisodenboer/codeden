@@ -208,6 +208,8 @@ export const automations = sqliteTable("automations", {
   target: json<Automation["target"]>("target").notNull(),
   guards: json<Automation["guards"]>("guards").notNull(),
   workKey: text("work_key"),
+  /** `user` (or null), `pm` or `import`. */
+  createdBy: text("created_by").$type<NonNullable<Automation["createdBy"]>>(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

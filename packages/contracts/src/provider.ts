@@ -33,6 +33,12 @@ export const ProviderCapabilities = z.object({
    * a running turn keeps its autonomy and the change applies from the next turn.
    */
   liveAutonomy: z.boolean().optional(),
+  /**
+   * The `read_only` permission level is enforced natively: no file edits, no writing shell
+   * commands, no commits or pushes (§11.2). When false (or absent), sessions on this provider
+   * cannot use `read_only`.
+   */
+  readOnly: z.boolean().optional(),
 });
 export type ProviderCapabilities = z.infer<typeof ProviderCapabilities>;
 

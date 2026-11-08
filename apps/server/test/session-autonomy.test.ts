@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   InboxItem,
+  type ProviderInfo,
   type RunnerCommand,
   type Session,
   SessionDetail,
@@ -12,6 +13,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { type Database, openDatabase } from "../src/db/client";
 import { EventStore } from "../src/events/store";
 import type { RunnerPort } from "../src/services/runner-port";
+import { readOnlyUnsupported } from "../src/services/sessions/permissions";
 import { applyPendingConfig, updateSession } from "../src/services/sessions/reconfigure";
 import { SessionRepo } from "../src/services/sessions/repo";
 import { sampleSession } from "./helpers";
@@ -169,6 +171,32 @@ describe("PATCH /api/sessions/:id with autonomy, through a real runner", () => {
     );
   });
 
+  it("starts an agent session with read-only permissions and switches it live", {
+    timeout: 60_000,
+  }, async () => {
+    const res = await h.api("POST", "/sessions", {
+      projectId: h.projectId,
+      provider: "fake",
+      autonomy: "read_only",
+      purpose: `Read-only ${Math.random()}`,
+      input: { text: "look [approval]" },
+    });
+    const started = StartSessionResponse.parse(res.body);
+    if (started.status !== "started") throw new Error(started.status);
+    const id = started.sessionId;
+    await waitUntil(async () => ((await statusOf(id)) === "idle" ? true : undefined));
+    expect((await h.detail(id)).session.autonomy).toBe("read_only");
+    // Read-only never runs the scripted command, so nothing asks.
+    expect(await openApprovals(id)).toEqual([]);
+    // CodeDen's own tools never commit or push for it either.
+    await expect(
+      h.server.services.github.createPullRequest(id, { title: "feat: nope" }),
+    ).rejects.toMatchObject({ code: "read_only" });
+    const patched = await h.api("PATCH", `/sessions/${id}`, { autonomy: "auto" });
+    expect(patched.body).toMatchObject({ autonomy: "auto" });
+    expect((await h.api("PATCH", `/sessions/${id}`, { autonomy: "read_only" })).status).toBe(200);
+  });
+
   it("saves the level for a session that is not running and rejects bad values", async () => {
     const res = await h.api("POST", "/sessions", {
       projectId: h.projectId,
@@ -190,5 +218,39 @@ describe("PATCH /api/sessions/:id with autonomy, through a real runner", () => {
     expect(
       (await h.api("PATCH", `/sessions/${started.sessionId}`, { autonomy: "max" })).status,
     ).toBe(400);
+  });
+});
+
+describe("readOnlyUnsupported", () => {
+  const caps = {
+    resume: true,
+    steer: true,
+    interrupt: true,
+    approvals: true,
+    userQuestions: true,
+    subagents: true,
+    rollback: false,
+    fork: false,
+    images: true,
+    planMode: true,
+    reasoningEffort: true,
+    mcp: true,
+    skills: false,
+  };
+  const provider = (readOnly?: boolean): ProviderInfo => ({
+    id: "other",
+    displayName: "Other",
+    models: [],
+    capabilities: { ...caps, ...(readOnly === undefined ? {} : { readOnly }) },
+  });
+
+  it("refuses read-only agent sessions on providers that cannot enforce it", () => {
+    expect(readOnlyUnsupported("agent", "read_only", provider())).toMatch(/Other cannot/);
+    expect(readOnlyUnsupported("agent", "read_only", provider(false))).toMatch(/read-only/);
+    expect(readOnlyUnsupported("agent", "read_only", provider(true))).toBeNull();
+    expect(readOnlyUnsupported("agent", "auto", provider())).toBeNull();
+    // PMs and the orchestrator are read-only on every provider; unknown providers pass.
+    expect(readOnlyUnsupported("pm", "read_only", provider())).toBeNull();
+    expect(readOnlyUnsupported("agent", "read_only", undefined)).toBeNull();
   });
 });
