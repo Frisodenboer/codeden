@@ -45,7 +45,20 @@ test.beforeAll(() => {
 });
 
 test.afterAll(async () => {
-  if (app) await app.close().catch(() => undefined);
+  if (app) {
+    // A failed step can leave the app hidden in the tray; don't let close() hang, and never
+    // leave CodeDen.exe running (it locks the next build's output folder on Windows).
+    const proc = app.process();
+    const closed = app.close().then(
+      () => true,
+      () => false,
+    );
+    const done = await Promise.race([
+      closed,
+      new Promise<boolean>((r) => setTimeout(() => r(false), 15_000)),
+    ]);
+    if (!done && proc.pid && proc.exitCode === null) proc.kill();
+  }
   const left = await sweepProcesses(home, 15_000);
   if (left.length) console.warn(`desktop e2e: stopped ${left.length} leftover process(es)`);
   rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
@@ -123,6 +136,8 @@ test("the desktop app starts, bridges, tracks, follows links and quits cleanly",
     await expect(page.getByText("Keep running in the tray")).toBeVisible();
     await shot(page, "settings-app");
     await page.goto(`${origin}/`);
+    // Wait for the shell (and its shortcut listener) before pressing the palette shortcut.
+    await expect(page.getByRole("button", { name: /Search or run/ })).toBeVisible();
     await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     await page.getByText("Add project…").click();
     await expect(page.getByTestId("native-folder-field")).toBeVisible();
