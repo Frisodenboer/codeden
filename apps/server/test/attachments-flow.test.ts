@@ -3,6 +3,7 @@ import {
   type Attachment,
   type ItemRecord,
   type QueuedMessage,
+  RoleMessageResponse,
   StartSessionResponse,
 } from "@codeden/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -120,5 +121,31 @@ describe("pasted images in a session", () => {
     const image = queued?.message.input.attachments[0];
     expect(image?.type === "image" && image.source.type).toBe("artifact");
     expect(mentionsArtifactsDir(JSON.stringify(queued))).toBe(false);
+  });
+
+  it("reach a PM that the first message starts", async () => {
+    const sent = RoleMessageResponse.parse(
+      (
+        await h.api("POST", `/orchestration/projects/${h.projectId}/pm/messages`, {
+          input: { text: "what is in this screenshot?", attachments: [pastedImage] },
+        })
+      ).body,
+    );
+    const id = sent.sessionId;
+    // The new PM starts first, then its queued first message runs.
+    const message = await waitUntil(async () => {
+      const d = await h.detail(id);
+      if (d.session.status !== "idle" || !d.session.rootThreadId) return undefined;
+      const root = encodeURIComponent(d.session.rootThreadId);
+      const page = await h.api("GET", `/sessions/${id}/threads/${root}/items`);
+      return userMessages((page.body as { items: ItemRecord[] }).items)[0];
+    });
+    expect(message.input.text.endsWith("what is in this screenshot?")).toBe(true);
+    const shown = message.input.attachments[0];
+    if (shown?.type !== "image" || shown.source.type !== "artifact") throw new Error("no artifact");
+    const res = await fetch(`${h.server.url}/api/artifacts/${shown.source.artifactId}`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(Buffer.from(await res.arrayBuffer()).toString("base64")).toBe(PNG_B64);
   });
 });

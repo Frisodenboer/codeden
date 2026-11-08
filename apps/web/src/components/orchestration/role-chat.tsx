@@ -1,8 +1,15 @@
-import type { Session } from "@codeden/contracts";
+import type { Session, UserInputInit } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { ArrowUp } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
+import { toInputAttachments } from "@/components/composer/attachments";
+import {
+  ComposerBox,
+  canSendDraft,
+  composerPlaceholders,
+  isSendKey,
+} from "@/components/composer/composer-box";
 import { ThreadView } from "@/components/thread/thread-view";
 import { Button } from "@/components/ui/button";
 import { useClient } from "@/lib/api";
@@ -31,7 +38,11 @@ export function useRoleSession(
   }, undefined);
 }
 
-/** Composer for a role session that does not exist yet: the first message creates it. */
+/**
+ * Composer for a role session that does not exist yet: the first message, with any pasted or
+ * attached images and files, creates it. Session controls (options, queue/steer, stop) come
+ * with the session's own composer.
+ */
 function StartComposer({
   kind: role,
   projectId,
@@ -42,59 +53,46 @@ function StartComposer({
   const client = useClient();
   const key = roleDraftKey(role, projectId);
   const draft = useComposerStore((s) => getDraft(s, key));
-  const focusToken = useComposerStore((s) => s.focusToken);
   const { setText, clear } = useComposerStore.getState();
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    if (focusToken > 0) ref.current?.focus();
-  }, [focusToken]);
+  // The input is captured at submit time: `onMutate` clears the draft before `mutationFn` runs.
   const send = useMutation({
-    mutationFn: (text: string) => client.orchestration.send(role, projectId, { text }),
+    mutationFn: (input: UserInputInit) => client.orchestration.send(role, projectId, input),
     onMutate: () => clear(key),
-    onError: (e, text) => {
-      setText(key, text);
+    onError: (e, input) => {
+      setText(key, input.text);
       toast.error("Message not sent", { description: e.message });
     },
   });
-  const text = draft.text.trim();
+  const canSend = canSendDraft(draft);
+  const submit = () => {
+    if (!canSend) return;
+    send.mutate({ text: draft.text.trim(), attachments: toInputAttachments(draft.attachments) });
+  };
   return (
-    <div className="mx-auto w-full max-w-[46rem] px-6 pb-5">
-      <div className="rounded-2xl border border-border bg-card shadow-[0_10px_30px_-18px] shadow-black/40 focus-within:border-primary/35">
-        <textarea
-          ref={ref}
-          value={draft.text}
-          rows={1}
-          onChange={(e) => setText(key, e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              if (text) send.mutate(text);
-            }
-          }}
-          placeholder={
-            role === "orchestrator"
-              ? "Ask the orchestrator to start a project, triage issues or check on work…"
-              : "Message the project manager…"
-          }
-          aria-label="Message"
-          className="block max-h-64 min-h-[56px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground/70"
-        />
-        <div className="flex items-center px-2 pb-2">
-          <span className="px-2 text-2xs text-muted-foreground">
-            The first message starts the {role === "orchestrator" ? "orchestrator" : "PM"}.
-          </span>
-          <Button
-            size="icon-sm"
-            className="ml-auto rounded-full"
-            onClick={() => text && send.mutate(text)}
-            disabled={!text || send.isPending}
-            aria-label="Send"
-          >
-            <ArrowUp />
-          </Button>
-        </div>
-      </div>
-    </div>
+    <ComposerBox
+      draftKey={key}
+      placeholder={composerPlaceholders[role]}
+      onKeyDown={(e) => {
+        if (!isSendKey(e)) return;
+        e.preventDefault();
+        submit();
+      }}
+      options={
+        <span className="px-2 text-2xs text-muted-foreground">
+          The first message starts the {role === "orchestrator" ? "orchestrator" : "PM"}.
+        </span>
+      }
+    >
+      <Button
+        size="icon-sm"
+        className="rounded-full transition-transform hover:scale-105"
+        onClick={submit}
+        disabled={!canSend || send.isPending}
+        aria-label="Send"
+      >
+        <ArrowUp />
+      </Button>
+    </ComposerBox>
   );
 }
 

@@ -1,9 +1,23 @@
-import { ImageMediaType } from "@codeden/contracts";
+import { type Attachment, ImageMediaType } from "@codeden/contracts";
 import { FileText, X } from "lucide-react";
 import type { ComposerAttachment } from "@/stores/composer";
 
 let n = 0;
 const nextId = () => `att-${Date.now().toString(36)}-${n++}`;
+
+/** Composer attachments as message input: images inline as base64, files by path. */
+export function toInputAttachments(attachments: ComposerAttachment[]): Attachment[] {
+  return attachments.map((a) =>
+    a.type === "image"
+      ? {
+          type: "image",
+          mediaType: a.mediaType,
+          name: a.name,
+          source: { type: "base64", data: a.data },
+        }
+      : { type: "file", path: a.path, name: a.name },
+  );
+}
 
 /** Read dropped or pasted files into composer attachments (images inline, others as files). */
 export async function filesToAttachments(files: File[]): Promise<ComposerAttachment[]> {
