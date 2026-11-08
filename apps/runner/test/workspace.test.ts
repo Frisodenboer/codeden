@@ -4,13 +4,8 @@ import type { RunnerEvent } from "@codeden/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { branches, commit, push, status } from "../src/git/ops";
 import { ProcessSupervisor } from "../src/process/supervisor";
-import {
-  assertRemovable,
-  prepareWorkspace,
-  removeWorkspace,
-  sessionShort,
-  slugFromPath,
-} from "../src/workspace/worktree";
+import { assertRemovable, removeWorkspace } from "../src/workspace/removal";
+import { prepareWorkspace, sessionShort, slugFromPath } from "../src/workspace/worktree";
 import { makeRepo, removeDir, sh, tempDir, write } from "./helpers";
 
 const dirs: string[] = [];
@@ -160,46 +155,53 @@ describe("workspace.prepare", () => {
   });
 
   it("removes a worktree and its branch", async () => {
-    const { repo, ctx } = setup();
+    const { repo, home, ctx } = setup();
     const result = await prepareWorkspace(prepare("sess-rm", repo), ctx);
     write(result.cwd, "dirty.txt", "x\n");
     await expect(
-      removeWorkspace({ name: "workspace.remove", repoPath: repo, path: result.cwd }),
-    ).rejects.toThrow();
-    const removed = await removeWorkspace({
-      name: "workspace.remove",
-      repoPath: repo,
-      path: result.cwd,
-      force: true,
-      deleteBranch: result.branch ?? undefined,
-    });
+      removeWorkspace({ name: "workspace.remove", repoPath: repo, path: result.cwd }, home),
+    ).rejects.toMatchObject({ code: "worktree_dirty" });
+    expect(existsSync(join(result.cwd, "dirty.txt"))).toBe(true);
+    const removed = await removeWorkspace(
+      {
+        name: "workspace.remove",
+        repoPath: repo,
+        path: result.cwd,
+        force: true,
+        deleteBranch: result.branch ?? undefined,
+      },
+      home,
+    );
     expect(removed.removed).toBe(true);
     expect(existsSync(result.cwd)).toBe(false);
+    expect(sh(repo, "worktree", "list")).not.toContain("sess");
     expect(sh(repo, "branch", "--list", "codeden/*")).toBe("");
   });
 
   it("refuses a dirty worktree before touching it, but ignores ignored files", async () => {
-    const { repo, ctx } = setup();
+    const { repo, home, ctx } = setup();
     write(repo, ".gitignore", "build/\n");
     sh(repo, "add", "-A");
     sh(repo, "commit", "-q", "-m", "ignore build");
     const result = await prepareWorkspace(prepare("sess-dirty", repo), ctx);
     const cmd = { name: "workspace.remove" as const, repoPath: repo, path: result.cwd };
     write(result.cwd, "build/out.js", "ignored\n");
-    await expect(assertRemovable(cmd)).resolves.toBeUndefined();
+    await expect(assertRemovable(cmd, home)).resolves.toMatchObject({ state: "registered" });
     write(result.cwd, "notes.txt", "uncommitted\n");
-    await expect(assertRemovable(cmd)).rejects.toMatchObject({ code: "worktree_dirty" });
-    await expect(assertRemovable({ ...cmd, force: true })).resolves.toBeUndefined();
+    await expect(assertRemovable(cmd, home)).rejects.toMatchObject({ code: "worktree_dirty" });
+    await expect(assertRemovable({ ...cmd, force: true }, home)).resolves.toMatchObject({
+      state: "registered",
+    });
     expect(existsSync(join(result.cwd, "notes.txt"))).toBe(true);
   });
 
   it("recreates a removed worktree from its branch", async () => {
-    const { repo, ctx } = setup();
+    const { repo, home, ctx } = setup();
     const first = await prepareWorkspace(prepare("sess-back", repo), ctx);
     write(first.cwd, "work.txt", "committed\n");
     sh(first.cwd, "add", "-A");
     sh(first.cwd, "commit", "-q", "-m", "work");
-    await removeWorkspace({ name: "workspace.remove", repoPath: repo, path: first.cwd });
+    await removeWorkspace({ name: "workspace.remove", repoPath: repo, path: first.cwd }, home);
     expect(existsSync(first.cwd)).toBe(false);
     const again = await prepareWorkspace(
       prepare("sess-back", repo, { path: first.cwd, branch: first.branch ?? undefined }),
