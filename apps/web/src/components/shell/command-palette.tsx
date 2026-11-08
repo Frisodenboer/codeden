@@ -49,6 +49,7 @@ function Row({
   icon,
   label,
   hint,
+  badge,
   keys,
   onSelect,
   value,
@@ -56,6 +57,8 @@ function Row({
   icon: ReactNode;
   label: string;
   hint?: string;
+  /** A short label after the hint, e.g. "Archived". */
+  badge?: string;
   keys?: ShortcutId;
   onSelect: () => void;
   value?: string;
@@ -67,6 +70,11 @@ function Row({
       </span>
       <span className="min-w-0 truncate">{label}</span>
       {hint && <span className="min-w-0 truncate text-xs text-muted-foreground">{hint}</span>}
+      {badge && (
+        <span className="shrink-0 rounded-sm border border-border px-1 text-3xs text-muted-foreground">
+          {badge}
+        </span>
+      )}
       <span className="flex-1" />
       {keys && <Hotkey keys={formatCombo(shortcut(keys).combo)} />}
     </CommandItem>
@@ -130,10 +138,11 @@ export function CommandPalette() {
               .map((s) => (
                 <Row
                   key={s.id}
-                  value={`${s.title ?? s.purpose} ${s.workKey} ${projectName(s.projectId) ?? ""}`}
+                  value={`${s.title ?? s.purpose} ${s.workKey} ${projectName(s.projectId) ?? ""}${s.archivedAt ? " archived" : ""}`}
                   icon={<StatusDot status={s.status} />}
                   label={s.title ?? s.purpose}
                   hint={projectName(s.projectId)}
+                  badge={s.archivedAt ? "Archived" : undefined}
                   onSelect={run(() =>
                     navigate({ to: "/sessions/$sessionId", params: { sessionId: s.id } }),
                   )}

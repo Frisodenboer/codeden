@@ -1,4 +1,5 @@
-import type { EventEnvelope, Snapshot } from "@codeden/contracts";
+import { type EventEnvelope, type Project, type Snapshot, sortProjects } from "@codeden/contracts";
+import { withOrder } from "./project-order";
 
 function upsert<T extends { id: string }>(list: T[], next: T): T[] {
   const i = list.findIndex((x) => x.id === next.id);
@@ -6,6 +7,12 @@ function upsert<T extends { id: string }>(list: T[], next: T): T[] {
   const copy = [...list];
   copy[i] = next;
   return copy;
+}
+
+/** The snapshot lists active projects only, in the canonical order (§13). */
+function upsertProject(list: Project[], project: Project): Project[] {
+  if (project.archivedAt !== null) return list.filter((p) => p.id !== project.id);
+  return sortProjects(upsert(list, project));
 }
 
 /**
@@ -18,10 +25,13 @@ export function applyDomainEvent(snap: Snapshot, env: EventEnvelope): Snapshot {
   switch (env.type) {
     case "project.created":
     case "project.updated":
-      next.projects = upsert(snap.projects, env.payload.project);
+      next.projects = upsertProject(snap.projects, env.payload.project);
       break;
     case "project.archived":
       next.projects = snap.projects.filter((p) => p.id !== env.payload.projectId);
+      break;
+    case "projects.reordered":
+      next.projects = withOrder(snap.projects, env.payload.projectIds);
       break;
     case "session.created":
     case "session.updated":

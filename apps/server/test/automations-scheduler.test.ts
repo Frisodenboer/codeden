@@ -23,6 +23,8 @@ const project: Project = {
   factoryLimits: {} as Project["factoryLimits"],
   killSwitch: false,
   timezone: "UTC",
+  pinned: false,
+  sortOrder: 0,
   createdAt: ts,
   updatedAt: ts,
   archivedAt: null,

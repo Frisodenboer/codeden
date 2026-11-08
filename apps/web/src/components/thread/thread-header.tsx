@@ -1,4 +1,4 @@
-import type { ArchiveSessionResponse, Session } from "@codeden/contracts";
+import type { Session } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -32,6 +32,7 @@ import { useClient } from "@/lib/api";
 import { statusLabel } from "@/lib/format";
 import { platform } from "@/lib/platform";
 import { useProject, useSnapshotData } from "@/lib/queries";
+import { useSessionActions } from "@/lib/session-actions";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
 import { AutonomyBadge } from "./autonomy";
@@ -76,19 +77,8 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
     mutationFn: () => client.interrupt(session.id),
     onSuccess: () => toast("Turn stopped"),
   });
-  const end = useMutation({
-    mutationFn: () => client.stopSession(session.id),
-    onSuccess: () => toast("Session stopped"),
-  });
-  const archive = useMutation({
-    mutationFn: (force: boolean) => client.archiveSession(session.id, { force }),
-    onSuccess: (result) => announceArchive(result, () => archive.mutate(true)),
-    onError: (error) => toast.error(error.message),
-  });
-  const unarchive = useMutation({
-    mutationFn: () => client.unarchiveSession(session.id),
-    onSuccess: () => toast.success("Session restored to the sidebar"),
-  });
+  // Stop, archive and unarchive are shared with the sidebar's session row menu.
+  const actions = useSessionActions(session);
 
   const title =
     session.role === "orchestrator"
@@ -239,16 +229,16 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
             {session.role === "agent" && (
               <>
                 <DropdownMenuSeparator />
-                {session.archivedAt ? (
-                  <DropdownMenuItem onSelect={() => unarchive.mutate()}>
+                {actions.archived ? (
+                  <DropdownMenuItem onSelect={actions.unarchive}>
                     <ArchiveRestore /> Unarchive
                   </DropdownMenuItem>
                 ) : (
-                  <DropdownMenuItem onSelect={() => archive.mutate(false)}>
+                  <DropdownMenuItem onSelect={actions.archive}>
                     <Archive /> Archive session
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem variant="destructive" onSelect={() => end.mutate()}>
+                <DropdownMenuItem variant="destructive" onSelect={actions.stop}>
                   <X /> Stop session
                 </DropdownMenuItem>
               </>
@@ -258,18 +248,4 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
       </div>
     </header>
   );
-}
-
-/** Toast for an archive: what happened to the worktree, with a way to force a kept one. */
-function announceArchive(result: ArchiveSessionResponse, force: () => void): void {
-  const { status, message } = result.worktree;
-  if (status === "removed") toast.success("Session archived and its worktree removed");
-  else if (status === "none") toast.success("Session archived");
-  else if (status === "kept_changes") {
-    toast("Session archived. The worktree has uncommitted changes, so it was kept.", {
-      action: { label: "Remove anyway", onClick: force },
-      duration: 10_000,
-    });
-  } else
-    toast.warning(`Session archived, but the worktree was kept: ${message ?? "unknown error"}`);
 }

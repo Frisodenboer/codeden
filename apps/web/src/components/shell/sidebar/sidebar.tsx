@@ -1,18 +1,28 @@
 import type { Session } from "@codeden/contracts";
 import { Link } from "@tanstack/react-router";
-import { Bot, ChartColumnBig, FolderPlus, Inbox, PanelLeftClose, Plus, Search } from "lucide-react";
+import {
+  Bot,
+  ChartColumnBig,
+  FolderPlus,
+  Inbox,
+  PanelLeftClose,
+  Pin,
+  Plus,
+  Search,
+} from "lucide-react";
 import { Hotkey, SectionLabel } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { splitPinned } from "@/lib/project-order";
 import { useSnapshot } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
 import { useUiStore } from "@/stores/ui";
 import { Logo } from "../logo";
 import { NavRow, rowBase } from "./nav-row";
-import { ProjectGroup } from "./project-group";
+import { SortableProjectGroup } from "./project-list";
 import { SidebarFooter } from "./sidebar-footer";
 
 /** Waiting sessions in a soft amber box; hidden when nothing waits (§11.1). */
@@ -66,6 +76,7 @@ export function Sidebar({ width }: { width: number }) {
   const orchestrator = data?.sessions.find((s) => s.role === "orchestrator");
   const waiting = data?.sessions.filter((s) => s.status === "waiting" && s.role === "agent") ?? [];
   const projectName = (id: string | null) => data?.projects.find((p) => p.id === id)?.name ?? "";
+  const { pinned, others } = splitPinned(data?.projects ?? []);
 
   return (
     <aside
@@ -135,33 +146,53 @@ export function Sidebar({ width }: { width: number }) {
 
       <WaitingOnYou sessions={waiting} projectName={projectName} />
 
-      <div className="mt-4 flex items-center pr-2 pb-1 pl-5">
-        <SectionLabel>Projects</SectionLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="ml-auto text-muted-foreground"
-              aria-label="Add project"
-              onClick={() => openAddProject(true)}
-            >
-              <Plus />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Add a project</TooltipContent>
-        </Tooltip>
-      </div>
-
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-1 px-3 pb-3">
-          {data?.projects.map((project) => (
-            <ProjectGroup
-              key={project.id}
-              project={project}
-              sessions={data.sessions.filter((s) => s.projectId === project.id)}
+      {/*
+        The scroll area wraps its content in a `display: table` box that grows to the widest
+        row, which stops `truncate` from ever applying. A block box keeps rows at the sidebar's
+        width, so titles end in an ellipsis and trailing details stay visible.
+      */}
+      <ScrollArea
+        data-testid="sidebar-projects"
+        className="mt-3 min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!"
+      >
+        <div className="flex min-w-0 flex-col gap-1 px-3 pb-3">
+          {pinned.length > 0 && (
+            <section aria-label="Pinned projects" className="flex flex-col gap-1">
+              <div className="flex h-7 items-center gap-1.5 pt-1 pl-2">
+                <Pin className="size-3 text-muted-foreground/70" />
+                <SectionLabel>Pinned</SectionLabel>
+              </div>
+              <SortableProjectGroup
+                projects={pinned}
+                sessions={data?.sessions ?? []}
+                label="Pinned"
+              />
+            </section>
+          )}
+          <section aria-label="Projects" className="flex flex-col gap-1">
+            <div className={cn("flex h-7 items-center pl-2", pinned.length > 0 && "mt-2")}>
+              <SectionLabel>Projects</SectionLabel>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="ml-auto text-muted-foreground"
+                    aria-label="Add project"
+                    onClick={() => openAddProject(true)}
+                  >
+                    <Plus />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Add a project</TooltipContent>
+              </Tooltip>
+            </div>
+            <SortableProjectGroup
+              projects={others}
+              sessions={data?.sessions ?? []}
+              label="Projects"
             />
-          ))}
+          </section>
           {data && data.projects.length === 0 && (
             <button
               type="button"

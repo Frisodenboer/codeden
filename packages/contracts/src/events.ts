@@ -77,6 +77,11 @@ export const EventEnvelope = z.discriminatedUnion("type", [
   globalEvent("project.created", z.object({ project: Project })),
   globalEvent("project.updated", z.object({ project: Project })),
   globalEvent("project.archived", z.object({ projectId: Id })),
+  /**
+   * The user rearranged the project list (§13). `projectIds` is every non-archived project in
+   * its new order; each one's `sortOrder` becomes its index. Archived projects keep theirs.
+   */
+  globalEvent("projects.reordered", z.object({ projectIds: z.array(Id) })),
   globalEvent("session.created", z.object({ session: Session })),
   /** Any change to a session row, including status transitions. */
   globalEvent("session.updated", z.object({ session: Session })),

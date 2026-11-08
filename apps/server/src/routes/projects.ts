@@ -1,10 +1,14 @@
-import { CreateProjectRequest, UpdateProjectRequest } from "@codeden/contracts";
+import {
+  CreateProjectRequest,
+  ReorderProjectsRequest,
+  UpdateProjectRequest,
+} from "@codeden/contracts";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppServices } from "../services/container";
 import { jsonBody, queryOf } from "./validate";
 
-/** `/api/projects`: add from a folder or clone, list, update, archive. */
+/** `/api/projects`: add from a folder or clone, list, reorder, update (and pin), archive. */
 export function projectRoutes(s: AppServices) {
   return new Hono()
     .get("/", queryOf(z.object({ archived: z.enum(["true", "false"]).optional() })), (c) =>
@@ -12,6 +16,9 @@ export function projectRoutes(s: AppServices) {
     )
     .post("/", jsonBody(CreateProjectRequest), async (c) =>
       c.json(await s.projects.create(c.req.valid("json")), 201),
+    )
+    .put("/order", jsonBody(ReorderProjectsRequest), (c) =>
+      c.json({ projects: s.projects.reorder(c.req.valid("json").projectIds) }),
     )
     .get("/:id", (c) => c.json(s.projects.get(c.req.param("id"))))
     .patch("/:id", jsonBody(UpdateProjectRequest), (c) =>

@@ -8,6 +8,8 @@ import {
   GitStatusResponse,
   InboxItem,
   LoginCommandResponse,
+  Project,
+  ReorderProjectsResponse,
   RestoreFilesResponse,
   type SendMessageRequestInit,
   SessionDetail,
@@ -93,6 +95,12 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
       post(`/inbox/${enc(id)}/resolve`, resolution, (v) => InboxItem.parse(v)),
 
     createProject: (input) => post("/projects", input, (v) => CreateProjectResponse.parse(v)),
+    updateProject: (id, patch) =>
+      call("PATCH", `/projects/${enc(id)}`, patch, (v) => Project.parse(v)),
+    reorderProjects: (projectIds) =>
+      call("PUT", "/projects/order", { projectIds }, (v) => ReorderProjectsResponse.parse(v)).then(
+        (r) => r.projects,
+      ),
     automations: httpAutomationsApi(http),
     factory: httpFactoryApi(http),
 

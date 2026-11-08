@@ -32,6 +32,8 @@ const project = (id: string, name: string): Project => ({
   factoryLimits: FactoryLimits.parse({}),
   killSwitch: false,
   timezone: null,
+  pinned: false,
+  sortOrder: 0,
   createdAt: ts(1000),
   updatedAt: ts(1000),
   archivedAt: null,

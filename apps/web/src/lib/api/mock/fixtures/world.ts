@@ -26,6 +26,8 @@ function project(
     factoryLimits: limits,
     killSwitch: false,
     timezone: null,
+    pinned: false,
+    sortOrder: 0,
     createdAt: ago(60 * 24 * 12),
     updatedAt: ago(30),
     archivedAt: null,
@@ -52,6 +54,7 @@ export const projects: Project[] = [
       name: "Storefront",
       slug: "storefront",
       path: "C:\\Code\\storefront",
+      sortOrder: 0,
       autonomyMode: "autopilot",
       factoryLimits: {
         ...limits,
@@ -64,7 +67,13 @@ export const projects: Project[] = [
     "hearth-co/storefront",
   ),
   project(
-    { id: "p-billing", name: "Billing API", slug: "billing-api", path: "C:\\Code\\billing-api" },
+    {
+      id: "p-billing",
+      name: "Billing API",
+      slug: "billing-api",
+      path: "C:\\Code\\billing-api",
+      sortOrder: 1,
+    },
     "hearth-co/billing-api",
   ),
   project({
@@ -73,6 +82,7 @@ export const projects: Project[] = [
     slug: "notes-cli",
     path: "C:\\Code\\notes-cli",
     autonomyMode: "manual",
+    sortOrder: 2,
   }),
 ];
 

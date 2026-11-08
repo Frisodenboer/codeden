@@ -50,19 +50,24 @@ const sessionRoute = createRoute({
 const projectRoute = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId",
-  validateSearch: (s: Record<string, unknown>): { newSession?: boolean; tab?: ProjectTab } => ({
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { newSession?: boolean; tab?: ProjectTab; archived?: boolean } => ({
     ...(s.newSession ? { newSession: true } : {}),
     ...(s.tab === "github" ? { tab: "github" as const } : {}),
+    // The sessions list shows archived sessions (from the sidebar's "N archived" row).
+    ...(s.archived ? { archived: true } : {}),
   }),
   component: function Project() {
     const { projectId } = projectRoute.useParams();
-    const { newSession, tab } = projectRoute.useSearch();
+    const { newSession, tab, archived } = projectRoute.useSearch();
     return (
       <ProjectPage
         key={projectId}
         projectId={projectId}
         newSession={Boolean(newSession)}
         tab={tab ?? "overview"}
+        sessionView={archived ? "archived" : "active"}
       />
     );
   },

@@ -3,12 +3,14 @@ import {
   CreateProjectRequest,
   defaultSettings,
   ListSessionsQuery,
+  ReorderProjectsRequest,
   SendMessageRequest,
   StartSessionRequest,
   StartSessionResponse,
   ThreadItemsQuery,
   UiClientMessage,
   UiServerMessage,
+  UpdateProjectRequest,
 } from "../src";
 
 function roundTrip<T>(schema: { parse: (v: unknown) => T }, value: unknown): T {
@@ -43,6 +45,15 @@ describe("api schemas", () => {
     roundTrip(CreateProjectRequest, { source: { type: "local", path: "C:\\code\\app" } });
     roundTrip(CreateProjectRequest, { source: { type: "clone", url: "owner/repo" }, name: "App" });
     expect(() => CreateProjectRequest.parse({ source: { type: "ftp" } })).toThrow();
+  });
+
+  it("parses project pin and reorder requests", () => {
+    expect(roundTrip(UpdateProjectRequest, { pinned: true })).toEqual({ pinned: true });
+    expect(() => UpdateProjectRequest.parse({ pinned: "yes" })).toThrow();
+    roundTrip(ReorderProjectsRequest, { projectIds: ["p2", "p1"] });
+    roundTrip(ReorderProjectsRequest, { projectIds: [] });
+    expect(() => ReorderProjectsRequest.parse({ projectIds: [""] })).toThrow();
+    expect(() => ReorderProjectsRequest.parse({})).toThrow();
   });
 
   it("coerces query strings", () => {

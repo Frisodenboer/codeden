@@ -61,6 +61,9 @@ export const projects = sqliteTable(
     factoryLimits: json<FactoryLimits>("factory_limits"),
     killSwitch: integer("kill_switch", { mode: "boolean" }).notNull().default(false),
     timezone: text("timezone"),
+    pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    /** Manual list position (§13); the migration backfills it from the alphabetical order. */
+    sortOrder: integer("sort_order").notNull().default(0),
     github: json<GitHubRepo>("github"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),

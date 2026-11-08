@@ -171,6 +171,8 @@ export const sampleProject: Project = {
   },
   killSwitch: false,
   timezone: null,
+  pinned: false,
+  sortOrder: 0,
   createdAt: ts,
   updatedAt: ts,
   archivedAt: null,

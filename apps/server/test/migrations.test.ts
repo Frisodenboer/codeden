@@ -51,6 +51,9 @@ function expectFullSchema(file: string): void {
       ]),
     );
     expect(columns(database.client, "automations")).toContain("work_key");
+    expect(columns(database.client, "projects")).toEqual(
+      expect.arrayContaining(["pinned", "sort_order"]),
+    );
     expect(columns(database.client, "github_prs")).toEqual(
       expect.arrayContaining(["review_decision", "linked_issues", "merged_at"]),
     );
@@ -98,6 +101,41 @@ describe("migrations", () => {
     const file = join(tempDir(), "old.db");
     openDatabase(file, partialMigrations(keep)).close();
     expectFullSchema(file);
+  });
+
+  it("backfill the project order from the old alphabetical listing", () => {
+    const file = join(tempDir(), "before-pinning.db");
+    const old = openDatabase(
+      file,
+      partialMigrations((n) => !n.endsWith("_project_pin_order")),
+    );
+    const insert = old.client.prepare(
+      "INSERT INTO projects (id, kind, name, slug, path, created_at, updated_at) VALUES (?, 'local', ?, ?, ?, 'x', 'x')",
+    );
+    for (const [id, name] of [
+      ["p1", "notes-cli"],
+      ["p2", "Storefront"],
+      ["p4", "Billing API"],
+      ["p3", "Billing API"],
+    ] as const) {
+      insert.run(id, name, id, `/code/${id}`);
+    }
+    old.close();
+    const database = openDatabase(file, all);
+    try {
+      const rows = database.client
+        .prepare("SELECT id, pinned, sort_order FROM projects ORDER BY sort_order")
+        .all();
+      // Upper case sorts before lower case, as the old `ORDER BY name` did; ids break ties.
+      expect(rows).toEqual([
+        { id: "p3", pinned: 0, sort_order: 0 },
+        { id: "p4", pinned: 0, sort_order: 1 },
+        { id: "p2", pinned: 0, sort_order: 2 },
+        { id: "p1", pinned: 0, sort_order: 3 },
+      ]);
+    } finally {
+      database.close();
+    }
   });
 
   it("apply the older-timestamped factory loop on a database that already applied automations", () => {
