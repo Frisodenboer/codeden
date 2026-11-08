@@ -17,12 +17,15 @@ export const Role = z.enum(["orchestrator", "pm", "agent"]);
 export type Role = z.infer<typeof Role>;
 
 /**
- * Autonomy levels (§11.2), mapped onto each provider's native enforcement.
+ * Permission levels of an agent session (§11.2), mapped onto each provider's native enforcement.
+ * Shown in the UI as "Permissions"; stored as `autonomy`.
+ * - `read_only`: reads and runs checks, but never edits files, commits or pushes. Needs a
+ *   provider with `ProviderCapabilities.readOnly`.
  * - `supervised`: every edit and command asks.
  * - `auto`: edits and normal commands in the worktree run freely; risky actions ask (default).
  * - `full`: no approvals inside the worktree.
  */
-export const AutonomyLevel = z.enum(["supervised", "auto", "full"]);
+export const AutonomyLevel = z.enum(["read_only", "supervised", "auto", "full"]);
 export type AutonomyLevel = z.infer<typeof AutonomyLevel>;
 
 /** Reasoning effort. Each model advertises the subset it supports (see `ModelInfo.efforts`). */

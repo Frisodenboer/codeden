@@ -137,10 +137,14 @@ export class FakeSession implements ProviderSession {
       await this.streamAssistant(turn, threadId, this.replyFor(prompt));
       await this.todoList(turn);
       if (prompt.includes("[mcp]")) await this.mcpToolCall(turn);
+      // The read_only level never runs the scripted (writing) command, so nothing asks either.
+      const readOnly = this.autonomy === "read_only";
       const asks =
-        (this.fake.approval || prompt.includes("[approval]")) && this.autonomy !== "full";
+        !readOnly &&
+        (this.fake.approval || prompt.includes("[approval]")) &&
+        this.autonomy !== "full";
       const approved = asks ? await this.approval(turn) : true;
-      if (approved) await this.commandToolCall(turn);
+      if (approved && !readOnly) await this.commandToolCall(turn);
       if (this.fake.subagent || prompt.includes("[subagent]")) await this.subagent(turn);
       if (this.fake.followups ?? true) {
         await this.step(turn);

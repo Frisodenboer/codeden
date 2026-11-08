@@ -257,6 +257,7 @@ const caps = {
   reasoningEffort: true,
   mcp: true,
   skills: true,
+  readOnly: true,
 };
 
 export const providers: ProviderInfo[] = [

@@ -1,7 +1,9 @@
 /**
- * Read-only sessions (the orchestrator and PMs, §11.2) may inspect a repository but never
- * change it. This allowlist decides which shell commands they may run: commands that only
- * read, with no output redirection and no command substitution. Anything else is denied.
+ * Read-only sessions (the orchestrator and PMs, and agent sessions with the `read_only`
+ * permission level, §11.2) may inspect a repository but never change it. This allowlist decides
+ * which shell commands they may run: commands that only read, with no output redirection and no
+ * command substitution. Agent sessions may also run the project's checks (tests, lint, type
+ * checks) without fix or update flags. Anything else is denied.
  */
 
 /**
@@ -122,8 +124,83 @@ const bin = (token: string | undefined): string =>
     ?.toLowerCase()
     .replace(/\.(exe|cmd|bat|ps1)$/, "") ?? "";
 
+/** Package managers whose `test`, `lint`, ... scripts count as checks. */
+const PACKAGE_MANAGERS = new Set(["npm", "pnpm", "yarn", "bun"]);
+
+/** Script names a package manager may run as a check (`pnpm test`, `npm run lint`). */
+const CHECK_SCRIPTS = new Set([
+  "test",
+  "tests",
+  "lint",
+  "typecheck",
+  "type-check",
+  "check",
+  "types",
+  "vitest",
+  "jest",
+  "biome",
+  "eslint",
+  "tsc",
+]);
+
+/** Programs (null: any arguments) and `<program> <subcommand>` pairs that run checks. */
+const CHECK_COMMANDS: Record<string, string[] | null> = {
+  tsc: null,
+  vitest: null,
+  jest: null,
+  eslint: null,
+  pytest: null,
+  mypy: null,
+  pyright: null,
+  biome: ["check", "lint", "ci"],
+  ruff: ["check"],
+  cargo: ["test", "check", "clippy"],
+  go: ["test", "vet"],
+  dotnet: ["test"],
+  mvn: ["test", "verify"],
+  gradle: ["test", "check"],
+};
+
+/** Flags that turn a check into a write (fixing, formatting, updating snapshots, watching). */
+const WRITING_FLAG =
+  /^(--fix|--fix-type=.*|--write|--apply|--apply-unsafe|--unsafe|-u|--update|--update-snapshots?|--updatesnapshot|--watch|-w)(=.*)?$/;
+
+/** True when `name args` runs a known check without writing flags. */
+function isCheck(name: string, args: string[]): boolean {
+  if (args.some((a) => WRITING_FLAG.test(a))) return false;
+  const positional = args.filter((a) => !a.startsWith("-"));
+  if (PACKAGE_MANAGERS.has(name)) {
+    const script = positional[0] === "run" ? positional[1] : positional[0];
+    return script !== undefined && CHECK_SCRIPTS.has(script);
+  }
+  if (name === "npx" || name === "pnpx" || name === "bunx") {
+    const tool = positional[0];
+    return tool !== undefined && isCheck(bin(tool), args.slice(args.indexOf(tool) + 1));
+  }
+  if (name === "python" || name === "python3" || name === "py") {
+    return args[0] === "-m" && (args[1] === "pytest" || args[1] === "mypy");
+  }
+  if (!Object.hasOwn(CHECK_COMMANDS, name)) return false;
+  const subs = CHECK_COMMANDS[name];
+  if (!subs) return true;
+  return positional[0] !== undefined && subs.includes(positional[0]);
+}
+
+/** Options of `readOnlyCommandDenial`. */
+export interface ReadOnlyCommandOptions {
+  /**
+   * Also allow the project's checks (`pnpm test`, `tsc --noEmit`, `cargo check`, ...) without
+   * fix, write or snapshot-update flags. On for agent sessions with the `read_only` level; off
+   * for the orchestrator and PMs.
+   */
+  allowChecks?: boolean;
+}
+
 /** Why a command is refused in a read-only session, or undefined when it may run. */
-export function readOnlyCommandDenial(command: string): string | undefined {
+export function readOnlyCommandDenial(
+  command: string,
+  options: ReadOnlyCommandOptions = {},
+): string | undefined {
   if (/\$\(|`|<\(|>\(/.test(command)) {
     return "Command substitution is not allowed in a read-only session";
   }
@@ -157,6 +234,7 @@ export function readOnlyCommandDenial(command: string): string | undefined {
     if (name === "find" && args.some((a) => a === "-delete" || a === "-exec" || a === "-execdir")) {
       return "find with -delete or -exec is not allowed in a read-only session";
     }
+    if (options.allowChecks && isCheck(name, args)) continue;
     if (!READ_ONLY_BINS.has(name)) {
       return `${name || "This command"} is not on the read-only allowlist`;
     }

@@ -197,7 +197,8 @@ export class SessionLauncher {
       autonomy: session.autonomy,
       resumeToken: session.resumeToken ?? undefined,
       systemPrompt: codedenSystemPrompt(session.role),
-      // The orchestrator and PMs never write project code (§11.2).
+      // The orchestrator and PMs never write project code (§11.2). Agent sessions at the
+      // `read_only` level carry it in `autonomy`, so it can change live.
       readOnly: session.role !== "agent",
       mcpServers,
     });
