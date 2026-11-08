@@ -127,7 +127,8 @@ for (const size of SIZES) {
       const sheet = page.getByTestId("right-sheet");
       await expect(sheet).toBeVisible();
       const box = await sheet.boundingBox();
-      if (size.name === "phone") expect(box?.width).toBe(size.viewport.width);
+      // Full width on phones (to within a pixel: Linux Chromium reports 390.00001...).
+      if (size.name === "phone") expect(box?.width ?? 0).toBeCloseTo(size.viewport.width, 0);
       await sheet.getByRole("button", { name: "Close panel" }).click();
       await expect(sheet).toBeHidden();
 
