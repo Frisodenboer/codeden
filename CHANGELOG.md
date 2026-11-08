@@ -6,11 +6,15 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ### Added
 
+- **The desktop app.** CodeDen for Windows, macOS and Linux as an installable app, from GitHub Releases: no Node.js needed, same data as `npx codeden` (it attaches to a running CodeDen or starts its own). Its own window, a tray (menu bar) icon with running and waiting agents, the app icon badge, system notifications, the system folder picker for new projects, `codeden://` links, keep-awake while agents run, open at login and close to tray (**Settings > App**). It updates itself from GitHub Releases through the same update banner and **Updates** setting, stopping the runner gracefully before installing so sessions resume afterwards. See [The desktop app](docs/desktop.md).
+- Claude Code support installs without npm when there is none (straight from the registry, checked against its published checksum).
+
 - **Archive sessions.** **Archive session** in the session menu stops the session, hides it from the sidebar and removes its worktree; **Unarchive** (or sending it a message) brings it back.
 - **Worktree cleanup.** Worktrees of sessions inactive for 7 days are removed automatically, unless the pull request is still open or there are uncommitted changes; archiving a project cleans up its sessions' worktrees. Configure it in Settings > General > Worktrees. Branches and checkpoints are kept, and the worktree is recreated from its branch the next time you message the session.
 
 ### Fixed
 
+- `codeden stop` also stops a runner that the server was still starting when it shut down (for example right after an update), so no runner is left running in the background.
 - **Codex models in the model pickers.** Codex's full model list, with each model's reasoning efforts, shows up as soon as CodeDen starts, with no need to run a Codex session or reload the page first. It is loaded again after a setup re-check (for example once you have logged in), and new model lists reach open pages live. Choosing **Max** for a Codex model that offers it now sends `max` instead of `xhigh`.
 
 ## [0.1.1] - 2026-11-07
