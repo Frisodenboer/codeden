@@ -109,18 +109,21 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Playwright's browsers live outside node_modules, so the pnpm cache does not cover them.
-      # They are cached per OS and Playwright version, in Playwright's default folder.
-      - name: Resolve the Playwright version
-        id: playwright
+      # Playwright's browsers and the Electron binary live outside node_modules, so the pnpm
+      # cache does not cover them. They are cached per OS and version, in their default folders.
+      - name: Resolve the Playwright and Electron versions
+        id: versions
         shell: bash
-        run: echo "version=$(pnpm --filter @codeden/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "playwright=$(pnpm --filter @codeden/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          cd apps/desktop
+          echo "electron=$(node -p 'require("electron/package.json").version')-builder-$(node -p 'require("electron-builder/package.json").version')" >> "$GITHUB_OUTPUT"
       - name: Restore the Playwright browsers
         id: playwright-cache
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.playwright }}
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @codeden/web exec playwright install chromium
@@ -138,10 +141,29 @@ jobs:
         if: runner.os == 'Linux'
         run: pnpm --filter @codeden/web exec playwright install-deps chromium
       - run: pnpm e2e
+      # Packaging downloads the Electron binary (and, on Windows, electron-builder's icon tools)
+      # from GitHub releases, which can fail with a 504; a cache hit needs no download.
+      - name: Restore the Electron downloads
+        id: electron-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron\Cache' || '~/.cache/electron' }}
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.electron }}
+      - name: Package the desktop app (unpacked build)
+        run: pnpm --filter @codeden/desktop package --dir
+      - name: Save the Electron downloads
+        if: steps.electron-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron\Cache' || '~/.cache/electron' }}
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
+          key: ${{ steps.electron-cache.outputs.cache-primary-key }}
       - name: Desktop app smoke test (unpacked build)
         shell: bash
         run: |
-          pnpm --filter @codeden/desktop package --dir
           if [ "$RUNNER_OS" = "Linux" ]; then
             xvfb-run -a pnpm --filter @codeden/desktop e2e
           else
