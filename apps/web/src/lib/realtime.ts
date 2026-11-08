@@ -94,6 +94,10 @@ export function startRealtime(client: CodeDenClient, queryClient: QueryClient): 
       switch (msg.type) {
         case "runner":
           conn().setRunner(msg.runner);
+          // Pickers read providers and their models from the snapshot: keep it current.
+          queryClient.setQueryData(snapshotKey, (s: Snapshot | undefined) =>
+            s ? { ...s, runner: msg.runner } : s,
+          );
           break;
         case "update":
           queryClient.setQueryData(updatesKey, msg.update);
