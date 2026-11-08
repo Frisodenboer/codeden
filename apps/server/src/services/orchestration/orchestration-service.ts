@@ -3,6 +3,7 @@ import {
   type AgentEventOf,
   agentEventToNewEvent,
   type ConflictRecord,
+  messageFrom,
   NOTICE_BATCH_CODE,
   type Notice,
   type Overview,
@@ -221,7 +222,7 @@ export class OrchestrationService {
     return this.sendToRole(
       "pm",
       projectId,
-      { text: `Message from the orchestrator:\n${text}`, attachments: [] },
+      messageFrom("orchestrator", text),
       "queue",
       "orchestrator",
     );
