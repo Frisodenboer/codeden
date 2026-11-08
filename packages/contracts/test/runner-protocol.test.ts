@@ -169,6 +169,8 @@ describe("runner protocol", () => {
       diff: "diff --git a/x b/x",
       files: [{ path: "x", status: "modified", additions: 1, deletions: 2, binary: false }],
     });
+    roundTrip(RunnerCommandResults["workspace.remove"], { removed: true, discardedChanges: true });
+    roundTrip(RunnerCommandResults["workspace.remove"], { removed: true });
     roundTrip(RunnerCommandResults["workspace.prepare"], {
       cwd: "/wt/demo/s1",
       branch: "codeden/demo",

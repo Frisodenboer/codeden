@@ -84,14 +84,18 @@ export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequest>;
  * sidebar and remove its worktree. The branch and checkpoints stay.
  */
 export const ArchiveSessionRequest = z.object({
-  /** Remove the worktree even when it has uncommitted changes (those changes are lost). */
+  /**
+   * Kept for older clients. Archiving always removes the worktree, uncommitted changes
+   * included (§9); what the session's turns changed stays in its checkpoints.
+   */
   force: z.boolean().default(false),
 });
 export type ArchiveSessionRequest = z.infer<typeof ArchiveSessionRequest>;
 
 /**
- * What worktree cleanup did: `removed`; `kept_changes` (uncommitted changes, not forced);
- * `none` (no worktree, or already removed); `failed` (runner unavailable, files locked).
+ * What worktree cleanup did: `removed` (`message` notes discarded uncommitted changes);
+ * `kept_changes` (uncommitted changes, not forced: the inactivity sweep); `none` (no worktree,
+ * or already removed); `failed` (runner unavailable, a file in use; `message` says why).
  */
 export const WorktreeCleanupOutcome = z.object({
   status: z.enum(["removed", "kept_changes", "none", "failed"]),
