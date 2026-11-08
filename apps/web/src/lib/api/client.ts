@@ -102,8 +102,8 @@ export interface CodeDenClient {
   respond(sessionId: string, requestId: string, response: RuntimeResponse): Promise<void>;
   startSession(input: StartSessionRequestInit): Promise<StartSessionResponse>;
   stopSession(sessionId: string): Promise<void>;
-  /** Hide a session and remove its worktree (§9); `force` drops uncommitted changes. */
-  archiveSession(sessionId: string, opts?: { force?: boolean }): Promise<ArchiveSessionResponse>;
+  /** Hide a session and remove its worktree (§9), uncommitted changes included. */
+  archiveSession(sessionId: string): Promise<ArchiveSessionResponse>;
   unarchiveSession(sessionId: string): Promise<Session>;
   /** Change model, effort or title; model and effort apply from the next turn. */
   updateSession(sessionId: string, patch: UpdateSessionRequest): Promise<Session>;

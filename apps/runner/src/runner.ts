@@ -30,6 +30,7 @@ import { HttpMcpUpstream, handleMcpRequest, type McpUpstream } from "./mcp/proxy
 import { ProcessSupervisor } from "./process/supervisor";
 import { TerminalHost } from "./pty/terminal-host";
 import { SessionHost } from "./session-host";
+import { emptyTrash } from "./workspace/trash";
 
 export interface StartRunnerOptions {
   /** CodeDen data directory; the runner uses `<home>/runner/` and `<home>/wt/`. */
@@ -144,6 +145,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
     browser,
     startedAt: new Date().toISOString(),
     emit,
+    log,
     isDraining: () => draining,
     drain: ({ reason, timeoutMs, exitWhenDrained }) => {
       if (!draining) {
@@ -230,6 +232,8 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   // Ask providers for their models now, so pickers are right before the first session.
   // Spawns provider CLIs, so it runs in the background; it never throws.
   void registry.refreshModels();
+  // Finish deleting worktrees a previous run moved to the trash; it never throws.
+  void emptyTrash(opts.home, log);
 
   const removeLock = () => removeOwnLock(lockFile);
   process.once("exit", removeLock);

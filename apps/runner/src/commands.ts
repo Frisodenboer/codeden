@@ -14,7 +14,8 @@ import { listPorts } from "./ports";
 import type { ProcessSupervisor } from "./process/supervisor";
 import type { TerminalHost } from "./pty/terminal-host";
 import type { SessionHost } from "./session-host";
-import { assertRemovable, prepareWorkspace, removeWorkspace } from "./workspace/worktree";
+import { assertRemovable, removeWorkspace } from "./workspace/removal";
+import { prepareWorkspace } from "./workspace/worktree";
 
 /** Everything command handlers need; owned by `startRunner`. */
 export interface RunnerCore {
@@ -29,6 +30,8 @@ export interface RunnerCore {
   browser: BrowserCommandHandlers;
   startedAt: string;
   emit: (event: RunnerEvent) => void;
+  /** The runner's log (background work such as emptying the worktree trash). */
+  log?: (message: string) => void;
   isDraining: () => boolean;
   drain: (opts: { reason: string; timeoutMs?: number; exitWhenDrained?: boolean }) => void;
   /** Point the MCP proxy at an upstream; returns the agent-facing proxy URL. */
@@ -96,10 +99,11 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
         emit: core.emit,
       });
     case "workspace.remove":
-      await assertRemovable(command);
+      // Refuse first, so a kept worktree's terminals and processes are left running.
+      await assertRemovable(command, core.home);
       await terminals.closeUnder(command.path);
       await core.supervisor.killUnder(command.path);
-      return removeWorkspace(command);
+      return removeWorkspace(command, core.home, core.log);
 
     case "session.start":
       if (core.isDraining()) throw new CommandError("draining", "Runner is draining");

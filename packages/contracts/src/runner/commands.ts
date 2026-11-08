@@ -80,7 +80,15 @@ export const RunnerCommand = z.discriminatedUnion("name", [
     /** Run `.codeden/project.json` `setup` commands before `setupCommands`. Default true. */
     runProjectSetup: z.boolean().optional(),
   }),
-  /** Remove a session worktree (and optionally its branch). */
+  /**
+   * Remove a session worktree (and optionally its branch). Idempotent: a missing path, or a
+   * half-deleted folder under `<home>/wt/<project>/<session>` that is no longer a git worktree,
+   * ends `removed`. A folder under `<home>/wt` is moved to `<home>/wt/.trash` (all or nothing)
+   * and deleted in the background; nothing is ever deleted through a symlink or junction.
+   * Fails with `worktree_dirty` (uncommitted changes, not forced), `worktree_locked`,
+   * `worktree_in_use` (a file is held open; the worktree is untouched, retry later) or
+   * `not_a_worktree` (left alone: not this repository's worktree, or outside `<home>/wt`).
+   */
   z.object({
     name: z.literal("workspace.remove"),
     repoPath: z.string().min(1),
@@ -248,7 +256,11 @@ export const RunnerCommandResults = {
       .array(z.object({ command: z.string(), exitCode: z.int().nullable(), ok: z.boolean() }))
       .optional(),
   }),
-  "workspace.remove": z.object({ removed: z.boolean() }),
+  "workspace.remove": z.object({
+    removed: z.boolean(),
+    /** A forced removal deleted uncommitted changes (absent from older runners). */
+    discardedChanges: z.boolean().optional(),
+  }),
   "session.start": z.object({ resumeToken: z.string().nullable() }),
   "session.send": Empty,
   "session.steer": Empty,

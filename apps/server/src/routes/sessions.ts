@@ -53,8 +53,9 @@ export function sessionRoutes(s: AppServices) {
         return c.json({ ok: true as const });
       })
       .post("/:id/stop", async (c) => c.json(await s.sessions.stop(c.req.param("id"))))
+      // The body (`force`) is accepted for older clients; archive always removes the worktree.
       .post("/:id/archive", jsonBody(ArchiveSessionRequest), async (c) =>
-        c.json(await s.worktreeCleanup.archive(c.req.param("id"), c.req.valid("json"))),
+        c.json(await s.worktreeCleanup.archive(c.req.param("id"))),
       )
       .post("/:id/unarchive", (c) => c.json(s.worktreeCleanup.unarchive(c.req.param("id"))))
       // The queued-message tray. Each answers 409 `already_sent` once delivery took the message.

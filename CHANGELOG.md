@@ -11,9 +11,14 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Read-only permissions.** A new level below Supervised, so the ladder is **Read-only, Supervised, Auto, Full**, shown as **Permissions** in the composer, the new-session dialog and the automation editor. Read-only agents can read and run checks (tests, lint, type checks) but never edit files, commit or push; Claude enforces it per tool call and Codex with its read-only sandbox.
 - **The PM can set up automations.** PMs have `create_automation` and `update_automation`; what they create starts off and is marked **Created by the PM**.
 
+### Changed
+
+- **Archiving always removes the worktree**, uncommitted changes included, and says when it discarded any. The branch and checkpoints stay. The removal is instant: the folder moves to `~/.codeden/wt/.trash` and is deleted in the background.
+
 ### Fixed
 
 - **Dictation and pasted images in a new orchestrator or PM chat.** Before its first message, the orchestrator and PM chats now have the full composer input: the dictation button and shortcuts, image and file paste, drag-and-drop and the attach button. The first message, which starts the session, carries its images.
+- **Archiving no longer leaves half-deleted worktrees on Windows.** Git deletes the contents of folders that a pnpm `node_modules` junction points to, and it stops at a dangling junction, so removing a pnpm-installed worktree failed halfway with "is not a working tree". CodeDen now deletes worktrees itself without ever following a symlink or junction. It cleans up the folders earlier versions left behind for archived sessions (about a minute after CodeDen starts), and recreates a session's worktree over such a leftover. If a file is in use, nothing is deleted and the toast offers **Try again**.
 
 ## [0.2.0] - 2026-11-08
 
