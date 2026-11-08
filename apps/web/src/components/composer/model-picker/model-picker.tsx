@@ -11,6 +11,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useSetupStatus } from "@/lib/queries";
 import { matchesCombo, shortcut } from "@/lib/shortcuts";
+import { isCustom, withCustomModels } from "./custom";
 import { EffortColumn, focusEffort } from "./effort-column";
 import { isHidden, visibleRows } from "./hidden";
 import {
@@ -34,7 +35,7 @@ import {
 import { ModelList, SetupNotice } from "./model-list";
 import { ProviderRail } from "./provider-rail";
 import { PickerTrigger } from "./trigger";
-import { useFavoriteModels, useHiddenModels } from "./use-model-settings";
+import { useCustomModels, useFavoriteModels, useHiddenModels } from "./use-model-settings";
 
 export interface ModelPickerProps {
   providers: ProviderInfo[];
@@ -62,7 +63,7 @@ const valueKey = (v: ModelChoice | null) => (v ? `${v.provider}|${v.model}|${v.e
  * levels. Picking a model moves focus to its levels; picking a level closes the picker.
  */
 export function ModelPicker({
-  providers,
+  providers: listed,
   value,
   onChange,
   lockedProvider,
@@ -94,6 +95,9 @@ export function ModelPicker({
 
   const { favorites, toggle: toggleFavorite } = useFavoriteModels();
   const { hidden, toggle: toggleHidden } = useHiddenModels();
+  // The user's custom model ids join the listed ones (§13).
+  const { custom } = useCustomModels();
+  const providers = withCustomModels(listed, custom);
   const tabs = providerTabs(providers, checks, lockedProvider, { favorites: true });
   const openTabs = openProviderTabs(tabs);
   const tab: PickerTab | undefined = tabs.find((t) => t.id === tabId) ?? openTabs[0];
@@ -276,6 +280,14 @@ export function ModelPicker({
                   }
                   isFavorite={(row) => starred.has(row.key)}
                   isHidden={(row) => isHidden(hidden, row.provider.id, row.model.id)}
+                  isCustom={(row) =>
+                    isCustom(
+                      custom,
+                      listed.find((p) => p.id === row.provider.id),
+                      row.provider.id,
+                      row.model.id,
+                    )
+                  }
                   hiddenToggle={
                     !searching && tab?.kind === "provider"
                       ? {

@@ -1,8 +1,9 @@
-import type { ModelRef, Settings, SettingsPatch, Snapshot } from "@codeden/contracts";
+import type { CustomModel, ModelRef, Settings, SettingsPatch, Snapshot } from "@codeden/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useClient } from "@/lib/api";
 import { snapshotKey, useSnapshotData } from "@/lib/queries";
+import type { CustomModels } from "./custom";
 import { type HiddenModels, toggleHidden } from "./hidden";
 import { toggleFavorite } from "./logic";
 
@@ -63,4 +64,21 @@ export function useHiddenModels(): {
     );
   };
   return { hidden: models.hidden, toggle };
+}
+
+/** Model ids the user added (`models.custom`), by provider. */
+export function useCustomModels(): {
+  custom: CustomModels;
+  /** Replace one provider's custom models. */
+  set: (providerId: string, list: CustomModel[]) => void;
+} {
+  const { models, current, save } = useModelsSettings();
+  const set = (providerId: string, list: CustomModel[]) => {
+    const now = current();
+    save(
+      { ...now, custom: { ...now.custom, [providerId]: list } },
+      { models: { custom: { [providerId]: list } } },
+    );
+  };
+  return { custom: models.custom, set };
 }

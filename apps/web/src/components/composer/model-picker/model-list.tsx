@@ -91,6 +91,7 @@ function Row({
   highlighted,
   favorite,
   hidden,
+  custom,
   onPick,
   onToggleFavorite,
   onToggleHidden,
@@ -100,6 +101,7 @@ function Row({
   highlighted: boolean;
   favorite: boolean;
   hidden: boolean;
+  custom: boolean;
   onPick: (row: ModelRow) => void;
   onToggleFavorite?: (row: ModelRow) => void;
   onToggleHidden?: (row: ModelRow) => void;
@@ -122,6 +124,11 @@ function Row({
       {model.isDefault && provider.models.length > 1 && (
         <span className="shrink-0 rounded border border-border px-1 text-3xs text-muted-foreground">
           Default
+        </span>
+      )}
+      {custom && (
+        <span className="shrink-0 rounded border border-border px-1 text-3xs text-muted-foreground">
+          Custom
         </span>
       )}
       {hidden && (
@@ -190,6 +197,7 @@ export function ModelList({
   empty,
   isFavorite,
   isHidden,
+  isCustom,
   hiddenToggle,
   onPick,
   onToggleFavorite,
@@ -210,6 +218,8 @@ export function ModelList({
   empty?: string;
   isFavorite?: (row: ModelRow) => boolean;
   isHidden?: (row: ModelRow) => boolean;
+  /** A model id the user added, not one the provider lists. */
+  isCustom?: (row: ModelRow) => boolean;
   /** A trailing row that reveals (or hides again) the tab's hidden models. */
   hiddenToggle?: { count: number; shown: boolean; onToggle: () => void };
   onPick: (row: ModelRow) => void;
@@ -277,6 +287,7 @@ export function ModelList({
               highlighted={row.key === highlight}
               favorite={isFavorite?.(row) ?? false}
               hidden={isHidden?.(row) ?? false}
+              custom={isCustom?.(row) ?? false}
               onPick={onPick}
               onToggleFavorite={onToggleFavorite}
               onToggleHidden={onToggleHidden}
