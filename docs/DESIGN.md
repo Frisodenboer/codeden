@@ -321,7 +321,7 @@ The orchestrator must always know what's happening across all projects, and each
 
 - **What an automation is:** a **trigger**, an **action**, a **target** and **guards**.
   - **Triggers:** `cron` (croner, in the project's timezone), `event` (`session.finished`, `pr.opened`, `pr.merged`, `pr.checks_failed`, `issue.opened`, `issue.labeled`, …), or `manual`.
-  - **Actions:** start an agent session with a prompt template, message the PM, or run triage.
+  - **Actions:** start an agent session with a prompt template, message the PM, or run triage. A session action carries its agent (provider, model, effort) and its **permissions** (the §11.2 level, Read-only to Full), separate from the automation itself.
   - **Guards:** an overlap policy (`skip-if-running`, the default, or `queue` or `run-anyway`, using the `workKey` conflict check from §8.4), a concurrency cap, quiet hours, a maximum per day, and catching up missed runs after downtime.
 - **Templates** are Markdown files with YAML frontmatter (trigger, provider, autonomy, prompt), so they're readable and editable. Built-in templates:
   - security audit
@@ -332,7 +332,9 @@ The orchestrator must always know what's happening across all projects, and each
   - issue triage
   - stale PR follow-up
 - **Where they live.** Global templates live in `~/.codeden/automations/`. Project automations live in the repo's `.codeden/automations/` (commit them or not) or in the database.
-- **Control.** Everything is toggleable globally, per project and per automation. **All automations are off by default**: a new project offers a starter set to enable.
+- **Creating and editing in the UI.** **New automation** opens one editor: name and target, when it runs (human schedule choices that compile to cron, with a plain-English summary and the next three runs in a chosen timezone; an event in plain words; or only when run by hand), the prompt with an "Insert placeholder" menu, the unified provider/model/effort picker, the permissions ladder, and advanced options (session title, work key, guards) collapsed. Templates open the same editor prefilled. Database automations stay editable on their page, with duplicate and delete; file-based ones are read-only there, with "Duplicate to edit". PMs create and change database automations with `create_automation` and `update_automation`, under the same validation (`createdBy: pm`).
+- **Sharing.** The Markdown + frontmatter format is also the exchange format: export one automation (`<slug>.md`, or copied as Markdown) or a project's automations as a `.zip`; import `.md` files, a zip or pasted text. Imports go through the file parser and validation, refuse unknown fields, are size- and count-limited before parsing, never run anything, and create database automations (`createdBy: import`) that start off; Full permissions are flagged in the preview.
+- **Control.** Everything is toggleable globally, per project and per automation. **All automations are off by default**: a new project offers a starter set to enable; new, imported and PM-created automations start off too.
 - **Issue triage.** The PM reads new issues and classifies them as ready, needs info, unsafe, out of scope or duplicate. It applies labels and comments according to project policy, and either starts a session or puts a decision in your inbox when unsure ("Should I take this on?").
 - **Visibility.** Every automation run is a normal session (or PM turn) with a full transcript, so background work stays visible.
 
@@ -396,17 +398,23 @@ Each item links to its session, issue and PR, and can be answered in place. The 
 
 Approvals and questions block an agent, so they get stronger cues. When one arrives live, a short chime plays (synthesized in the browser, debounced so a burst plays once, on by default and switchable in Settings) and a sticky toast with **Open** stays until the item is opened or resolved. While any is open, the favicon carries an amber dot, and a background tab's title alternates with "Waiting on you". The first such toast also offers, once, to turn on browser notifications.
 
-### 11.2 Autonomy levels
+### 11.2 Autonomy levels (Permissions)
 
-Each level maps onto each provider's **native** enforcement:
+The UI calls these **Permissions** and shows them as a ladder, **Read-only → Supervised → Auto → Full**, with one plain line each; they are stored as `autonomy` (`read_only`, `supervised`, `auto`, `full`) on sessions, projects, settings and automation actions. Each level maps onto each provider's **native** enforcement:
 
+- **Read-only:** can read and run checks, but never edits files, commits or pushes.
+  - Offered only where the provider reports `capabilities.readOnly`; the server refuses `read_only` agent sessions on other providers. UI and orchestration read the capability, never the provider id.
+  - **Claude:** the `default` permission mode, with CodeDen's PreToolUse hook denying the edit tools and every shell command outside the read-only allowlist. Agent sessions may also run the project's checks (test, lint, type-check commands without fix, write, snapshot-update or watch flags). The hook decides per call, so the level can change live.
+  - **Codex:** the read-only sandbox with `never` approvals and no network: writes fail instead of asking; it applies from the next turn.
+  - CodeDen's `create_pull_request` is hidden from and refused for read-only sessions.
+  - The orchestrator and PMs are read-only by role (`SessionOptions.readOnly`) at every level, without checks.
 - **Supervised:** every edit and command asks.
 - **Auto, risky actions ask** (default):
   - Edits and normal commands inside the worktree run freely.
   - Risky actions go to the inbox: writes outside the worktree, force pushes, deleting branches, global installs, network access to unlisted hosts, and secrets access.
   - **Claude:** `acceptEdits` plus a `canUseTool` policy classifier.
   - **Codex:** workspace-write sandbox plus on-request approvals.
-- **Full autonomy:** no approvals inside the worktree.
+- **Full:** no approvals inside the worktree.
 - **The OS temp directory** (`os.tmpdir()`, `%TEMP%`/`%TMP%`, `$TMPDIR`, `/tmp`, and Git Bash's `/tmp` on Windows) counts as inside the worktree for writes and deletes under Auto and Full, so logs and scratch files there don't ask. Only the temp directories themselves qualify: never their root, a filesystem root or the home directory, and a secrets file written there still asks. Supervised is unchanged.
 - **The classifier reads commands like a shell:** quoted text, heredoc bodies and PowerShell here-strings are data, redirects count only outside quotes, and relative paths resolve from where a `cd` (in the same command, or an earlier one Claude reports) moved the shell.
 - **Changing the level on a running session** saves it on the session (`PATCH /api/sessions/:id`, recorded as `session.updated`) and sends it to the live provider session. Claude applies it from the next tool call (`liveAutonomy`); Codex from the next turn, through per-turn approval and sandbox overrides. Approvals already waiting stay waiting.

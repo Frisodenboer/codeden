@@ -4,6 +4,13 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Create automations in one editor.** **New automation** on a project's Automations page opens a single editor: name and target (this project or all projects); when it runs, as plain choices (every few minutes or hours, daily, weekdays, weekly, monthly, or custom cron) with a summary such as "Every weekday at 09:00", the next three runs and a timezone, or when something happens ("When a pull request's checks fail"), or only when you run it; the prompt with **Insert placeholder**; the agent (provider, model, effort); permissions; and advanced options tucked away. Save it on or off, or **Save and run now**. Templates open in the same editor to tweak first, and everything stays editable on the automation's page, with **Duplicate** and **Delete**. Automations from files show **From file** and offer **Duplicate to edit**.
+- **Share automations.** Export one as a Markdown file (download or copy) or a project's as a `.zip`, and **Import** `.md` files, a zip or pasted text, with a preview of each automation and its errors. The files use the same format as `.codeden/automations/`, imports never run anything and always start off, and Full permissions are flagged.
+- **Read-only permissions.** A new level below Supervised, so the ladder is **Read-only, Supervised, Auto, Full**, shown as **Permissions** in the composer, the new-session dialog and the automation editor. Read-only agents can read and run checks (tests, lint, type checks) but never edit files, commit or push; Claude enforces it per tool call and Codex with its read-only sandbox.
+- **The PM can set up automations.** PMs have `create_automation` and `update_automation`; what they create starts off and is marked **Created by the PM**.
+
 ### Fixed
 
 - **Dictation and pasted images in a new orchestrator or PM chat.** Before its first message, the orchestrator and PM chats now have the full composer input: the dictation button and shortcuts, image and file paste, drag-and-drop and the attach button. The first message, which starts the session, carries its images.

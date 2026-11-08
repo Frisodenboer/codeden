@@ -23,19 +23,30 @@ To report a vulnerability, see [SECURITY.md](../SECURITY.md).
 
 ## The orchestrator and PMs can't write code
 
-They run read-only: Claude gets no edit tools and a policy that denies writing commands, and Codex runs in a read-only sandbox. They act only through CodeDen's tools.
+They always run read-only, whatever their level: Claude gets no edit tools and a policy that denies writing commands (checks included), and Codex runs in a read-only sandbox. They act only through CodeDen's tools.
 
-## Autonomy levels
+## Permissions
 
-Each session runs at an autonomy level (the default comes from **Settings → Autonomy**; change it per session in the composer). Each level maps onto the provider's **native** enforcement:
+Each agent session and each automation runs at a **permission level**, from Read-only to Full. The default comes from **Settings → Autonomy**; change it per session in the composer's **Permissions** picker or the new-session dialog, and per automation in its editor. Each level maps onto the provider's **native** enforcement:
 
 | Level | Claude Code | Codex |
 |---|---|---|
-| **Supervised**: every edit and command asks | Default permission mode, and every edit or command is routed to an approval | `untrusted` approvals, workspace-write sandbox |
-| **Auto, risky actions ask** (default) | `acceptEdits`, plus CodeDen's risk classifier on every tool call | `on-request` approvals, workspace-write sandbox, network off |
-| **Full autonomy**: no approvals inside the worktree | `bypassPermissions`; only writes outside the worktree ask | `never`, workspace-write sandbox, network on |
+| **Read-only**: can read and run checks, but never edits files, commits or pushes | Default permission mode; a PreToolUse hook denies the edit tools and every shell command that is not on the read-only allowlist | `never` approvals, **read-only sandbox**, network off: writes fail instead of asking |
+| **Supervised**: asks before edits and commands | Default permission mode, and every edit or command is routed to an approval | `untrusted` approvals, workspace-write sandbox |
+| **Auto**: works freely in its worktree and asks only for risky actions (default) | `acceptEdits`, plus CodeDen's risk classifier on every tool call | `on-request` approvals, workspace-write sandbox, network off |
+| **Full**: never asks | `bypassPermissions`; only writes outside the worktree ask | `never`, workspace-write sandbox, network on |
 
-Changing the level in the composer while a session runs is saved on the session and sent to the running agent. Claude follows it from its next tool call; Codex from its next turn (the composer tells you which). Approvals that are already waiting stay waiting.
+Read-only is offered only on providers that report the `readOnly` capability (Claude Code and Codex both do); the server refuses it elsewhere. Under Read-only:
+
+- **Claude** may run commands that only read (`ls`, `cat`, `rg`, `git status`/`log`/`diff`/`show`, `gh ... view`/`list`/`checks`, and their PowerShell equivalents) and the project's **checks**: `npm`/`pnpm`/`yarn`/`bun` `test`, `lint`, `typecheck` or `check`, `tsc`, `vitest`, `jest`, `eslint`, `biome check`, `ruff check`, `pytest`, `mypy`, `cargo test`/`check`/`clippy` and `go test`/`vet`. Fix, write, snapshot-update and watch flags (`--fix`, `--write`, `-u`, `--watch`, ...), output redirection and command substitution are refused, as are installs, builds, commits and pushes. Checks run the project's own scripts, so a test that writes files (coverage, caches) can still write them; the agent itself cannot.
+- **Codex** runs every command in its read-only sandbox, so checks run but any write fails.
+- **CodeDen's `create_pull_request`** is hidden from read-only sessions and refused if called. Commenting on issues and attaching screenshots as evidence still work, so the agent can report what it found.
+
+Changing the level while a session runs is saved on the session and sent to the running agent. Claude follows it from its next tool call, into and out of Read-only too; Codex from its next turn (the composer tells you which). Approvals that are already waiting stay waiting.
+
+## Automations
+
+Automations run unattended, so they use the same permission levels with safer defaults around them: new, imported and PM-created automations always start **off**, an import never runs anything and warns about Full permissions, and imports are parsed with the same validation as automation files, within limits on file count and size. See [Automations](automations.md#sharing-export-and-import).
 
 **The OS temp directory counts as part of the workspace** under Auto and Full: writing or deleting files in `os.tmpdir()`, `%TEMP%`/`%TMP%`, `$TMPDIR` or `/tmp` (including Git Bash's `/tmp` on Windows) doesn't ask, and Codex's sandbox may write there. Only the temp directories themselves qualify, never a filesystem root or your home directory, even if an environment variable points there. Secrets files written to temp still ask, and Supervised still asks for everything.
 

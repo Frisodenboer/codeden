@@ -1,19 +1,62 @@
 # Automations
 
-Automations are background work you switch on per project: a weekly security audit, dependency updates, issue triage, a nightly UI review. Each one is a **trigger**, an **action**, a **target** and **guards**, and every run is an ordinary session (or PM turn) with a full transcript, so background work stays visible.
+Automations are background work you switch on per project: a weekly security audit, dependency updates, issue triage, a nightly UI review. Each one says **when it runs**, **what it does** (usually: start an agent session with a prompt), **which agent** runs it and **with what permissions**, plus a few guards. Every run is an ordinary session (or PM turn) with a full transcript, so background work stays visible.
 
-**Everything is off by default.** A new project gets the starter set added with every switch off; you turn on what you want.
+**Everything starts off.** New, imported and PM-created automations, and the starter set a new project gets, are all off until you switch them on.
 
 ![A project's automations with their schedules, last runs and the next occurrences](images/automations.png)
 
 ## Where to find them
 
-- **Sidebar → project → Automations** lists each automation with its switch.
-- The **Automations** page has three tabs: **Automations** (switches, **Run** now, the next occurrence, **Reload files**), **Runs** (history with status and skip reasons) and **Templates** (add a built-in or global template to the project, or add the whole starter set).
+- **Sidebar → project → Automations** lists each automation with its switch, **Run**, the next occurrence and its last run.
+- The **Automations** page has three tabs: **Automations**, **Runs** (history with status and skip reasons) and **Templates** (the built-in and global templates, and the starter set). Its header has **New automation**, **Import** and **Export all**.
 - The project's **Now / Next** strip shows the upcoming runs, where you can skip the next one.
 - **Settings → General → Automations** is the master switch for all of them.
 
 An automation runs only when **all** of these are on: the master switch, the project's automations switch, and the automation's own switch. Automations that target all projects can also be switched on or off per project.
+
+## Create an automation
+
+Press **New automation**. One editor holds everything, and everything in it can be changed later on the automation's page:
+
+1. **Name and description**, and where it **runs in**: this project, or all projects.
+2. **When it runs**:
+   - **On a schedule**: every few minutes or hours, daily, on weekdays, weekly on a day, or monthly on a date, each at a time you pick, or **Custom (cron)** for anything else. The editor says it in plain English ("Every weekday at 09:00") and lists the next three runs. Pick a **timezone**, or leave it empty for the project's.
+   - **When something happens**: a pull request is opened, merged or its checks fail, a review is requested, an issue is opened, labelled or commented on, or a session finishes, fails or waits on you. Issue and PR events can be narrowed by labels, branches and authors.
+   - **Only when I run it**: it runs when you press **Run now**, or when the PM runs it.
+3. **What it does**: start an agent session (the usual choice), message the PM, or triage an issue. Write the **prompt** in the roomy editor; **Insert placeholder** adds fields such as `{{project.name}}`, `{{date}}` or, for event triggers, `{{pr.number}}` and `{{issue.title}}` at the cursor.
+4. **Agent**: the provider, model and reasoning effort, in the same picker as the composer. Leave it on the default agent to follow your settings.
+5. **Permissions**: what the agent may do on its own while nobody is watching.
+
+   | Permissions | What it means |
+   |---|---|
+   | **Read-only** | Can read and run checks, but never edits files, commits or pushes |
+   | **Supervised** | Asks before edits and commands |
+   | **Auto** | Works freely in its worktree and asks only for risky actions |
+   | **Full** | Never asks |
+
+   Read-only suits audits and reports; Full is for work you trust to run unattended. See [Security](security.md#permissions) for how each level is enforced.
+6. **Advanced options** (collapsed): the session title, the [work key](#work-keys), what happens when matching work is still running, concurrency, a daily maximum, quiet hours and catching up missed runs. See [Guards](#guards).
+
+Choose **Starts off** or **Starts on** in the header, then **Save**, or **Save and run now** to try it straight away.
+
+**From a template.** On the Templates tab, **Use template** opens the same editor filled in from a built-in or global template, to adjust before saving. **Add and enable** adds it as it is.
+
+**Later.** The automation's page is the same editor plus its schedule, **Run now**, pause and skip, and recent runs. **Duplicate** makes an editable copy (off), **Export** shares it, and the bin icon deletes it (its past runs and sessions stay).
+
+**Files are read-only here.** Automations defined in a `.md` file (see [The file format](#the-file-format)) show a **From file** badge and are edited in the file; **Duplicate to edit** makes a copy you can change in CodeDen.
+
+**From the PM.** Ask your PM ("run the linter every night and tell me what fails") and it can create the automation with `create_automation`, or change one with `update_automation`, using the same validation. PM-created automations start off and say **Created by the PM**, so you can check the prompt and permissions before switching them on.
+
+## Sharing: export and import
+
+Automations travel as Markdown files with YAML frontmatter, the same format as automation files, so a shared file also works dropped into a repo's `.codeden/automations/` folder.
+
+- **Export** on an automation's page: **Download .md** (`<name>.md`) or **Copy as Markdown**.
+- **Export all** on the Automations page downloads every automation of the project as a `.zip` of `.md` files.
+- **Import** takes one or more `.md` files, a `.zip` of them, or pasted Markdown. CodeDen parses each file exactly like an automation file and shows a preview: name, schedule, agent, permissions, the first lines of the prompt, and any error (bad YAML, an unknown field, an invalid cron expression or timezone, a missing prompt). Pick which ones to import and whether they go into this project or all projects.
+
+Imported automations always start **off**, and an import never runs anything. A file with **Full** permissions is flagged in the preview, so you can read its prompt before switching it on. Unknown frontmatter fields are refused on import (a typo such as `maxPerDya` would otherwise be silently ignored). An import takes at most 50 files of up to 128 KB each (1 MB in total), and a zip of up to 1 MB.
 
 ## Built-in templates
 
@@ -27,9 +70,11 @@ An automation runs only when **all** of these are on: the master switch, the pro
 | **Stale PR follow-up** | Weekdays 08:00 | Finds PRs idle for 5+ days; rebases and fixes CodeDen's own PRs, nudges people politely on theirs, never merges | yes | yes |
 | **Issue triage** | When an issue opens | The PM classifies the issue, labels and comments per policy, then starts a session or asks you | yes | yes |
 
-The templates are ordinary Markdown files (shipped in the package under `templates/automations/`); open one to see how a good prompt is structured.
+The templates are ordinary Markdown files (shipped in the package under `templates/automations/`); open one with **Use template**, or export it, to see how a good prompt is structured.
 
 ## Triggers
+
+In files, the editor's choices are stored as one of three trigger types. Schedules are always stored as a cron expression, so "Every weekday at 09:00" is `0 9 * * 1-5`.
 
 | Trigger | Frontmatter | Notes |
 |---|---|---|
@@ -60,7 +105,7 @@ In a project in **Manual** [autonomy mode](autonomy-and-dark-factory.md), schedu
 
 | Action | What happens | The Markdown body is |
 |---|---|---|
-| `start_session` (default) | Starts an agent session in a new worktree with the prompt, optional `title`, `provider`, `model`, `effort` and `autonomy` | the prompt |
+| `start_session` (default) | Starts an agent session in a new worktree with the prompt, optional `title`, `provider`, `model`, `effort` and `autonomy` (the permissions) | the prompt |
 | `message_pm` | Sends a message to the project's PM | the message |
 | `triage` | Hands an issue to the PM to triage with a `policy` | extra triage guidance |
 
@@ -83,18 +128,18 @@ Guards are checked in this order every time a trigger fires:
 
 Every outcome is recorded as a run: `queued`, `running`, `completed`, `failed`, `skipped` or `cancelled`. Skipped runs carry a reason: `overlap`, `concurrency`, `quiet_hours`, `daily_cap`, `disabled`, `skipped_by_pm`, `conflict_skip` or `factory_intake`. Session runs follow their session, and link to it both ways. Skipped runs send an `automation.skipped` notice to the PM, which may take over or adjust the schedule.
 
-PMs manage automations with `list_automations`, `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation` / `resume_automation` (no cron or event runs while paused) and `cancel_queued_run`.
+PMs manage automations with `list_automations`, `create_automation` and `update_automation` (created off; files stay read-only), `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation` / `resume_automation` (no cron or event runs while paused) and `cancel_queued_run`.
 
-## Writing your own
+## The file format
 
-An automation file is Markdown with YAML frontmatter. Put it in one of:
+Every automation can be written as a Markdown file with YAML frontmatter: it is what **Export** produces and **Import** reads, and you can keep automations as files in your repository instead of in CodeDen. Put a file in one of:
 
 | Location | Applies to | Id |
 |---|---|---|
 | `~/.codeden/automations/<name>.md` | All projects (also listed as a template) | `global:<name>` |
 | `<repo>/.codeden/automations/<name>.md` | That project (commit it to share it with your team, or don't) | `project:<projectId>:<name>` |
 
-CodeDen watches both folders (and rescans every 60 seconds), so saving the file is enough; **Reload files** on the Automations page re-reads them immediately. Files that fail to parse are listed with their error. File automations are edited in the file; in the UI you can switch them on and off and run them. The enabled switch survives edits. New file automations start **off**.
+CodeDen watches both folders (and rescans every 60 seconds), so saving the file is enough; **Reload files** on the Automations page re-reads them immediately. Files that fail to parse are listed with their error. File automations are edited in the file; in the UI you can switch them on and off, run them, export them and **Duplicate to edit**. The enabled switch survives edits. New file automations start **off**.
 
 ### A complete example
 
@@ -184,7 +229,7 @@ Tip: quote any value that starts with `{{`, as in the `workKey` above, so YAML d
 | `provider` | string | the agent role default | `claude`, `codex` |
 | `model` | string | the provider default | |
 | `effort` | `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` | | Each model supports a subset |
-| `autonomy` | `supervised` \| `auto` \| `full` | your default | See [Security](security.md#autonomy-levels) |
+| `autonomy` | `read_only` \| `supervised` \| `auto` \| `full` | your default | The permissions; see [Security](security.md#permissions) |
 | `guards.overlapPolicy` | `skip-if-running` \| `queue` \| `run-anyway` | `skip-if-running` | |
 | `guards.maxConcurrent` | integer | `1` | Per project |
 | `guards.maxPerDay` | integer or null | null (no cap) | Per local day |
@@ -213,6 +258,11 @@ Prompts, messages, titles and work keys can use:
 - Say what to do when there's nothing to do (don't open an empty PR).
 - Keep the PR small and say what goes into an issue instead.
 - Use a work key that matches what the work *is*, so a manual run and a scheduled one can't collide.
+- Give it the least permissions that do the job: **Read-only** for audits and reports that only open issues or comment.
+
+### Work keys
+
+A run's work key (`<kind>:<id>`, default `automation:<file name>`) says what the work is. Runs with the same key count as the same work, so the overlap guard can skip or queue a run while matching work (from this automation, another one, or a session you started) is still going. See [orchestration](orchestration.md#work-keys-and-conflicts).
 
 ## Issue triage
 

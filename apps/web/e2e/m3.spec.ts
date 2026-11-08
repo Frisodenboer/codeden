@@ -71,7 +71,7 @@ test("a template added on a project runs now on the Fake provider and shows in h
   await test.step("pick the Fake provider and a manual trigger in the editor, then save", async () => {
     const editor = page.getByTestId("automation-editor");
     await expect(editor.getByTestId("cron-preview")).toContainText("Next:");
-    await editor.getByRole("button", { name: "Manual", exact: true, pressed: false }).click();
+    await editor.getByRole("button", { name: /Only when I run it/, pressed: false }).click();
     await editor.getByRole("button", { name: /^Provider and model/ }).click();
     const picker = page.getByTestId("model-picker");
     await picker.getByRole("button", { name: /^Fake/ }).click();
