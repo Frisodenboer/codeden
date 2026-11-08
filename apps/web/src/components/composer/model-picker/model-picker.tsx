@@ -1,6 +1,13 @@
 import type { ProviderInfo, ReasoningEffort } from "@codeden/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useSetupStatus } from "@/lib/queries";
 import { matchesCombo, shortcut } from "@/lib/shortcuts";
@@ -182,17 +189,14 @@ export function ModelPicker({
   };
 
   // The picker shortcut toggles it (the composer's picker listens).
-  const toggleRef = useRef(openPicker);
-  toggleRef.current = openPicker;
-  const openRef = useRef(open);
-  openRef.current = open;
+  const onShortcut = useEffectEvent(() => openPicker(!open));
   useEffect(() => {
     if (!listen || disabled) return;
     const combo = shortcut("modelPicker").combo;
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (!matchesCombo(e, combo)) return;
       e.preventDefault();
-      toggleRef.current(!openRef.current);
+      onShortcut();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

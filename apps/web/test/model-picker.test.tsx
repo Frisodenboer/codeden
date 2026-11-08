@@ -252,6 +252,20 @@ describe("ModelPicker", () => {
   });
 });
 
+describe("ModelPicker shortcut", () => {
+  it("opens and closes with Alt+M when it listens for the shortcut", async () => {
+    await setup({ initial: { provider: "claude", model: "opus", effort: null }, shortcut: true });
+    act(() => {
+      fireEvent.keyDown(window, { key: "m", altKey: true });
+    });
+    expect(await screen.findByTestId("model-picker")).toBeTruthy();
+    act(() => {
+      fireEvent.keyDown(window, { key: "m", altKey: true });
+    });
+    await waitFor(() => expect(screen.queryByTestId("model-picker")).toBeNull());
+  });
+});
+
 describe("ModelPicker favourites", () => {
   it("stars a model, saves it to settings and lists it under Favourites", async () => {
     const client = createMockClient();
