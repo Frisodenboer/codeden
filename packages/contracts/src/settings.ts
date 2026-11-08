@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AutonomyLevel, ProviderId, QuietHours, ReasoningEffort } from "./common";
 import { UpdateMode } from "./updates";
+import { DictationEngine, WhisperModelId } from "./voice-api";
 
 /** `auto` lets CodeDen pick the first ready provider (Claude, then Codex). */
 export const ProviderChoice = z.union([z.literal("auto"), ProviderId]);
@@ -81,9 +82,19 @@ export const Settings = z.object({
     .object({
       dictation: z
         .object({
-          engine: z.enum(["browser", "elevenlabs", "openai"]).default("browser"),
+          engine: DictationEngine.default("browser"),
           pushToTalkShortcut: z.string().nullable().default(null),
+          /**
+           * BCP 47 tag such as `en-US`; null is auto (the browser engine follows the browser
+           * language, the server engines detect it). English-only Whisper models ignore it.
+           */
           language: z.string().nullable().default(null),
+          /** Local Whisper: which downloaded model transcribes (§11.3). */
+          local: z
+            .object({
+              model: WhisperModelId.default("base.en"),
+            })
+            .prefault({}),
         })
         .prefault({}),
       readAloud: z
