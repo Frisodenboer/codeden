@@ -351,6 +351,19 @@ async function loadUpdater(log: (m: string) => void) {
   };
   const updater = mod.autoUpdater ?? mod.default?.autoUpdater;
   if (!updater) throw new Error("electron-updater did not load");
+  // Tests only: a local feed instead of GitHub Releases (like CODEDEN_UPDATE_REGISTRY for npm),
+  // with its own download cache so a test never touches a real install's.
+  const feed = process.env.CODEDEN_DESKTOP_UPDATE_URL;
+  if (feed) {
+    const config = join(app.getPath("userData"), "test-app-update.yml");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(
+      config,
+      `provider: generic\nurl: ${feed}\nupdaterCacheDirName: codeden-updater-test\n`,
+    );
+    updater.updateConfigPath = config;
+    updater.setFeedURL({ provider: "generic", url: feed });
+  }
   updater.logger = {
     info: (m: unknown) => log(`updater: ${String(m)}`),
     warn: (m: unknown) => log(`updater: ${String(m)}`),

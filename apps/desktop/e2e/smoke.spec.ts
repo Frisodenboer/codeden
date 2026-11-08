@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { _electron, type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { processesMentioning, sweepProcesses } from "../../web/e2e/support/process-sweep";
+import { unpackedApp } from "./support";
 
 /**
  * Desktop smoke test (§17): the unpacked app for this OS (`pnpm desktop:build`) starts its
@@ -12,21 +13,6 @@ import { processesMentioning, sweepProcesses } from "../../web/e2e/support/proce
  * second launch, hides to the tray on close, and quits leaving the runner running (which the
  * test then stops, so nothing outlives it).
  */
-const root = resolve(import.meta.dirname, "..");
-
-function unpackedApp(): string {
-  const candidates = {
-    win32: [join(root, "release", "win-unpacked", "CodeDen.exe")],
-    darwin: ["mac-arm64", "mac", "mac-universal"].map((d) =>
-      join(root, "release", d, "CodeDen.app", "Contents", "MacOS", "CodeDen"),
-    ),
-    linux: [join(root, "release", "linux-unpacked", "codeden")],
-  }[process.platform as "win32" | "darwin" | "linux"];
-  const found = candidates?.find((c) => existsSync(c));
-  if (!found) throw new Error("No unpacked app: run `pnpm desktop:build` first");
-  return found;
-}
-
 type TestHooks = {
   trayLabels(): string[];
   status(): { connected: boolean; activity: unknown };
@@ -141,6 +127,7 @@ test("the desktop app starts, bridges, tracks, follows links and quits cleanly",
     await page.getByText("Add project…").click();
     await expect(page.getByTestId("native-folder-field")).toBeVisible();
     await expect(page.getByRole("button", { name: /Choose folder/ })).toBeVisible();
+    if (shots) await page.waitForTimeout(500); // let the palette finish fading out
     await shot(page, "add-project");
     await page.keyboard.press("Escape");
   });
