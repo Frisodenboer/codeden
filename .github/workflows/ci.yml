@@ -5,13 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to a pull request cancels its older, superseded run. Every push to main gets its
+# own group (the run id), so merges in quick succession each get a full run: within one group
+# GitHub keeps only the newest pending run and cancels the others even without
+# cancel-in-progress.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
     name: ${{ matrix.os }}
+    # About 3 minutes (5 on Windows): fail a hang in minutes instead of waiting for GitHub.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +93,8 @@ jobs:
 
   e2e:
     name: e2e (${{ matrix.os }})
+    # About 3 minutes (8 on Windows before the browser cache): fail a hang in minutes.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -101,8 +109,37 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Playwright's browsers and the Electron binary live outside node_modules, so the pnpm
+      # cache does not cover them. They are cached per OS and version, in their default folders.
+      - name: Resolve the Playwright and Electron versions
+        id: versions
+        shell: bash
+        run: |
+          echo "playwright=$(pnpm --filter @codeden/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          cd apps/desktop
+          echo "electron=$(node -p 'require("electron/package.json").version')-builder-$(node -p 'require("electron-builder/package.json").version')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.playwright }}
       - name: Install Playwright Chromium
-        run: pnpm --filter @codeden/web exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @codeden/web exec playwright install chromium
+      # Saved straight away, so a failing test run still fills the cache for the next one.
+      - name: Save the Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
+      # Linux needs Chromium's shared libraries from apt (not cacheable here). On Windows,
+      # `--with-deps` only installs the Windows Server Media Foundation feature (about 3 minutes);
+      # the suite does not play media, so Windows needs nothing beyond the browser.
+      - name: Install Playwright system dependencies
+        if: runner.os == 'Linux'
+        run: pnpm --filter @codeden/web exec playwright install-deps chromium
       - run: pnpm e2e
       # The desktop smoke test packages and launches the Electron app. Run it on main and
       # on pull requests that change the desktop app; other PRs don't need the download.
@@ -120,39 +157,64 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No desktop changes: skipping the desktop smoke test."
           fi
-      # Electron fetches its ~100 MB binary from GitHub releases on first use. Cache it per
-      # version and OS, and retry transient network errors (GitHub has returned 504s).
-      - name: Cache the Electron binary
+      # Packaging downloads the Electron binary (and, on Windows, electron-builder's icon tools)
+      # from GitHub releases, which can fail with a 504; a cache hit needs no download.
+      - name: Restore the Electron downloads
+        id: electron-cache
         if: steps.desktop.outputs.run == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: electron-${{ runner.os }}-
-      - name: Download the Electron binary (with retries)
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron\Cache' || '~/.cache/electron' }}
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.electron }}
+      # On a cache miss a GitHub 504 is retried twice (30 s, then 60 s later); any other
+      # failure fails at once. The two desktop steps do not fail pull requests (a GitHub
+      # release-download outage blocked every PR on 2026-11-08); on main they still block.
+      - name: Package the desktop app (unpacked build)
+        id: package
         if: steps.desktop.outputs.run == 'true'
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         shell: bash
-        working-directory: apps/desktop
+        env:
+          # Logs "Cache hit" or "Cache miss" (and the URL) for every Electron download.
+          DEBUG: "@electron/get:index"
         run: |
-          for attempt in 1 2 3 4 5; do
-            if node -e "require('electron')" > /dev/null; then exit 0; fi
-            echo "::warning::Electron download failed (attempt $attempt of 5); retrying"
+          for attempt in 1 2 3; do
+            if pnpm --filter @codeden/desktop package --dir 2>&1 | tee "$RUNNER_TEMP/package.log"; then
+              exit 0
+            fi
+            if [ "$attempt" = 3 ] || ! grep -qE "HTTPError: Response code 5[0-9][0-9]|ETIMEDOUT|ECONNRESET|EAI_AGAIN" "$RUNNER_TEMP/package.log"; then
+              exit 1
+            fi
+            echo "::warning::A download from GitHub failed (attempt $attempt of 3); retrying in $((attempt * 30)) s"
             sleep $((attempt * 30))
           done
-          exit 1
+      # Only after a successful packaging run, so a half-finished download is never saved.
+      - name: Save the Electron downloads
+        if: steps.electron-cache.outputs.cache-hit != 'true' && steps.package.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron\Cache' || '~/.cache/electron' }}
+            ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
+          key: ${{ steps.electron-cache.outputs.cache-primary-key }}
       - name: Desktop app smoke test (unpacked build)
-        if: steps.desktop.outputs.run == 'true'
+        id: smoke
+        if: steps.package.outcome == 'success'
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         shell: bash
         run: |
-          pnpm --filter @codeden/desktop package --dir
           if [ "$RUNNER_OS" = "Linux" ]; then
             xvfb-run -a pnpm --filter @codeden/desktop e2e
           else
             pnpm --filter @codeden/desktop e2e
           fi
+      - name: Warn that a desktop step failed
+        if: github.event_name == 'pull_request' && (steps.package.outcome == 'failure' || steps.smoke.outcome == 'failure')
+        shell: bash
+        run: |
+          echo "::warning title=Desktop app step failed (not blocking this PR)::The desktop packaging or smoke test failed (package: ${{ steps.package.outcome }}, smoke test: ${{ steps.smoke.outcome }}). This is often a GitHub release-download outage (HTTP 504); check the step log. On main these steps still fail the build."
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
