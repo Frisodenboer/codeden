@@ -51,6 +51,30 @@ describe("wake scheduler (§8.2 batching, debounce, loop guard)", () => {
     expect(fired.sort()).toEqual(["orchestrator", "pm:p1"]);
   });
 
+  it("wakes again for a notice that arrives while a wake is in flight", async () => {
+    // The in-flight wake read the notices before this one arrived, so it must not be lost
+    // when that wake succeeds (it used to be: the PM never heard its agent had finished).
+    const fired: string[] = [];
+    let settle: (result: WakeResult) => void = () => undefined;
+    const s = new WakeScheduler(
+      (key) => {
+        fired.push(key);
+        return fired.length === 1 ? new Promise((r) => (settle = r)) : Promise.resolve("sent");
+      },
+      { debounceMs: 5_000, maxWaitMs: 30_000 },
+    );
+    s.request("pm:p1");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fired).toEqual(["pm:p1"]);
+    s.request("pm:p1"); // arrives mid-wake
+    settle("sent");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.isPending("pm:p1")).toBe(true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fired).toEqual(["pm:p1", "pm:p1"]);
+    expect(s.isPending("pm:p1")).toBe(false);
+  });
+
   it("retries a busy target after the debounce", async () => {
     const { s, fired } = scheduler(["busy", "sent"]);
     s.request("pm:p1");
