@@ -162,7 +162,10 @@ export function NowNext({
 }) {
   const running = work.filter((w) => w.status !== "queued").length;
   return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_300px]" data-testid="now-next">
+    <section
+      className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_300px]"
+      data-testid="now-next"
+    >
       <div className="min-w-0">
         <SectionLabel className="mb-2 flex items-center gap-2">
           Now{" "}
