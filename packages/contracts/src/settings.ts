@@ -83,6 +83,11 @@ export const Settings = z.object({
        * model a provider no longer lists are kept (it may come back) but not shown.
        */
       favorites: z.array(ModelRef).default([]),
+      /**
+       * Model ids left out of the picker, by provider id. A hidden model that is still chosen
+       * somewhere (a session, a default, an automation) keeps showing there.
+       */
+      hidden: z.record(ProviderId, z.array(z.string().min(1))).default({}),
     })
     .prefault({}),
   /** Follow-up prompt chips (§7.5). */
