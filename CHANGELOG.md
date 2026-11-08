@@ -4,6 +4,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-08
+
 ### Added
 
 - **Create automations in one editor.** **New automation** on a project's Automations page opens a single editor: name and target (this project or all projects); when it runs, as plain choices (every few minutes or hours, daily, weekdays, weekly, monthly, or custom cron) with a summary such as "Every weekday at 09:00", the next three runs and a timezone, or when something happens ("When a pull request's checks fail"), or only when you run it; the prompt with **Insert placeholder**; the agent (provider, model, effort); permissions; and advanced options tucked away. Save it on or off, or **Save and run now**. Templates open in the same editor to tweak first, and everything stays editable on the automation's page, with **Duplicate** and **Delete**. Automations from files show **From file** and offer **Duplicate to edit**.
