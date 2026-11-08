@@ -2,9 +2,16 @@ import { AgentEvent, type SessionOptions } from "@codeden/contracts";
 import { describe, expect, it } from "vitest";
 import { ApprovalBroker } from "../src/approvals";
 import { handleServerRequest } from "../src/codex/approvals";
-import { codexConfigOverrides, codexPolicy, toCodexInput } from "../src/codex/config";
+import {
+  codexConfigOverrides,
+  codexPolicy,
+  codexSandboxPolicy,
+  codexWritableRoots,
+  toCodexInput,
+} from "../src/codex/config";
 import { parseCodexLoginStatus } from "../src/codex/detect";
 import type { ServerRequest } from "../src/codex/protocol";
+import { osTempRoots } from "../src/policy/paths";
 
 const T = "thread-x";
 const TURN = "turn-1";
@@ -128,13 +135,46 @@ describe("Codex config", () => {
   });
 
   it("injects MCP servers and writable roots as config overrides", () => {
-    expect(codexConfigOverrides(opts)).toEqual({
+    expect(codexConfigOverrides(opts, ["/tmp"])).toEqual({
       "sandbox_workspace_write.network_access": false,
-      "sandbox_workspace_write.writable_roots": ["/extra"],
+      "sandbox_workspace_write.writable_roots": ["/extra", "/tmp"],
       "mcp_servers.codeden": {
         url: "http://127.0.0.1:1/mcp",
         http_headers: { Authorization: "Bearer t" },
       },
+    });
+  });
+
+  it("lets the sandbox write the OS temp directory in auto and full only", () => {
+    const temp = ["/tmp", "/var/folders/x/T"];
+    expect(codexWritableRoots({ ...opts, autonomy: "full" }, temp)).toEqual(["/extra", ...temp]);
+    expect(codexWritableRoots({ ...opts, autonomy: "supervised" }, temp)).toEqual(["/extra"]);
+    expect(codexWritableRoots({ ...opts, readOnly: true }, temp)).toEqual(["/extra"]);
+    expect(
+      codexConfigOverrides({ ...opts, autonomy: "supervised", additionalDirectories: [] }, temp),
+    ).not.toHaveProperty("sandbox_workspace_write.writable_roots");
+    // The defaults come from the running platform.
+    expect(codexWritableRoots({ ...opts, additionalDirectories: [] })).toEqual([
+      ...osTempRoots(),
+    ]);
+  });
+
+  it("builds the per-turn sandbox override for each level", () => {
+    expect(codexSandboxPolicy({ ...opts, autonomy: "full" }, ["/tmp"])).toEqual({
+      type: "workspaceWrite",
+      writableRoots: ["/extra", "/tmp"],
+      networkAccess: true,
+      excludeTmpdirEnvVar: false,
+      excludeSlashTmp: false,
+    });
+    expect(codexSandboxPolicy({ ...opts, autonomy: "supervised" }, ["/tmp"])).toMatchObject({
+      type: "workspaceWrite",
+      writableRoots: ["/extra"],
+      networkAccess: false,
+    });
+    expect(codexSandboxPolicy({ ...opts, readOnly: true }, ["/tmp"])).toEqual({
+      type: "readOnly",
+      networkAccess: false,
     });
   });
 

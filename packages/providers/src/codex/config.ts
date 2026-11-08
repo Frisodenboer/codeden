@@ -1,14 +1,21 @@
 import type { AutonomyLevel, McpServerConfig, SessionOptions, UserInput } from "@codeden/contracts";
+import { osTempRoots } from "../policy/paths";
 import type { JsonValue } from "./protocol/serde_json/JsonValue";
-import type { AskForApproval, UserInput as CodexUserInput, SandboxMode } from "./protocol/v2";
+import type {
+  AskForApproval,
+  UserInput as CodexUserInput,
+  SandboxMode,
+  SandboxPolicy,
+} from "./protocol/v2";
 
 /**
  * Native sandbox + approval policy per autonomy level (§11.2):
  * - supervised -> `untrusted`: every command that isn't known-safe and every patch asks
- * - auto       -> workspace-write sandbox + `on-request`: the sandbox confines writes and
- *                 network; escaping it (outside the worktree, network, force pushes) asks
+ * - auto       -> workspace-write sandbox + `on-request`: the sandbox confines writes (to the
+ *                 worktree, extra roots and the OS temp directory) and network; escaping it
+ *                 (outside the worktree, network, force pushes) asks
  * - full       -> workspace-write + `never`, with network on: no approvals, still confined
- *                 to the worktree
+ *                 to the worktree, extra roots and temp
  */
 export function codexPolicy(
   autonomy: AutonomyLevel,
@@ -27,18 +34,54 @@ export function codexPolicy(
   return { approvalPolicy: "never", sandbox: "workspace-write", networkAccess: true };
 }
 
+type PolicyOptions = Pick<SessionOptions, "autonomy" | "readOnly" | "additionalDirectories">;
+
+/**
+ * Extra writable roots for the workspace-write sandbox: the session's additional directories,
+ * plus the OS temp directories in `auto` and `full`, so writing a log or scratch file there
+ * never needs an approval (§11.2).
+ */
+export function codexWritableRoots(
+  opts: PolicyOptions,
+  tempRoots: readonly string[] = osTempRoots(),
+): string[] {
+  const temp = opts.readOnly || opts.autonomy === "supervised" ? [] : tempRoots;
+  return [...new Set([...opts.additionalDirectories, ...temp])];
+}
+
+/**
+ * The `turn/start` sandbox override for an autonomy level: the same sandbox `thread/start`
+ * configures, so a mid-session change applies from the next turn.
+ */
+export function codexSandboxPolicy(
+  opts: PolicyOptions,
+  tempRoots: readonly string[] = osTempRoots(),
+): SandboxPolicy {
+  const { sandbox, networkAccess } = codexPolicy(opts.autonomy, opts.readOnly);
+  if (sandbox === "read-only") return { type: "readOnly", networkAccess };
+  return {
+    type: "workspaceWrite",
+    writableRoots: codexWritableRoots(opts, tempRoots),
+    networkAccess,
+    excludeTmpdirEnvVar: false,
+    excludeSlashTmp: false,
+  };
+}
+
 /**
  * Config overrides for `thread/start` / `thread/resume` (same semantics as `-c key=value`).
  * Sent over stdin as JSON, so MCP bearer tokens never appear on a command line.
  */
-export function codexConfigOverrides(opts: SessionOptions): Record<string, JsonValue> {
+export function codexConfigOverrides(
+  opts: SessionOptions,
+  tempRoots: readonly string[] = osTempRoots(),
+): Record<string, JsonValue> {
   const { networkAccess } = codexPolicy(opts.autonomy, opts.readOnly);
   const config: Record<string, JsonValue> = {
     "sandbox_workspace_write.network_access": networkAccess,
   };
-  if (opts.additionalDirectories.length) {
-    config["sandbox_workspace_write.writable_roots"] = [...opts.additionalDirectories];
-  }
+  const roots = codexWritableRoots(opts, tempRoots);
+  if (roots.length) config["sandbox_workspace_write.writable_roots"] = roots;
   for (const server of opts.mcpServers) Object.assign(config, mcpOverride(server));
   return config;
 }
