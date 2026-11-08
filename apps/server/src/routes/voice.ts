@@ -1,7 +1,13 @@
-import { SttQuery, TtsRequest, type VoiceListResponse } from "@codeden/contracts";
+import {
+  LocalSttModelParams,
+  type LocalSttStatus,
+  SttQuery,
+  TtsRequest,
+  type VoiceListResponse,
+} from "@codeden/contracts";
 import { Hono } from "hono";
 import type { AppServices } from "../services/container";
-import { ServiceError } from "../services/errors";
+import { badRequest, ServiceError } from "../services/errors";
 import { MAX_AUDIO_BYTES } from "../services/voice/voice-service";
 import { jsonBody, queryOf } from "./validate";
 
@@ -14,15 +20,35 @@ const AUDIO_EXTENSIONS: Array<[RegExp, string]> = [
   [/mpeg|mp3/, ".mp3"],
 ];
 
-/** `/api/voice/voices`: the ElevenLabs voice picker (§11.3). */
-export function voiceRoutes(s: AppServices) {
-  return new Hono().get("/voices", async (c) => {
-    const body: VoiceListResponse = { voices: await s.voice.voices() };
-    return c.json(body);
-  });
+function modelId(raw: string) {
+  const parsed = LocalSttModelParams.safeParse({ id: raw });
+  if (!parsed.success) throw badRequest(`Unknown Whisper model: ${raw}`, "unknown_model");
+  return parsed.data.id;
 }
 
-/** `POST /api/tts` (streamed MP3) and `POST /api/stt` (transcription), both opt-in cloud engines. */
+/**
+ * `/api/voice/*` (§11.3): the ElevenLabs voice picker, and local Whisper's status, downloads
+ * and deletes.
+ */
+export function voiceRoutes(s: AppServices) {
+  return new Hono()
+    .get("/voices", async (c) => {
+      const body: VoiceListResponse = { voices: await s.voice.voices() };
+      return c.json(body);
+    })
+    .get("/local", (c) => c.json<LocalSttStatus>(s.localStt.status()))
+    .post("/local/models/:id/download", (c) =>
+      c.json<LocalSttStatus>(s.localStt.download(modelId(c.req.param("id")))),
+    )
+    .delete("/local/models/:id", async (c) =>
+      c.json<LocalSttStatus>(await s.localStt.remove(modelId(c.req.param("id")))),
+    );
+}
+
+/**
+ * `POST /api/tts` (streamed MP3) and `POST /api/stt` (transcription with a cloud engine or
+ * local Whisper).
+ */
 export function speechRoutes(s: AppServices) {
   return new Hono()
     .post("/tts", jsonBody(TtsRequest), async (c) => {

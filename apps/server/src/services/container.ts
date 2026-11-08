@@ -43,6 +43,7 @@ import { type SelfUpdateHost, UpdateService } from "./updates/service";
 import { billingFromSetup } from "./usage/billing";
 import { UsageService } from "./usage/usage-service";
 import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
+import { LocalSttService, type LocalSttServiceDeps } from "./voice/local/local-stt-service";
 import { VoiceService } from "./voice/voice-service";
 import { WorkbenchService } from "./workbench/workbench-service";
 
@@ -65,6 +66,11 @@ export interface ServicesOptions {
   imageEngines?: ImageEngineRegistry;
   /** Cloud voice API base URLs (tests point them at a local stub). */
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
+  /** Local Whisper downloads and runtime (tests serve fixtures and inject a fake runtime). */
+  localStt?: Pick<
+    LocalSttServiceDeps,
+    "fetch" | "platform" | "runtimePins" | "models" | "loadRuntime" | "idleUnloadMs"
+  >;
   /** Orchestration seams and timings (§8): GitHub and automation ports, wake debounce. */
   orchestration?: OrchestrationOptions & { github?: GithubPort; automation?: AutomationPort };
   /** GitHub API transport and poll intervals (tests point them at a fake GitHub). */
@@ -109,6 +115,8 @@ export interface AppServices {
   images: ImageService;
   /** Optional cloud text to speech and transcription (§11.3). */
   voice: VoiceService;
+  /** Local Whisper: runtime and model downloads, and transcription (§11.3). */
+  localStt: LocalSttService;
   /** Update checks and one-click self-update (§16). */
   updates: UpdateService;
   setup: SetupService;
@@ -216,6 +224,13 @@ export function createServices(opts: ServicesOptions): AppServices {
     onChecked: () => redetectProviders(opts.runner, opts.log),
   });
   const claudeSdk = new ClaudeSdkService({ depsDir: opts.paths.deps, log: opts.log });
+  const localStt = new LocalSttService({
+    runtimeDir: join(opts.paths.deps, "whisper"),
+    modelsDir: join(opts.paths.models, "whisper"),
+    settings: opts.settings,
+    ...opts.localStt,
+    log: opts.log,
+  });
   const automations = new AutomationService({
     db: opts.db,
     store: opts.store,
@@ -316,7 +331,13 @@ export function createServices(opts: ServicesOptions): AppServices {
       generatedDir: join(opts.paths.home, "generated"),
       log: opts.log,
     }),
-    voice: new VoiceService({ secrets: opts.secrets, settings: opts.settings, ...opts.voice }),
+    voice: new VoiceService({
+      secrets: opts.secrets,
+      settings: opts.settings,
+      local: localStt,
+      ...opts.voice,
+    }),
+    localStt,
     setup,
     claudeSdk,
     usage,
