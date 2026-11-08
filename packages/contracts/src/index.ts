@@ -24,6 +24,7 @@ export * from "./items";
 export * from "./orchestration";
 export * from "./orchestration-api";
 export * from "./project-config";
+export * from "./projects-api";
 export * from "./provider";
 export * from "./runner/browser";
 export * from "./runner/commands";
