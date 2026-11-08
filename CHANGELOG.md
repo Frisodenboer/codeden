@@ -10,6 +10,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Share automations.** Export one as a Markdown file (download or copy) or a project's as a `.zip`, and **Import** `.md` files, a zip or pasted text, with a preview of each automation and its errors. The files use the same format as `.codeden/automations/`, imports never run anything and always start off, and Full permissions are flagged.
 - **Read-only permissions.** A new level below Supervised, so the ladder is **Read-only, Supervised, Auto, Full**, shown as **Permissions** in the composer, the new-session dialog and the automation editor. Read-only agents can read and run checks (tests, lint, type checks) but never edit files, commit or push; Claude enforces it per tool call and Codex with its read-only sandbox.
 - **The PM can set up automations.** PMs have `create_automation` and `update_automation`; what they create starts off and is marked **Created by the PM**.
+- **Messages from the PM and the orchestrator stand out.** In a session's thread, a message the project manager or the orchestrator sent is a card with the sender's badge and rendered Markdown, instead of a plain user bubble. The sender is recorded with the message.
+- **Projects pick up a GitHub remote added later.** A local folder that later gets `git init` and a GitHub `origin` becomes a GitHub project: CodeDen checks again on start, after each agent turn in a local-only project, and with **Check again** in the GitHub tab, the session's Issue / PR panel and the Autonomy dialog. If a GitHub project's `origin` disappears, CodeDen warns instead of downgrading it, and offers **Make local-only**.
 
 ### Changed
 
@@ -20,6 +22,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **A slow-starting runner is no longer killed and relaunched.** CodeDen used to give a new runner 20 seconds, then kill it and start another, forever on a machine where start-up takes longer (security software, a slow disk). It now waits for a runner that is still starting (up to five minutes), the sidebar says **Starting the runner…**, and a runner that crashes during start-up is reported at once with the end of `logs/runner.log`.
 - **Dictation and pasted images in a new orchestrator or PM chat.** Before its first message, the orchestrator and PM chats now have the full composer input: the dictation button and shortcuts, image and file paste, drag-and-drop and the attach button. The first message, which starts the session, carries its images.
 - **Archiving no longer leaves half-deleted worktrees on Windows.** Git deletes the contents of folders that a pnpm `node_modules` junction points to, and it stops at a dangling junction, so removing a pnpm-installed worktree failed halfway with "is not a working tree". CodeDen now deletes worktrees itself without ever following a symlink or junction. It cleans up the folders earlier versions left behind for archived sessions (about a minute after CodeDen starts), and recreates a session's worktree over such a leftover. If a file is in use, nothing is deleted and the toast offers **Try again**.
+- **Long questions and answers in question cards wrap** instead of overflowing; long answered questions are clamped with **Show more**.
+- **A session started just as the runner connects is no longer marked failed.** Recovery after a runner restart could mistake it for a session cut off by the restart.
 
 ## [0.2.0] - 2026-11-08
 
