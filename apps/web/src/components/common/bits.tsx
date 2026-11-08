@@ -2,6 +2,7 @@ import type { GitHubIssueRef, GitHubPrRef } from "@codeden/contracts";
 import { CircleDot, GitMerge, GitPullRequest, GitPullRequestDraft } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { providerLogo } from "./provider-logos";
 
 /** Small uppercase section label used in sidebars and panels. */
 export function SectionLabel({ children, className }: { children: ReactNode; className?: string }) {
@@ -47,10 +48,28 @@ export function EmptyState({
   );
 }
 
-const providerHue: Record<string, number> = { claude: 35, codex: 220, fake: 300 };
+/** Monogram hues for providers without a bundled logo. */
+const providerHue: Record<string, number> = { fake: 300 };
 
-/** Provider monogram tile. Colour is decorative only; behaviour never depends on the id. */
+/**
+ * Provider mark: the provider's logo when one is bundled, otherwise a monogram tile.
+ * Decorative only; behaviour never depends on the id.
+ */
 export function ProviderMark({ provider, className }: { provider: string; className?: string }) {
+  const Logo = providerLogo(provider);
+  if (Logo) {
+    return (
+      <span
+        className={cn(
+          "inline-flex size-4 shrink-0 items-center justify-center text-foreground",
+          className,
+        )}
+        aria-hidden
+      >
+        <Logo className="size-full" />
+      </span>
+    );
+  }
   const hue = providerHue[provider] ?? (provider.charCodeAt(0) * 37) % 360;
   return (
     <span
