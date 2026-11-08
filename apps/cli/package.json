@@ -1,6 +1,6 @@
 {
   "name": "codeden",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A local-first harness for coding agents: Claude Code and Codex sessions, an orchestrator and project managers, an inbox, GitHub traceability, automations and an experimental dark factory.",
   "license": "MIT",
   "author": "Leon van Zyl",

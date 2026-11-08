@@ -4,6 +4,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-08
+
 ### Added
 
 - **Open CodeDen from your phone or tablet.** **Settings › Network access** (off by default) lets devices on your network, or on your own VPN such as Tailscale, open CodeDen after signing in with a password. Set one (at least 15 characters; very common passwords and simple sequences are refused) or **Generate** a five-word passphrase, shown once. Turning it on moves only CodeDen's web listener to your network addresses on the same port; agents and the runner carry on. Settings lists every address with a **QR code** to scan, and the signed-in devices with **Sign out** and **Sign out all**. `codeden password` and `codeden network on|off` do the same from a terminal. See [Phones, tablets and network access](docs/remote-access.md).
