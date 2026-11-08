@@ -24,6 +24,15 @@ describe.skipIf(!LIVE)("Codex live smoke", () => {
     expect(status).toMatchObject({ installed: true, loggedIn: true, supported: true });
   });
 
+  it("lists its models before any session (model/list only, no turn)", async () => {
+    const fresh = new CodexAdapter();
+    await fresh.refreshModels();
+    const models = fresh.models();
+    expect(models.length).toBeGreaterThan(1);
+    expect(models.filter((m) => m.isDefault)).toHaveLength(1);
+    expect(models.every((m) => m.id !== "default" && m.efforts.length > 0)).toBe(true);
+  });
+
   it("runs a real turn that edits a file", { timeout: LIVE_TIMEOUT }, async () => {
     const session = await adapter.openSession(sessionOptions(cwd, base));
     cleanups.push(() => session.close());

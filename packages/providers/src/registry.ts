@@ -6,6 +6,7 @@ import { CodexAdapter } from "./codex/adapter";
 /** The set of adapters a runner has loaded, keyed by id. */
 export class ProviderRegistry {
   private readonly adapters = new Map<string, ProviderAdapter>();
+  private readonly listeners = new Set<() => void>();
 
   constructor(adapters: ProviderAdapter[] = []) {
     for (const adapter of adapters) this.register(adapter);
@@ -16,6 +17,7 @@ export class ProviderRegistry {
       throw new Error(`Provider "${adapter.id}" is already registered`);
     }
     this.adapters.set(adapter.id, adapter);
+    adapter.onModelsChanged?.(() => this.notify());
   }
 
   get(id: string): ProviderAdapter | undefined {
@@ -28,6 +30,31 @@ export class ProviderRegistry {
 
   info(): ProviderInfo[] {
     return this.list().map(providerInfo);
+  }
+
+  /**
+   * Refresh the model lists of all adapters (or those in `ids`) that support it. Never throws;
+   * changes reach `onChange` listeners.
+   */
+  async refreshModels(ids?: readonly string[]): Promise<void> {
+    const adapters = ids ? this.list().filter((a) => ids.includes(a.id)) : this.list();
+    await Promise.all(adapters.map((a) => a.refreshModels?.().catch(() => undefined)));
+  }
+
+  /** Call `listener` whenever `info()` changes (a provider's models). Returns unsubscribe. */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        // One failing listener must not stop the others.
+      }
+    }
   }
 }
 

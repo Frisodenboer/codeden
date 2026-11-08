@@ -2,16 +2,16 @@ import type {
   ModelInfo,
   ProviderCapabilities,
   ProviderStatus,
-  ReasoningEffort,
   SessionOptions,
 } from "@codeden/contracts";
-import { ReasoningEffort as ReasoningEffortSchema } from "@codeden/contracts";
 import type { ProviderAdapter, ProviderSession } from "../adapter";
+import { ModelCatalog } from "../models";
 import { type ResolvedCommand, resolveExecutable } from "../util/exec";
+import { DEFAULT_MODEL_ID } from "../util/model";
 import type { UtilityModel } from "../utility";
 import { detectCodex } from "./detect";
+import { listCodexModels, visibleCodexModels } from "./models";
 import { CodexUtilityModel } from "./one-shot";
-import type { Model } from "./protocol/v2";
 import { CodexSession } from "./session";
 
 export const CODEX_PROVIDER_ID = "codex";
@@ -36,41 +36,38 @@ const capabilities: ProviderCapabilities = {
   skills: true,
 };
 
-const FALLBACK_MODELS: ModelInfo[] = [
-  {
-    id: "default",
-    label: "Default",
-    description: "The model configured in ~/.codex/config.toml",
-    efforts: ["minimal", "low", "medium", "high", "xhigh"],
-    isDefault: true,
-  },
-];
+const CONFIGURED_MODEL = "The model configured in ~/.codex/config.toml";
+
+/**
+ * Until Codex has listed its models, one entry that leaves the choice to the user's Codex
+ * config. `note` says why the real list is missing when discovery failed.
+ */
+function fallbackModels(note?: string): ModelInfo[] {
+  return [
+    {
+      id: DEFAULT_MODEL_ID,
+      label: "Default",
+      description: note ? `${CONFIGURED_MODEL}. ${note}` : CONFIGURED_MODEL,
+      efforts: ["minimal", "low", "medium", "high", "xhigh"],
+      isDefault: true,
+    },
+  ];
+}
 
 export interface CodexAdapterOptions {
   executable?: ResolvedCommand;
-}
-
-/** Map an app-server `Model` to CodeDen's `ModelInfo`. */
-export function modelInfoFromCodex(m: Model): ModelInfo {
-  const efforts = m.supportedReasoningEfforts
-    .map((e) => e.reasoningEffort)
-    .filter((e): e is ReasoningEffort => ReasoningEffortSchema.safeParse(e).success);
-  const defaultEffort = ReasoningEffortSchema.safeParse(m.defaultReasoningEffort);
-  return {
-    id: m.model,
-    label: m.displayName || m.model,
-    ...(m.description ? { description: m.description } : {}),
-    efforts,
-    ...(defaultEffort.success ? { defaultEffort: defaultEffort.data } : {}),
-    ...(m.isDefault ? { isDefault: true } : {}),
-  };
+  /** Max time for model discovery, app-server start-up included. */
+  modelListTimeoutMs?: number;
 }
 
 /** Codex through `codex app-server` JSON-RPC (§7.2). */
 export class CodexAdapter implements ProviderAdapter {
   readonly id = CODEX_PROVIDER_ID;
   readonly displayName = "Codex";
-  private modelList: ModelInfo[] = FALLBACK_MODELS;
+  private readonly catalog = new ModelCatalog(fallbackModels());
+  /** True once Codex reported a real model list (discovery or a session). */
+  private listed = false;
+  private refreshing: Promise<void> | undefined;
   private cachedExe: ResolvedCommand | undefined;
 
   constructor(private readonly options: CodexAdapterOptions = {}) {}
@@ -90,7 +87,22 @@ export class CodexAdapter implements ProviderAdapter {
   }
 
   models(): ModelInfo[] {
-    return this.modelList.map((m) => ({ ...m }));
+    return this.catalog.list();
+  }
+
+  onModelsChanged(listener: () => void): () => void {
+    return this.catalog.subscribe(listener);
+  }
+
+  /**
+   * Load Codex's model list through a short-lived `codex app-server` (`model/list`; no thread,
+   * no turn). Concurrent calls share one discovery. Never throws.
+   */
+  refreshModels(): Promise<void> {
+    this.refreshing ??= this.discoverModels().finally(() => {
+      this.refreshing = undefined;
+    });
+    return this.refreshing;
   }
 
   async openSession(opts: SessionOptions): Promise<ProviderSession> {
@@ -99,8 +111,8 @@ export class CodexAdapter implements ProviderAdapter {
     const session = new CodexSession(opts, {
       executable,
       onModels: (models) => {
-        const visible = models.filter((m) => !m.hidden).map(modelInfoFromCodex);
-        if (visible.length) this.modelList = visible;
+        const visible = visibleCodexModels(models);
+        if (visible.length) this.setModels(visible);
       },
     });
     try {
@@ -114,5 +126,29 @@ export class CodexAdapter implements ProviderAdapter {
 
   utilityModel(): UtilityModel {
     return new CodexUtilityModel(() => this.executable());
+  }
+
+  private async discoverModels(): Promise<void> {
+    // Not installed: `detect()` reports that; the fallback stays.
+    const exe = this.executable();
+    if (!exe) return;
+    try {
+      const models = await listCodexModels(exe, { timeoutMs: this.options.modelListTimeoutMs });
+      if (models.length) this.setModels(models);
+      else this.discoveryFailed("Codex listed no models.");
+    } catch (error) {
+      const reason = (error instanceof Error ? error.message : String(error)).slice(0, 200);
+      this.discoveryFailed(`Codex's model list could not be loaded: ${reason}`);
+    }
+  }
+
+  private setModels(models: ModelInfo[]): void {
+    this.listed = true;
+    this.catalog.set(models);
+  }
+
+  /** Keep the last real list; without one, say why only the configured default is offered. */
+  private discoveryFailed(note: string): void {
+    if (!this.listed) this.catalog.set(fallbackModels(note));
   }
 }

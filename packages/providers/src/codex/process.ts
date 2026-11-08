@@ -12,11 +12,14 @@ const OPT_OUT = [
   "fuzzyFileSearch/sessionCompleted",
 ];
 
-/** Spawn `codex app-server` (stdio) and complete the `initialize` handshake. */
+/**
+ * Spawn `codex app-server` (stdio) and complete the `initialize` handshake. Aborting `signal`
+ * stops the process at any point, including during the handshake.
+ */
 export async function startAppServer(
   exe: ResolvedCommand,
   handlers: CodexRpcHandlers,
-  opts: { env?: Record<string, string>; cwd?: string } = {},
+  opts: { env?: Record<string, string>; cwd?: string; signal?: AbortSignal } = {},
 ): Promise<{ rpc: CodexRpc; info: InitializeResponse }> {
   const child = spawnResolved(exe, ["app-server"], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -24,6 +27,10 @@ export async function startAppServer(
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
   });
   const rpc = new CodexRpc(child, handlers);
+  if (opts.signal) {
+    if (opts.signal.aborted) void rpc.close();
+    else opts.signal.addEventListener("abort", () => void rpc.close(), { once: true });
+  }
   const params: InitializeParams = {
     clientInfo: { name: "codeden", title: "CodeDen", version: CODEDEN_VERSION },
     capabilities: {
