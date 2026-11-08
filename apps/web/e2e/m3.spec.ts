@@ -72,9 +72,15 @@ test("a template added on a project runs now on the Fake provider and shows in h
     const editor = page.getByTestId("automation-editor");
     await expect(editor.getByTestId("cron-preview")).toContainText("Next:");
     await editor.getByRole("button", { name: "Manual", exact: true, pressed: false }).click();
-    await editor.getByRole("button", { name: "Provider and model" }).click();
-    await page.getByRole("menuitem").first().click();
-    await expect(editor.getByRole("button", { name: "Provider and model" })).toContainText(/Fake/i);
+    await editor.getByRole("button", { name: /^Provider and model/ }).click();
+    const picker = page.getByTestId("model-picker");
+    await picker.getByRole("button", { name: /^Fake/ }).click();
+    // The Fake model has no effort levels, so picking it closes the picker.
+    await picker.getByRole("option", { name: /^Fake 1/ }).click();
+    await expect(picker).toBeHidden();
+    await expect(editor.getByRole("button", { name: /^Provider and model/ })).toContainText(
+      /Fake/i,
+    );
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Automation saved")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
