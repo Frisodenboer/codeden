@@ -62,7 +62,7 @@ describe("useSessionActions", () => {
     const unarchive = vi.spyOn(client, "unarchiveSession");
     actions.archive();
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
-    expect(archive).toHaveBeenCalledWith("s-search", { force: false });
+    expect(archive).toHaveBeenCalledWith("s-search");
     const [message, options] = toast.success.mock.calls[0] ?? [];
     expect(message).toBe("Session archived and its worktree removed");
     expect(options.action.label).toBe("Undo");
@@ -70,26 +70,46 @@ describe("useSessionActions", () => {
     await waitFor(() => expect(unarchive).toHaveBeenCalledWith("s-search"));
   });
 
-  it("offers Remove anyway and Undo when the worktree had changes", async () => {
-    toast.mockClear();
+  it("says when uncommitted changes were discarded", async () => {
+    toast.success.mockClear();
     const client = createMockClient();
-    const kept: ArchiveSessionResponse = {
+    vi.spyOn(client, "archiveSession").mockResolvedValueOnce({
       session: { ...session("s-deps"), archivedAt: new Date().toISOString() },
-      worktree: { status: "kept_changes", message: null },
+      worktree: { status: "removed", message: "Its uncommitted changes were discarded" },
+    });
+    const { actions } = await actionsFor(session("s-deps"), client);
+    actions.archive();
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const [message, options] = toast.success.mock.calls[0] ?? [];
+    expect(message).toBe("Session archived and its worktree removed");
+    expect(options.description).toBe("Its uncommitted changes were discarded");
+  });
+
+  it("offers Try again and Undo when the worktree couldn't be removed", async () => {
+    toast.warning.mockClear();
+    const client = createMockClient();
+    const detail = `A file in the worktree is in use (${"node_modules/".repeat(20)}x.node).`;
+    const failed: ArchiveSessionResponse = {
+      session: { ...session("s-deps"), archivedAt: new Date().toISOString() },
+      worktree: { status: "failed", message: detail },
     };
     const archive = vi
       .spyOn(client, "archiveSession")
-      .mockResolvedValueOnce(kept)
-      .mockResolvedValueOnce({ ...kept, worktree: { status: "removed", message: null } });
+      .mockResolvedValueOnce(failed)
+      .mockResolvedValueOnce({ ...failed, worktree: { status: "removed", message: null } });
     const unarchive = vi.spyOn(client, "unarchiveSession");
     const { actions } = await actionsFor(session("s-deps"), client);
     actions.archive();
-    await waitFor(() => expect(toast).toHaveBeenCalled());
-    const [, options] = toast.mock.calls[0] ?? [];
-    expect(options.action.label).toBe("Remove anyway");
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+    const [message, options] = toast.warning.mock.calls[0] ?? [];
+    expect(message).toBe("Session archived, but its worktree couldn't be removed yet");
+    expect(options.description.length).toBeLessThanOrEqual(160);
+    expect(options.description).toMatch(/^A file in the worktree is in use/);
+    expect(options.action.label).toBe("Try again");
     expect(options.cancel.label).toBe("Undo");
     options.action.onClick();
-    await waitFor(() => expect(archive).toHaveBeenLastCalledWith("s-deps", { force: true }));
+    await waitFor(() => expect(archive).toHaveBeenCalledTimes(2));
+    expect(archive).toHaveBeenLastCalledWith("s-deps");
     options.cancel.onClick();
     await waitFor(() => expect(unarchive).toHaveBeenCalledWith("s-deps"));
   });

@@ -15,29 +15,32 @@ export const sessionLink = (sessionId: string, origin = window.location.origin) 
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+const brief = (text: string | null) =>
+  text && text.length > 160 ? `${text.slice(0, 159).trimEnd()}…` : (text ?? undefined);
+
 /**
- * Toast for an archive: what happened to the worktree, with Undo, and a way to remove a
- * worktree that was kept because of uncommitted changes.
+ * Toast for an archive: what happened to the worktree, with Undo. Archiving always removes
+ * the worktree; when that fails (a file still in use), the toast offers Try again.
  */
 export function announceArchive(
   result: ArchiveSessionResponse,
-  actions: { undo: () => void; force: () => void },
+  actions: { undo: () => void; retry: () => void },
 ): void {
   const undo = { label: "Undo", onClick: actions.undo };
   const { status, message: detail } = result.worktree;
   if (status === "removed") {
-    toast.success("Session archived and its worktree removed", { action: undo });
+    toast.success("Session archived and its worktree removed", {
+      action: undo,
+      description: brief(detail),
+    });
   } else if (status === "none") {
     toast.success("Session archived", { action: undo });
-  } else if (status === "kept_changes") {
-    toast("Session archived. The worktree has uncommitted changes, so it was kept.", {
-      action: { label: "Remove anyway", onClick: actions.force },
+  } else {
+    toast.warning("Session archived, but its worktree couldn't be removed yet", {
+      description: brief(detail),
+      action: { label: "Try again", onClick: actions.retry },
       cancel: undo,
       duration: 10_000,
-    });
-  } else {
-    toast.warning(`Session archived, but the worktree was kept: ${detail ?? "unknown error"}`, {
-      action: undo,
     });
   }
 }
@@ -63,11 +66,11 @@ export function useSessionActions(session: Session) {
     onError,
   });
   const archive = useMutation({
-    mutationFn: (force: boolean) => client.archiveSession(session.id, { force }),
+    mutationFn: () => client.archiveSession(session.id),
     onSuccess: (result) =>
       announceArchive(result, {
         undo: () => unarchive.mutate(),
-        force: () => archive.mutate(true),
+        retry: () => archive.mutate(),
       }),
     onError,
   });
@@ -94,7 +97,7 @@ export function useSessionActions(session: Session) {
     canStop: canStop(session),
     stop: () => stop.mutate(),
     archived: Boolean(session.archivedAt),
-    archive: () => archive.mutate(false),
+    archive: () => archive.mutate(),
     unarchive: () => unarchive.mutate(),
   };
 }
