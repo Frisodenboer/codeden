@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c5924f49-f5f1-414f-b969-98ead3219ed8",
+  "id": "f8d3d2c9-0af3-49b9-8b7b-8ed5cda39ccc",
   "prevIds": [
-    "b5dde36b-af3d-41a7-be46-432780581d4c"
+    "b96c776c-383c-4450-b4c9-ab37a46ce549"
   ],
   "ddl": [
     {
@@ -1227,6 +1227,26 @@
       "notNull": false,
       "autoincrement": false,
       "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "projects",
+      "name": "pinned",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "projects",
+      "name": "sort_order",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
       "generated": null,
       "entityType": "columns"
     },
