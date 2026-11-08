@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { Id, Timestamp } from "./common";
-import { UserInput } from "./input";
+import { MessageSender, UserInput } from "./input";
 import { CheckpointIndex, PtyId } from "./runner/commands";
 
 /**
@@ -32,12 +32,9 @@ export const SetupStep = z.object({
 });
 export type SetupStep = z.infer<typeof SetupStep>;
 
-/**
- * Who queued a message: the user, the orchestrator (to a PM), a PM (to its sessions), an
- * automation, or CodeDen itself (automatic wake-ups, the factory loop).
- */
-export const QueueSender = z.enum(["user", "orchestrator", "pm", "automation", "codeden"]);
-export type QueueSender = z.infer<typeof QueueSender>;
+/** Who queued a message: the same senders as `MessageSender`. */
+export const QueueSender = MessageSender;
+export type QueueSender = MessageSender;
 
 /** A message sent while a turn was running, waiting to be delivered (survives restarts). */
 export const QueuedMessage = z.object({

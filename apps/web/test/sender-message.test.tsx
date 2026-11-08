@@ -1,0 +1,102 @@
+import { messageFrom, type UserInput } from "@codeden/contracts";
+import { screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { UserMessage } from "@/components/thread/messages";
+import { renderWithClient } from "./utils";
+
+const body = ["Please **rebase** first, then:", "", "1. Run `pnpm test`", "2. Open the PR"].join(
+  "\n",
+);
+
+const digest = [
+  '<codeden_status project="p1" at="2026-11-08T10:00:00.000Z">',
+  "Running: none",
+  "</codeden_status>",
+].join("\n");
+
+const render = (input: UserInput) =>
+  renderWithClient(
+    <UserMessage item={{ id: "u1", kind: "user_message", status: "completed", input }} />,
+  );
+
+/** The card's header, Markdown and that the raw sender line is gone. */
+function expectSenderCard(name: string, label: string) {
+  const card = screen.getByRole("article", { name });
+  expect(within(card).getByText(label)).toBeTruthy();
+  // The transcript's Markdown renderer marks bold with a data attribute on a span.
+  expect(within(card).getByText("rebase").getAttribute("data-streamdown")).toBe("strong");
+  expect(card.querySelector("ol")?.querySelectorAll("li")).toHaveLength(2);
+  expect(within(card).getByText("pnpm test").tagName).toBe("CODE");
+  expect(card.textContent).not.toContain("Message from");
+  expect(card.textContent).not.toContain("**");
+  return card;
+}
+
+const reducedMotion = (reduce: boolean) =>
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        matches: reduce && query === "(prefers-reduced-motion: reduce)",
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }) as MediaQueryList,
+  );
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("messages from a PM or the orchestrator", () => {
+  it("renders a PM's message as Markdown under a Project manager header", () => {
+    render(messageFrom("pm", body));
+    const card = expectSenderCard("Message from the project manager", "Project manager");
+    expect(card.getAttribute("data-sender")).toBe("pm");
+  });
+
+  it("gives an older message that only has the text line the same card", () => {
+    render({ text: `Message from the orchestrator:\n${body}`, attachments: [] });
+    expectSenderCard("Message from the orchestrator", "Orchestrator");
+  });
+
+  it("keeps folding the status digest of a role session above the card", () => {
+    const { text, from } = messageFrom("orchestrator", body);
+    render({ text: `${digest}\n\n${text}`, attachments: [], from });
+    expectSenderCard("Message from the orchestrator", "Orchestrator");
+    expect(screen.getByRole("button", { name: /Status sent to agent/ })).toBeTruthy();
+    expect(screen.queryByText(/codeden_status/)).toBeNull();
+  });
+
+  it("leaves the user's own message as a plain bubble", () => {
+    render({ text: body, attachments: [] });
+    expect(screen.queryByRole("article")).toBeNull();
+    expect(screen.queryByTestId("sender-message")).toBeNull();
+    const bubble = screen.getByText(/Please \*\*rebase\*\* first/);
+    expect(bubble.className).toContain("whitespace-pre-wrap");
+    expect(bubble.className).toContain("bg-message");
+    expect(bubble.textContent).toBe(body);
+    expect(bubble.querySelector("[data-streamdown]")).toBeNull();
+  });
+
+  it("trusts a recorded sender over the text", () => {
+    render({ text: `Message from the orchestrator:\n${body}`, attachments: [], from: "user" });
+    expect(screen.queryByTestId("sender-message")).toBeNull();
+  });
+
+  it("sweeps a light along the border, and keeps it still under reduced motion", () => {
+    reducedMotion(false);
+    const { unmount } = render(messageFrom("pm", body));
+    const moving = screen.getByTestId("sender-message");
+    expect(moving.className).toContain("border-shimmer");
+    expect(moving.className).toContain("animate-border-shimmer");
+    unmount();
+
+    reducedMotion(true);
+    render(messageFrom("pm", body));
+    const still = screen.getByTestId("sender-message");
+    expect(still.className).toContain("border-shimmer");
+    expect(still.className).not.toContain("animate-border-shimmer");
+  });
+});
