@@ -11,7 +11,7 @@ function Details({ entry }: { entry: WorkEntry }) {
   const openTab = useLayoutStore((s) => s.openRightTab);
   if (entry.kind === "reasoning") {
     return (
-      <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-muted-foreground italic">
+      <p className="text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word text-muted-foreground italic">
         {entry.text || entry.summary}
       </p>
     );
@@ -66,7 +66,8 @@ function Details({ entry }: { entry: WorkEntry }) {
       const output = entry.output?.text;
       if (!input && !output && !entry.error) return null;
       return (
-        <div className="space-y-1.5 rounded-lg border border-border bg-surface p-2.5 font-mono text-[11.5px] text-muted-foreground">
+        // Long unbroken tokens (ids, URLs, compact JSON) wrap anywhere so they never widen the row.
+        <div className="space-y-1.5 rounded-lg border border-border bg-surface p-2.5 font-mono text-[11.5px] wrap-anywhere text-muted-foreground">
           {input && <pre className="whitespace-pre-wrap">{input}</pre>}
           {output && (
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-foreground/80 scroll-thin">
@@ -79,6 +80,14 @@ function Details({ entry }: { entry: WorkEntry }) {
     }
   }
 }
+
+/**
+ * Row columns: icon, verb, target, meta, spacer, then duration and chevron. Verb, target and
+ * meta size to their text but can shrink to nothing (`minmax(0, auto)`). Space goes to the
+ * shortest first, so short labels stay whole and only the long ones truncate with an ellipsis.
+ * The spacer pushes the duration and chevron to the end, and those never shrink.
+ */
+const ROW_COLUMNS = "grid-cols-[auto_minmax(0,auto)_minmax(0,auto)_minmax(0,auto)_1fr_auto]";
 
 /** One tool call or reasoning step: a 26px row that expands into details. */
 export function ToolRow({
@@ -103,9 +112,12 @@ export function ToolRow({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={showDetails}
-        className="group/tool flex h-[26px] w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50"
+        className={cn(
+          "group/tool grid h-[26px] w-full min-w-0 items-center rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
+          ROW_COLUMNS,
+        )}
       >
-        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+        <span className="col-start-1 flex size-4 items-center justify-center text-muted-foreground">
           {running ? (
             <Loader2 className="size-3.5 animate-spin" />
           ) : failed ? (
@@ -114,13 +126,16 @@ export function ToolRow({
             <Icon className="size-3.5" />
           )}
         </span>
-        <span className={cn("shrink-0 text-muted-foreground", running && "text-shine")}>
+        <span
+          className={cn("col-start-2 ml-2 truncate text-muted-foreground", running && "text-shine")}
+        >
           {verb}
         </span>
         {target && (
           <span
+            title={target}
             className={cn(
-              "min-w-0 truncate font-mono text-[12px]",
+              "col-start-3 ml-2 truncate font-mono text-[12px]",
               failed ? "text-status-failed/90" : "text-foreground/80",
             )}
           >
@@ -128,9 +143,14 @@ export function ToolRow({
           </span>
         )}
         {meta && (
-          <span className="shrink-0 truncate text-2xs text-muted-foreground/70">{meta}</span>
+          <span
+            title={meta}
+            className="col-start-4 ml-2 truncate text-2xs text-muted-foreground/70"
+          >
+            {meta}
+          </span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+        <span className="col-start-6 flex items-center gap-1.5 pl-2">
           {ms !== undefined && !running && (
             <span className="text-3xs text-muted-foreground/60 tabular-nums">{duration(ms)}</span>
           )}

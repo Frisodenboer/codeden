@@ -35,7 +35,7 @@ export function CommandOutput({
         {!running && exitCode !== undefined && exitCode !== null && (
           <span
             className={cn(
-              "rounded px-1.5 py-px text-3xs font-medium",
+              "shrink-0 rounded px-1.5 py-px text-3xs font-medium",
               exitCode === 0
                 ? "bg-status-done/12 text-status-done"
                 : "bg-status-failed/12 text-status-failed",
@@ -52,7 +52,7 @@ export function CommandOutput({
             const el = e.currentTarget;
             pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
           }}
-          className="max-h-64 overflow-auto px-3 py-2 font-mono text-[11.5px] leading-[1.55] whitespace-pre-wrap text-muted-foreground scroll-thin"
+          className="max-h-64 overflow-auto px-3 py-2 font-mono text-[11.5px] leading-[1.55] whitespace-pre-wrap wrap-anywhere text-muted-foreground scroll-thin"
         >
           {output}
           {running && (

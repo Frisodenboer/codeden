@@ -73,6 +73,7 @@ export function Transcript({
     <div className={cn("relative min-h-0 flex-1", className)}>
       <div
         ref={scrollRef}
+        data-testid="transcript-scroll"
         className="h-full overflow-y-auto scroll-thin [scrollbar-gutter:stable]"
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -81,7 +82,13 @@ export function Transcript({
           if (bottom !== atBottom) setAtBottom(bottom);
         }}
       >
-        <div className={cn("mx-auto w-full max-w-[46rem] px-6 pt-6 pb-4", contentClassName)}>
+        {/* Safety net: long words wrap, and nothing that still overflows can scroll sideways. */}
+        <div
+          className={cn(
+            "mx-auto w-full max-w-[46rem] overflow-x-clip px-6 pt-6 pb-4 wrap-break-word",
+            contentClassName,
+          )}
+        >
           <div style={{ height: total, position: "relative" }}>
             {virtualizer.getVirtualItems().map((v) => {
               const row = rows[v.index];

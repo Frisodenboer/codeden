@@ -108,8 +108,9 @@ function NoticeRow({ notice }: { notice: Notice }) {
         <div className="flex items-center gap-1.5 text-3xs text-muted-foreground">
           <span className={cn("font-medium", tone)}>{label}</span>
           {project && (
-            <span className="inline-flex items-center gap-1">
-              · <ProjectTile project={project} className="size-3 text-[7px]" /> {project.name}
+            <span className="inline-flex min-w-0 items-center gap-1">
+              · <ProjectTile project={project} className="size-3 text-[7px]" />
+              <span className="truncate">{project.name}</span>
             </span>
           )}
           {workKey && <code className="truncate font-mono">· {workKey}</code>}

@@ -62,10 +62,10 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
         aria-expanded={open}
         className="group/wg flex h-[26px] w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50"
       >
-        <span className="flex size-4 items-center justify-center text-muted-foreground">
+        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
           <Layers className="size-3.5" />
         </span>
-        <span className="truncate text-muted-foreground">{summarizeWork(entries)}</span>
+        <span className="min-w-0 truncate text-muted-foreground">{summarizeWork(entries)}</span>
         {failed > 0 && (
           <span className="shrink-0 rounded bg-status-failed/12 px-1.5 text-3xs font-medium text-status-failed">
             {failed} failed
