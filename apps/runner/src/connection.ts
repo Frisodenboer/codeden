@@ -81,6 +81,8 @@ export class ServerConnection {
         for (const event of this.core.journal.after(msg.lastAckedSeq)) this.send(event);
         this.attached = true;
         this.onAttach(this);
+        // Models discovered between `welcome` and now would otherwise be missed.
+        this.send({ type: "providers", providers: this.core.registry.info() });
         return;
       case "ack":
         this.core.journal.ack(msg.seq);

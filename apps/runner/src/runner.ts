@@ -121,6 +121,10 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   const stream = (data: RunnerStream) => {
     attached?.deliver({ type: "stream", ts: new Date().toISOString(), stream: data });
   };
+  // Model lists change after the handshake (discovery, sessions): keep the server current.
+  const stopProviderUpdates = registry.onChange(() => {
+    if (!stopped) attached?.deliver({ type: "providers", providers: registry.info() });
+  });
   const supervisor = new ProcessSupervisor();
   const host = new SessionHost(registry, emit, { log });
   const terminals = new TerminalHost({ supervisor, emit, stream });
@@ -223,6 +227,9 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   writeFileSync(tmp, `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
   renameSync(tmp, lockFile);
   log(`runner ${journal.runnerId} listening on 127.0.0.1:${port}`);
+  // Ask providers for their models now, so pickers are right before the first session.
+  // Spawns provider CLIs, so it runs in the background; it never throws.
+  void registry.refreshModels();
 
   const removeLock = () => removeOwnLock(lockFile);
   process.once("exit", removeLock);
@@ -231,6 +238,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
     closing ??= (async () => {
       // Stop advertising first so a new server spawns a fresh runner instead of reconnecting.
       removeLock();
+      stopProviderUpdates();
       await host.closeAll();
       await terminals.closeAll();
       await browserManager.shutdown().catch((error: unknown) => log(`browser: ${String(error)}`));

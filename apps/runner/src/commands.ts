@@ -62,7 +62,11 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
       const adapters = command.providerId
         ? registry.list().filter((a) => a.id === command.providerId)
         : registry.list();
-      return { statuses: await Promise.all(adapters.map((a) => a.detect())) };
+      const statuses = await Promise.all(adapters.map((a) => a.detect()));
+      // A re-detect (after an install or a login) also refreshes model lists; changes reach
+      // the server as a `providers` message.
+      void registry.refreshModels(adapters.map((a) => a.id));
+      return { statuses };
     }
 
     case "provider.oneShot": {
