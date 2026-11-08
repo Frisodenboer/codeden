@@ -267,8 +267,19 @@ export class SessionService {
     const input = this.externalize(session, this.inputDecorator?.(session, raw) ?? raw);
     await applyPendingConfig(this.deps.repo, this.deps.runner, session);
     const previous = session.status;
-    this.deps.repo.update(session.id, (s) => ({ ...s, status: "running", endedAt: null }));
+    // Messaging an archived session brings it back.
+    this.deps.repo.update(session.id, (s) => ({
+      ...s,
+      status: "running",
+      endedAt: null,
+      archivedAt: null,
+    }));
     try {
+      if (session.worktreeRemovedAt) {
+        // Cleanup removed the worktree (§9): recreate it, then resume through the provider.
+        await this.deps.launcher.resume(this.deps.repo.get(session.id), input);
+        return;
+      }
       try {
         await this.deps.runner.request({ name: "session.send", sessionId: session.id, input });
       } catch (error) {

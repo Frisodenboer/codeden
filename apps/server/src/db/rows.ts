@@ -63,7 +63,12 @@ export function rowToProject(r: ProjectRow): Project {
 
 /** Session columns only; `usage` and `startMeta` are written separately. */
 export function sessionToRow(s: Session): Omit<SessionRow, "usage" | "startMeta"> {
-  return { ...s, result: s.result ?? null };
+  return {
+    ...s,
+    result: s.result ?? null,
+    archivedAt: s.archivedAt ?? null,
+    worktreeRemovedAt: s.worktreeRemovedAt ?? null,
+  };
 }
 
 export function rowToSession(r: SessionRow): Session {

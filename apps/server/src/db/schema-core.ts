@@ -100,6 +100,8 @@ export const sessions = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     endedAt: text("ended_at"),
+    archivedAt: text("archived_at"),
+    worktreeRemovedAt: text("worktree_removed_at"),
     /** Accumulated usage (server-side projection; not part of the `Session` entity). */
     usage: json<Usage>("usage"),
     /** How the session was started (workspace fallback, forced conflict reason, queue). */

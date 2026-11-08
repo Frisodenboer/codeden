@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { branches, commit, push, status } from "../src/git/ops";
 import { ProcessSupervisor } from "../src/process/supervisor";
 import {
+  assertRemovable,
   prepareWorkspace,
   removeWorkspace,
   sessionShort,
@@ -175,6 +176,38 @@ describe("workspace.prepare", () => {
     expect(removed.removed).toBe(true);
     expect(existsSync(result.cwd)).toBe(false);
     expect(sh(repo, "branch", "--list", "codeden/*")).toBe("");
+  });
+
+  it("refuses a dirty worktree before touching it, but ignores ignored files", async () => {
+    const { repo, ctx } = setup();
+    write(repo, ".gitignore", "build/\n");
+    sh(repo, "add", "-A");
+    sh(repo, "commit", "-q", "-m", "ignore build");
+    const result = await prepareWorkspace(prepare("sess-dirty", repo), ctx);
+    const cmd = { name: "workspace.remove" as const, repoPath: repo, path: result.cwd };
+    write(result.cwd, "build/out.js", "ignored\n");
+    await expect(assertRemovable(cmd)).resolves.toBeUndefined();
+    write(result.cwd, "notes.txt", "uncommitted\n");
+    await expect(assertRemovable(cmd)).rejects.toMatchObject({ code: "worktree_dirty" });
+    await expect(assertRemovable({ ...cmd, force: true })).resolves.toBeUndefined();
+    expect(existsSync(join(result.cwd, "notes.txt"))).toBe(true);
+  });
+
+  it("recreates a removed worktree from its branch", async () => {
+    const { repo, ctx } = setup();
+    const first = await prepareWorkspace(prepare("sess-back", repo), ctx);
+    write(first.cwd, "work.txt", "committed\n");
+    sh(first.cwd, "add", "-A");
+    sh(first.cwd, "commit", "-q", "-m", "work");
+    await removeWorkspace({ name: "workspace.remove", repoPath: repo, path: first.cwd });
+    expect(existsSync(first.cwd)).toBe(false);
+    const again = await prepareWorkspace(
+      prepare("sess-back", repo, { path: first.cwd, branch: first.branch ?? undefined }),
+      ctx,
+    );
+    expect(again.cwd).toBe(first.cwd);
+    expect(again.branch).toBe(first.branch);
+    expect(existsSync(join(again.cwd, "work.txt"))).toBe(true);
   });
 });
 

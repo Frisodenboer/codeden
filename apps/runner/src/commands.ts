@@ -14,7 +14,7 @@ import { listPorts } from "./ports";
 import type { ProcessSupervisor } from "./process/supervisor";
 import type { TerminalHost } from "./pty/terminal-host";
 import type { SessionHost } from "./session-host";
-import { prepareWorkspace, removeWorkspace } from "./workspace/worktree";
+import { assertRemovable, prepareWorkspace, removeWorkspace } from "./workspace/worktree";
 
 /** Everything command handlers need; owned by `startRunner`. */
 export interface RunnerCore {
@@ -92,6 +92,7 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
         emit: core.emit,
       });
     case "workspace.remove":
+      await assertRemovable(command);
       await terminals.closeUnder(command.path);
       await core.supervisor.killUnder(command.path);
       return removeWorkspace(command);

@@ -123,6 +123,17 @@ export const Settings = z.object({
       killSwitch: z.boolean().default(false),
     })
     .prefault({}),
+  /**
+   * Worktree cleanup (§9). Archiving a session always removes its worktree; with `cleanup` on,
+   * worktrees of sessions inactive for `afterDays` are removed too, unless the session's pull
+   * request is still open or the worktree has uncommitted changes.
+   */
+  worktrees: z
+    .object({
+      cleanup: z.boolean().default(true),
+      afterDays: z.int().min(1).max(365).default(7),
+    })
+    .prefault({}),
   /** Master switch; individual automations are still off by default (§10). */
   automations: z
     .object({

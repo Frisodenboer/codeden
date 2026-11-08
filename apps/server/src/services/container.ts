@@ -35,6 +35,7 @@ import { QuestionBroker } from "./sessions/questions";
 import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
+import { WorktreeCleanup, type WorktreeCleanupDeps } from "./sessions/worktree-cleanup";
 import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
 import { notesSources, updateRegistry } from "./updates/registry";
@@ -76,6 +77,8 @@ export interface ServicesOptions {
   selfUpdate?: SelfUpdateHost;
   /** Update check transport (tests). */
   updates?: { fetch?: typeof fetch; intervalMs?: number };
+  /** Worktree cleanup clock and sweep timings (tests). */
+  worktreeCleanup?: Pick<WorktreeCleanupDeps, "now" | "intervalMs" | "initialDelayMs">;
   log?: (message: string) => void;
 }
 
@@ -124,6 +127,8 @@ export interface AppServices {
   automations: AutomationService;
   /** Autonomy modes and the dark-factory loop (§10.1). */
   factory: FactoryService;
+  /** Session archive and worktree cleanup (§9). */
+  worktreeCleanup: WorktreeCleanup;
   userHome: string;
 }
 
@@ -254,6 +259,16 @@ export function createServices(opts: ServicesOptions): AppServices {
     options: opts.factory,
     log: opts.log,
   });
+  const worktreeCleanup = new WorktreeCleanup({
+    repo: sessionRepo,
+    projects,
+    runner: opts.runner,
+    store: opts.store,
+    settings: () => opts.settings.get(),
+    stopSession: (id) => (sessions as SessionService).stop(id),
+    ...opts.worktreeCleanup,
+    log: opts.log,
+  });
   const services: AppServices = {
     db: opts.db,
     store: opts.store,
@@ -301,6 +316,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     claudeSdk,
     usage,
     factory,
+    worktreeCleanup,
     configFiles: new ConfigFiles({
       projects,
       home: userHome,

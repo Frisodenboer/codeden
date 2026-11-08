@@ -4,6 +4,7 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 import type { GitHubRepo, Session } from "@codeden/contracts";
 import { type ArtifactService, MAX_ATTACHMENT_BYTES } from "../artifacts";
 import { badRequest, forbidden, notFound } from "../errors";
+import { sessionWorkdir } from "../sessions/workdir";
 import type { GithubClient } from "./client";
 import { commitEvidence, type EvidenceFile, evidenceComment } from "./evidence";
 import { commentOnIssue } from "./issues";
@@ -50,7 +51,7 @@ export function readEvidence(
   if (sources.length > MAX_EVIDENCE_FILES) {
     throw badRequest(`Attach at most ${MAX_EVIDENCE_FILES} files at once`);
   }
-  const cwd = session.worktreePath ?? session.cwd;
+  const cwd = sessionWorkdir(session);
   const roots = [cwd, tmpdir()].filter(existsSync).map((p) => realpathSync(p));
   return sources.map((source) => {
     let file: string;

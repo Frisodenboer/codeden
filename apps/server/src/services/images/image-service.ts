@@ -20,6 +20,7 @@ import type { SettingsStore } from "../../settings-store";
 import type { ArtifactService } from "../artifacts";
 import { badRequest, errorMessage, ServiceError } from "../errors";
 import type { SessionRepo } from "../sessions/repo";
+import { sessionWorkdir } from "../sessions/workdir";
 import { ImageUsageStore } from "./usage";
 
 const MEDIA_TYPES: Record<string, string> = {
@@ -163,7 +164,7 @@ export class ImageService {
     const eff = this.effective(session.projectId);
     const pick = await this.pick(eff.engine);
     if (!pick.engine) throw new ServiceError(409, "no_image_engine", pick.reason);
-    const cwd = realpathSync(session.worktreePath ?? session.cwd);
+    const cwd = realpathSync(sessionWorkdir(session));
     // Agents write into their worktree; PMs and the orchestrator never write project files.
     const root =
       req.role === "agent" ? cwd : this.ensureDir(join(this.deps.generatedDir, session.id));

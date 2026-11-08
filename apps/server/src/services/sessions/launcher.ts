@@ -105,12 +105,13 @@ export class SessionLauncher {
    */
   async resume(session: Session, input?: UserInput): Promise<void> {
     await this.requireRunner();
+    const current = await this.restoreWorktree(session);
     const result = await this.deps.runner.request(
       {
         name: "session.start",
-        sessionId: session.id,
-        providerId: session.provider,
-        options: this.sessionOptions(session),
+        sessionId: current.id,
+        providerId: current.provider,
+        options: this.sessionOptions(current),
         input,
       },
       START_TIMEOUT_MS,
@@ -119,6 +120,36 @@ export class SessionLauncher {
       ...s,
       resumeToken: result.resumeToken ?? s.resumeToken,
       runnerId: this.deps.runner.runnerId(),
+    }));
+  }
+
+  /**
+   * Recreate a worktree that cleanup removed (§9), at the same path from the session's branch,
+   * running the project's setup again. A no-op for sessions that still have their worktree.
+   */
+  async restoreWorktree(session: Session): Promise<Session> {
+    if (!session.worktreeRemovedAt || !session.worktreePath || !session.projectId) return session;
+    const project = this.deps.projects.get(session.projectId);
+    const result = await this.deps.runner.request(
+      {
+        name: "workspace.prepare",
+        sessionId: session.id,
+        repoPath: project.path,
+        strategy: "worktree",
+        path: session.worktreePath,
+        branch: session.branch ?? undefined,
+        baseRef: session.baseBranch ?? project.defaultBranch ?? undefined,
+        setupCommands: [],
+      },
+      PREPARE_TIMEOUT_MS,
+    );
+    this.deps.log?.(`session ${session.id}: recreated worktree ${result.cwd}`);
+    return this.deps.repo.update(session.id, (s) => ({
+      ...s,
+      cwd: result.cwd,
+      worktreePath: result.cwd,
+      branch: result.branch ?? s.branch,
+      worktreeRemovedAt: null,
     }));
   }
 

@@ -172,6 +172,28 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       running.get(sessionId)?.cancel();
       world.updateSession(sessionId, { status: "stopped", endedAt: new Date().toISOString() });
     },
+    async archiveSession(sessionId) {
+      running.get(sessionId)?.cancel();
+      const now = new Date().toISOString();
+      const before = world.snapshot.sessions.find((s) => s.id === sessionId);
+      if (!before) throw new Error("Session not found");
+      world.updateSession(sessionId, {
+        status: before.status === "running" ? "stopped" : before.status,
+        archivedAt: now,
+        worktreeRemovedAt: before.worktreePath ? now : null,
+      });
+      const session = world.snapshot.sessions.find((s) => s.id === sessionId) ?? before;
+      return {
+        session,
+        worktree: { status: before.worktreePath ? "removed" : "none", message: null },
+      };
+    },
+    async unarchiveSession(sessionId) {
+      world.updateSession(sessionId, { archivedAt: null });
+      const session = world.snapshot.sessions.find((s) => s.id === sessionId);
+      if (!session) throw new Error("Session not found");
+      return session;
+    },
 
     async resolveInbox(itemId, resolution) {
       const item = world.snapshot.inbox.find((i) => i.id === itemId);

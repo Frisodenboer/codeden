@@ -4,6 +4,11 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Archive sessions.** **Archive session** in the session menu stops the session, hides it from the sidebar and removes its worktree; **Unarchive** (or sending it a message) brings it back.
+- **Worktree cleanup.** Worktrees of sessions inactive for 7 days are removed automatically, unless the pull request is still open or there are uncommitted changes; archiving a project cleans up its sessions' worktrees. Configure it in Settings > General > Worktrees. Branches and checkpoints are kept, and the worktree is recreated from its branch the next time you message the session.
+
 ## [0.1.1] - 2026-11-07
 
 ### Added

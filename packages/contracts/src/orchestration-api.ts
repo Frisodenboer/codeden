@@ -66,3 +66,30 @@ export const UpdateSessionRequest = z
     message: "Nothing to change",
   });
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequest>;
+
+/**
+ * `POST /api/sessions/:id/archive`: stop the session if it is running, hide it from the
+ * sidebar and remove its worktree. The branch and checkpoints stay.
+ */
+export const ArchiveSessionRequest = z.object({
+  /** Remove the worktree even when it has uncommitted changes (those changes are lost). */
+  force: z.boolean().default(false),
+});
+export type ArchiveSessionRequest = z.infer<typeof ArchiveSessionRequest>;
+
+/**
+ * What worktree cleanup did: `removed`; `kept_changes` (uncommitted changes, not forced);
+ * `none` (no worktree, or already removed); `failed` (runner unavailable, files locked).
+ */
+export const WorktreeCleanupOutcome = z.object({
+  status: z.enum(["removed", "kept_changes", "none", "failed"]),
+  message: z.string().nullable(),
+});
+export type WorktreeCleanupOutcome = z.infer<typeof WorktreeCleanupOutcome>;
+
+/** `POST /api/sessions/:id/archive` response. */
+export const ArchiveSessionResponse = z.object({
+  session: Session,
+  worktree: WorktreeCleanupOutcome,
+});
+export type ArchiveSessionResponse = z.infer<typeof ArchiveSessionResponse>;

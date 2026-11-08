@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ArchiveSessionRequest,
+  ArchiveSessionResponse,
   ConflictRecord,
   EventEnvelope,
   InboxItemKind,
@@ -8,13 +10,16 @@ import {
   Overview,
   RoleMessageRequest,
   RunnerCommand,
+  Session,
   SessionOptions,
+  Settings,
   Snapshot,
   StartWorkResult,
   UpdateSessionRequest,
   type WorkSummary,
+  WorktreeCleanupOutcome,
 } from "../src";
-import { ts } from "./fixtures";
+import { sampleSession, ts } from "./fixtures";
 
 const work: WorkSummary = {
   kind: "session",
@@ -163,5 +168,31 @@ describe("orchestration contracts (§8)", () => {
         effort: "high",
       }),
     ).toEqual({ name: "session.configure", sessionId: "s1", model: "m", effort: "high" });
+  });
+});
+
+describe("session archive and worktree cleanup (§9)", () => {
+  it("round-trips the archive shapes and the cleanup fields on a session", () => {
+    expect(ArchiveSessionRequest.parse({})).toEqual({ force: false });
+    const archived = {
+      ...sampleSession,
+      archivedAt: "2026-11-08T10:00:00.000Z",
+      worktreeRemovedAt: "2026-11-08T10:00:01.000Z",
+    };
+    const response = ArchiveSessionResponse.parse({
+      session: archived,
+      worktree: { status: "kept_changes", message: "Uncommitted changes" },
+    });
+    expect(ArchiveSessionResponse.parse(JSON.parse(JSON.stringify(response)))).toEqual(response);
+    expect(response.session.worktreeRemovedAt).toBe(archived.worktreeRemovedAt);
+    // Sessions written before cleanup existed have neither field.
+    expect(Session.parse(sampleSession).archivedAt).toBeUndefined();
+    expect(() => WorktreeCleanupOutcome.parse({ status: "gone", message: null })).toThrow();
+  });
+
+  it("defaults worktree cleanup on, after a week", () => {
+    const s = Settings.parse({});
+    expect(s.worktrees).toEqual({ cleanup: true, afterDays: 7 });
+    expect(() => Settings.parse({ worktrees: { afterDays: 0 } })).toThrow();
   });
 });

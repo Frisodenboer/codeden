@@ -78,7 +78,7 @@ export function ProjectGroup({ project, sessions }: { project: Project; sessions
   const pm = sessions
     .filter((s) => s.role === "pm")
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
-  const agents = sortSessions(sessions.filter((s) => s.role === "agent"));
+  const agents = sortSessions(sessions.filter((s) => s.role === "agent" && !s.archivedAt));
   const visible = showAll ? agents : agents.slice(0, LIMIT);
   const attention = agents.some((s) => s.status === "waiting");
   const running = agents.filter((s) => statusTone[s.status] === "running").length;

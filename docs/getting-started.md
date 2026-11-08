@@ -106,7 +106,7 @@ Open **Settings** (**Ctrl/Cmd+,**):
 
 | Section | What's there |
 |---|---|
-| General | Theme, follow-up chips, the automations master switch, the global factory kill switch |
+| General | Theme, follow-up chips, the automations master switch, the global factory kill switch, updates, worktree cleanup |
 | Providers | Default provider, model and effort for the orchestrator, PMs and agents |
 | Autonomy | The default autonomy level for new sessions |
 | GitHub | Connection status |

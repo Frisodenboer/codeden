@@ -28,6 +28,7 @@ import { type AppServices, createServices, type ServicesOptions } from "./servic
 import type { Exec } from "./services/exec";
 import { runnerPort } from "./services/runner-port";
 import { createSecretStore, MemorySecretStore, type SecretStore } from "./services/secrets";
+import { sessionWorkdir } from "./services/sessions/workdir";
 import type { UtilityService } from "./services/utility";
 import { SettingsStore } from "./settings-store";
 
@@ -101,6 +102,8 @@ export interface StartServerOptions {
   selfUpdate?: ServicesOptions["selfUpdate"];
   /** Update check transport and interval (tests). */
   updates?: ServicesOptions["updates"];
+  /** Worktree cleanup clock and sweep timings (tests). */
+  worktreeCleanup?: ServicesOptions["worktreeCleanup"];
   log?: (message: string) => void;
 }
 
@@ -171,6 +174,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     factory: opts.factory,
     selfUpdate: opts.selfUpdate,
     updates: opts.updates,
+    worktreeCleanup: opts.worktreeCleanup,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
@@ -181,6 +185,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.usage.start();
   services.automations.start();
   services.factory.start();
+  services.worktreeCleanup.start();
   const stopUpdateEvents = services.updates.onChange((status) => hub.broadcastUpdate(status));
   services.updates.start();
 
@@ -218,7 +223,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     runner: services.runner,
     cwdFor: (sessionId) => {
       const session = sessionId ? services.sessionRepo.find(sessionId)?.session : undefined;
-      return session ? (session.worktreePath ?? session.cwd) : paths.home;
+      return session ? sessionWorkdir(session) : paths.home;
     },
     log,
   });
@@ -301,6 +306,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.usage.stop();
       services.automations.stop();
       services.factory.stop();
+      services.worktreeCleanup.stop();
       services.updates.stop();
       stopUpdateEvents();
       stopTerminalEvents();

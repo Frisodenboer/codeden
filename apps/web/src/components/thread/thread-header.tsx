@@ -1,7 +1,9 @@
-import type { Session } from "@codeden/contracts";
+import type { ArchiveSessionResponse, Session } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  Archive,
+  ArchiveRestore,
   Bot,
   Copy,
   FolderTree,
@@ -78,6 +80,15 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
     mutationFn: () => client.stopSession(session.id),
     onSuccess: () => toast("Session stopped"),
   });
+  const archive = useMutation({
+    mutationFn: (force: boolean) => client.archiveSession(session.id, { force }),
+    onSuccess: (result) => announceArchive(result, () => archive.mutate(true)),
+    onError: (error) => toast.error(error.message),
+  });
+  const unarchive = useMutation({
+    mutationFn: () => client.unarchiveSession(session.id),
+    onSuccess: () => toast.success("Session restored to the sidebar"),
+  });
 
   const title =
     session.role === "orchestrator"
@@ -111,6 +122,7 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
           )}
         >
           {statusLabel[session.status]}
+          {session.archivedAt && " · Archived"}
         </span>
       </div>
 
@@ -131,9 +143,16 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
         )}
         {session.worktreePath && (
           <Chip
-            className="hidden @[70rem]:inline-flex"
+            className={cn(
+              "hidden @[70rem]:inline-flex",
+              session.worktreeRemovedAt && "border-dashed opacity-60",
+            )}
             icon={<FolderTree />}
-            title={session.worktreePath}
+            title={
+              session.worktreeRemovedAt
+                ? `Worktree cleaned up. It's recreated from ${session.branch ?? "its branch"} when you send a message.`
+                : session.worktreePath
+            }
           >
             {session.worktreePath.split(/[\\/]/).at(-1)}
           </Chip>
@@ -220,6 +239,15 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
             {session.role === "agent" && (
               <>
                 <DropdownMenuSeparator />
+                {session.archivedAt ? (
+                  <DropdownMenuItem onSelect={() => unarchive.mutate()}>
+                    <ArchiveRestore /> Unarchive
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => archive.mutate(false)}>
+                    <Archive /> Archive session
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem variant="destructive" onSelect={() => end.mutate()}>
                   <X /> Stop session
                 </DropdownMenuItem>
@@ -230,4 +258,18 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
       </div>
     </header>
   );
+}
+
+/** Toast for an archive: what happened to the worktree, with a way to force a kept one. */
+function announceArchive(result: ArchiveSessionResponse, force: () => void): void {
+  const { status, message } = result.worktree;
+  if (status === "removed") toast.success("Session archived and its worktree removed");
+  else if (status === "none") toast.success("Session archived");
+  else if (status === "kept_changes") {
+    toast("Session archived. The worktree has uncommitted changes, so it was kept.", {
+      action: { label: "Remove anyway", onClick: force },
+      duration: 10_000,
+    });
+  } else
+    toast.warning(`Session archived, but the worktree was kept: ${message ?? "unknown error"}`);
 }

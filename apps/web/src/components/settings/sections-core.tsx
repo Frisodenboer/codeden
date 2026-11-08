@@ -2,6 +2,7 @@ import type { ReasoningEffort, Role } from "@codeden/contracts";
 import { ProviderMark } from "@/components/common/bits";
 import { KillSwitchButton } from "@/components/factory/kill-switch";
 import { AUTONOMY } from "@/components/thread/autonomy";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -79,6 +80,38 @@ export function GeneralSettings() {
           <KillSwitchButton scope="global" on={settings.factory.killSwitch} size="xs" />
         </SettingRow>
         <UpdateModeSetting />
+      </SettingsSection>
+      <SettingsSection
+        title="Worktrees"
+        description="Archiving a session always removes its worktree. Branches and checkpoints are kept, and a cleaned-up worktree is recreated when you message the session again."
+      >
+        <SettingRow
+          label="Clean up inactive worktrees"
+          help="Skips sessions with an open pull request and worktrees with uncommitted changes."
+        >
+          <Switch
+            checked={settings.worktrees.cleanup}
+            onCheckedChange={(v) => update({ worktrees: { cleanup: v } })}
+          />
+        </SettingRow>
+        <SettingRow label="Inactive for" help="Days without activity before cleanup.">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Input
+              type="number"
+              min={1}
+              max={365}
+              aria-label="Days before cleanup"
+              disabled={!settings.worktrees.cleanup}
+              value={settings.worktrees.afterDays}
+              onChange={(e) => {
+                const days = Math.round(Number(e.target.value));
+                if (days >= 1 && days <= 365) update({ worktrees: { afterDays: days } });
+              }}
+              className="h-8 w-20 text-xs"
+            />
+            days
+          </div>
+        </SettingRow>
       </SettingsSection>
     </>
   );

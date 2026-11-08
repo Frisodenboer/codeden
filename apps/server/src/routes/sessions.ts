@@ -1,4 +1,5 @@
 import {
+  ArchiveSessionRequest,
   ListSessionsQuery,
   RespondRequest,
   SendMessageRequest,
@@ -14,7 +15,10 @@ import { badRequest, notFound } from "../services/errors";
 import { previewRecord } from "../services/sessions/preview";
 import { jsonBody, queryOf } from "./validate";
 
-/** `/api/sessions`: start (with conflict handling), message, steer, interrupt, respond, stop. */
+/**
+ * `/api/sessions`: start (with conflict handling), message, steer, interrupt, respond, stop,
+ * archive (removes the worktree, §9) and unarchive.
+ */
 export function sessionRoutes(s: AppServices) {
   return new Hono()
     .get("/", queryOf(ListSessionsQuery), (c) => c.json(s.sessionRepo.list(c.req.valid("query"))))
@@ -46,6 +50,10 @@ export function sessionRoutes(s: AppServices) {
       return c.json({ ok: true as const });
     })
     .post("/:id/stop", async (c) => c.json(await s.sessions.stop(c.req.param("id"))))
+    .post("/:id/archive", jsonBody(ArchiveSessionRequest), async (c) =>
+      c.json(await s.worktreeCleanup.archive(c.req.param("id"), c.req.valid("json"))),
+    )
+    .post("/:id/unarchive", (c) => c.json(s.worktreeCleanup.unarchive(c.req.param("id"))))
     .get("/:id/threads/:threadId/items", queryOf(ThreadItemsQuery), (c) => {
       const id = c.req.param("id");
       s.sessionRepo.get(id);

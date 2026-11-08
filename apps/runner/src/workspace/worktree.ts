@@ -162,6 +162,22 @@ export async function prepareWorkspace(
   return { ...target, config, setup };
 }
 
+/**
+ * Refuse to remove a worktree with uncommitted changes (`worktree_dirty`) unless forced. Runs
+ * before terminals and processes in the worktree are stopped, so a dirty worktree is left
+ * exactly as it was. Ignored files (build output, `node_modules`) don't count.
+ */
+export async function assertRemovable(cmd: RunnerCommandOf<"workspace.remove">): Promise<void> {
+  if (cmd.force || !existsSync(cmd.path) || !(await isWorkTree(cmd.path))) return;
+  const status = await git(cmd.path, ["status", "--porcelain"]);
+  if (status.stdout.toString("utf8").trim()) {
+    throw new CommandError(
+      "worktree_dirty",
+      `${cmd.path} has uncommitted changes; commit them or remove it with force`,
+    );
+  }
+}
+
 /** `workspace.remove`: remove a worktree (retrying briefly for Windows file locks). */
 export async function removeWorkspace(
   cmd: RunnerCommandOf<"workspace.remove">,

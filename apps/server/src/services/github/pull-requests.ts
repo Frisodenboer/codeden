@@ -3,6 +3,7 @@ import type { EventStore } from "../../events/store";
 import { badRequest, conflict, notFound } from "../errors";
 import { type RunnerPort, toServiceError } from "../runner-port";
 import type { SessionRepo } from "../sessions/repo";
+import { sessionWorkdir } from "../sessions/workdir";
 import type { GithubClient } from "./client";
 import { diffPr } from "./diff";
 import { fetchPullRequests, toGithubPr } from "./graphql";
@@ -69,7 +70,7 @@ export async function createPullRequest(
   repo: GitHubRepo,
   input: CreatePullRequestInput,
 ): Promise<CreatePullRequestResult> {
-  const cwd = session.worktreePath ?? session.cwd;
+  const cwd = sessionWorkdir(session);
   const branch = session.branch;
   if (!branch)
     throw conflict("This session has no branch to open a pull request from", "no_branch");

@@ -17,6 +17,7 @@ import { checkpoints } from "../../db/schema";
 import { badRequest, conflict, notFound } from "../errors";
 import { type RunnerPort, toServiceError } from "../runner-port";
 import type { SessionRepo } from "../sessions/repo";
+import { sessionWorkdir } from "../sessions/workdir";
 import { statsFromPatch, toDiffFiles } from "./diff-files";
 
 const GIT_TIMEOUT_MS = 120_000;
@@ -146,5 +147,5 @@ export class WorkbenchService {
 
 /** Directory git commands run in: the session's worktree, else its cwd. */
 export function workdir(session: Session): string {
-  return session.worktreePath ?? session.cwd;
+  return sessionWorkdir(session);
 }

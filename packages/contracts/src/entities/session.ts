@@ -72,6 +72,13 @@ export const Session = z.object({
   rootThreadId: Id.nullable(),
   /** Structured result from the agent's `finish` tool, once reported. */
   result: SessionResult.nullable().optional(),
+  /** When the session was archived: hidden from the sidebar, its worktree cleaned up. */
+  archivedAt: Timestamp.nullable().optional(),
+  /**
+   * When CodeDen removed the session's worktree (archive or inactivity cleanup). The branch and
+   * checkpoints stay; the worktree is recreated from the branch on the next message.
+   */
+  worktreeRemovedAt: Timestamp.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   endedAt: Timestamp.nullable(),

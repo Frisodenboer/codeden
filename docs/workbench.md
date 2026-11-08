@@ -57,6 +57,14 @@ The shell is PowerShell on Windows and your `$SHELL` elsewhere. Set `CODEDEN_SHE
 
 ![A terminal in the session's worktree](images/terminal.png)
 
+## Archiving and worktree cleanup
+
+**Archive session** in a session's **⋯** menu stops the session, hides it from the sidebar and removes its worktree. If the worktree has uncommitted changes it is kept, and the toast offers **Remove anyway**. Archiving a project cleans up the worktrees of its sessions that aren't working.
+
+CodeDen also removes worktrees on its own once a session has been inactive for 7 days, unless its pull request is still open or the worktree has uncommitted changes. Change the number of days, or switch this off, in **Settings → General → Worktrees**.
+
+Nothing is lost: the branch and the turn checkpoints stay. A cleaned-up worktree shows a dashed worktree chip in the header. When you message the session again, CodeDen recreates the worktree at the same path from its branch, runs your setup commands and carries on. Messaging an archived session also unarchives it.
+
 ## Browser
 
 The runner launches one Chromium (your installed **Edge** or **Chrome**; Edge first on Windows, Chrome first elsewhere) and gives every session its own browser context, so cookies, storage and tabs never cross sessions.
