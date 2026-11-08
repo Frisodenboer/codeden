@@ -41,7 +41,8 @@ const capabilities: ProviderCapabilities = {
  * Deterministic scripted provider for demos and tests (§7.2). Every turn streams:
  * user message, assistant message (word deltas), a todo list, a command tool call,
  * optionally an approval request (waits for `respond`) and a subagent child thread,
- * followups, usage, then `turn.completed`. Prompts containing `[fail]` fail the turn.
+ * followups, usage, then `turn.completed`. Prompts containing `[fail]` fail the turn;
+ * `[mcp]` adds an MCP tool call with a long JSON result before the command.
  */
 export class FakeProvider implements ProviderAdapter {
   readonly id = "fake";

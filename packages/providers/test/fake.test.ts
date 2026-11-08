@@ -128,6 +128,24 @@ describe("FakeProvider", () => {
     await session.close();
   });
 
+  it("adds an MCP tool call with a long JSON result on [mcp]", async () => {
+    const session = await new FakeProvider().openSession(options);
+    await session.send(UserInput.parse({ text: "triage [mcp]" }));
+    const events = await collectUntil(session, isTurnEnd);
+    const tools = events.flatMap((e) =>
+      e.type === "item.completed" && e.item.kind === "tool_call" ? [e.item] : [],
+    );
+    expect(tools.map((t) => t.toolKind)).toEqual(["mcp", "command"]);
+    const mcp = tools[0];
+    if (mcp?.toolKind !== "mcp") throw new Error("expected an MCP tool call");
+    expect(mcp).toMatchObject({ server: "codeden", tool: "triage_issue" });
+    const text = mcp.output?.text ?? "";
+    expect(text.length).toBeGreaterThan(1500);
+    expect(text).not.toContain("\n");
+    expect(JSON.parse(text)).toMatchObject({ issue: { number: 3 } });
+    await session.close();
+  });
+
   it("interrupts a running turn", async () => {
     const session = await new FakeProvider({ delayMs: 5 }).openSession(options);
     await session.send(UserInput.parse({ text: "a long reply with many words in it" }));

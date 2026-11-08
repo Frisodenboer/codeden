@@ -9,6 +9,7 @@ import type {
 import { type ProviderSession, ProviderSessionError, type SessionConfigChange } from "../adapter";
 import { AsyncQueue } from "../async-queue";
 import type { FakeProviderOptions } from "./adapter";
+import { fakeMcpInput, fakeMcpResult } from "./mcp-result";
 
 class Interrupted extends Error {}
 
@@ -126,6 +127,7 @@ export class FakeSession implements ProviderSession {
 
       await this.streamAssistant(turn, threadId, this.replyFor(prompt));
       await this.todoList(turn);
+      if (prompt.includes("[mcp]")) await this.mcpToolCall(turn);
       const approved =
         this.fake.approval || prompt.includes("[approval]") ? await this.approval(turn) : true;
       if (approved) await this.commandToolCall(turn);
@@ -251,6 +253,35 @@ export class FakeSession implements ProviderSession {
       });
     }
     return allowed;
+  }
+
+  /** An MCP tool call with a long, one-line JSON result (`[mcp]` in the prompt). */
+  private async mcpToolCall(turn: TurnState): Promise<void> {
+    const { threadId, turnId } = turn;
+    const base = {
+      id: this.nextId("item"),
+      kind: "tool_call" as const,
+      toolKind: "mcp" as const,
+      toolName: "mcp__codeden__triage_issue",
+      server: "codeden",
+      tool: "triage_issue",
+      title: "codeden: triage_issue",
+      input: fakeMcpInput,
+    };
+    await this.step(turn);
+    this.emit({ type: "item.started", threadId, turnId, item: { ...base, status: "in_progress" } });
+    await this.step(turn);
+    this.emit({
+      type: "item.completed",
+      threadId,
+      turnId,
+      item: {
+        ...base,
+        status: "completed",
+        output: { text: fakeMcpResult(), truncated: false },
+        durationMs: 12,
+      },
+    });
   }
 
   private async commandToolCall(turn: TurnState): Promise<void> {
