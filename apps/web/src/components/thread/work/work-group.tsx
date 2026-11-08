@@ -1,5 +1,6 @@
 import { ChevronRight, Layers } from "lucide-react";
 import { useState } from "react";
+import { ImageGallery, ImageThumbnail } from "@/components/common/image-viewer";
 import { useClient } from "@/lib/api";
 import { duration } from "@/lib/format";
 import { summarizeWork, type WorkEntry } from "@/lib/transcript/timeline";
@@ -12,24 +13,28 @@ function GeneratedImages({ entries }: { entries: WorkEntry[] }) {
   const client = useClient();
   const ids = entries.flatMap(imageArtifacts);
   if (ids.length === 0) return null;
+  const images = ids.map((id, i) => ({
+    src: client.artifactUrl(id),
+    name: ids.length > 1 ? `Generated image ${i + 1}` : "Generated image",
+  }));
   return (
-    <div className="mt-2 ml-6 flex flex-wrap gap-2">
-      {ids.map((id) => (
-        <a
-          key={id}
-          href={client.artifactUrl(id)}
-          target="_blank"
-          rel="noreferrer"
-          className="group/img block overflow-hidden rounded-xl border border-border shadow-xs"
-        >
-          <img
-            src={client.artifactUrl(id)}
-            alt="Generated"
-            className="h-40 w-auto object-cover transition-transform duration-300 group-hover/img:scale-[1.02]"
-          />
-        </a>
-      ))}
-    </div>
+    <ImageGallery images={images}>
+      <div className="mt-2 ml-6 flex flex-wrap gap-2">
+        {ids.map((id, i) => (
+          <ImageThumbnail
+            key={id}
+            index={i}
+            className="group/img block overflow-hidden rounded-xl border border-border shadow-xs"
+          >
+            <img
+              src={client.artifactUrl(id)}
+              alt="Generated"
+              className="h-40 w-auto object-cover transition-transform duration-300 group-hover/img:scale-[1.02]"
+            />
+          </ImageThumbnail>
+        ))}
+      </div>
+    </ImageGallery>
   );
 }
 

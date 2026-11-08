@@ -29,7 +29,8 @@ describe("user message attachments", () => {
     );
     const img = screen.getByRole("img", { name: "image.png" });
     expect(img.getAttribute("src")).toBe(client.artifactUrl("art-1"));
-    expect(img.closest("a")?.getAttribute("href")).toBe(client.artifactUrl("art-1"));
+    // The thumbnail opens the in-app viewer rather than navigating to the artifact.
+    expect(img.closest("button")?.getAttribute("aria-label")).toBe("View image.png");
   });
 
   it("shows an image the server could not map to an artifact as a file name", () => {

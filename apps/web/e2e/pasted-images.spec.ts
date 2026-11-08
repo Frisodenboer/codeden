@@ -57,16 +57,31 @@ async function settle(page: Page) {
   }).toPass({ timeout: 30_000 });
 }
 
-/** The pasted image in the transcript: a link to the artifact around the thumbnail. */
-const transcriptThumbnail = (page: Page) => page.locator('a[href*="/api/artifacts/"] img').first();
+/** The pasted image in the transcript: a thumbnail loaded from its artifact. */
+const transcriptThumbnail = (page: Page) => page.locator('img[src*="/api/artifacts/"]').first();
+
+const loaded = (img: ReturnType<Page["locator"]>) =>
+  expect
+    .poll(() => img.evaluate((el: HTMLImageElement) => (el.complete ? el.naturalWidth : 0)))
+    .toBeGreaterThan(0);
 
 async function expectLoaded(page: Page) {
   const img = transcriptThumbnail(page);
   await expect(img).toBeVisible({ timeout: 30_000 });
   await expect(img).toHaveAttribute("alt", "image.png");
-  await expect
-    .poll(() => img.evaluate((el: HTMLImageElement) => (el.complete ? el.naturalWidth : 0)))
-    .toBeGreaterThan(0);
+  await loaded(img);
+}
+
+/** Clicking the thumbnail opens the full image in the in-app viewer; Escape closes it. */
+async function expectOpensInViewer(page: Page) {
+  await page.getByRole("button", { name: "View image.png" }).first().click();
+  const viewer = page.getByRole("dialog");
+  await expect(viewer.getByRole("heading", { name: "image.png" })).toBeVisible();
+  const full = viewer.getByRole("img", { name: "image.png" });
+  await expect(full).toHaveAttribute("src", /\/api\/artifacts\//);
+  await loaded(full);
+  await page.keyboard.press("Escape");
+  await expect(viewer).toHaveCount(0);
 }
 
 /** Paste, send, see the thumbnail load, reload, see it load again. */
@@ -80,6 +95,7 @@ async function pasteSendAndReload(page: Page, text: string) {
   await expectLoaded(page);
   await page.reload();
   await expectLoaded(page);
+  await expectOpensInViewer(page);
 }
 
 test.beforeEach(async ({ page }) => {

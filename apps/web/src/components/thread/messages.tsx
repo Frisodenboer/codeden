@@ -2,7 +2,9 @@ import type { Attachment, ItemOf } from "@codeden/contracts";
 import { Copy, FileText } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
+import { ImageGallery, ImageThumbnail } from "@/components/common/image-viewer";
 import { useClient } from "@/lib/api";
+import { attachmentGallery } from "@/lib/attachments";
 import { foldDigest } from "@/lib/orchestration";
 import { platform } from "@/lib/platform";
 import { DigestDisclosure, WakeLine } from "./digest-fold";
@@ -21,31 +23,60 @@ function FileChip({ label }: { label: string }) {
   );
 }
 
-function AttachmentView({ attachment }: { attachment: Attachment }) {
-  const client = useClient();
+/**
+ * One attachment: an image opens in the viewer (`image` is its place in the message's
+ * gallery, `-1` when it can't be shown); anything else is a chip with its name.
+ */
+function AttachmentView({
+  attachment,
+  image,
+  src,
+}: {
+  attachment: Attachment;
+  image: number;
+  src: string | undefined;
+}) {
   if (attachment.type === "file") return <FileChip label={attachment.name ?? attachment.path} />;
   // Images are served from artifacts; the browser never loads a filesystem path. A path the
   // server could not map to an artifact arrives as a bare file name.
-  if (attachment.source.type === "path") {
-    return <FileChip label={attachment.name ?? attachment.source.path} />;
+  if (image < 0 || !src) {
+    const label = attachment.source.type === "path" ? attachment.source.path : "image";
+    return <FileChip label={attachment.name ?? label} />;
   }
-  const src =
-    attachment.source.type === "base64"
-      ? `data:${attachment.mediaType};base64,${attachment.source.data}`
-      : client.artifactUrl(attachment.source.artifactId);
   return (
-    <a
-      href={src}
-      target="_blank"
-      rel="noreferrer"
-      className="block overflow-hidden rounded-lg border border-border"
-    >
+    <ImageThumbnail index={image} className="block overflow-hidden rounded-lg border border-border">
       <img
         src={src}
         alt={attachment.name ?? "Attached image"}
         className="h-28 w-auto max-w-64 object-cover"
       />
-    </a>
+    </ImageThumbnail>
+  );
+}
+
+function Attachments({ id, attachments }: { id: string; attachments: Attachment[] }) {
+  const client = useClient();
+  const { images, positions } = useMemo(
+    () => attachmentGallery(attachments, client.artifactUrl),
+    [attachments, client],
+  );
+  return (
+    <ImageGallery images={images}>
+      <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
+        {attachments.map((a, i) => {
+          const image = positions[i] ?? -1;
+          return (
+            <AttachmentView
+              // biome-ignore lint/suspicious/noArrayIndexKey: attachments have no ids and never reorder.
+              key={`${id}-${i}`}
+              attachment={a}
+              image={image}
+              src={images[image]?.src}
+            />
+          );
+        })}
+      </div>
+    </ImageGallery>
   );
 }
 
@@ -61,14 +92,7 @@ export function UserMessage({ item }: { item: ItemOf<"user_message"> }) {
   return (
     <div className="group flex flex-col items-end gap-1.5 animate-rise">
       <DigestDisclosure folded={folded} />
-      {attachments.length > 0 && (
-        <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
-          {attachments.map((a, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: attachments have no ids and never reorder.
-            <AttachmentView key={`${item.id}-${i}`} attachment={a} />
-          ))}
-        </div>
-      )}
+      {attachments.length > 0 && <Attachments id={item.id} attachments={attachments} />}
       {text && (
         <div className="max-w-[80%] rounded-2xl rounded-br-md bg-message px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap text-foreground">
           {text}

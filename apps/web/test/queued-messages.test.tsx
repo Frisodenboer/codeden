@@ -98,6 +98,34 @@ describe("QueuedMessages", () => {
     expect(within(row).queryByRole("button", { name: "Send now" })).toBeNull();
   });
 
+  it("opens a queued message's image thumbnail in the image viewer", async () => {
+    const message: QueuedMessage = {
+      ...queued("a", "see this"),
+      input: {
+        text: "see this",
+        attachments: [
+          { type: "file", path: "notes.md" },
+          {
+            type: "image",
+            mediaType: "image/png",
+            name: "bug.png",
+            source: { type: "artifact", artifactId: "art-q" },
+          },
+        ],
+      },
+    };
+    const client = withQueue({ list: async () => [message] });
+    renderWithClient(<QueuedMessages session={session()} running={false} />, client);
+    fireEvent.click(await screen.findByRole("button", { name: "View bug.png" }));
+    const viewer = screen.getByRole("dialog");
+    expect(within(viewer).getByRole("img", { name: "bug.png" }).getAttribute("src")).toBe(
+      client.artifactUrl("art-q"),
+    );
+    expect(within(viewer).queryByText(/\/ 2/)).toBeNull();
+    fireEvent.keyDown(viewer, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("send-now steers the running turn through the mock; a dropped message answers 409", async () => {
     const client = createMockClient();
     const started = await client.startSession({ projectId: "p-storefront", input: { text: "Go" } });
