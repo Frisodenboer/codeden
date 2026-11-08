@@ -19,7 +19,13 @@ export {
 } from "./policy/risk";
 export * from "./registry";
 export * from "./replay";
-export { type ResolvedCommand, resolveExecutable } from "./util/exec";
+export {
+  isElectronRuntime,
+  ownNodeEnv,
+  type ResolvedCommand,
+  resolveExecutable,
+  scriptRuntime,
+} from "./util/exec";
 export { acquireInstallLock, type InstallLockOptions } from "./util/install-lock";
 export { resolveNpm } from "./util/npm";
 export { npmFailure, type RunNpmOptions, runNpm } from "./util/npm-run";

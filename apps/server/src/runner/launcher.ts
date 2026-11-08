@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { RunnerLock } from "@codeden/contracts";
+import { ownNodeEnv } from "@codeden/providers";
 import { isProcessAlive, readLiveRunnerLock } from "./lock";
 
 /** How to start the runner process. */
@@ -37,12 +38,14 @@ export function spawnRunner(config: RunnerLaunchConfig, home: string): number | 
   const logs = join(home, "logs");
   mkdirSync(logs, { recursive: true });
   const log = openSync(join(logs, "runner.log"), "a");
+  const env = { ...process.env, ...config.env, CODEDEN_HOME: home };
   const child = spawn(config.command, [...config.args, "--home", home], {
     detached: true,
     stdio: ["ignore", log, log],
     windowsHide: true,
     cwd: home,
-    env: { ...process.env, ...config.env, CODEDEN_HOME: home },
+    // In the desktop app `process.execPath` is the Electron binary: run it as Node.js (§17).
+    env: config.command === process.execPath ? ownNodeEnv(env) : env,
   });
   child.unref();
   return child.pid;
