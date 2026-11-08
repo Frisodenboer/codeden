@@ -1,14 +1,18 @@
 import {
+  type ActivitySummary,
   CODEDEN_VERSION,
   type HealthResponse,
+  type InboxItem,
+  type Session,
   type SessionSnapshot,
   type SettingsPatch,
   type Snapshot,
+  summarizeActivity,
 } from "@codeden/contracts";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { rowToAutomation, rowToItemRecord, rowToSession, rowToThread, rowToTurn } from "../db/rows";
-import { automations, items, sessions, threads, turns } from "../db/schema";
+import { automations, inboxItems, items, sessions, threads, turns } from "../db/schema";
 import type { AppServices } from "../services/container";
 import { badRequest, notFound } from "../services/errors";
 import { clientItemRecord } from "../services/sessions/client-items";
@@ -58,6 +62,7 @@ export function createApi(ctx: ApiContext) {
       return c.json(body);
     })
     .get("/snapshot", (c) => c.json(buildSnapshot(ctx)))
+    .get("/activity", (c) => c.json(buildActivity(s)))
     .get("/sessions/:id/snapshot", (c) => c.json(buildSessionSnapshot(s, c.req.param("id"))))
     .route("/projects", projectRoutes(s))
     .route("/projects", projectGithubRoutes(s))
@@ -130,6 +135,21 @@ function buildSnapshot(ctx: ApiContext): Snapshot {
     roleSessions: s.orchestration.roles.refs(),
     runner: ctx.runnerStatus(),
   };
+}
+
+/** Running and waiting sessions and open inbox items, for the desktop tray and badge (§17). */
+function buildActivity(s: AppServices): ActivitySummary {
+  const active = s.db
+    .select({ status: sessions.status })
+    .from(sessions)
+    .where(inArray(sessions.status, ["starting", "running", "waiting"]))
+    .all() as Array<{ status: Session["status"] }>;
+  const open = s.db
+    .select({ status: inboxItems.status })
+    .from(inboxItems)
+    .where(eq(inboxItems.status, "open"))
+    .all() as Array<{ status: InboxItem["status"] }>;
+  return summarizeActivity(active, open);
 }
 
 /** A whole transcript in one response (prefer the paginated thread items route). */
