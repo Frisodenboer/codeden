@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Id, ProviderId, ReasoningEffort } from "../common";
+import { AutonomyLevel, Id, ProviderId, ReasoningEffort } from "../common";
 import { UserInput } from "../input";
 import { ProjectConfigFile } from "../project-config";
 import { ProviderStatus, RuntimeResponse, SessionOptions } from "../provider";
@@ -113,12 +113,17 @@ export const RunnerCommand = z.discriminatedUnion("name", [
   }),
   /** Close the provider session (resumable later via its resume token). */
   z.object({ name: z.literal("session.stop"), sessionId: Id }),
-  /** Change model/effort for the next turn (`unsupported` when the provider cannot). */
+  /**
+   * Change model/effort for the next turn, and/or the autonomy level (§11.2): from the next
+   * tool call when the provider reports `liveAutonomy`, otherwise from the next turn.
+   * `unsupported` when the provider cannot change a requested setting live.
+   */
   z.object({
     name: z.literal("session.configure"),
     sessionId: Id,
     model: z.string().nullable().optional(),
     effort: ReasoningEffort.nullable().optional(),
+    autonomy: AutonomyLevel.optional(),
   }),
   z.object({
     name: z.literal("pty.open"),

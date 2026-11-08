@@ -8,6 +8,7 @@ import {
   Notice,
   NoticeBatchData,
   Overview,
+  ProviderCapabilities,
   RoleMessageRequest,
   RunnerCommand,
   Session,
@@ -168,6 +169,51 @@ describe("orchestration contracts (§8)", () => {
         effort: "high",
       }),
     ).toEqual({ name: "session.configure", sessionId: "s1", model: "m", effort: "high" });
+  });
+});
+
+describe("autonomy changes on a running session (§11.2)", () => {
+  it("round-trips autonomy in PATCH /api/sessions/:id", () => {
+    const patch = { autonomy: "full" as const };
+    expect(UpdateSessionRequest.parse(patch)).toEqual(patch);
+    expect(UpdateSessionRequest.parse(JSON.parse(JSON.stringify(patch)))).toEqual(patch);
+    expect(UpdateSessionRequest.parse({ autonomy: "supervised", model: "m" })).toEqual({
+      autonomy: "supervised",
+      model: "m",
+    });
+    expect(() => UpdateSessionRequest.parse({ autonomy: "yolo" })).toThrow();
+    expect(() => UpdateSessionRequest.parse({ autonomy: null })).toThrow();
+  });
+
+  it("round-trips autonomy in the runner's session.configure", () => {
+    const command = { name: "session.configure" as const, sessionId: "s1", autonomy: "full" };
+    expect(RunnerCommand.parse(command)).toEqual(command);
+    expect(RunnerCommand.parse(JSON.parse(JSON.stringify(command)))).toEqual(command);
+    expect(() => RunnerCommand.parse({ ...command, autonomy: "never" })).toThrow();
+  });
+
+  it("reports whether a provider applies autonomy changes to a running turn", () => {
+    const caps = {
+      resume: true,
+      steer: true,
+      interrupt: true,
+      approvals: true,
+      userQuestions: true,
+      subagents: true,
+      rollback: false,
+      fork: false,
+      images: true,
+      planMode: true,
+      reasoningEffort: true,
+      mcp: true,
+      skills: true,
+    };
+    expect(ProviderCapabilities.parse({ ...caps, liveAutonomy: true })).toEqual({
+      ...caps,
+      liveAutonomy: true,
+    });
+    // Older runners leave it out: the UI then treats changes as applying from the next turn.
+    expect(ProviderCapabilities.parse(caps).liveAutonomy).toBeUndefined();
   });
 });
 
