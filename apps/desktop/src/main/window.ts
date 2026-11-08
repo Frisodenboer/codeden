@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { BrowserWindow, nativeTheme, type Rectangle, screen, shell } from "electron";
+import { app, BrowserWindow, nativeTheme, type Rectangle, screen, shell } from "electron";
 import { allowPermission, externalUrl, isServerUrl } from "./security";
 import { readWindowState, restoreBounds, type WindowState } from "./window-state";
 
@@ -129,10 +129,11 @@ export class MainWindow {
     }
     this.window.on("close", (event) => {
       this.saveState();
-      if (!this.quitting && this.opts.hideOnClose()) {
-        event.preventDefault();
-        this.window.hide();
-      }
+      if (this.quitting) return;
+      event.preventDefault();
+      // Keep running in the tray, or (with that setting off) closing the window quits.
+      if (this.opts.hideOnClose()) this.window.hide();
+      else app.quit();
     });
   }
 
