@@ -60,6 +60,7 @@ The SDK is not redistributed in the published `codeden` package. `loadClaudeSdk(
 - The npm `codex.cmd` shim runs a Node wrapper that spawns the vendored `codex.exe`; the adapter runs `node <codex.js> app-server` and kills the process tree with `taskkill /T`.
 - Unknown keys in the user's `~/.codex/config.toml` produce `configWarning` notifications on every start; they are ignored.
 - Collab subagents and plan mode are experimental in app-server and not surfaced, so `subagents` and `planMode` are `false` for Codex.
+- Models come from `model/list`, which needs no thread: `refreshModels()` runs a short-lived app-server for it (about 1 s on Windows, 20 s timeout) when the runner starts and on every `provider.detect`. The id CodeDen sends back is the `model` slug. `thread/start` accepts any model string, so a bad id only fails at `turn/start`. Current models list `max` (sent as is) and `ultra` (not offered). Older models top out at `xhigh`, so `max` is sent as `xhigh` for them.
 
 ## Image generation (`src/image/`, §12.5)
 

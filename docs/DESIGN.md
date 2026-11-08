@@ -106,7 +106,7 @@ The runner hosts everything that has to sit next to the code: agent processes (t
 A versioned, zod-typed message protocol over one WebSocket:
 
 - **Server → runner commands:** `workspace.prepare`, `session.start`, `session.send`, `session.steer`, `session.interrupt`, `session.respond` (approval or answer), `session.stop`, `pty.*`, `browser.*`, `git.*`.
-- **Runner → server events:** normalized agent events (§7.3), process status, terminal output, browser frames. Each event carries a monotonically increasing `seq`, which the server acknowledges.
+- **Runner → server events:** normalized agent events (§7.3), process status, terminal output, browser frames. Each event carries a monotonically increasing `seq`, which the server acknowledges. Provider lists (with each provider's models) are sent at the handshake and again whenever a list changes, for example once model discovery finishes.
 - **Handshake:** the protocol version, runner version and capabilities are exchanged on connect.
 
 ### 4.4 MCP access path
