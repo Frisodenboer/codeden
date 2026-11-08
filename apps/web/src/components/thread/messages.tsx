@@ -124,7 +124,7 @@ export function AssistantMessage({
       {!streaming && item.text && (
         <button
           type="button"
-          className="absolute -bottom-5 left-0 flex items-center gap-1 text-3xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+          className="absolute -bottom-5 left-0 flex items-center gap-1 text-3xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground touch:opacity-100"
           onClick={() => {
             void platform.writeClipboard(item.text);
             toast.success("Copied message");

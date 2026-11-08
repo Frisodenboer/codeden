@@ -65,7 +65,7 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="group/wg flex h-[26px] w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50"
+        className="group/wg flex h-[26px] pointer-coarse:h-10 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50"
       >
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
           <Layers className="size-3.5" />

@@ -52,7 +52,7 @@ export function GitBar({ sessionId, title }: { sessionId: string; title: string 
   if (!data) return null;
   const changed = data.files.length;
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3 text-2xs text-muted-foreground">
+    <div className="flex h-9 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-3 text-2xs whitespace-nowrap text-muted-foreground scroll-thin pointer-coarse:h-auto pointer-coarse:min-h-10">
       <GitBranch className="size-3.5 shrink-0" />
       <span className="min-w-0 truncate font-mono" title={data.branch ?? undefined}>
         {data.branch ?? "detached"}

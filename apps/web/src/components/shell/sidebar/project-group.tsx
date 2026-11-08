@@ -133,7 +133,7 @@ export function ProjectGroup({
           {/* Actions never start a drag; the row around them does. */}
           <div
             onPointerDown={(e) => e.stopPropagation()}
-            className="flex items-center opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100"
+            className="flex items-center opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 touch:opacity-100"
           >
             <Link
               to="/projects/$projectId"

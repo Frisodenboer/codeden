@@ -33,15 +33,15 @@ export function InboxPage() {
     <>
       <PageHeader icon={<Inbox />} title="Inbox" meta={`${counts.all} waiting on you`} />
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-        <div className="mx-auto w-full max-w-3xl px-6 py-6">
-          <div className="mb-6 flex items-center gap-1 rounded-lg border border-border bg-card/50 p-0.5 text-xs w-fit">
+        <div className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6 sm:py-6">
+          <div className="mb-6 flex w-fit max-w-full flex-wrap items-center gap-1 rounded-lg border border-border bg-card/50 p-0.5 text-xs">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
                 type="button"
                 onClick={() => setFilter(f.id)}
                 className={cn(
-                  "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-muted-foreground transition-colors hover:text-foreground",
+                  "flex h-7 items-center gap-1.5 rounded-md px-2.5 whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground pointer-coarse:h-10",
                   filter === f.id && "bg-accent text-foreground",
                 )}
               >

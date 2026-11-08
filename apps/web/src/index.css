@@ -7,6 +7,8 @@
 @source "../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
+/* Devices without hover (phones, tablets): hover-only affordances need a tap equivalent. */
+@custom-variant touch (@media (hover: none));
 
 @theme inline {
   --font-heading: var(--font-sans);
@@ -334,5 +336,32 @@
   .animate-rise,
   .animate-border-shimmer::before {
     animation: none;
+  }
+}
+
+/*
+ * Touch screens (phones, tablets): tap targets of at least 40 px, and 16 px text in fields so
+ * iOS doesn't zoom in when one gets focus. The desktop layout is untouched.
+ */
+@media (pointer: coarse) {
+  [data-slot="button"],
+  button[data-variant][data-size],
+  a[data-variant][data-size],
+  [role="tab"],
+  [data-slot="select-trigger"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="context-menu-item"],
+  [data-slot="select-item"],
+  [data-slot="command-item"] {
+    min-height: 2.5rem;
+  }
+  [data-variant][data-size^="icon"] {
+    min-width: 2.5rem;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    min-height: 2.5rem;
+    font-size: max(16px, 1em);
   }
 }

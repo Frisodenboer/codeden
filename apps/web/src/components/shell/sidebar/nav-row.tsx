@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export const rowBase =
-  "group/row relative flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-[13px] text-sidebar-foreground/80 outline-none transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring";
+  "group/row relative flex h-8 pointer-coarse:h-10 w-full min-w-0 items-center gap-2 rounded-md px-2 text-[13px] text-sidebar-foreground/80 outline-none transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring";
 export const rowActive =
   "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1.5 before:-left-[5px] before:w-[3px] before:rounded-full before:bg-primary";
 

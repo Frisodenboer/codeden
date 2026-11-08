@@ -118,7 +118,7 @@ function NextRow({ run }: { run: ScheduledRun }) {
           onClick={() => skip.mutate()}
           disabled={skip.isPending || !run.projectId}
           aria-label={`Skip the next ${run.name} run`}
-          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:min-h-10 pointer-coarse:px-2.5"
         >
           <SkipForward className="size-3" /> Skip
         </button>

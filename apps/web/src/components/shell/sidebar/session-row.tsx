@@ -98,7 +98,7 @@ export function SessionRow({ session }: { session: Session }) {
             ) : null}
             <span
               className={cn(
-                "w-6 shrink-0 text-right text-3xs tabular-nums transition-opacity group-focus-within/session:opacity-0 group-hover/session:opacity-0 group-has-[[data-state=open]]/session:opacity-0",
+                "w-6 shrink-0 text-right text-3xs tabular-nums transition-opacity group-focus-within/session:opacity-0 group-hover/session:opacity-0 group-has-[[data-state=open]]/session:opacity-0 touch:opacity-0",
                 tone === "waiting" ? "font-medium text-status-waiting" : "text-muted-foreground/70",
               )}
             >
@@ -111,7 +111,7 @@ export function SessionRow({ session }: { session: Session }) {
             menu={menu}
             entries={entries}
             label={`${title} actions`}
-            className="absolute top-1/2 right-1 size-6 -translate-y-1/2 opacity-0 transition-opacity group-focus-within/session:opacity-100 group-hover/session:opacity-100 data-[state=open]:opacity-100"
+            className="absolute top-1/2 right-1 size-6 -translate-y-1/2 opacity-0 transition-opacity group-focus-within/session:opacity-100 group-hover/session:opacity-100 data-[state=open]:opacity-100 touch:size-9 touch:opacity-100"
           />
         )}
       </div>

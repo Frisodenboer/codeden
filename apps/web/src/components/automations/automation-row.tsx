@@ -92,7 +92,7 @@ export function AutomationRow({
         <Button
           size="icon-xs"
           variant="ghost"
-          className="text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          className="text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 touch:opacity-100"
           aria-label={state.paused ? `Resume ${a.name}` : `Pause ${a.name}`}
           onClick={() => actions.pause.mutate({ id: a.id, paused: !state.paused })}
         >

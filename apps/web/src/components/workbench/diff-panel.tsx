@@ -81,7 +81,7 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex h-full flex-col" data-testid="diff-panel">
       <GitBar sessionId={sessionId} title={session?.title ?? session?.purpose ?? "Update"} />
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
+      <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 whitespace-nowrap scroll-thin pointer-coarse:h-auto pointer-coarse:min-h-12">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="gap-1 text-xs">
@@ -221,7 +221,7 @@ function FilePatch({
         <Button
           variant="secondary"
           size="xs"
-          className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 touch:opacity-100"
           onClick={onRestore}
           title={`Restore ${file.path}`}
         >
