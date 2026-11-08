@@ -1,5 +1,5 @@
 import { Command as CommandPrimitive } from "cmdk";
-import { ArrowRight, Check, Search, Star, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, Search, Star, TriangleAlert } from "lucide-react";
 import type { KeyboardEvent, ReactNode, RefObject } from "react";
 import { ProviderMark } from "@/components/common/bits";
 import { cn } from "@/lib/utils";
@@ -45,20 +45,64 @@ export function SetupNotice({
   );
 }
 
+/** A small button inside a row; clicking it never picks the row. */
+function RowAction({
+  label,
+  pressed,
+  focusable,
+  alwaysVisible,
+  onClick,
+  children,
+}: {
+  label: string;
+  pressed: boolean;
+  /** Only the highlighted row's actions are in the tab order. */
+  focusable: boolean;
+  alwaysVisible: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      tabIndex={focusable ? 0 : -1}
+      aria-pressed={pressed}
+      aria-label={label}
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      className={cn(
+        "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+        !alwaysVisible &&
+          "opacity-0 group-hover:opacity-100 group-data-[selected=true]:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 function Row({
   row,
   selected,
   highlighted,
   favorite,
+  hidden,
   onPick,
   onToggleFavorite,
+  onToggleHidden,
 }: {
   row: ModelRow;
   selected: boolean;
   highlighted: boolean;
   favorite: boolean;
+  hidden: boolean;
   onPick: (row: ModelRow) => void;
   onToggleFavorite?: (row: ModelRow) => void;
+  onToggleHidden?: (row: ModelRow) => void;
 }) {
   const { model, provider } = row;
   return (
@@ -67,10 +111,11 @@ function Row({
       onSelect={() => onPick(row)}
       title={model.description ? `${model.label}: ${model.description}` : model.label}
       data-checked={selected}
+      data-hidden={hidden || undefined}
       className="group flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] outline-none select-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
     >
-      <ProviderMark provider={provider.id} />
-      <span className="shrink-0 truncate">
+      <ProviderMark provider={provider.id} className={cn(hidden && "opacity-50")} />
+      <span className={cn("shrink-0 truncate", hidden && "text-muted-foreground")}>
         {model.label}
         <span className="sr-only">, {provider.displayName}</span>
       </span>
@@ -79,40 +124,54 @@ function Row({
           Default
         </span>
       )}
+      {hidden && (
+        <span className="shrink-0 rounded border border-dashed border-border px-1 text-3xs text-muted-foreground">
+          Hidden
+        </span>
+      )}
       <span className="min-w-0 flex-1 truncate text-2xs text-muted-foreground">
         {model.description}
       </span>
+      {onToggleHidden && (
+        <RowAction
+          label={
+            hidden ? `Show ${model.label} in the picker` : `Hide ${model.label} from the picker`
+          }
+          pressed={hidden}
+          focusable={highlighted}
+          alwaysVisible={hidden}
+          onClick={() => onToggleHidden(row)}
+        >
+          {hidden ? (
+            <Eye className="size-3" aria-hidden />
+          ) : (
+            <EyeOff className="size-3" aria-hidden />
+          )}
+        </RowAction>
+      )}
       {onToggleFavorite && (
-        <button
-          type="button"
-          // Only the highlighted row's star is in the tab order.
-          tabIndex={highlighted ? 0 : -1}
-          aria-pressed={favorite}
-          aria-label={
+        <RowAction
+          label={
             favorite ? `Remove ${model.label} from favourites` : `Add ${model.label} to favourites`
           }
-          title={favorite ? "Remove from favourites" : "Add to favourites"}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFavorite(row);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className={cn(
-            "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
-            !favorite &&
-              "opacity-0 group-hover:opacity-100 group-data-[selected=true]:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
-          )}
+          pressed={favorite}
+          focusable={highlighted}
+          alwaysVisible={favorite}
+          onClick={() => onToggleFavorite(row)}
         >
           <Star
             className={cn("size-3", favorite && "fill-current text-status-waiting")}
             aria-hidden
           />
-        </button>
+        </RowAction>
       )}
       <Check className={cn("size-3.5 shrink-0", !selected && "invisible")} aria-hidden />
     </CommandPrimitive.Item>
   );
 }
+
+/** Value of the row that shows or hides a tab's hidden models. */
+const HIDDEN_TOGGLE = "::hidden";
 
 /**
  * The search box and model list. Typing searches every provider the picker offers; with an
@@ -130,8 +189,11 @@ export function ModelList({
   notice,
   empty,
   isFavorite,
+  isHidden,
+  hiddenToggle,
   onPick,
   onToggleFavorite,
+  onToggleHidden,
   onFocusRail,
   onFocusEffort,
 }: {
@@ -147,9 +209,14 @@ export function ModelList({
   /** Shown when the tab has no rows and nothing is searched. */
   empty?: string;
   isFavorite?: (row: ModelRow) => boolean;
+  isHidden?: (row: ModelRow) => boolean;
+  /** A trailing row that reveals (or hides again) the tab's hidden models. */
+  hiddenToggle?: { count: number; shown: boolean; onToggle: () => void };
   onPick: (row: ModelRow) => void;
   /** Shows a star on each row to add or remove it from the favourites. */
   onToggleFavorite?: (row: ModelRow) => void;
+  /** Shows an action on each row to hide it from the picker, or show it again. */
+  onToggleHidden?: (row: ModelRow) => void;
   onFocusRail?: () => void;
   onFocusEffort?: () => void;
 }) {
@@ -195,7 +262,7 @@ export function ModelList({
         className="min-h-0 flex-1 overflow-y-auto p-1.5 scroll-thin"
       >
         {notice}
-        {rows.length === 0 ? (
+        {rows.length === 0 && !hiddenToggle?.count ? (
           <CommandPrimitive.Empty className="px-3 py-6 text-center text-xs text-muted-foreground">
             {query
               ? `No models match "${query}"`
@@ -209,10 +276,29 @@ export function ModelList({
               selected={row.key === selectedKey}
               highlighted={row.key === highlight}
               favorite={isFavorite?.(row) ?? false}
+              hidden={isHidden?.(row) ?? false}
               onPick={onPick}
               onToggleFavorite={onToggleFavorite}
+              onToggleHidden={onToggleHidden}
             />
           ))
+        )}
+        {hiddenToggle && hiddenToggle.count > 0 && (
+          <CommandPrimitive.Item
+            value={HIDDEN_TOGGLE}
+            onSelect={hiddenToggle.onToggle}
+            aria-expanded={hiddenToggle.shown}
+            className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-xs text-muted-foreground outline-none select-none data-[selected=true]:bg-accent data-[selected=true]:text-foreground"
+          >
+            {hiddenToggle.shown ? (
+              <EyeOff className="size-3.5" aria-hidden />
+            ) : (
+              <Eye className="size-3.5" aria-hidden />
+            )}
+            {hiddenToggle.shown
+              ? "Hide hidden models again"
+              : `Show ${hiddenToggle.count} hidden model${hiddenToggle.count === 1 ? "" : "s"}`}
+          </CommandPrimitive.Item>
         )}
       </CommandPrimitive.List>
     </CommandPrimitive>

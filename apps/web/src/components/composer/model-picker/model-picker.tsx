@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useSetupStatus } from "@/lib/queries";
 import { matchesCombo, shortcut } from "@/lib/shortcuts";
 import { EffortColumn, focusEffort } from "./effort-column";
+import { isHidden, visibleRows } from "./hidden";
 import {
   adjacentTab,
   chooseModel,
@@ -33,7 +34,7 @@ import {
 import { ModelList, SetupNotice } from "./model-list";
 import { ProviderRail } from "./provider-rail";
 import { PickerTrigger } from "./trigger";
-import { useFavoriteModels } from "./use-favorites";
+import { useFavoriteModels, useHiddenModels } from "./use-model-settings";
 
 export interface ModelPickerProps {
   providers: ProviderInfo[];
@@ -78,6 +79,7 @@ export function ModelPicker({
   const [tabId, setTabId] = useState("");
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -91,6 +93,7 @@ export function ModelPicker({
   const shown = optimistic ?? value;
 
   const { favorites, toggle: toggleFavorite } = useFavoriteModels();
+  const { hidden, toggle: toggleHidden } = useHiddenModels();
   const tabs = providerTabs(providers, checks, lockedProvider, { favorites: true });
   const openTabs = openProviderTabs(tabs);
   const tab: PickerTab | undefined = tabs.find((t) => t.id === tabId) ?? openTabs[0];
@@ -104,9 +107,17 @@ export function ModelPicker({
 
   const searching = query.trim().length > 0;
   const searchable = openTabs.map((t) => t.provider);
-  const rowsFor = (q: string, t: PickerTab | undefined): ModelRow[] =>
-    q.trim() ? searchRows(searchable, q, favorites) : tabRows(t, searchable, favorites);
-  const rows = rowsFor(query, tab);
+  // Hidden models are left out everywhere unless selected, or revealed on a provider tab.
+  const listFor = (q: string, t: PickerTab | undefined, reveal: boolean) =>
+    visibleRows(
+      q.trim() ? searchRows(searchable, q, favorites) : tabRows(t, searchable, favorites),
+      hidden,
+      selectedKey,
+      reveal && !q.trim() && t?.kind === "provider",
+    );
+  const rowsFor = (q: string, t: PickerTab | undefined): ModelRow[] => listFor(q, t, false).rows;
+  const list = listFor(query, tab, showHidden);
+  const rows = list.rows;
   const starred = new Set(favorites.map((f) => rowKey(f.provider, f.model)));
   const notice =
     !searching && tab?.kind === "provider" && !tab.availability.ready ? (
@@ -127,6 +138,7 @@ export function ModelPicker({
     const next = tabs.find((t) => t.id === id);
     setTabId(id);
     setQuery("");
+    setShowHidden(false);
     setHighlight(firstKey(rowsFor("", next)));
     if (focusSearch) requestAnimationFrame(() => inputRef.current?.focus());
   };
@@ -135,7 +147,8 @@ export function ModelPicker({
     if (next) {
       // Starred models come first, except when the provider is fixed for this session.
       const start =
-        (!lockedProvider && favoriteRows(favorites, searchable).length > 0
+        (!lockedProvider &&
+        visibleRows(favoriteRows(favorites, searchable), hidden, selectedKey, false).rows.length > 0
           ? tabs.find((t) => t.kind === "favorites")
           : undefined) ??
         openTabs.find((t) => t.id === shown?.provider) ??
@@ -262,6 +275,17 @@ export function ModelPicker({
                       : undefined
                   }
                   isFavorite={(row) => starred.has(row.key)}
+                  isHidden={(row) => isHidden(hidden, row.provider.id, row.model.id)}
+                  hiddenToggle={
+                    !searching && tab?.kind === "provider"
+                      ? {
+                          count: list.hiddenCount,
+                          shown: showHidden,
+                          onToggle: () => setShowHidden((v) => !v),
+                        }
+                      : undefined
+                  }
+                  onToggleHidden={(row) => toggleHidden(row.provider.id, row.model.id)}
                   onToggleFavorite={(row) =>
                     toggleFavorite({ provider: row.provider.id, model: row.model.id })
                   }
