@@ -31,6 +31,7 @@ async function projectId(page: Page): Promise<string> {
   return created.project.id;
 }
 
+// Named to run after the m1 spec, which needs a server that has not finished setup yet.
 test.beforeEach(async ({ page }) => {
   await page.goto(env("CODEDEN_E2E_LAUNCH_URL"));
   await api(page, "POST", "/setup/complete", {});
