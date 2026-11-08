@@ -15,6 +15,7 @@ export type ShortcutId =
   | "stop"
   | "dictate"
   | "focusComposer"
+  | "modelPicker"
   | "tab1"
   | "tab2"
   | "tab3"
@@ -50,6 +51,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "newline", combo: "shift+enter", label: "New line", group: "Composer" },
   { id: "stop", combo: "mod+.", label: "Stop the running turn", group: "Composer" },
   { id: "dictate", combo: "mod+shift+m", label: "Start / stop dictation", group: "Composer" },
+  { id: "modelPicker", combo: "alt+m", label: "Choose model and effort", group: "Composer" },
 ];
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);

@@ -11,6 +11,9 @@ if (!("ResizeObserver" in globalThis)) {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
 }
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
 if (!window.matchMedia) {
   window.matchMedia = (query: string) =>
     ({
