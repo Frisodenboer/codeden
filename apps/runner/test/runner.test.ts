@@ -2,12 +2,15 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type ModelInfo,
+  type ProviderStatus,
   RUNNER_PROTOCOL_VERSION,
   RunnerLock,
   type RunnerToServerMessage,
   RunnerToServerMessage as RunnerToServerSchema,
   type ServerToRunnerMessage,
 } from "@codeden/contracts";
+import { FakeProvider, ModelCatalog, type ProviderAdapter } from "@codeden/providers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { Journal, type RunningRunner, startRunner } from "../src";
@@ -171,6 +174,62 @@ describe("runner", () => {
     expect(replayed.at(-1)).toBe(events.at(-1)?.seq);
 
     await again.close();
+    await runner.close();
+  });
+
+  it("pushes provider model changes to the attached server", async () => {
+    const model = (id: string): ModelInfo => ({ id, label: id, efforts: ["low", "high"] });
+    const catalog = new ModelCatalog([model("default")]);
+    const lists = [[model("found-at-start")], [model("found-on-detect")]];
+    let releaseStart: () => void = () => {};
+    const startGate = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    let refreshes = 0;
+    const status = { providerId: "listed", installed: true } as ProviderStatus;
+    const listed: ProviderAdapter = {
+      id: "listed",
+      displayName: "Listed",
+      detect: async () => status,
+      capabilities: () => new FakeProvider().capabilities(),
+      models: () => catalog.list(),
+      onModelsChanged: (listener) => catalog.subscribe(listener),
+      refreshModels: async () => {
+        const list = lists[refreshes++] ?? [];
+        if (refreshes === 1) await startGate;
+        catalog.set(list);
+      },
+      openSession: () => Promise.reject(new Error("not used")),
+    };
+    const modelIds = (m: RunnerToServerMessage) =>
+      m.type === "welcome" || m.type === "providers"
+        ? m.providers.find((p) => p.id === "listed")?.models.map((x) => x.id)
+        : undefined;
+
+    const runner = await startRunner({ home, adapters: [listed] });
+    expect(refreshes).toBe(1); // discovery starts with the runner, without blocking it
+    const server = await TestServer.connect(runner);
+    server.send({ type: "hello", protocolVersion: RUNNER_PROTOCOL_VERSION, serverVersion: "test" });
+    expect(modelIds(await server.waitFor((m) => m.type === "welcome"))).toEqual(["default"]);
+    server.send({ type: "resume", lastAckedSeq: 0 });
+    await server.waitFor((m) => m.type === "providers");
+
+    // Discovery that finishes after the handshake reaches the server.
+    releaseStart();
+    await server.waitFor((m) => modelIds(m)?.[0] === "found-at-start");
+
+    // A re-detect refreshes the lists too.
+    server.send({ type: "command", id: "detect", command: { name: "provider.detect" } });
+    await server.waitFor((m) => m.type === "result" && m.id === "detect");
+    await server.waitFor((m) => modelIds(m)?.[0] === "found-on-detect");
+    expect(refreshes).toBe(2);
+    expect(server.messages.filter((m) => m.type === "providers").map(modelIds)).toEqual([
+      ["default"],
+      ["found-at-start"],
+      ["found-on-detect"],
+    ]);
+
+    await server.close();
     await runner.close();
   });
 

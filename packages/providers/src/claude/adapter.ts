@@ -6,6 +6,7 @@ import type {
   SessionOptions,
 } from "@codeden/contracts";
 import type { ProviderAdapter, ProviderSession } from "../adapter";
+import { ModelCatalog } from "../models";
 import { type ResolvedCommand, resolveExecutable } from "../util/exec";
 import type { UtilityModel } from "../utility";
 import { detectClaude } from "./detect";
@@ -56,7 +57,7 @@ export interface ClaudeAdapterOptions {
 export class ClaudeAdapter implements ProviderAdapter {
   readonly id = CLAUDE_PROVIDER_ID;
   readonly displayName = "Claude Code";
-  private modelList: ModelInfo[] = FALLBACK_MODELS;
+  private readonly catalog = new ModelCatalog(FALLBACK_MODELS);
   private cachedExe: ResolvedCommand | undefined;
 
   constructor(private readonly options: ClaudeAdapterOptions = {}) {}
@@ -76,7 +77,11 @@ export class ClaudeAdapter implements ProviderAdapter {
   }
 
   models(): ModelInfo[] {
-    return this.modelList.map((m) => ({ ...m }));
+    return this.catalog.list();
+  }
+
+  onModelsChanged(listener: () => void): () => void {
+    return this.catalog.subscribe(listener);
   }
 
   async openSession(opts: SessionOptions): Promise<ProviderSession> {
@@ -88,13 +93,15 @@ export class ClaudeAdapter implements ProviderAdapter {
       query,
       onModels: (models) => {
         if (!models.length) return;
-        this.modelList = models.map((m, i) => ({
-          id: m.value,
-          label: m.displayName || m.value,
-          ...(m.description ? { description: m.description } : {}),
-          efforts: (m.supportedEffortLevels ?? []) as ReasoningEffort[],
-          ...(i === 0 ? { isDefault: true } : {}),
-        }));
+        this.catalog.set(
+          models.map((m, i) => ({
+            id: m.value,
+            label: m.displayName || m.value,
+            ...(m.description ? { description: m.description } : {}),
+            efforts: (m.supportedEffortLevels ?? []) as ReasoningEffort[],
+            ...(i === 0 ? { isDefault: true } : {}),
+          })),
+        );
       },
     });
   }

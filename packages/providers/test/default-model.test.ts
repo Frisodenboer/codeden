@@ -1,10 +1,10 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentEvent, SessionOptions } from "@codeden/contracts";
+import type { AgentEvent, ReasoningEffort, SessionOptions } from "@codeden/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildQueryOptions } from "../src/claude/options";
-import { CodexSession } from "../src/codex/session";
+import { CodexSession, codexEffort } from "../src/codex/session";
 import { explicitModel } from "../src/util/model";
 
 const base: SessionOptions = {
@@ -103,5 +103,40 @@ describe("the Default model", () => {
 
     const turns = requests(log).filter((r) => r.method === "turn/start");
     expect(turns.map((t) => t.params.model)).toEqual([undefined, "gpt-other", "gpt-configured"]);
+  });
+});
+
+describe("Codex reasoning effort", () => {
+  it("maps max to xhigh unless the model lists max", () => {
+    expect(codexEffort(undefined)).toBeUndefined();
+    expect(codexEffort("high")).toBe("high");
+    expect(codexEffort("max")).toBe("xhigh");
+    expect(codexEffort("max", ["low", "xhigh"])).toBe("xhigh");
+    expect(codexEffort("max", ["low", "xhigh", "max"])).toBe("max");
+  });
+
+  it("checks the model each turn runs on, the configured one included", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "codeden-codex-effort-")), "requests.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const efforts: Record<string, ReasoningEffort[]> = {
+      "gpt-configured": ["low", "xhigh"],
+      "gpt-other": ["low", "xhigh", "max"],
+    };
+    const session = new CodexSession(
+      { ...base, effort: "max" },
+      { executable: fakeCodex, modelEfforts: (model) => efforts[model] },
+    );
+    sessions.push(session);
+    await session.start();
+    const completed = turnCounter(session);
+    // The thread runs on the configured model (from `thread/start`), which tops out at xhigh.
+    await session.send({ text: "first", attachments: [] });
+    await completed(1);
+    await session.configure({ model: "gpt-other" });
+    await session.send({ text: "second", attachments: [] });
+    await completed(2);
+
+    const turns = requests(log).filter((r) => r.method === "turn/start");
+    expect(turns.map((t) => t.params.effort)).toEqual(["xhigh", "max"]);
   });
 });

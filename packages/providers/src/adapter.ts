@@ -24,8 +24,19 @@ export interface ProviderAdapter {
   detect(): Promise<ProviderStatus>;
   /** Honest capability flags (Principle 5). */
   capabilities(): ProviderCapabilities;
-  /** Models the provider offers. */
+  /** Models the provider offers (the last known list; see `refreshModels`). */
   models(): ModelInfo[];
+  /**
+   * Ask the provider for its current model list, without a session or a turn, and keep it for
+   * `models()`. Optional. Must not throw: on failure `models()` keeps its last good list, or
+   * an honest fallback.
+   */
+  refreshModels?(): Promise<void>;
+  /**
+   * Call `listener` whenever `models()` changes (discovery, a session reporting its models).
+   * Optional. Returns the unsubscribe function.
+   */
+  onModelsChanged?(listener: () => void): () => void;
   openSession(opts: SessionOptions): Promise<ProviderSession>;
   /** One-shot, tool-less model calls for side jobs (§7.4), when the provider supports them. */
   utilityModel?(): UtilityModel;

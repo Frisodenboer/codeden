@@ -46,6 +46,47 @@ describe("runner protocol", () => {
     });
   });
 
+  it("round-trips provider list updates", () => {
+    const update = roundTrip(RunnerToServerMessage, {
+      type: "providers",
+      providers: [
+        {
+          id: "codex",
+          displayName: "Codex",
+          capabilities: {
+            resume: true,
+            steer: true,
+            interrupt: true,
+            approvals: true,
+            userQuestions: true,
+            subagents: false,
+            rollback: false,
+            fork: false,
+            images: true,
+            planMode: false,
+            reasoningEffort: true,
+            mcp: true,
+            skills: true,
+          },
+          models: [
+            {
+              id: "gpt-6.1-sol",
+              label: "GPT-6.1-Sol",
+              efforts: ["low", "medium", "high", "xhigh", "max"],
+              defaultEffort: "low",
+              isDefault: true,
+            },
+            // Older payloads without efforts still parse.
+            { id: "gpt-6-luna", label: "GPT-6-Luna" },
+          ],
+        },
+      ],
+    });
+    expect(update.type === "providers" && update.providers[0]?.models[1]?.efforts).toEqual([]);
+    roundTrip(RunnerToServerMessage, { type: "providers", providers: [] });
+    expect(RunnerToServerMessage.safeParse({ type: "providers" }).success).toBe(false);
+  });
+
   it("round-trips commands and results", () => {
     const start = roundTrip(ServerToRunnerMessage, {
       type: "command",

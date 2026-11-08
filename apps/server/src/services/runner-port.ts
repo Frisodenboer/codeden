@@ -46,6 +46,17 @@ export function toServiceError(error: unknown): ServiceError {
   return new ServiceError(502, code, message);
 }
 
+/**
+ * Ask a connected runner to re-detect its providers, which also refreshes their model lists
+ * (they come back as a runner status update). Fire and forget; failures are only logged.
+ */
+export function redetectProviders(runner: RunnerPort, log?: (message: string) => void): void {
+  if (!runner.isConnected()) return;
+  runner.request({ name: "provider.detect" }, 60_000).catch((error: unknown) => {
+    log?.(`runner: provider re-detect failed: ${error instanceof Error ? error.message : error}`);
+  });
+}
+
 /** `RunnerPort` over the server's (possibly absent) `RunnerClient`. */
 export function runnerPort(get: () => RunnerClient | undefined): RunnerPort {
   return {

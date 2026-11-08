@@ -9,6 +9,10 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Archive sessions.** **Archive session** in the session menu stops the session, hides it from the sidebar and removes its worktree; **Unarchive** (or sending it a message) brings it back.
 - **Worktree cleanup.** Worktrees of sessions inactive for 7 days are removed automatically, unless the pull request is still open or there are uncommitted changes; archiving a project cleans up its sessions' worktrees. Configure it in Settings > General > Worktrees. Branches and checkpoints are kept, and the worktree is recreated from its branch the next time you message the session.
 
+### Fixed
+
+- **Codex models in the model pickers.** Codex's full model list, with each model's reasoning efforts, shows up as soon as CodeDen starts, with no need to run a Codex session or reload the page first. It is loaded again after a setup re-check (for example once you have logged in), and new model lists reach open pages live. Choosing **Max** for a Codex model that offers it now sends `max` instead of `xhigh`.
+
 ## [0.1.1] - 2026-11-07
 
 ### Added
