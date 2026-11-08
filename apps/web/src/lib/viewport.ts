@@ -1,8 +1,10 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Responsive layout modes (§13). The desktop layout is unchanged; below it:
- * - phones and portrait tablets (< 1024 px) get the sidebar as a slide-out drawer;
+ * Responsive layout modes (§13). The desktop layout is unchanged, including narrow desktop
+ * windows with a mouse; below it:
+ * - phones (< 768 px) and portrait touch tablets (< 1024 px) get the sidebar as a slide-out
+ *   drawer;
  * - touch tablets in landscape (1024–1279 px, coarse pointer) keep a slim icon rail;
  * - in both, the right panel opens as an overlay sheet instead of squeezing the transcript.
  */
@@ -46,7 +48,7 @@ function subscribe(onChange: () => void): () => void {
 
 /** Derive the layout modes from the media query results. */
 export function viewportFrom(flags: Record<Key, boolean>): Viewport {
-  const drawerNav = flags.narrow;
+  const drawerNav = flags.phone || (flags.narrow && flags.coarse);
   const railNav = !drawerNav && flags.medium && flags.coarse;
   return { phone: flags.phone, drawerNav, railNav, sheetPanels: drawerNav || railNav };
 }

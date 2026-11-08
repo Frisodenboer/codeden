@@ -155,13 +155,10 @@ describe("responsive layout modes", () => {
     expect(portrait).toMatchObject({ drawerNav: true, sheetPanels: true });
     const landscape = viewportFrom({ phone: false, narrow: false, medium: true, coarse: true });
     expect(landscape).toMatchObject({ drawerNav: false, railNav: true, sheetPanels: true });
-    // A narrow desktop window with a mouse keeps the desktop layout.
-    const narrowDesktop = viewportFrom({
-      phone: false,
-      narrow: false,
-      medium: true,
-      coarse: false,
-    });
-    expect(narrowDesktop).toMatchObject({ drawerNav: false, railNav: false, sheetPanels: false });
+    // Narrow desktop windows with a mouse keep the desktop layout.
+    for (const narrow of [true, false]) {
+      const desktop = viewportFrom({ phone: false, narrow, medium: true, coarse: false });
+      expect(desktop).toMatchObject({ drawerNav: false, railNav: false, sheetPanels: false });
+    }
   });
 });

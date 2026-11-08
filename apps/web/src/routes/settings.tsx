@@ -97,8 +97,8 @@ export function SettingsPage({ section }: { section: string }) {
   return (
     <>
       <PageHeader icon={<Settings2 />} title="Settings" meta={active?.label} />
-      {/* Phones and portrait tablets: a section picker instead of the side nav. */}
-      <div className="shrink-0 border-b border-border px-4 py-2 lg:hidden">
+      {/* Phones: a section picker instead of the side nav. */}
+      <div className="shrink-0 border-b border-border px-4 py-2 md:hidden">
         <select
           aria-label="Settings section"
           className="h-10 w-full rounded-lg border border-border bg-background px-3 text-[13px]"
@@ -116,7 +116,7 @@ export function SettingsPage({ section }: { section: string }) {
         </select>
       </div>
       <div className="flex min-h-0 flex-1">
-        <nav className="hidden w-56 shrink-0 space-y-0.5 border-r border-border p-3 lg:block">
+        <nav className="hidden w-56 shrink-0 space-y-0.5 border-r border-border p-3 md:block">
           {SECTIONS.map((s) => (
             <Link
               key={s.id}
