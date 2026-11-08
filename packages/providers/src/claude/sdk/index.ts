@@ -8,4 +8,4 @@ export {
   installedClaudeSdkVersion,
   isClaudeSdkInstalled,
 } from "./install";
-export { claudeSdkSource, configureClaudeSdk, loadClaudeSdk } from "./load";
+export { claudeSdkReady, claudeSdkSource, configureClaudeSdk, loadClaudeSdk } from "./load";

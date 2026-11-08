@@ -1,4 +1,9 @@
-import { type ClaudeSdkModule, importClaudeSdkFrom, installClaudeSdk } from "./install";
+import {
+  type ClaudeSdkModule,
+  importClaudeSdkFrom,
+  installClaudeSdk,
+  isClaudeSdkInstalled,
+} from "./install";
 
 /**
  * Set to `true` by the published bundle (tsdown `define`): the SDK is not shipped with
@@ -28,6 +33,16 @@ export function configureClaudeSdk(opts: {
   depsDir = opts.depsDir;
   progressListener = opts.onProgress;
   loaded = undefined;
+}
+
+/**
+ * True when the SDK can be loaded without installing it first: from the workspace, already
+ * loaded, or already installed in the deps folder. Background work (model discovery) checks
+ * this so it never triggers the on-demand install by itself.
+ */
+export function claudeSdkReady(): boolean {
+  if (claudeSdkSource() === "workspace" || loaded) return true;
+  return depsDir !== undefined && isClaudeSdkInstalled(depsDir);
 }
 
 /**
