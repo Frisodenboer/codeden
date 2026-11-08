@@ -16,7 +16,10 @@ export interface QueueApi {
   /** Replace the text; attachments stay. */
   edit(sessionId: string, messageId: string, text: string): Promise<QueuedMessage>;
   remove(sessionId: string, messageId: string): Promise<void>;
-  /** Steer the running turn with it now (or send it, if the session went idle). */
+  /**
+   * Steer the running turn with it now (needs `capabilities.steer`). Rejects with 409
+   * `no_turn` when no turn is running: the queue sends it next, in order.
+   */
   sendNow(sessionId: string, messageId: string): Promise<SendQueuedNowResponse>;
 }
 

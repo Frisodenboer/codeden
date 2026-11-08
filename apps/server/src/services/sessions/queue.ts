@@ -14,7 +14,6 @@ export interface QueueServiceDeps {
 }
 
 const BUSY = new Set(["running", "waiting"]);
-const NOT_STARTED = new Set(["created", "queued", "starting"]);
 
 /**
  * The queued-message tray (`/api/sessions/:id/queue`): list, edit, delete and send-now.
@@ -43,34 +42,26 @@ export class QueueService {
   }
 
   /**
-   * Deliver a queued message ahead of its turn: steer the running turn with it, or send it
-   * straight away when the session is idle. If delivery fails it goes back in its place.
+   * Steer the running turn with a queued message, ahead of its place. Only a running turn
+   * can take it (409 `no_turn` otherwise; the queue sends it next, in order), and only on a
+   * provider that can steer. If the steer fails the message goes back in its place.
    */
   async sendNow(sessionId: string, messageId: string): Promise<SendQueuedNowResponse> {
     const message = this.require(sessionId, messageId);
     const session = this.deps.repo.get(sessionId);
-    if (NOT_STARTED.has(session.status)) {
-      throw conflict("The session has not started yet", "not_started");
+    if (!BUSY.has(session.status)) {
+      // Nudge delivery so an idle session with a waiting queue sends its next message, in order.
+      void this.deps.sessions.flushOutbox(sessionId).catch(() => undefined);
+      throw conflict("No turn is running: the queue sends this message next", "no_turn");
     }
-    const busy = BUSY.has(session.status);
     const canSteer = this.deps.providers().find((p) => p.id === session.provider)
       ?.capabilities.steer;
-    if (busy && !canSteer) {
-      throw conflict("This provider cannot steer a running turn", "unsupported");
-    }
+    if (!canSteer) throw conflict("This provider cannot steer a running turn", "unsupported");
     // Taken out before anything is awaited: delivery can no longer pick it up.
     this.deps.outbox.remove(message, "sent");
     try {
-      if (busy) {
-        await this.deps.sessions.steer(sessionId, message.input);
-        return { status: "steered" };
-      }
-      await this.deps.sessions.send(
-        sessionId,
-        { input: message.input, whenBusy: "queue" },
-        message.from,
-      );
-      return { status: "sent" };
+      await this.deps.sessions.steer(sessionId, message.input);
+      return { status: "steered" };
     } catch (error) {
       this.deps.outbox.restore(message);
       void this.deps.sessions.flushOutbox(sessionId).catch(() => undefined);

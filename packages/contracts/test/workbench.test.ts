@@ -104,6 +104,8 @@ describe("workbench contracts", () => {
     });
     roundTrip(EditQueuedMessageRequest, { text: "hello instead" });
     roundTrip(SendQueuedNowResponse, { status: "steered" });
+    // Send-now only ever steers a running turn.
+    expect(SendQueuedNowResponse.safeParse({ status: "sent" }).success).toBe(false);
     expect(QueuedMessage.safeParse({ ...message, from: "someone" }).success).toBe(false);
   });
 

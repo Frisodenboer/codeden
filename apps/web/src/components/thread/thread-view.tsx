@@ -103,7 +103,7 @@ export function ThreadView({ sessionId, empty }: { sessionId: string; empty?: Re
         <div className="flex min-h-0 flex-1 flex-col">{empty}</div>
       )}
       {followups && !running && <FollowupChips sessionId={sessionId} suggestions={followups} />}
-      <QueuedMessages session={session} />
+      <QueuedMessages session={session} running={running} />
       <Composer session={session} running={running} />
     </div>
   );

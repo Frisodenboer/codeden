@@ -80,8 +80,8 @@ function QueuedRow({
   });
   const sendNow = useMutation({
     mutationFn: () => client.queue.sendNow(session.id, message.id),
-    onSuccess: (res) => {
-      toast(res.status === "steered" ? "Sent to the running turn" : "Sent");
+    onSuccess: () => {
+      toast("Sent to the running turn");
       void refresh();
     },
     onError,
@@ -185,15 +185,17 @@ function QueuedRow({
 
 /**
  * Messages waiting for the running turn to end, just above the composer: each with its
- * position, sender, text and thumbnails, and edit, delete and (when the provider can steer)
- * send-now actions. A delivered message leaves the tray and shows in the transcript.
+ * position, sender, text and thumbnails, and edit, delete and send-now actions. Send-now
+ * steers the running turn, so it shows only while a turn runs on a provider that can steer.
+ * A delivered message leaves the tray and shows in the transcript.
  */
-export function QueuedMessages({ session }: { session: Session }) {
+export function QueuedMessages({ session, running }: { session: Session; running: boolean }) {
   const { data: messages = [] } = useQueuedMessages(session.id);
-  const canSteer = useSnapshotData(
+  const providerCanSteer = useSnapshotData(
     (s) => s.runner.providers.find((p) => p.id === session.provider)?.capabilities.steer ?? false,
     false,
   );
+  const canSteer = running && providerCanSteer;
   if (messages.length === 0) return null;
   return (
     <section

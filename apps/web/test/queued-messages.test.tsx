@@ -51,7 +51,7 @@ describe("queue labels", () => {
 describe("QueuedMessages", () => {
   it("renders nothing while the queue is empty", async () => {
     const { container } = renderWithClient(
-      <QueuedMessages session={session()} />,
+      <QueuedMessages session={session()} running />,
       withQueue({ list: async () => [] }),
     );
     await waitFor(() =>
@@ -64,7 +64,7 @@ describe("QueuedMessages", () => {
       queued("a", "Fix the tests too"),
       queued("b", "Message from the orchestrator:\nAlso bump the version", "orchestrator"),
     ]);
-    renderWithClient(<QueuedMessages session={session()} />, withQueue({ list }));
+    renderWithClient(<QueuedMessages session={session()} running />, withQueue({ list }));
     const tray = await screen.findByRole("region", { name: "Queued messages" });
     expect(within(tray).getByText("2 queued")).toBeTruthy();
     const [first, second] = within(tray).getAllByTestId("queued-message");
@@ -80,12 +80,39 @@ describe("QueuedMessages", () => {
 
   it("hides send-now when the provider cannot steer", async () => {
     renderWithClient(
-      <QueuedMessages session={session({ provider: "no-steer" })} />,
+      <QueuedMessages session={session({ provider: "no-steer" })} running />,
       withQueue({ list: async () => [queued("a", "later")] }),
     );
     const row = await screen.findByTestId("queued-message");
     expect(within(row).getByRole("button", { name: "Edit" })).toBeTruthy();
     expect(within(row).queryByRole("button", { name: "Send now" })).toBeNull();
+  });
+
+  it("hides send-now while no turn runs: it only steers a running turn", async () => {
+    renderWithClient(
+      <QueuedMessages session={session()} running={false} />,
+      withQueue({ list: async () => [queued("a", "next up")] }),
+    );
+    const row = await screen.findByTestId("queued-message");
+    await waitFor(() => expect(within(row).getByRole("button", { name: "Delete" })).toBeTruthy());
+    expect(within(row).queryByRole("button", { name: "Send now" })).toBeNull();
+  });
+
+  it("send-now steers the running turn through the mock; a dropped message answers 409", async () => {
+    const client = createMockClient();
+    const started = await client.startSession({ projectId: "p-storefront", input: { text: "Go" } });
+    if (started.status !== "started") throw new Error("not started");
+    const id = started.sessionId;
+    await client.sendMessage(id, { text: "steer me" }, "queue");
+    await client.sendMessage(id, { text: "wait for me" }, "queue");
+    const [first, second] = await client.queue.list(id);
+    await expect(client.queue.sendNow(id, first?.id ?? "")).resolves.toEqual({ status: "steered" });
+    expect((await client.queue.list(id)).map((m) => m.input.text)).toEqual(["wait for me"]);
+    await client.interrupt(id);
+    await expect(client.queue.sendNow(id, second?.id ?? "")).rejects.toMatchObject({
+      status: 409,
+      code: "no_longer_queued",
+    });
   });
 
   it("edits inline and deletes", async () => {
@@ -98,7 +125,7 @@ describe("QueuedMessages", () => {
       items = items.filter((m) => m.id !== id);
     });
     renderWithClient(
-      <QueuedMessages session={session()} />,
+      <QueuedMessages session={session()} running />,
       withQueue({ list: async () => items, edit, remove }),
     );
     const [first] = await screen.findAllByTestId("queued-message");
@@ -123,7 +150,7 @@ describe("QueuedMessages", () => {
       throw new ApiRequestError(409, "already_sent", "This message was already sent");
     });
     renderWithClient(
-      <QueuedMessages session={session()} />,
+      <QueuedMessages session={session()} running />,
       withQueue({ list: async () => items, remove }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
@@ -146,7 +173,10 @@ describe("queue with the mock client", () => {
       "Then write the changelog",
     ]);
 
-    const { queryClient } = renderWithClient(<QueuedMessages session={session({ id })} />, client);
+    const { queryClient } = renderWithClient(
+      <QueuedMessages session={session({ id })} running />,
+      client,
+    );
     const stop = startRealtime(client, queryClient);
     try {
       await screen.findByText("Then write the changelog");

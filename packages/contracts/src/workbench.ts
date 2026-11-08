@@ -62,12 +62,13 @@ export const EditQueuedMessageRequest = z.object({ text: z.string().max(200_000)
 export type EditQueuedMessageRequest = z.infer<typeof EditQueuedMessageRequest>;
 
 /**
- * `POST /api/sessions/:id/queue/:messageId/send-now`: deliver a queued message ahead of its
- * turn. `steered` while a turn runs (needs `capabilities.steer`), `sent` when the session was
- * idle. `DELETE /api/sessions/:id/queue/:messageId` answers `{ ok: true }`; both answer 409
+ * `POST /api/sessions/:id/queue/:messageId/send-now`: steer the running turn with a queued
+ * message (needs `capabilities.steer`). Answers 409 `no_turn` when no turn is running (the
+ * queue sends it next) and 409 `unsupported` when the provider cannot steer.
+ * `DELETE /api/sessions/:id/queue/:messageId` answers `{ ok: true }`; both answer 409
  * `already_sent` once delivery has taken the message.
  */
-export const SendQueuedNowResponse = z.object({ status: z.enum(["steered", "sent"]) });
+export const SendQueuedNowResponse = z.object({ status: z.literal("steered") });
 export type SendQueuedNowResponse = z.infer<typeof SendQueuedNowResponse>;
 
 /** Structured result an agent reports with the `finish` tool (§8.3). */

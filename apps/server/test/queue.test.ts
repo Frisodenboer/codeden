@@ -177,15 +177,22 @@ describe("QueueService", () => {
     expect(text(outbox)).toEqual(["a", "b"]);
   });
 
-  it("send-now sends straight away when idle, and refuses providers that cannot steer", async () => {
-    const idle = queueWith({ status: "idle" });
-    const a = outbox.push("s1", { text: "a", attachments: [] }, "pm");
-    await expect(idle.queue.sendNow("s1", a.id)).resolves.toEqual({ status: "sent" });
-    expect(idle.sessions.send).toHaveBeenCalledWith(
-      "s1",
-      { input: a.input, whenBusy: "queue" },
-      "pm",
-    );
+  it("send-now only steers: no running turn or no steering leaves the message queued", async () => {
+    // Idle (for example between delivery taking the next message and its turn starting):
+    // sending it now would jump the queue, so it waits for its turn.
+    for (const status of ["idle", "starting", "interrupted"]) {
+      const idle = queueWith({ status });
+      const a = outbox.push("s1", { text: `a-${status}`, attachments: [] });
+      await expect(idle.queue.sendNow("s1", a.id)).rejects.toMatchObject({
+        status: 409,
+        code: "no_turn",
+      });
+      expect(idle.sessions.steer).not.toHaveBeenCalled();
+      expect(idle.sessions.send).not.toHaveBeenCalled();
+      // Delivery is nudged instead, which sends the head of the queue (in order) if idle.
+      expect(idle.sessions.flushOutbox).toHaveBeenCalledWith("s1");
+    }
+    expect(text(outbox)).toEqual(["a-idle", "a-starting", "a-interrupted"]);
 
     const noSteer = queueWith({ status: "running", canSteer: false });
     const b = outbox.push("s1", { text: "b", attachments: [] });
@@ -193,6 +200,7 @@ describe("QueueService", () => {
       status: 409,
       code: "unsupported",
     });
-    expect(text(outbox)).toEqual(["b"]);
+    expect(text(outbox)).toContain("b");
+    expect(noSteer.sessions.steer).not.toHaveBeenCalled();
   });
 });

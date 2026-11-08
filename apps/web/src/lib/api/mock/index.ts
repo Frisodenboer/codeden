@@ -175,10 +175,9 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       running.get(sessionId)?.cancel();
       world.updateSession(sessionId, { status: "stopped", endedAt: new Date().toISOString() });
     },
-    queue: queue.api(async (sessionId, input) => {
-      const steer = running.has(sessionId);
-      await client.sendMessage(sessionId, input, steer ? "steer" : "send");
-      return steer ? "steered" : "sent";
+    queue: queue.api({
+      running: (sessionId) => running.has(sessionId),
+      steer: (sessionId, input) => client.sendMessage(sessionId, input, "steer"),
     }),
     async archiveSession(sessionId) {
       running.get(sessionId)?.cancel();

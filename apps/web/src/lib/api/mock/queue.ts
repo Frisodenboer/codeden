@@ -48,8 +48,11 @@ export class MockQueue {
     for (const m of this.list(sessionId)) this.take(m, "dropped");
   }
 
-  /** The tray API; `deliver` sends a message now (steering a running turn). */
-  api(deliver: (sessionId: string, input: UserInput) => Promise<"steered" | "sent">): QueueApi {
+  /** The tray API; send-now `steer`s the running turn, like the server. */
+  api(turn: {
+    running: (sessionId: string) => boolean;
+    steer: (sessionId: string, input: UserInput) => Promise<void>;
+  }): QueueApi {
     return {
       list: async (sessionId) => structuredClone(this.list(sessionId)),
       edit: async (sessionId, messageId, text) => {
@@ -71,8 +74,16 @@ export class MockQueue {
       },
       sendNow: async (sessionId, messageId) => {
         const message = this.require(sessionId, messageId);
+        if (!turn.running(sessionId)) {
+          throw new ApiRequestError(
+            409,
+            "no_turn",
+            "No turn is running: the queue sends this message next",
+          );
+        }
         this.take(message, "sent");
-        return { status: await deliver(sessionId, message.input) };
+        await turn.steer(sessionId, message.input);
+        return { status: "steered" };
       },
     };
   }
