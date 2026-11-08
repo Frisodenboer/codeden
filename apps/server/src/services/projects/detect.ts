@@ -1,8 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { PackageManager, ProjectDetection } from "@codeden/contracts";
 import { badRequest } from "../errors";
 import type { Exec } from "../exec";
+
+/** Remove credentials embedded in URLs (`https://user:token@host`). */
+export function redactUrls(text: string): string {
+  return text.replace(/(\w+:\/\/)[^@\s/]+@/g, "$1***@");
+}
 
 /** `owner/repo` from a GitHub remote URL (https, ssh or scp-style); null for other hosts. */
 export function parseGitHubRemote(url: string): { owner: string; repo: string } | null {
@@ -72,6 +77,31 @@ export function suggestedSetup(pm: PackageManager | null): string[] {
   return pm ? [`${pm} install`] : [];
 }
 
+/** True when `path` exists and is a directory. */
+export function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether two paths name the same folder, following symlinks (macOS `/var` → `/private/var`)
+ * and ignoring case on Windows.
+ */
+export function sameRealPath(a: string, b: string): boolean {
+  const real = (p: string) => {
+    try {
+      return realpathSync.native(p);
+    } catch {
+      return resolve(p);
+    }
+  };
+  const [x, y] = [real(a), real(b)];
+  return process.platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
+}
+
 async function git(exec: Exec, cwd: string, args: string[]): Promise<string | null> {
   const result = await exec("git", ["-C", cwd, ...args], { timeoutMs: 10_000 });
   return result.code === 0 ? result.stdout.trim() || null : null;
@@ -93,11 +123,13 @@ export async function detectProject(exec: Exec, dir: string): Promise<ProjectDet
   };
   if (!root) return base;
 
-  const [remoteUrl, originHead, current] = await Promise.all([
+  const [rawRemote, originHead, current] = await Promise.all([
     git(exec, dir, ["remote", "get-url", "origin"]),
     git(exec, dir, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]),
     git(exec, dir, ["symbolic-ref", "--short", "HEAD"]),
   ]);
+  // A token embedded in the remote URL must never reach the event log or the UI.
+  const remoteUrl = rawRemote ? redactUrls(rawRemote) : null;
   const defaultBranch = originHead?.replace(/^origin\//, "") ?? current;
   const gh = remoteUrl ? parseGitHubRemote(remoteUrl) : null;
   return {

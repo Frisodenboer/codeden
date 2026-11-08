@@ -58,7 +58,7 @@ CodeDen also re-checks silently on every launch and warns when something changes
 
 Click **+** next to **Projects** in the sidebar and choose:
 
-- **Local folder.** Browse your disk with the built-in folder picker. Any folder works; GitHub features switch on when it has a GitHub remote.
+- **Local folder.** Browse your disk with the built-in folder picker. Any folder works; GitHub features switch on when it has a GitHub remote, including one added later (by you or an agent, see [GitHub](github.md#when-a-folder-gets-a-github-remote-later)).
 - **Clone from GitHub.** Paste a repository URL or `owner/repo` and CodeDen clones it.
 
 New projects get the **starter set** of automations added, all switched **off**. Turn on the ones you want later (see [Automations](automations.md)).

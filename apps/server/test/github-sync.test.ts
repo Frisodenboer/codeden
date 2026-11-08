@@ -1,3 +1,4 @@
+import type { Project } from "@codeden/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GithubRateLimitError } from "../src/services/github/client";
 import { createGithubEnv, type GithubEnv } from "./support/github-env";
@@ -238,4 +239,34 @@ describe("local-only projects", () => {
     );
     expect(env.gh.requests).toHaveLength(0);
   });
+
+  it("imports a project that became a GitHub project right away", async () => {
+    env.gh.addIssue({ title: "Already there" });
+    env.service.start();
+    await waitFor(() => types().includes("github.synced"));
+    const synced = () =>
+      env.events.filter(
+        (e) =>
+          e.type === "github.synced" &&
+          (e.payload as { projectId: string }).projectId === "p-local",
+      );
+    expect(synced()).toHaveLength(0);
+
+    // Re-detection found the same GitHub origin in the local project's folder.
+    const { github } = env.githubProject as Extract<Project, { kind: "github" }>;
+    const project: Project = { ...env.localProject, kind: "github", github };
+    env.store.append([{ type: "project.updated", sessionId: null, payload: { project } }]);
+    env.service.sync.soon("p-local", { now: true });
+    // Well before the next 5 s scheduler tick.
+    await waitFor(() => synced().length === 1, 2_000);
+    await expect(env.service.listIssues("p-local")).resolves.toHaveLength(1);
+  });
 });
+
+async function waitFor(probe: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!probe()) {
+    if (Date.now() > deadline) throw new Error("timed out");
+    await waitTick();
+  }
+}

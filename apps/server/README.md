@@ -177,9 +177,12 @@ Opt-in proxies next to the browser's speech APIs (which stay the default). Keys 
 - **CodeDen's comments** carry a hidden `<!-- codeden -->` marker (they are posted with the user's token), stripped again when comments are shown to agents or the UI.
 - **Evidence.** Files are committed with the Git Data API (blobs, tree on the branch's tree, commit, ref) to the orphan branch `codeden/evidence` under `<pr-N|issue-N>/<sessionId>/`, so no checkout is touched. Comments link `https://github.com/<o>/<r>/blob/<commit>/<path>?raw=true`: GitHub keeps that URL as the `<img src>` and serves it to signed-in readers, so images render in private repositories too (`raw.githubusercontent.com` links would not).
 - **Local-only projects:** list routes return empty lists with `connection.message`; everything else is `409 not_a_github_project`. No GitHub request is made.
+- **Re-detection** (`src/services/projects/redetector.ts`, `reconcile.ts`). A project's kind is detected again on server start (every project, one at a time), when an `agent.turn.completed|failed|interrupted` lands for a session in a local project, and on `POST /api/projects/:id/refresh`. `ProjectService.refresh` runs `detectProject` and `reconcileProject` and appends `project.updated` only when something changed: local + GitHub `origin` -> `kind: "github"` (then `GithubSync.soon(id, { now: true })`); no checkout -> checkout records `defaultBranch`; another repository on `origin` -> new coordinates; a GitHub project without a GitHub `origin` keeps its coordinates and gets `remoteWarning` (never downgraded). `POST /api/projects/:id/disconnect-github` is the user's way out (`409 github_remote_present` while `origin` is on GitHub, `409 factory_mode` in autopilot or dark factory). When a `project.updated` points a project at another repository (or makes it a GitHub project), the projector drops its `github_issues`, `github_prs` and `github_sync_state` rows in the same transaction, so the next sync re-imports silently. Remote URLs are stored with credentials removed.
 
 | Route | Body / response |
 |---|---|
+| `POST /api/projects/:id/refresh` | -> `RefreshProjectResponse` (`outcome`, `changed`, `message`, `detected`) |
+| `POST /api/projects/:id/disconnect-github` | -> `DisconnectGithubResponse` |
 | `GET /api/github/connection` | -> `GithubConnection` |
 | `GET /api/projects/:id/github/issues?state=&limit=` | -> `GithubIssuesResponse` (projection + connection + sync status) |
 | `GET /api/projects/:id/github/prs?state=&limit=` | -> `GithubPrsResponse` |

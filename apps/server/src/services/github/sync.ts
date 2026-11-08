@@ -83,10 +83,14 @@ export class GithubSync {
     return run;
   }
 
-  /** Poll this project at the next scheduler tick (after creating a PR, merging, ...). */
-  soon(projectId: string): void {
+  /**
+   * Poll this project at the next scheduler tick (after creating a PR, merging, ...). A project
+   * that just became a GitHub project (or moved to another repository) is polled right away.
+   */
+  soon(projectId: string, opts: { now?: boolean } = {}): void {
     const schedule = this.schedules.get(projectId);
     if (schedule) schedule.nextAt = 0;
+    if (opts.now && this.timer) setImmediate(() => this.tick());
   }
 
   status(projectId: string): GithubSyncStatus {

@@ -2,6 +2,20 @@ import { z } from "zod";
 import { AutonomyLevel, Id, ProviderId, Timestamp } from "../common";
 import { AutonomyMode, DEFAULT_VISION_PATH, FactoryLimits } from "../factory";
 
+/**
+ * Something re-detecting a project's folder found that CodeDen does not apply on its own (§9).
+ * `github_remote_missing`: a `github` project's folder no longer has a GitHub `origin` (removed,
+ * pointing at another host, or no git checkout at all). The project keeps its GitHub
+ * coordinates until the user restores the remote or disconnects GitHub.
+ */
+export const ProjectRemoteWarning = z.object({
+  code: z.literal("github_remote_missing"),
+  /** What `origin` points at now, credentials removed; null when there is no `origin`. */
+  remoteUrl: z.string().nullable(),
+  detectedAt: Timestamp,
+});
+export type ProjectRemoteWarning = z.infer<typeof ProjectRemoteWarning>;
+
 const projectBase = {
   id: Id,
   name: z.string().min(1),
@@ -34,6 +48,12 @@ const projectBase = {
    * `projects.reordered`; archived projects keep theirs.
    */
   sortOrder: z.int().nonnegative().default(0),
+  /**
+   * Set when re-detection found the folder's git remote out of step with the project (see
+   * `ProjectRemoteWarning`); absent when all is well. Cleared by the next detection that finds
+   * the GitHub remote again, or by disconnecting GitHub.
+   */
+  remoteWarning: ProjectRemoteWarning.optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   archivedAt: Timestamp.nullable(),
@@ -51,6 +71,9 @@ export type GitHubRepo = z.infer<typeof GitHubRepo>;
 /**
  * A project. `github` projects get the full issue/PR/evidence flow; `local` projects
  * (no GitHub remote) get sessions, worktrees, checkpoints, diffs and automations only (§9).
+ * The kind is detected when the project is added and again later (on server start, after
+ * agent turns in local projects, on demand): a folder that gains a GitHub `origin` becomes a
+ * `github` project. Losing the remote never downgrades a project on its own.
  */
 export const Project = z.discriminatedUnion("kind", [
   z.object({ ...projectBase, kind: z.literal("github"), github: GitHubRepo }),

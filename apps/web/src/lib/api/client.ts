@@ -7,6 +7,7 @@ import type {
   CreateProjectResponse,
   DiffResult,
   DiffScope,
+  DisconnectGithubResponse,
   FsListResponse,
   GitCommitRequest,
   GitCommitResponse,
@@ -16,6 +17,7 @@ import type {
   InboxItem,
   LoginCommandResponse,
   Project,
+  RefreshProjectResponse,
   ResolveConflictResponse,
   RestoreFilesRequest,
   RestoreFilesResponse,
@@ -126,6 +128,13 @@ export interface CodeDenClient {
    * Resolves with the projects in their new order.
    */
   reorderProjects(projectIds: string[]): Promise<Project[]>;
+  /**
+   * Detect the project folder's git checkout and GitHub remote again (§9): a folder that gained
+   * a GitHub `origin` becomes a GitHub project. The project change also arrives as an event.
+   */
+  refreshProject(projectId: string): Promise<RefreshProjectResponse>;
+  /** Make a GitHub project local-only, once its folder no longer has a GitHub `origin`. */
+  disconnectGithub(projectId: string): Promise<DisconnectGithubResponse>;
   readonly automations: AutomationsApi;
   /** Autonomy modes, the vision, the factory panel and kill switches (§10.1, experimental). */
   readonly factory: FactoryApi;

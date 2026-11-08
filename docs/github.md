@@ -72,3 +72,20 @@ Browser screenshots taken with `browser_screenshot` can go straight into evidenc
 ## Local-only projects
 
 A folder without a GitHub remote gets sessions, worktrees, checkpoints, diffs, the workbench and automations that don't need GitHub. GitHub lists are simply empty, and no GitHub request is ever made for it. Templates marked `requiresGithub` (issue triage, stale PR follow-up) aren't offered, and the factory modes need a GitHub project.
+
+### When a folder gets a GitHub remote later
+
+A project's git checkout and GitHub remote (`origin`) are detected when you add it, and checked again:
+
+- **after every agent turn** in a local-only project, the moment an agent may have run `git init`, created a repository or pushed to one;
+- **when the server starts**, for every project;
+- **on demand**, with **Check again** on the GitHub tab's "Local-only project" screen, in a session's Issue / PR tab, and next to the "A GitHub project" requirement in the Autonomy dialog. It tells you what it found, such as "Connected to owner/repo" or "Still no GitHub remote on origin".
+
+What a check changes:
+
+- **A GitHub `origin` appeared:** the project becomes a GitHub project. The header shows the repository, the GitHub tab fills with issues and PRs (the first import is silent), and the factory modes become available. No reload is needed.
+- **The folder became a git checkout:** its default branch is recorded, so worktrees work.
+- **`origin` moved to another repository:** the project follows it. Issues and PRs synced from the old repository are dropped and the new one is imported from scratch.
+- **The GitHub `origin` is gone:** nothing is downgraded and nothing is lost. The project keeps its repository and shows a "GitHub remote is missing" warning on the GitHub tab. Restore the remote and **Check again**, or choose **Make local-only** (synced issues and PRs stay in the database, and adding the remote back later reconnects the project).
+
+Credentials embedded in a remote URL (`https://user:token@github.com/...`) are removed before the URL is stored or shown.

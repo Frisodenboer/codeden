@@ -317,6 +317,7 @@ The orchestrator must always know what's happening across all projects, and each
 - **Traceability.** Every session records its issue, branch, PR and commits. PR bodies link the issue (`Fixes #N`) and the CodeDen session.
 - **Evidence.** Screenshots and test artifacts are committed to a dedicated orphan branch (`codeden/evidence`) and linked from PR and issue comments, so GitHub renders them inline. Test output and summaries are posted as comments.
 - **Local-only projects** (no GitHub remote) get sessions, worktrees, checkpoints, diffs and automations, but no issue, PR or evidence flow.
+- **Re-detection.** A project's git checkout and GitHub `origin` are checked again on server start, after agent turns in local-only projects, and on demand. A folder that gains a GitHub remote becomes a GitHub project; one that loses it is never downgraded on its own: it gets a warning, and the user restores the remote or disconnects GitHub.
 
 ## 10. Automations
 

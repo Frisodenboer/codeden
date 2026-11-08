@@ -186,6 +186,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.lifecycle.start();
   services.orchestration.start();
   services.github.start({ sync: opts.github?.sync ?? process.env.CODEDEN_GITHUB_SYNC !== "0" });
+  // A folder may have gained a git checkout or a GitHub remote while CodeDen was away.
+  services.redetector.start();
   services.usage.start();
   services.automations.start();
   services.factory.start();
@@ -307,6 +309,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.lifecycle.stop();
       services.orchestration.stop();
       services.github.stop();
+      services.redetector.stop();
       services.usage.stop();
       services.automations.stop();
       services.factory.stop();
