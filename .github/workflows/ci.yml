@@ -151,8 +151,24 @@ jobs:
             ${{ runner.os == 'Windows' && '~\AppData\Local\electron\Cache' || '~/.cache/electron' }}
             ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.electron }}
+      # On a cache miss a GitHub 504 is retried twice (30 s, then 60 s later); any other
+      # failure fails at once.
       - name: Package the desktop app (unpacked build)
-        run: pnpm --filter @codeden/desktop package --dir
+        shell: bash
+        env:
+          # Logs "Cache hit" or "Cache miss" (and the URL) for every Electron download.
+          DEBUG: "@electron/get:index"
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm --filter @codeden/desktop package --dir 2>&1 | tee "$RUNNER_TEMP/package.log"; then
+              exit 0
+            fi
+            if [ "$attempt" = 3 ] || ! grep -qE "HTTPError: Response code 5[0-9][0-9]|ETIMEDOUT|ECONNRESET|EAI_AGAIN" "$RUNNER_TEMP/package.log"; then
+              exit 1
+            fi
+            echo "::warning::A download from GitHub failed (attempt $attempt of 3); retrying in $((attempt * 30)) s"
+            sleep $((attempt * 30))
+          done
       - name: Save the Electron downloads
         if: steps.electron-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
