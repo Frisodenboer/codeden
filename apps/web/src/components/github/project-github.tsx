@@ -15,6 +15,7 @@ import { platform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { ChecksBadge, GithubUnavailable, LabelChip, ReviewDecisionBadge } from "./github-bits";
 import { PrDetailsView } from "./pr-details";
+import { CheckRemoteButton, RemoteWarningBanner } from "./remote-check";
 
 const STATES: GithubState[] = ["open", "closed", "all"];
 
@@ -123,13 +124,16 @@ export function ProjectGithub({ project }: { project: Project }) {
     onError: (e) => toast.error("Sync failed", { description: e.message }),
   });
 
-  if (!github) return <GithubUnavailable localOnly />;
+  if (!github) {
+    return <GithubUnavailable localOnly action={<CheckRemoteButton projectId={project.id} />} />;
+  }
   const connection = prs.data?.connection ?? issues.data?.connection;
   if (connection && !connection.connected) return <GithubUnavailable connection={connection} />;
   const syncStatus = prs.data?.sync;
 
   return (
     <div className="space-y-6" data-testid="project-github">
+      <RemoteWarningBanner project={project} />
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/50 p-0.5 text-xs">
           {STATES.map((s) => (

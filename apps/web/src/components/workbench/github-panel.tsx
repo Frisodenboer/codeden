@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { EmptyState } from "@/components/common/bits";
 import { GithubUnavailable, LabelChip } from "@/components/github/github-bits";
 import { PrDetailsView } from "@/components/github/pr-details";
+import { CheckRemoteButton } from "@/components/github/remote-check";
 import { Markdown } from "@/components/thread/markdown";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClient } from "@/lib/api";
@@ -72,7 +73,15 @@ export function GitHubPanel({ sessionId }: { sessionId: string }) {
     refetchInterval: 30_000,
   });
 
-  if (localOnly) return <GithubUnavailable localOnly className="m-4" />;
+  if (project?.kind === "local") {
+    return (
+      <GithubUnavailable
+        localOnly
+        className="m-4"
+        action={<CheckRemoteButton projectId={project.id} />}
+      />
+    );
+  }
   if (isLoading)
     return (
       <div className="space-y-2 p-4">

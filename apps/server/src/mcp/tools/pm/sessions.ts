@@ -1,5 +1,6 @@
 import {
   ConflictDecision,
+  messageFrom,
   ProviderId,
   ReasoningEffort,
   SessionStatus,
@@ -132,7 +133,7 @@ export const messageSession = defineTool({
     const res = await services.sessions.send(
       sessionId,
       {
-        input: { text: `Message from your project manager:\n${text}`, attachments: [] },
+        input: messageFrom("pm", text),
         whenBusy: whenBusy ?? "queue",
       },
       "pm",

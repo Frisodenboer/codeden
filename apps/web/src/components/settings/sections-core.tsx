@@ -80,7 +80,7 @@ export function GeneralSettings() {
       </SettingsSection>
       <SettingsSection
         title="Worktrees"
-        description="Archiving a session always removes its worktree. Branches and checkpoints are kept, and a cleaned-up worktree is recreated when you message the session again."
+        description="Archiving a session removes its worktree unless it has uncommitted changes. Branches and checkpoints are kept, and a cleaned-up worktree is recreated when you message the session again."
       >
         <SettingRow
           label="Clean up inactive worktrees"

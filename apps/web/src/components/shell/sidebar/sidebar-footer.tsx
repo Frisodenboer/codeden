@@ -4,6 +4,7 @@ import { StatusDot } from "@/components/common/status-dot";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isMockMode } from "@/lib/api";
+import { runnerStatusText } from "@/lib/runner-status";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/stores/connection";
 import { resolveTheme, useThemeStore } from "@/stores/theme";
@@ -45,13 +46,7 @@ export function SidebarFooter({ compact = false }: { compact?: boolean }) {
   const openShortcuts = useUiStore((s) => s.setShortcutsOpen);
   const dark = resolveTheme(preference) === "dark";
 
-  const tone = socket !== "open" ? "failed" : runner?.state === "connected" ? "done" : "waiting";
-  const label =
-    socket !== "open"
-      ? "Connecting…"
-      : runner?.state === "connected"
-        ? "Ready"
-        : `Runner ${runner?.state ?? "unknown"}`;
+  const { tone, label, detail } = runnerStatusText(socket, runner);
 
   return (
     <div
@@ -63,11 +58,7 @@ export function SidebarFooter({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <div
           className="flex min-w-0 flex-1 items-center gap-2 px-1.5 text-2xs text-muted-foreground"
-          title={
-            runner
-              ? `Runner ${runner.state} · ${runner.providers.map((p) => p.displayName).join(", ")}`
-              : label
-          }
+          title={detail}
         >
           <StatusDot tone={tone} />
           <span className="truncate">{label}</span>

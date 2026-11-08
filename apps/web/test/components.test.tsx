@@ -1,6 +1,6 @@
-import type { ItemOf } from "@codeden/contracts";
+import type { ItemOf, UserQuestion } from "@codeden/contracts";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { VoiceButton } from "@/components/composer/voice-button";
 import { ConflictCard } from "@/components/project/conflict-card";
 import { ApprovalCard } from "@/components/thread/cards/approval-card";
@@ -82,6 +82,124 @@ describe("QuestionCard", () => {
         answers: { a: ["Backoff"], b: ["Dead-letter it"] },
       }),
     );
+  });
+
+  const LONG_ANSWER =
+    "I'm not sure. My concern is that we're going to have an infinite amount of worktrees taking up space on disk if every retry spins up its own session, so whatever we pick should cap the number of attempts and clean up after itself.";
+  const retry: UserQuestion = {
+    id: "a",
+    question: "How should failed webhooks be retried?",
+    options: [{ label: "Backoff" }, { label: "Fixed" }],
+    multiSelect: false,
+    allowFreeText: true,
+  };
+  const exhausted: UserQuestion = {
+    id: "d",
+    question: "What should happen once retries are exhausted?",
+    options: [{ label: "Dead-letter table" }, { label: "Inbox alert" }, { label: "Email on-call" }],
+    multiSelect: true,
+    allowFreeText: true,
+  };
+  const answered = (
+    questions: UserQuestion[],
+    answers: Record<string, string[]>,
+  ): ItemOf<"user_question"> => ({
+    id: "q",
+    kind: "user_question",
+    status: "completed",
+    requestId: "req-q",
+    questions,
+    answers,
+  });
+
+  /** Classes on `el` or its ancestors (up to the rendered card) that stop text from wrapping. */
+  const noWrapClasses = (el: HTMLElement, container: HTMLElement) => {
+    const found: string[] = [];
+    for (let node: HTMLElement | null = el; node && node !== container; node = node.parentElement) {
+      for (const c of node.classList) {
+        if (["shrink-0", "whitespace-nowrap", "text-nowrap", "truncate"].includes(c)) found.push(c);
+      }
+    }
+    return found;
+  };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("wraps a long free-text answer instead of squeezing the question", () => {
+    const { container } = renderWithClient(
+      <QuestionCard item={answered([retry], { a: [LONG_ANSWER] })} sessionId="s1" />,
+    );
+    const question = screen.getByText("How should failed webhooks be retried?");
+    const answer = screen.getByText(LONG_ANSWER);
+    expect(noWrapClasses(question, container)).toEqual([]);
+    expect(noWrapClasses(answer, container)).toEqual([]);
+    const block = answer.closest("p");
+    expect(block?.className).toContain("whitespace-pre-wrap");
+    expect(block?.className).toContain("wrap-break-word");
+    // Nothing is clamped in jsdom, so there is nothing to expand.
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+  });
+
+  it("lists picked options, then a typed answer on its own line", () => {
+    renderWithClient(
+      <QuestionCard
+        item={answered([retry, exhausted], {
+          a: ["Backoff"],
+          d: ["Dead-letter table", "Inbox alert", "Also log it\nwith the payload"],
+        })}
+        sessionId="s1"
+      />,
+    );
+    expect(screen.getByText("Backoff")).toBeTruthy();
+    const picked = screen.getByText("Dead-letter table");
+    expect(screen.getByText("Inbox alert")).toBeTruthy();
+    expect(screen.getByText("Also log it with the payload")).toBeTruthy();
+    expect(picked.closest("p")?.textContent).toBe(
+      "Dead-letter table, Inbox alert\nAlso log it\nwith the payload",
+    );
+  });
+
+  it("shows a dash for a question left unanswered", () => {
+    renderWithClient(<QuestionCard item={answered([retry], {})} sessionId="s1" />);
+    expect(screen.getByText("—")).toBeTruthy();
+  });
+
+  it("clamps long text with a toggle to show all of it", () => {
+    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(120);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(60);
+    renderWithClient(
+      <QuestionCard item={answered([retry], { a: [LONG_ANSWER] })} sessionId="s1" />,
+    );
+    const block = screen.getByText(LONG_ANSWER).closest("p");
+    expect(block?.className).toContain("line-clamp-4");
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    expect(block?.className).not.toContain("line-clamp");
+    const less = screen.getByRole("button", { name: "Show less" });
+    expect(less.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(less);
+    expect(block?.className).toContain("line-clamp-4");
+  });
+
+  it("wraps a long question and option label while it waits for an answer", () => {
+    const label = `Dead-letter table (${"billing_webhook_dead_letters_".repeat(6)})`;
+    const question = `${"Keep in mind that providers resend the same event id days later. ".repeat(4)}What then?`;
+    const { container } = renderWithClient(
+      <QuestionCard
+        item={{
+          id: "q",
+          kind: "user_question",
+          status: "in_progress",
+          requestId: "req-q",
+          questions: [{ ...exhausted, header: "After retries", question, options: [{ label }] }],
+        }}
+        sessionId="s1"
+      />,
+    );
+    // The header chip flows inline with the question text rather than in a squeezed column.
+    expect(screen.getByText("After retries").parentElement?.textContent).toContain("What then?");
+    const option = screen.getByText(label);
+    expect(noWrapClasses(option, container)).toEqual([]);
+    expect(option.closest(".wrap-break-word")).toBeTruthy();
   });
 });
 

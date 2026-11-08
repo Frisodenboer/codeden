@@ -21,7 +21,7 @@ import type { Db } from "../db/client";
 import { runnerState } from "../db/schema";
 import { ingestRunnerEvent } from "../events/ingest";
 import type { EventStore } from "../events/store";
-import { type RunnerLaunchConfig, startRunnerProcess } from "./launcher";
+import { type RunnerLaunchConfig, type RunnerStartTimeouts, startRunnerProcess } from "./launcher";
 import { isProcessAlive, probeRunnerLock, readLiveRunnerLock } from "./lock";
 
 export interface RunnerClientOptions {
@@ -36,8 +36,11 @@ export interface RunnerClientOptions {
   /** Ephemeral stream data (terminal output, browser frames). */
   onStream?: (stream: RunnerStream) => void;
   log?: (message: string) => void;
-  /** Max time to wait for a spawned runner's lock file. Default 20s. */
-  startTimeoutMs?: number;
+  /**
+   * How long to wait for a spawned runner's lock file. A live runner is waited for well past
+   * `slowAfterMs` (default 20 s); only `timeoutMs` (default 5 minutes) gives up on it.
+   */
+  startTimeouts?: RunnerStartTimeouts;
   /**
    * The server's MCP endpoint (`http://127.0.0.1:<port>/mcp`). Pushed to the runner after
    * every handshake so its local proxy (§4.4) forwards there.
@@ -195,12 +198,21 @@ export class RunnerClient {
     }
     if (!this.opts.launch) throw new Error("No live runner and launching is disabled");
     this.opts.log?.("runner: starting a new runner process");
+    // A retry after a failed start keeps showing why the previous attempt failed.
+    const previous = this.current.state === "disconnected" ? this.current.lastError : null;
+    this.setStatus({ ...this.current, state: "starting", lastError: previous });
     return startRunnerProcess({
       launch: this.opts.launch,
       home: this.opts.home,
       lockFile: this.opts.lockFile,
       stale: existing,
-      timeoutMs: this.opts.startTimeoutMs ?? 20_000,
+      timeouts: this.opts.startTimeouts,
+      onSlow: ({ pid, elapsedMs }) => {
+        const s = Math.round(elapsedMs / 1000);
+        this.opts.log?.(`runner: pid ${pid} is still starting after ${s} s; waiting for it`);
+        const lastError = "The runner is taking longer than usual to start";
+        this.setStatus({ ...this.current, state: "starting", lastError });
+      },
     });
   }
 

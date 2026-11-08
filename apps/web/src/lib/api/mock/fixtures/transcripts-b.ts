@@ -1,6 +1,18 @@
 import type { TranscriptState } from "@/lib/transcript/reducer";
 import { buildTranscript } from "./helpers";
-import { assistant, cmd, mcp, notice, read, search, thought, user, web } from "./item-builders";
+import {
+  assistant,
+  cmd,
+  edit,
+  fromRole,
+  mcp,
+  notice,
+  read,
+  search,
+  thought,
+  user,
+  web,
+} from "./item-builders";
 
 export const webhooksTranscript = buildTranscript(
   "s-webhooks",
@@ -149,6 +161,33 @@ export const pmStorefrontTranscript = buildTranscript(
   [{ id: "t-pm-storefront", title: "Storefront PM" }],
   [
     {
+      id: "pm-turn-0",
+      threadId: "t-pm-storefront",
+      start: 95,
+      end: 93,
+      items: [
+        // Stored before senders were recorded: only the first line names the orchestrator.
+        user(
+          "pm-u0",
+          [
+            '<codeden_status project="p-storefront" at="2026-11-08T08:25:00.000Z">',
+            "Running: Fix flaky checkout e2e test",
+            "</codeden_status>",
+            "",
+            "Message from the orchestrator:",
+            "The user wants the **checkout flake** fixed before Friday's release.",
+            "",
+            "- Keep `s-checkout` going and have it open a PR",
+            "- Hold back new storefront work until it merges",
+          ].join("\n"),
+        ),
+        assistant(
+          "pm-a0",
+          "Understood. The checkout session is close: it found a race in `useCart` and is verifying the fix. I'll hold new work until its PR merges.",
+        ),
+      ],
+    },
+    {
       id: "pm-turn-1",
       threadId: "t-pm-storefront",
       start: 40,
@@ -179,7 +218,7 @@ export const exportTranscript = buildTranscript(
       id: "ex-turn-1",
       threadId: "t-export",
       start: 60 * 26,
-      end: 60 * 25,
+      end: 60 * 25 + 20,
       items: [
         user(
           "ex-u1",
@@ -190,6 +229,32 @@ export const exportTranscript = buildTranscript(
         assistant(
           "ex-a1",
           "Added `notes export --format md`. Each note becomes `<slug>.md` with title, tags and dates in YAML front matter. 14 tests pass.",
+        ),
+      ],
+    },
+    {
+      id: "ex-turn-2",
+      threadId: "t-export",
+      start: 60 * 25 + 15,
+      end: 60 * 25,
+      items: [
+        fromRole(
+          "ex-u2",
+          "pm",
+          [
+            "Looks good. Before you finish, **two small things** from the user:",
+            "",
+            "1. Slugs must stay ASCII: run titles through `slug::slugify`.",
+            "2. Add a line about the new flag to the [README](https://github.com/acme/notes-cli#export).",
+            "",
+            "Then call `finish` with the test results.",
+          ].join("\n"),
+        ),
+        edit("ex-t3", [{ path: "src/commands/export.rs", change: "modify", additions: 4 }]),
+        cmd("ex-t4", "cargo test export", "test result: ok. 15 passed; 0 failed", 0, 19_000),
+        assistant(
+          "ex-a2",
+          "Slugs now go through `slug::slugify`, with a test for a title with accents, and the README documents `--format md`. 15 tests pass.",
         ),
       ],
     },

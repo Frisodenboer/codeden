@@ -90,8 +90,9 @@ export const ArchiveSessionRequest = z.object({
 export type ArchiveSessionRequest = z.infer<typeof ArchiveSessionRequest>;
 
 /**
- * What worktree cleanup did: `removed`; `kept_changes` (uncommitted changes, not forced);
- * `none` (no worktree, or already removed); `failed` (runner unavailable, files locked).
+ * What worktree cleanup did: `removed` (`message` notes discarded uncommitted changes);
+ * `kept_changes` (uncommitted changes, not forced); `none` (no worktree,
+ * or already removed); `failed` (runner unavailable, a file in use; `message` says why).
  */
 export const WorktreeCleanupOutcome = z.object({
   status: z.enum(["removed", "kept_changes", "none", "failed"]),

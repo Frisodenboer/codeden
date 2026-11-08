@@ -36,6 +36,10 @@ interface Pending {
   suppressed: boolean;
   /** Busy attempts so far. */
   retries: number;
+  /** A wake attempt is in flight (`fire` has not settled). */
+  firing: boolean;
+  /** A notice arrived while the attempt was in flight: wake again once it settles. */
+  again: boolean;
 }
 
 /**
@@ -74,6 +78,11 @@ export class WakeScheduler {
     const now = this.opts.now();
     const entry = this.pending.get(key);
     if (entry) {
+      // The wake in flight may already have read the notices; this one waits for the next.
+      if (entry.firing) {
+        entry.again = true;
+        return;
+      }
       if (entry.suppressed) return;
       entry.retries = 0; // fresh news: retry from the short delay again
       this.opts.clearTimer(entry.timer);
@@ -86,6 +95,8 @@ export class WakeScheduler {
       timer: this.arm(key, this.opts.debounceMs),
       suppressed: false,
       retries: 0,
+      firing: false,
+      again: false,
     });
   }
 
@@ -122,7 +133,7 @@ export class WakeScheduler {
 
   private async run(key: string): Promise<void> {
     const entry = this.pending.get(key);
-    if (!entry) return;
+    if (!entry || entry.firing) return;
     const recent = this.recent(key);
     if (recent.length >= this.opts.maxWakes) {
       const until = (recent[0] ?? this.opts.now()) + this.opts.windowMs;
@@ -132,10 +143,26 @@ export class WakeScheduler {
       return;
     }
     let result: WakeResult;
+    entry.firing = true;
+    entry.again = false;
     try {
       result = await this.fire(key);
     } catch {
       result = "busy";
+    } finally {
+      entry.firing = false;
+    }
+    if (this.pending.get(key) !== entry) return; // disposed meanwhile
+    if (entry.again) {
+      // Fresh news during the attempt: wake again after the quiet period, as `request` would.
+      entry.again = false;
+      entry.retries = 0;
+      if (result === "sent") this.recordWake(key);
+      if (result !== "busy") {
+        entry.firstAt = this.opts.now();
+        entry.timer = this.arm(key, this.opts.debounceMs);
+        return;
+      }
     }
     if (result === "busy") {
       entry.suppressed = false;

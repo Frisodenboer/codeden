@@ -9,6 +9,7 @@ import { Link } from "@tanstack/react-router";
 import { Check, ChevronDown, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { CheckRemoteButton } from "@/components/github/remote-check";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -151,6 +152,9 @@ export function AutonomyDialog({
                       ? `(${project.github.owner}/${project.github.repo})`
                       : "— this folder has no GitHub remote, so there are no issues or PRs to merge"}
                   </span>
+                  {project.kind !== "github" && (
+                    <CheckRemoteButton projectId={project.id} layout="inline" className="mt-1.5" />
+                  )}
                 </Requirement>
                 <Requirement ok={visionOk}>
                   A vision file{" "}

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ArchiveSessionResponse, defaultSettings, type Session } from "@codeden/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ describe("worktree cleanup (§9)", () => {
     expect(existsSync(worktree)).toBe(true);
 
     const archived = await archive(id);
-    expect(archived.worktree.status).toBe("removed");
+    expect(archived.worktree).toEqual({ status: "removed", message: null });
     expect(archived.session.archivedAt).toBeTruthy();
     expect(archived.session.worktreeRemovedAt).toBeTruthy();
     expect(existsSync(worktree)).toBe(false);
@@ -61,19 +61,71 @@ describe("worktree cleanup (§9)", () => {
     expect(existsSync(worktree)).toBe(true);
   }, 60_000);
 
-  it("keeps a worktree with uncommitted changes unless forced", async () => {
-    const id = await h.startFakeSession();
-    const worktree = (await h.detail(id)).session.worktreePath as string;
-    writeFileSync(join(worktree, "notes.txt"), "not committed\n");
+  it("keeps a worktree with uncommitted changes unless forced, and says when it discarded them", async () => {
+    const archived = await h.startFakeSession();
+    const idle = await h.startFakeSession();
+    const archivedTree = (await h.detail(archived)).session.worktreePath as string;
+    const idleTree = (await h.detail(idle)).session.worktreePath as string;
+    writeFileSync(join(archivedTree, "notes.txt"), "not committed\n");
+    writeFileSync(join(idleTree, "notes.txt"), "not committed\n");
 
-    const kept = await archive(id);
+    const kept = await archive(archived);
     expect(kept.worktree.status).toBe("kept_changes");
     expect(kept.session.archivedAt).toBeTruthy();
     expect(kept.session.worktreeRemovedAt).toBeFalsy();
-    expect(existsSync(join(worktree, "notes.txt"))).toBe(true);
+    expect(existsSync(join(archivedTree, "notes.txt"))).toBe(true);
+    // The sweep retries archived sessions, but never discards changes the user didn't.
+    expect(await services().worktreeCleanup.sweep()).not.toContain(archived);
+    expect(existsSync(join(archivedTree, "notes.txt"))).toBe(true);
 
-    const forced = await archive(id, { force: true });
-    expect(forced.worktree.status).toBe("removed");
+    const forced = await archive(archived, { force: true });
+    expect(forced.worktree).toEqual({
+      status: "removed",
+      message: "Its uncommitted changes were discarded",
+    });
+    expect(forced.session.worktreeRemovedAt).toBeTruthy();
+    expect(existsSync(archivedTree)).toBe(false);
+    expect(branches()).toContain(forced.session.branch as string);
+
+    clock = Date.now() + 8 * DAY;
+    expect(await services().worktreeCleanup.sweep()).not.toContain(idle);
+    expect(existsSync(join(idleTree, "notes.txt"))).toBe(true);
+    clock = Date.now();
+  }, 60_000);
+
+  it("finishes removing the half-deleted worktree an earlier archive left behind", async () => {
+    const id = await h.startFakeSession();
+    const before = (await h.detail(id)).session;
+    const worktree = before.worktreePath as string;
+    // The state an older version left: archived, the removal failed after deleting `.git`
+    // and part of the files, and git has dropped the worktree.
+    services().sessionRepo.update(id, (s) => ({ ...s, archivedAt: new Date().toISOString() }));
+    mkdirSync(join(worktree, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(worktree, "node_modules", "pkg", "index.js"), "left over\n");
+    rmSync(join(worktree, ".git"));
+    execFileSync("git", ["-C", h.repo, "worktree", "prune"]);
+
+    expect(await services().worktreeCleanup.sweep()).toContain(id);
+    expect(existsSync(worktree)).toBe(false);
+    expect((await h.detail(id)).session.worktreeRemovedAt).toBeTruthy();
+    expect(branches()).toContain(before.branch as string);
+  }, 60_000);
+
+  it("never removes a worktree another live session works in", async () => {
+    const owner = await h.startFakeSession();
+    const other = await h.startFakeSession();
+    const worktree = (await h.detail(owner)).session.worktreePath as string;
+    const otherCwd = (await h.detail(other)).session.cwd;
+    services().sessionRepo.update(other, (s) => ({ ...s, cwd: worktree }));
+
+    const refused = await archive(owner);
+    expect(refused.worktree.status).toBe("failed");
+    expect(refused.worktree.message).toMatch(/Another session/);
+    expect(existsSync(worktree)).toBe(true);
+
+    // Archiving again retries once the folder is free.
+    services().sessionRepo.update(other, (s) => ({ ...s, cwd: otherCwd }));
+    expect((await archive(owner)).worktree.status).toBe("removed");
     expect(existsSync(worktree)).toBe(false);
   }, 60_000);
 

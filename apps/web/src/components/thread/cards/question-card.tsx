@@ -1,7 +1,7 @@
-import type { ItemOf } from "@codeden/contracts";
+import type { ItemOf, UserQuestion } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Check, MessageCircleQuestion } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,15 +30,9 @@ export function QuestionCard({
 
   if (!pending) {
     return (
-      <div className="space-y-1.5 rounded-lg border border-border bg-card/50 px-3 py-2.5 text-[13px]">
+      <div className="space-y-2 rounded-lg border border-border bg-card/50 px-3 py-2.5 text-[13px]">
         {item.questions.map((q) => (
-          <div key={q.id} className="flex gap-2">
-            <Check className="mt-0.5 size-3.5 shrink-0 text-status-done" />
-            <span className="text-muted-foreground">{q.question}</span>
-            <span className="ml-auto shrink-0 font-medium">
-              {item.answers?.[q.id]?.join(", ") ?? "—"}
-            </span>
-          </div>
+          <AnsweredQuestion key={q.id} question={q} answers={item.answers?.[q.id] ?? []} />
         ))}
       </div>
     );
@@ -74,16 +68,17 @@ export function QuestionCard({
       </div>
       <div className="divide-y divide-border">
         {item.questions.map((q, qi) => (
-          <section key={q.id} className="space-y-2 px-3.5 py-3" aria-label={q.question}>
-            <div className="mb-2 flex items-baseline gap-2 text-[14px] font-medium">
+          <section key={q.id} className="min-w-0 space-y-2 px-3.5 py-3" aria-label={q.question}>
+            {/* The header chip sits inline, so a long question wraps around it instead of squeezing it. */}
+            <p className="mb-2 text-[14px] font-medium wrap-break-word">
               {q.header && (
-                <span className="rounded bg-muted px-1.5 py-px text-3xs font-medium text-muted-foreground uppercase">
+                <span className="mr-2 inline-block max-w-full rounded bg-muted px-1.5 py-px text-3xs font-medium text-muted-foreground uppercase">
                   {q.header}
                 </span>
               )}
               {q.question}
-            </div>
-            <div className="grid gap-1">
+            </p>
+            <div className="grid grid-cols-1 gap-1">
               {q.options.map((o, oi) => {
                 const selected = answers[q.id]?.includes(o.label) ?? false;
                 return (
@@ -93,7 +88,7 @@ export function QuestionCard({
                     onClick={() => toggle(q.id, o.label, q.multiSelect)}
                     aria-pressed={selected}
                     className={cn(
-                      "flex items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors",
+                      "flex min-w-0 items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors",
                       selected
                         ? "border-chart-2/50 bg-chart-2/[0.08]"
                         : "border-border hover:bg-accent/50",
@@ -108,7 +103,7 @@ export function QuestionCard({
                     >
                       {selected && <Check className="size-3" strokeWidth={3} />}
                     </span>
-                    <span className="min-w-0 flex-1">
+                    <span className="min-w-0 flex-1 wrap-break-word">
                       <span className="block text-[13px]">{o.label}</span>
                       {o.description && (
                         <span className="block text-2xs text-muted-foreground">
@@ -116,7 +111,7 @@ export function QuestionCard({
                         </span>
                       )}
                     </span>
-                    <span className="text-3xs text-muted-foreground/60 tabular-nums">
+                    <span className="shrink-0 text-3xs text-muted-foreground/60 tabular-nums">
                       {qi === 0 ? oi + 1 : ""}
                     </span>
                   </button>
@@ -145,6 +140,90 @@ export function QuestionCard({
         >
           Send answer
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One answered question. A short answer stays on the question's line after an arrow; when the
+ * two don't fit side by side the answer wraps onto its own line, lined up with the question.
+ * Picked options are listed first, then any typed answer on its own line with its line breaks
+ * kept. Long text is clamped to a few lines with a toggle to show it all.
+ */
+function AnsweredQuestion({ question, answers }: { question: UserQuestion; answers: string[] }) {
+  const questionRef = useRef<HTMLParagraphElement>(null);
+  const answerRef = useRef<HTMLParagraphElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
+
+  // Measure while collapsed (and again on resize) whether either clamp hides any text.
+  useLayoutEffect(() => {
+    if (expanded) return;
+    const elements = [questionRef.current, answerRef.current].filter((el) => el !== null);
+    const measure = () => setClamped(elements.some((el) => el.scrollHeight > el.clientHeight + 1));
+    measure();
+    const observer = new ResizeObserver(measure);
+    for (const el of elements) observer.observe(el);
+    return () => observer.disconnect();
+  }, [expanded]);
+
+  const isOption = (answer: string) => question.options.some((o) => o.label === answer);
+  const picked = answers.filter(isOption);
+  const typed = answers.filter((a) => !isOption(a));
+
+  return (
+    <div className="flex gap-2">
+      <Check className="mt-0.5 size-3.5 shrink-0 text-status-done" />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <p
+            ref={questionRef}
+            className={cn(
+              "min-w-0 wrap-break-word text-muted-foreground",
+              !expanded && "line-clamp-3",
+            )}
+          >
+            {question.question}
+          </p>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <span aria-hidden className="text-muted-foreground">
+              →
+            </span>
+            <p
+              ref={answerRef}
+              className={cn(
+                "min-w-0 font-medium whitespace-pre-wrap wrap-break-word",
+                !expanded && "line-clamp-4",
+              )}
+            >
+              {answers.length === 0 && "—"}
+              {picked.map((answer, i) => (
+                <span key={answer}>
+                  {i > 0 && <span className="font-normal text-muted-foreground">, </span>}
+                  {answer}
+                </span>
+              ))}
+              {typed.map((answer, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: answers are fixed once given.
+                <span key={i}>
+                  {(picked.length > 0 || i > 0) && "\n"}
+                  {answer}
+                </span>
+              ))}
+            </p>
+          </div>
+        </div>
+        {(clamped || expanded) && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-0.5 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
       </div>
     </div>
   );

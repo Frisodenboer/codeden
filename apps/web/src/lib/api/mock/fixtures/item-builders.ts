@@ -1,4 +1,12 @@
-import type { Attachment, FileChange, Item, ItemOf, ToolCallItem } from "@codeden/contracts";
+import {
+  type Attachment,
+  type FileChange,
+  type Item,
+  type ItemOf,
+  messageFrom,
+  type RoleSender,
+  type ToolCallItem,
+} from "@codeden/contracts";
 
 /** Terse constructors for transcript fixtures. */
 
@@ -7,6 +15,14 @@ export const user = (id: string, text: string, attachments: Attachment[] = []): 
   kind: "user_message",
   status: "completed",
   input: { text, attachments },
+});
+
+/** A message from the project's PM or the orchestrator, as the server sends it. */
+export const fromRole = (id: string, from: RoleSender, text: string): Item => ({
+  id,
+  kind: "user_message",
+  status: "completed",
+  input: messageFrom(from, text),
 });
 
 export const assistant = (id: string, text: string, streaming = false): Item => ({

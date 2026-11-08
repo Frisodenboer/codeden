@@ -15,18 +15,25 @@ export const sessionLink = (sessionId: string, origin = window.location.origin) 
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+const brief = (text: string | null) =>
+  text && text.length > 160 ? `${text.slice(0, 159).trimEnd()}…` : (text ?? undefined);
+
 /**
- * Toast for an archive: what happened to the worktree, with Undo, and a way to remove a
- * worktree that was kept because of uncommitted changes.
+ * Toast for an archive: what happened to the worktree, with Undo. A worktree kept because of
+ * uncommitted changes offers Remove anyway; a removal that failed (a file still in use) offers
+ * Try again.
  */
 export function announceArchive(
   result: ArchiveSessionResponse,
-  actions: { undo: () => void; force: () => void },
+  actions: { undo: () => void; retry: () => void; force: () => void },
 ): void {
   const undo = { label: "Undo", onClick: actions.undo };
   const { status, message: detail } = result.worktree;
   if (status === "removed") {
-    toast.success("Session archived and its worktree removed", { action: undo });
+    toast.success("Session archived and its worktree removed", {
+      action: undo,
+      description: brief(detail),
+    });
   } else if (status === "none") {
     toast.success("Session archived", { action: undo });
   } else if (status === "kept_changes") {
@@ -36,8 +43,11 @@ export function announceArchive(
       duration: 10_000,
     });
   } else {
-    toast.warning(`Session archived, but the worktree was kept: ${detail ?? "unknown error"}`, {
-      action: undo,
+    toast.warning("Session archived, but its worktree couldn't be removed yet", {
+      description: brief(detail),
+      action: { label: "Try again", onClick: actions.retry },
+      cancel: undo,
+      duration: 10_000,
     });
   }
 }
@@ -64,9 +74,10 @@ export function useSessionActions(session: Session) {
   });
   const archive = useMutation({
     mutationFn: (force: boolean) => client.archiveSession(session.id, { force }),
-    onSuccess: (result) =>
+    onSuccess: (result, force) =>
       announceArchive(result, {
         undo: () => unarchive.mutate(),
+        retry: () => archive.mutate(force),
         force: () => archive.mutate(true),
       }),
     onError,

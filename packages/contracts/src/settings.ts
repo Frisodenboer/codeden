@@ -183,7 +183,7 @@ export const Settings = z.object({
     })
     .prefault({}),
   /**
-   * Worktree cleanup (§9). Archiving a session always removes its worktree; with `cleanup` on,
+   * Worktree cleanup (§9). Archiving a session removes its worktree (unless it has uncommitted changes and isn't forced); with `cleanup` on,
    * worktrees of sessions inactive for `afterDays` are removed too, unless the session's pull
    * request is still open or the worktree has uncommitted changes.
    */

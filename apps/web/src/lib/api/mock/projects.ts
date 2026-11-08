@@ -5,7 +5,10 @@ import { defaultFactoryLimits } from "./fixtures/ops";
 import { uid } from "./live";
 import type { MockWorld } from "./world";
 
-type MockProjectApi = Pick<CodeDenClient, "createProject" | "updateProject" | "reorderProjects">;
+type MockProjectApi = Pick<
+  CodeDenClient,
+  "createProject" | "updateProject" | "reorderProjects" | "refreshProject" | "disconnectGithub"
+>;
 
 const later = <T>(value: T, ms: number): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(structuredClone(value)), ms));
@@ -101,6 +104,30 @@ export function mockProjectApi(world: MockWorld): MockProjectApi {
       }
       world.emitDomain({ type: "projects.reordered", sessionId: null, payload: { projectIds } });
       return later(world.snapshot.projects, 80);
+    },
+
+    // The mock has no folders to look at: every check finds the project as it is.
+    async refreshProject(id) {
+      const project = find(id);
+      const message =
+        project.kind === "github"
+          ? project.remoteWarning
+            ? `This folder has no GitHub remote on origin any more; GitHub features still use ${project.github.owner}/${project.github.repo}`
+            : `Connected to ${project.github.owner}/${project.github.repo}`
+          : "Still no GitHub remote on origin";
+      const outcome = project.remoteWarning ? "github_remote_missing" : "unchanged";
+      return later({ project, outcome, changed: false, message, detected: null }, 300);
+    },
+
+    async disconnectGithub(id) {
+      const current = find(id);
+      if (current.kind !== "github") {
+        throw new ApiRequestError(409, "not_a_github_project", `${current.name} is not on GitHub`);
+      }
+      const { github: _github, remoteWarning: _warning, ...rest } = current;
+      const project: Project = { ...rest, kind: "local", updatedAt: new Date().toISOString() };
+      world.emitDomain({ type: "project.updated", sessionId: null, payload: { project } });
+      return later({ project }, 80);
     },
   };
 }

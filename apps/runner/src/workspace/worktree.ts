@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { RunnerCommandOf, RunnerCommandResult, RunnerEvent } from "@codeden/contracts";
 import { CommandError } from "../errors";
@@ -9,7 +9,9 @@ import { git, gitOk, isWorkTree } from "../git/exec";
 import { currentBranch, defaultBranch } from "../git/ops";
 import type { ProcessSupervisor } from "../process/supervisor";
 import { readProjectConfig } from "./project-config";
+import { pruneWorktrees, worktreeState } from "./removal";
 import { runSetup, type SetupStep } from "./setup";
+import { discardFolder, isManagedWorktreePath } from "./trash";
 
 export interface WorkspaceContext {
   home: string;
@@ -71,23 +73,50 @@ async function resolveBase(
   return def ?? "HEAD";
 }
 
+function isEmptyDir(path: string): boolean {
+  try {
+    return readdirSync(path).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Make `path` ready for `git worktree add`: reuse a worktree of this repository, delete the
+ * orphan folder an interrupted removal left inside `<home>/wt` (stopping processes in it
+ * first), and drop git's stale record of it. Returns the worktree to reuse, if any.
+ */
+async function clearTarget(
+  repo: string,
+  path: string,
+  ctx: WorkspaceContext,
+): Promise<{ cwd: string; branch: string | null; created: boolean } | null> {
+  const info = await worktreeState(repo, path);
+  if (info.state === "registered") {
+    return { cwd: path, branch: await currentBranch(path), created: false };
+  }
+  if (info.state === "orphan" && isManagedWorktreePath(ctx.home, path) && !info.containsOther) {
+    await ctx.supervisor.killUnder(path);
+    await discardFolder(ctx.home, path);
+  } else if (info.state !== "missing" && !isEmptyDir(path)) {
+    throw new CommandError("path_exists", `${path} exists and is not a worktree`);
+  }
+  if (info.registered) await pruneWorktrees(repo);
+  return null;
+}
+
 async function createWorktree(
   cmd: RunnerCommandOf<"workspace.prepare">,
-  home: string,
+  ctx: WorkspaceContext,
 ): Promise<{ cwd: string; branch: string | null; created: boolean }> {
   const repo = await topLevel(cmd.repoPath).catch(() => {
     throw new CommandError("not_a_repo", `${cmd.repoPath} is not a git repository`);
   });
   const short = sessionShort(cmd.sessionId);
-  const path = resolve(cmd.path ?? join(home, "wt", cmd.projectSlug ?? slugFromPath(repo), short));
-  if (existsSync(path)) {
-    if (await isWorkTree(path)) {
-      return { cwd: path, branch: await currentBranch(path), created: false };
-    }
-    if (readdirSync(path).length > 0) {
-      throw new CommandError("path_exists", `${path} exists and is not a worktree`);
-    }
-  }
+  const slug = cmd.projectSlug ?? slugFromPath(repo);
+  const path = resolve(cmd.path ?? join(ctx.home, "wt", slug, short));
+  const reuse = await clearTarget(repo, path, ctx);
+  if (reuse) return reuse;
   await mkdir(dirname(path), { recursive: true });
   const base = await resolveBase(repo, cmd);
   if (cmd.branch && (await branchExists(repo, cmd.branch))) {
@@ -131,7 +160,7 @@ export async function prepareWorkspace(
       break;
     }
     case "worktree":
-      target = await createWorktree(cmd, ctx.home);
+      target = await createWorktree(cmd, ctx);
       break;
   }
 
@@ -160,55 +189,4 @@ export async function prepareWorkspace(
     });
   }
   return { ...target, config, setup };
-}
-
-/**
- * Refuse to remove a worktree with uncommitted changes (`worktree_dirty`) unless forced. Runs
- * before terminals and processes in the worktree are stopped, so a dirty worktree is left
- * exactly as it was. Ignored files (build output, `node_modules`) don't count.
- */
-export async function assertRemovable(cmd: RunnerCommandOf<"workspace.remove">): Promise<void> {
-  if (cmd.force || !existsSync(cmd.path) || !(await isWorkTree(cmd.path))) return;
-  const status = await git(cmd.path, ["status", "--porcelain"]);
-  if (status.stdout.toString("utf8").trim()) {
-    throw new CommandError(
-      "worktree_dirty",
-      `${cmd.path} has uncommitted changes; commit them or remove it with force`,
-    );
-  }
-}
-
-/** `workspace.remove`: remove a worktree (retrying briefly for Windows file locks). */
-export async function removeWorkspace(
-  cmd: RunnerCommandOf<"workspace.remove">,
-): Promise<RunnerCommandResult<"workspace.remove">> {
-  const path = resolve(cmd.path);
-  let removed = false;
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 5 && !removed; attempt++) {
-    try {
-      const args = ["worktree", "remove", ...(cmd.force ? ["--force"] : []), path];
-      await git(cmd.repoPath, args);
-      removed = true;
-    } catch (error) {
-      lastError = error;
-      if (!existsSync(path)) break;
-      if (!cmd.force && /modified or untracked|contains/.test(String(error))) break;
-      await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
-    }
-  }
-  if (!removed && existsSync(path) && cmd.force) {
-    await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    removed = true;
-  }
-  await git(cmd.repoPath, ["worktree", "prune"]).catch(() => undefined);
-  if (!removed && existsSync(path)) {
-    throw lastError instanceof Error
-      ? lastError
-      : new CommandError("remove_failed", `Could not remove ${path}`);
-  }
-  if (cmd.deleteBranch) {
-    await git(cmd.repoPath, ["branch", "-D", cmd.deleteBranch]).catch(() => undefined);
-  }
-  return { removed: removed || !existsSync(path) };
 }

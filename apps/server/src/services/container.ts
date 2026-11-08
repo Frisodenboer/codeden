@@ -26,6 +26,7 @@ import {
 } from "./orchestration/orchestration-service";
 import type { AutomationPort, GithubPort } from "./orchestration/ports";
 import { ProjectService } from "./projects/project-service";
+import { ProjectRedetector } from "./projects/redetector";
 import { type RunnerPort, redetectProviders } from "./runner-port";
 import type { SecretStore } from "./secrets";
 import { SessionLauncher } from "./sessions/launcher";
@@ -100,6 +101,8 @@ export interface AppServices {
   secrets: SecretStore;
   utility: UtilityService;
   projects: ProjectService;
+  /** Re-detects projects' git checkout and GitHub remote (§9): on demand, on start, after turns. */
+  redetector: ProjectRedetector;
   sessionRepo: SessionRepo;
   sessions: SessionService;
   /** The queued-message tray: list, edit, delete and send-now. */
@@ -228,6 +231,13 @@ export function createServices(opts: ServicesOptions): AppServices {
     ...opts.github,
     log: opts.log,
   });
+  const redetector = new ProjectRedetector({
+    projects,
+    store: opts.store,
+    repo: sessionRepo,
+    onGithubChanged: (projectId) => github.sync.soon(projectId, { now: true }),
+    log: opts.log,
+  });
   const setup = new SetupService({
     exec,
     settings: opts.settings,
@@ -309,6 +319,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     secrets: opts.secrets,
     utility,
     projects,
+    redetector,
     sessionRepo,
     sessions,
     queue,

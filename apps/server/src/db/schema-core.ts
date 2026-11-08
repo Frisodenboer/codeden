@@ -8,6 +8,7 @@ import type {
   GitHubRepo,
   Item,
   JsonValue,
+  ProjectRemoteWarning,
   QueueSender,
   SessionResult,
   StartedBy,
@@ -66,6 +67,8 @@ export const projects = sqliteTable(
     /** Manual list position (§13); the migration backfills it from the alphabetical order. */
     sortOrder: integer("sort_order").notNull().default(0),
     github: json<GitHubRepo>("github"),
+    /** Set when re-detection found the GitHub remote missing (§9); null when all is well. */
+    remoteWarning: json<ProjectRemoteWarning>("remote_warning"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     archivedAt: text("archived_at"),

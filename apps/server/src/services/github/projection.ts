@@ -1,6 +1,15 @@
-import type { EventOf, GithubEventType, GithubIssue, GithubPr } from "@codeden/contracts";
-import { githubIssues, githubPrs } from "../../db/schema";
+import type {
+  EventOf,
+  GitHubRepo,
+  GithubEventType,
+  GithubIssue,
+  GithubPr,
+  Project,
+} from "@codeden/contracts";
+import { eq } from "drizzle-orm";
+import { githubIssues, githubPrs, githubSyncState } from "../../db/schema";
 import type { Tx } from "../../events/projection-db";
+import { sameGithubRepo } from "../projects/reconcile";
 import { issueToRow, prToRow } from "./rows";
 
 /** A persisted GitHub domain event. */
@@ -30,6 +39,29 @@ function upsertPr(tx: Tx, pr: GithubPr, ts: string): void {
     .values(row)
     .onConflictDoUpdate({ target: [githubPrs.projectId, githubPrs.number], set: row })
     .run();
+}
+
+/**
+ * True when a `project.updated` points an existing project at another GitHub repository, or
+ * makes a local project a GitHub one. `before` is the stored row (`github` null when local).
+ */
+export function githubRepoChanged(
+  before: { github: GitHubRepo | null } | undefined,
+  next: Project,
+): boolean {
+  if (!before || next.kind !== "github") return false;
+  return !before.github || !sameGithubRepo(before.github, next.github);
+}
+
+/**
+ * Forget a project's synced issues and PRs and its sync cursors, so the next sync imports its
+ * (new) repository from scratch, silently. Called inside the `project.updated` append when
+ * `githubRepoChanged`, so a replay of the log does the same.
+ */
+export function resetGithubProjection(tx: Tx, projectId: string): void {
+  tx.delete(githubIssues).where(eq(githubIssues.projectId, projectId)).run();
+  tx.delete(githubPrs).where(eq(githubPrs.projectId, projectId)).run();
+  tx.delete(githubSyncState).where(eq(githubSyncState.projectId, projectId)).run();
 }
 
 /**
