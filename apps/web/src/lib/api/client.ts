@@ -48,6 +48,7 @@ import type {
   SecretsApi,
   VoiceApi,
 } from "./feature-apis";
+import type { QueueApi } from "./queue-api";
 import type { MentionCandidate, OpenTerminalOptions, SlashCommand, TerminalChannel } from "./types";
 import type { UpdatesApi } from "./updates-api";
 
@@ -104,6 +105,8 @@ export interface CodeDenClient {
   unarchiveSession(sessionId: string): Promise<Session>;
   /** Change model, effort or title; model and effort apply from the next turn. */
   updateSession(sessionId: string, patch: UpdateSessionRequest): Promise<Session>;
+  /** Messages waiting behind a running turn: list, edit, delete, send now. */
+  readonly queue: QueueApi;
 
   // Conflicts (§8.4): persisted start requests that matched running work.
   listConflicts(query?: { projectId?: string }): Promise<ConflictRecord[]>;

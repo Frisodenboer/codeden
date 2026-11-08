@@ -8,6 +8,7 @@ import { makeSession } from "./fixtures/helpers";
 import { defaultFactoryLimits } from "./fixtures/ops";
 import { type Script, scriptedTurn, uid } from "./live";
 import { mockOrchestration } from "./orchestration";
+import { MockQueue } from "./queue";
 import { respond } from "./responses";
 import { workbenchApi } from "./workbench-api";
 import { MockWorld } from "./world";
@@ -31,14 +32,14 @@ export interface MockClientOptions {
 export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
   const world = new MockWorld();
   const running = new Map<string, Script>();
-  const queued = new Map<string, string[]>();
+  const queue = new MockQueue(world);
   if (opts.ambient) startAmbient(world);
 
   const runTurn = (sessionId: string, text: string) => {
     const script = scriptedTurn(world, sessionId, { text }, () => {
       running.delete(sessionId);
-      const next = queued.get(sessionId)?.shift();
-      if (next) runTurn(sessionId, next);
+      const next = queue.shift(sessionId);
+      if (next) runTurn(sessionId, next.input.text);
     });
     running.set(sessionId, script.start());
   };
@@ -83,7 +84,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
           usage: null,
           followups: null,
           startMeta: null,
-          queuedMessages: queued.get(id)?.length ?? 0,
+          queuedMessages: queue.count(id),
         },
         60,
       ),
@@ -91,7 +92,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     async sendMessage(sessionId, input, mode) {
       const active = running.get(sessionId);
       if (active && mode === "queue") {
-        queued.set(sessionId, [...(queued.get(sessionId) ?? []), input.text]);
+        queue.push(sessionId, { text: input.text, attachments: input.attachments ?? [] });
         return;
       }
       if (active && mode === "steer") {
@@ -114,6 +115,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       runTurn(sessionId, input.text);
     },
     async interrupt(sessionId) {
+      queue.clear(sessionId);
       running.get(sessionId)?.cancel();
       running.delete(sessionId);
       const t = world.transcript(sessionId);
@@ -169,9 +171,15 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       };
     },
     async stopSession(sessionId) {
+      queue.clear(sessionId);
       running.get(sessionId)?.cancel();
       world.updateSession(sessionId, { status: "stopped", endedAt: new Date().toISOString() });
     },
+    queue: queue.api(async (sessionId, input) => {
+      const steer = running.has(sessionId);
+      await client.sendMessage(sessionId, input, steer ? "steer" : "send");
+      return steer ? "steered" : "sent";
+    }),
     async archiveSession(sessionId) {
       running.get(sessionId)?.cancel();
       const now = new Date().toISOString();

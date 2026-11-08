@@ -10,6 +10,7 @@ import { useSession, useSnapshotData, useTranscript } from "@/lib/queries";
 import { activeTurn } from "@/lib/transcript/reducer";
 import { latestFollowups } from "@/lib/transcript/timeline";
 import { useComposerStore } from "@/stores/composer";
+import { QueuedMessages } from "./queued-messages";
 import { ThreadHeader } from "./thread-header";
 import { Transcript } from "./transcript";
 
@@ -102,6 +103,7 @@ export function ThreadView({ sessionId, empty }: { sessionId: string; empty?: Re
         <div className="flex min-h-0 flex-1 flex-col">{empty}</div>
       )}
       {followups && !running && <FollowupChips sessionId={sessionId} suggestions={followups} />}
+      <QueuedMessages session={session} />
       <Composer session={session} running={running} />
     </div>
   );
