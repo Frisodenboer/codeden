@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { copyFile, rm } from "node:fs/promises";
+import { copyFile, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { DiffFileStat } from "@codeden/contracts";
@@ -40,6 +40,24 @@ export async function topLevel(cwd: string): Promise<string> {
 }
 
 /**
+ * Copy the index for use as a temporary index, keeping its modification time. Git trusts an
+ * entry's cached stat data only when the entry is older than the index file; an entry written
+ * in the same timestamp tick as the index is "racily clean" and its content is re-read. A
+ * copy stamped with the current time (Linux `copyFile` does that) would make such entries
+ * look safe, and a same-size rewrite in that tick would be missed by diffs and checkpoints.
+ */
+async function copyIndex(realIndex: string, tmp: string): Promise<void> {
+  try {
+    await copyFile(realIndex, tmp);
+  } catch {
+    return; // no index yet in a fresh repo
+  }
+  const { atime, mtime } = await stat(realIndex);
+  // Millisecond precision rounds down, which only ever makes more entries racy (re-read).
+  await utimes(tmp, atime, mtime);
+}
+
+/**
  * Write the full working tree (tracked + untracked, minus ignored files) as a tree object
  * using a temporary index seeded from a copy of the real one (for its stat cache). The
  * user's index, HEAD and branch are never modified.
@@ -54,7 +72,7 @@ export async function snapshotTree(cwd: string): Promise<string> {
   ]);
   const tmp = join(tmpdir(), `codeden-index-${randomBytes(8).toString("hex")}`);
   try {
-    await copyFile(realIndex, tmp).catch(() => undefined); // no index yet in a fresh repo
+    await copyIndex(realIndex, tmp);
     const env = { GIT_INDEX_FILE: tmp };
     await git(top, ["add", "-A", "--", "."], { env, timeoutMs: 10 * 60_000 });
     return await gitText(top, ["write-tree"], { env });
