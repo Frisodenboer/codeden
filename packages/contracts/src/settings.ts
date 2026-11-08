@@ -114,6 +114,8 @@ export const Settings = z.object({
     .object({
       toasts: z.boolean().default(true),
       browser: z.boolean().default(false),
+      /** A short chime when an agent is blocked on the user (an approval or a question). */
+      sound: z.boolean().default(true),
     })
     .prefault({}),
   /** Global factory controls (§10.1). */
