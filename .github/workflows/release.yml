@@ -84,3 +84,83 @@ jobs:
         with:
           name: codeden-${{ steps.version.outputs.version }}
           path: ${{ steps.pack.outputs.tarball }}
+
+  # The desktop app (docs/desktop.md): installers plus the update metadata the app reads
+  # (latest.yml, latest-mac.yml, latest-linux.yml, blockmaps), attached to the same GitHub
+  # Release. Signing is optional: without the secrets the builds are unsigned.
+  desktop:
+    name: desktop (${{ matrix.os }})
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Check the desktop version matches the CLI
+        shell: bash
+        run: |
+          cli=$(node -p "require('./apps/cli/package.json').version")
+          desktop=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "$cli" != "$desktop" ]; then
+            echo "::error::apps/desktop is $desktop but apps/cli is $cli"; exit 1
+          fi
+
+      - name: Build the installers
+        shell: bash
+        env:
+          # Windows (.pfx) or macOS (Developer ID .p12) certificate, base64 or a URL.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # macOS notarization.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Unset empty secrets so electron-builder treats the build as unsigned.
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -z "${!v}" ] && unset "$v"
+          done
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            pnpm --filter @codeden/desktop package --arch arm64 --arch x64
+          else
+            pnpm --filter @codeden/desktop package
+          fi
+          ls -la apps/desktop/release
+
+      - name: Collect the release files
+        id: files
+        shell: bash
+        run: |
+          shopt -s nullglob
+          cd apps/desktop/release
+          files=(*.exe *.dmg *.zip *.AppImage *.deb *.blockmap latest*.yml)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::no installers were built"; exit 1; fi
+          printf '%s\n' "${files[@]}"
+          mkdir -p "$RUNNER_TEMP/desktop" && cp "${files[@]}" "$RUNNER_TEMP/desktop/"
+          echo "dir=$RUNNER_TEMP/desktop" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to the GitHub Release
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.files.outputs.dir }}"/* --clobber
+
+      - name: Upload the installers (dry run)
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeden-desktop-${{ matrix.os }}
+          path: ${{ steps.files.outputs.dir }}
