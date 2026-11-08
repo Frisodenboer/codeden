@@ -52,6 +52,13 @@ export async function serve(opts: { home?: string; port: number; fake: boolean }
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => close(false));
 
   console.log(`CodeDen ${CODEDEN_VERSION} is running at ${server.url}`);
+  // Network access (§15.1) works the same as with \`codeden\`: the server moves only its HTTP
+  // listener when it is switched, so the app and the runner carry on.
+  if (server.network.enabled) {
+    for (const address of server.network.addresses()) {
+      console.log(`  ${address.label}: ${address.url}`);
+    }
+  }
   send({
     type: "ready",
     url: server.url,
