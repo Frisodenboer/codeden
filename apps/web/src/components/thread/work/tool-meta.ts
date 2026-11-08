@@ -12,6 +12,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { WorkEntry } from "@/lib/transcript/timeline";
+import { outputSummary } from "./tool-summary";
 
 export function entryIcon(e: WorkEntry): LucideIcon {
   if (e.kind === "reasoning") return Brain;
@@ -36,7 +37,7 @@ export function entryIcon(e: WorkEntry): LucideIcon {
   }
 }
 
-/** Short verb phrase and a monospace target for a work entry. */
+/** Short verb phrase, a monospace target and a one-line note for a work entry's row. */
 export function entryLabel(e: WorkEntry): { verb: string; target?: string; meta?: string } {
   if (e.kind === "reasoning")
     return { verb: e.status === "in_progress" ? "Thinking" : "Thought", target: e.summary };
@@ -68,7 +69,7 @@ export function entryLabel(e: WorkEntry): { verb: string; target?: string; meta?
     case "mcp":
       if (isImageTool(e))
         return { verb: running ? "Generating image" : "Generated image", target: e.title };
-      return { verb: e.title ?? `${e.server} · ${e.tool}`, meta: e.output?.text.split("\n")[0] };
+      return { verb: e.title ?? `${e.server} · ${e.tool}`, meta: outputSummary(e.output?.text) };
     case "browser":
       return { verb: e.title ?? `Browser ${e.action}`, target: e.url };
     default:

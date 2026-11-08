@@ -115,6 +115,30 @@ describe("WorkGroup", () => {
     expect(screen.getByText("src/a.ts")).toBeTruthy();
   });
 
+  it("summarises a long MCP result and keeps the full output in the details", () => {
+    const output = JSON.stringify({
+      issue: { projectId: "a72f9074", title: "Discover the model list", trace: "c0de".repeat(500) },
+    });
+    const mcp: WorkEntry = {
+      id: "m",
+      kind: "tool_call",
+      toolKind: "mcp",
+      status: "completed",
+      toolName: "mcp__codeden__triage_issue",
+      server: "codeden",
+      tool: "triage_issue",
+      title: "codeden: triage_issue",
+      output: { text: output, truncated: false },
+      durationMs: 12,
+    };
+    renderWithClient(<WorkGroup entries={[mcp]} live={false} />);
+    const row = screen.getByRole("button", { name: /codeden: triage_issue/ });
+    expect(row.textContent).toContain("Discover the model list");
+    expect(row.textContent).not.toContain("projectId");
+    fireEvent.click(row);
+    expect(screen.getByText(output)).toBeTruthy();
+  });
+
   it("shows the running step while live", () => {
     const live: WorkEntry[] = [
       ...entries,
