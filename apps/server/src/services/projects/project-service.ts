@@ -5,9 +5,12 @@ import {
   type CreateProjectRequest,
   type CreateProjectResponse,
   DEFAULT_VISION_PATH,
+  type DisconnectGithubResponse,
   FactoryLimits,
+  isFactoryMode,
   type Project,
   type ProjectDetection,
+  type RefreshProjectResponse,
   sortProjects,
   type UpdateProjectRequest,
 } from "@codeden/contracts";
@@ -18,7 +21,10 @@ import { projects } from "../../db/schema";
 import type { EventStore } from "../../events/store";
 import { badRequest, conflict, notFound, ServiceError } from "../errors";
 import type { Exec } from "../exec";
-import { detectProject, normalizeCloneUrl } from "./detect";
+import { detectProject, isDirectory, normalizeCloneUrl, redactUrls, sameRealPath } from "./detect";
+import { type Reconciled, reconcileProject } from "./reconcile";
+
+export { redactUrls };
 
 export interface ProjectServiceDeps {
   db: Db;
@@ -80,7 +86,9 @@ export class ProjectService {
     }
     const now = new Date().toISOString();
     if (existing) {
-      const project = { ...existing, archivedAt: null, updatedAt: now };
+      // Restored: take what the folder looks like today (it may have gained a GitHub remote).
+      const restored = { ...existing, archivedAt: null, updatedAt: now };
+      const { project } = this.reconcile(restored, detected, now);
       this.deps.store.append([{ type: "project.updated", sessionId: null, payload: { project } }]);
       return { project, detected };
     }
@@ -143,6 +151,78 @@ export class ProjectService {
     this.deps.store.append([
       { type: "project.archived", sessionId: null, payload: { projectId: id } },
     ]);
+  }
+
+  /**
+   * Detect the folder's git checkout and GitHub remote again and apply what changed (§9, see
+   * `reconcileProject`): a folder that gained a GitHub `origin` becomes a `github` project; one
+   * that lost it keeps its coordinates and gets a `remoteWarning`. Appends `project.updated`
+   * only when something changed.
+   */
+  async refresh(id: string): Promise<RefreshProjectResponse> {
+    const before = this.get(id);
+    if (!isDirectory(before.path)) {
+      return {
+        project: before,
+        outcome: "folder_missing",
+        changed: false,
+        message: `The project folder is missing: ${before.path}`,
+        detected: null,
+      };
+    }
+    const detected = await detectProject(this.deps.exec, before.path);
+    // Re-read: another change (a rename, a pin) may have landed while git ran.
+    const result = this.reconcile(this.get(id), detected, new Date().toISOString());
+    if (result.changed) {
+      this.deps.store.append([
+        { type: "project.updated", sessionId: null, payload: { project: result.project } },
+      ]);
+    }
+    return { ...result, detected };
+  }
+
+  /**
+   * Make a GitHub project local-only: the user's answer to a missing GitHub remote. Refused
+   * while `origin` still points to GitHub (the next check would connect it again) and in a
+   * factory mode (which needs GitHub). Synced issues and PRs stay in the database.
+   */
+  async disconnectGithub(id: string): Promise<DisconnectGithubResponse> {
+    const project = this.get(id);
+    if (project.kind !== "github") {
+      throw conflict(`${project.name} is not connected to GitHub`, "not_a_github_project");
+    }
+    if (isFactoryMode(project.autonomyMode)) {
+      throw conflict(
+        "Switch the autonomy mode to assisted or manual before disconnecting GitHub",
+        "factory_mode",
+      );
+    }
+    const detected = isDirectory(project.path)
+      ? await detectProject(this.deps.exec, project.path)
+      : null;
+    if (detected?.github) {
+      const { owner, repo } = detected.github;
+      throw conflict(
+        `origin still points to ${owner}/${repo} on GitHub; change or remove it first`,
+        "github_remote_present",
+      );
+    }
+    const current = this.get(id);
+    if (current.kind !== "github") return { project: current };
+    const { github: _github, remoteWarning: _warning, ...rest } = current;
+    const next: Project = { ...rest, kind: "local", updatedAt: new Date().toISOString() };
+    this.deps.store.append([
+      { type: "project.updated", sessionId: null, payload: { project: next } },
+    ]);
+    return { project: next };
+  }
+
+  private reconcile(project: Project, detected: ProjectDetection, now: string): Reconciled {
+    return reconcileProject(project, detected, {
+      now,
+      gitDirPresent: existsSync(join(project.path, ".git")),
+      ownCheckout: !detected.gitRoot || sameRealPath(detected.gitRoot, project.path),
+    });
   }
 
   private build(
@@ -213,9 +293,4 @@ export class ProjectService {
     }
     return dest;
   }
-}
-
-/** Remove credentials embedded in URLs (`https://user:token@host`). */
-export function redactUrls(text: string): string {
-  return text.replace(/(\w+:\/\/)[^@\s/]+@/g, "$1***@");
 }

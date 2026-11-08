@@ -48,6 +48,7 @@ export function projectToRow(p: Project): ProjectRow {
     pinned: p.pinned,
     sortOrder: p.sortOrder,
     github: p.kind === "github" ? p.github : null,
+    remoteWarning: p.remoteWarning ?? null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     archivedAt: p.archivedAt,
@@ -55,11 +56,12 @@ export function projectToRow(p: Project): ProjectRow {
 }
 
 export function rowToProject(r: ProjectRow): Project {
-  const { github, factoryLimits, ...rest } = r;
+  const { github, factoryLimits, remoteWarning, ...rest } = r;
   return Project.parse({
     ...rest,
     factoryLimits: factoryLimits ?? undefined,
     ...(r.kind === "github" ? { github } : {}),
+    ...(remoteWarning ? { remoteWarning } : {}),
   });
 }
 

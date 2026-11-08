@@ -10,7 +10,11 @@ import {
   sessions,
 } from "../db/schema";
 import { applyFactoryProjection } from "../services/factory/projection";
-import { applyGithubProjection } from "../services/github/projection";
+import {
+  applyGithubProjection,
+  githubRepoChanged,
+  resetGithubProjection,
+} from "../services/github/projection";
 import { applyOrchestrationProjection } from "../services/orchestration/projection";
 import { applyUsageReport } from "../services/usage/ledger";
 import { applyMutations, DbProjectionReader, derivedEvents, type Tx } from "./projection-db";
@@ -32,7 +36,15 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
   switch (e.type) {
     case "project.created":
     case "project.updated": {
-      const row = projectToRow(e.payload.project);
+      const { project } = e.payload;
+      const before = tx
+        .select({ github: projects.github })
+        .from(projects)
+        .where(eq(projects.id, project.id))
+        .get();
+      // Another repository behind the project: its old issues and PRs don't belong to it.
+      if (githubRepoChanged(before, project)) resetGithubProjection(tx, project.id);
+      const row = projectToRow(project);
       tx.insert(projects).values(row).onConflictDoUpdate({ target: projects.id, set: row }).run();
       return [];
     }
