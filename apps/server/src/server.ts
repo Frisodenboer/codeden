@@ -22,7 +22,11 @@ import { TerminalBridge } from "./realtime/terminals";
 import { createApi } from "./routes/api";
 import { findWebDir, mountWeb } from "./routes/static";
 import { RunnerClient } from "./runner/client";
-import { defaultRunnerLaunch, type RunnerLaunchConfig } from "./runner/launcher";
+import {
+  defaultRunnerLaunch,
+  type RunnerLaunchConfig,
+  type RunnerStartTimeouts,
+} from "./runner/launcher";
 import { loopbackOrigins, securityMiddleware } from "./security";
 import { type AppServices, createServices, type ServicesOptions } from "./services/container";
 import type { Exec } from "./services/exec";
@@ -44,6 +48,8 @@ export interface StartServerOptions {
    * `false` = don't use a runner (tests, UI-only work).
    */
   runner?: RunnerLaunchConfig | false;
+  /** How long to wait for a runner this server spawns (tests shorten the slow-start note). */
+  runnerStartTimeouts?: RunnerStartTimeouts;
   /** Load the scripted Fake provider in the runner (development and tests). */
   enableFakeProvider?: boolean;
   /**
@@ -291,6 +297,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       store,
       launch,
       mcpUpstreamUrl: `${url}/mcp`,
+      startTimeouts: opts.runnerStartTimeouts,
       onStatus: (status) => hub.broadcastRunner(status),
       onStream: (stream) => {
         if (stream.kind === "pty.output") terminals.onStream(stream);

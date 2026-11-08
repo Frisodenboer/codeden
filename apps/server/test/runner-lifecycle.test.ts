@@ -179,6 +179,66 @@ describe("runner lifecycle (real processes)", () => {
     expect(logs.filter((l) => l.includes("starting a new runner process"))).toHaveLength(1);
   }, 60_000);
 
+  it("waits for a slow-starting runner and spawns no second one (#14)", async () => {
+    const home = newHome();
+    const logs: string[] = [];
+    const states: string[] = [];
+    const launch = {
+      command: process.execPath,
+      args: [
+        "--import",
+        import.meta.resolve("tsx"),
+        join(import.meta.dirname, "fixtures", "slow-runner.ts"),
+        "--fake",
+        "--no-builtin",
+      ],
+      env: { CODEDEN_TEST_RUNNER_DELAY_MS: "2000" },
+    };
+    server = await startServer({
+      checkSetupOnStart: false,
+      port: 0,
+      dataDir: home,
+      token: TOKEN,
+      runner: launch,
+      // Well under the delay: the start counts as slow, and the runner must still be kept.
+      runnerStartTimeouts: { slowAfterMs: 300 },
+      log: (m) => logs.push(m),
+    });
+    const client = server.runner;
+    const seen = () => {
+      const state = client?.status.state;
+      if (state && states.at(-1) !== state) states.push(state);
+      return state === "connected";
+    };
+    await waitUntil(seen, 60_000);
+    expect(states[0]).toBe("starting");
+    expect(states).not.toContain("disconnected");
+    expect(logs.filter((l) => l.includes("starting a new runner process"))).toHaveLength(1);
+    expect(logs.some((l) => l.includes("is still starting after"))).toBe(true);
+  }, 90_000);
+
+  it("reports a runner that crashes during start-up with the end of its log (#14)", async () => {
+    const home = newHome();
+    const logs: string[] = [];
+    server = await startServer({
+      checkSetupOnStart: false,
+      port: 0,
+      dataDir: home,
+      token: TOKEN,
+      runner: {
+        command: process.execPath,
+        args: [join(import.meta.dirname, "fixtures", "fake-runner.mjs")],
+        env: { FAKE_RUNNER_MODE: "crash" },
+      },
+      log: (m) => logs.push(m),
+    });
+    const client = server.runner;
+    await waitUntil(() => client?.status.state === "disconnected", 15_000);
+    expect(client?.status.lastError).toMatch(/exited during start-up/);
+    expect(client?.status.lastError).toContain("boom, cannot load the provider registry");
+    expect(logs.some((l) => l.includes("boom, cannot load the provider registry"))).toBe(true);
+  }, 60_000);
+
   it("stops a detached runner without a server (codeden stop)", async () => {
     const home = newHome();
     // No real providers: they only slow the start (as in every server test).

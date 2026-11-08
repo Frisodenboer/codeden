@@ -106,9 +106,9 @@ claude update
 npm install -g @openai/codex@latest
 ```
 
-### "Runner did not start in time"
+### "The runner exited during start-up" or "did not start within 300 s"
 
-Look at `~/.codeden/logs/runner.log` for the error. A native module that failed to load (`node-pty`) usually means a broken or partial install: run `npm cache clean --force`, then `npx codeden@latest`. Security software that blocks new processes can also cause it.
+While CodeDen waits for its runner, the sidebar says **Starting the runner…**. A slow start (security software scanning files, a busy or cold disk) is waited for; CodeDen only gives up on a runner that hasn't started after five minutes. If the runner process exits during start-up, the error (hover the status in the sidebar, or see the server log) ends with the last lines of `~/.codeden/logs/runner.log`. A native module that failed to load (`node-pty`) usually means a broken or partial install: run `npm cache clean --force`, then `npx codeden@latest`. Security software that blocks new processes can also cause it.
 
 ### Agents keep running after I close the terminal
 

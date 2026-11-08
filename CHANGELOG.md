@@ -17,6 +17,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ### Fixed
 
+- **A slow-starting runner is no longer killed and relaunched.** CodeDen used to give a new runner 20 seconds, then kill it and start another, forever on a machine where start-up takes longer (security software, a slow disk). It now waits for a runner that is still starting (up to five minutes), the sidebar says **Starting the runner…**, and a runner that crashes during start-up is reported at once with the end of `logs/runner.log`.
 - **Dictation and pasted images in a new orchestrator or PM chat.** Before its first message, the orchestrator and PM chats now have the full composer input: the dictation button and shortcuts, image and file paste, drag-and-drop and the attach button. The first message, which starts the session, carries its images.
 - **Archiving no longer leaves half-deleted worktrees on Windows.** Git deletes the contents of folders that a pnpm `node_modules` junction points to, and it stops at a dangling junction, so removing a pnpm-installed worktree failed halfway with "is not a working tree". CodeDen now deletes worktrees itself without ever following a symlink or junction. It cleans up the folders earlier versions left behind for archived sessions (about a minute after CodeDen starts), and recreates a session's worktree over such a leftover. If a file is in use, nothing is deleted and the toast offers **Try again**.
 
