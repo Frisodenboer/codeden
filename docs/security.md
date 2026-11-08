@@ -6,12 +6,26 @@ To report a vulnerability, see [SECURITY.md](../SECURITY.md).
 
 ## Network
 
-- The **server and the runner listen on 127.0.0.1 only.** Nothing is exposed to your LAN or the internet. Remote and mobile access are not part of v1; when they come they'll be explicit opt-in with a password or pairing.
-- **Every request needs the install token**: a random 256-bit token in `~/.codeden/install-token`, created on first run (readable only by you where the OS supports file modes). It's required on every HTTP, WebSocket and MCP request, and compared in constant time.
+- By default the **server and the runner listen on 127.0.0.1 only.** Nothing is exposed to your LAN or the internet.
+- **Network access is opt-in** (Settings › Network access, or `codeden network on`): it needs a password and then moves only the server's web listener to all interfaces on the same port, so phones and tablets on your network or VPN can sign in. The runner, its MCP proxy and the agents' `/mcp` endpoint stay on 127.0.0.1. See [Network access](#network-access) below and [Phones, tablets and network access](remote-access.md).
+- **Every local request needs the install token**: a random 256-bit token in `~/.codeden/install-token`, created on first run (readable only by you where the OS supports file modes). It's required on every HTTP, WebSocket and MCP request, and compared in constant time.
 - **The browser gets the token once**, through the launch URL that `codeden` opens. The server swaps it for an **HttpOnly, `SameSite=Strict` cookie** and redirects to a clean URL, so the token doesn't linger in your address bar or history. Opening CodeDen without it shows a "CodeDen is locked" page.
 - **`Host` must be a loopback name** (`127.0.0.1`, `localhost`, `[::1]`), which blocks DNS-rebinding attacks.
 - **`Origin`, when present, must be CodeDen's own**, which blocks other websites, including other apps on other localhost ports.
 - The cookie name includes the port, so two installs side by side don't clash.
+
+### Network access
+
+Off by default. When you turn it on:
+
+- **A password is required.** At least 15 characters; very common passwords, repeats and simple sequences are refused. Only a **salted scrypt hash** is stored (`~/.codeden/remote-access.json`, mode 0600 where supported). CodeDen refuses to bind beyond 127.0.0.1 without one, at startup too. Changing it signs out every remote device.
+- **Remote means "not loopback"**, judged from the connection's peer address (`127.0.0.0/8`, `::1` and their IPv4-mapped forms are local). `X-Forwarded-*`, `Forwarded` and `X-Real-IP` are never read.
+- **Remote devices sign in with the password** and get a random session token in an **HttpOnly, `SameSite=Lax` cookie** (`Secure` over HTTPS), valid for 90 days. Only its SHA-256 hash is stored, with the device's user agent and when it was last seen. **The install token is never accepted from a remote device**, in a header, a cookie or `?token=`.
+- **Failed sign-ins are throttled per address:** after three, each attempt waits 1 s, 2 s, 4 s … up to 30 s; ten in 15 minutes lock the address out for 15 minutes. Only failures count, other devices are unaffected, and each failure is logged with its address (never the password) in `~/.codeden/logs/remote-access.log`.
+- **Reachable remotely, behind the session:** the web UI, the HTTP API and the UI WebSockets. **Never reachable remotely:** `/mcp` (404), the runner and its MCP proxy (still 127.0.0.1), and changing network access or the password (403; this computer or the CLI only).
+- **`Host`** may also be one of this computer's own LAN or VPN addresses on CodeDen's port while access is on, and **`Origin`** may be the matching `http://<address>:<port>`. Other hosts, other ports, foreign origins and `null` origins are refused.
+- **Signed-in devices** are listed in Settings with **Sign out** and **Sign out all**; signing out (or turning access off) also closes their open connections.
+- Network access serves plain **http**: use it on networks you trust, or over your own VPN (Tailscale, WireGuard). Never forward the port to the internet.
 
 ## Agents and MCP
 

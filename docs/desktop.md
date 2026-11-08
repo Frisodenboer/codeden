@@ -107,4 +107,8 @@ CodeDen [--home <dir>] [--port <n>] [--hidden] [codeden://...]
 
 ## Security
 
-The window shows only the local server's UI: it is sandboxed and isolated from Node.js, the page gets a small, typed bridge for notifications, the badge, the folder picker and links, and every call is checked in the app. Navigation away from the local server is blocked; other links open in your browser. The page may use notifications, the microphone (dictation) and the clipboard, and nothing else. The app never opens a debugging port. Everything else is as described in [Security](security.md): loopback only, the per-install token, no telemetry.
+The window shows only the local server's UI: it is sandboxed and isolated from Node.js, the page gets a small, typed bridge for notifications, the badge, the folder picker and links, and every call is checked in the app. Navigation away from the local server is blocked; other links open in your browser. The page may use notifications, the microphone (dictation) and the clipboard, and nothing else. The app never opens a debugging port. Everything else is as described in [Security](security.md): loopback only by default, the per-install token, no telemetry.
+
+## Phones and tablets
+
+**Settings › Network access** works the same in the desktop app as with `npx codeden`: set a password, switch it on, and scan the QR code with your phone. Switching it on or off moves only the server's web listener; the window, the tray and running agents carry on. The app's own window always uses this computer's address and the install token. See [Phones, tablets and network access](remote-access.md).

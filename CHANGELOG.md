@@ -4,6 +4,16 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Open CodeDen from your phone or tablet.** **Settings › Network access** (off by default) lets devices on your network, or on your own VPN such as Tailscale, open CodeDen after signing in with a password. Set one (at least 15 characters; very common passwords and simple sequences are refused) or **Generate** a five-word passphrase, shown once. Turning it on moves only CodeDen's web listener to your network addresses on the same port; agents and the runner carry on. Settings lists every address with a **QR code** to scan, and the signed-in devices with **Sign out** and **Sign out all**. `codeden password` and `codeden network on|off` do the same from a terminal. See [Phones, tablets and network access](docs/remote-access.md).
+- **Works on phones and tablets.** The sidebar becomes a slide-out drawer (or stays a slim rail on a tablet in landscape), the right panel opens as a sheet over the transcript, and screens fit without sideways scrolling, with tap targets of at least 40 px and row menus that don't need hover.
+- **Add to Home Screen.** CodeDen has a web app manifest and icons, so adding it to your home screen opens it full screen like an app.
+
+### Security
+
+- Network access keeps the runner and the agents' MCP endpoint on 127.0.0.1, never accepts the install token from another device, stores only a salted scrypt hash of the password and hashes of session tokens, throttles failed sign-ins per address (with a 15-minute lockout after ten), and keeps the `Host` and `Origin` checks, extended only to the computer's own network addresses while it's on.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added

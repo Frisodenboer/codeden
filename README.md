@@ -165,8 +165,8 @@ More in [Architecture](docs/architecture.md) and the full design in [docs/DESIGN
 
 ## Security model
 
-- The server and runner listen on **127.0.0.1 only**. Remote or LAN access is not part of v1.
-- Every HTTP, WebSocket and MCP request needs a **per-install random token**. The browser gets it once through the launch URL, then holds it in an HttpOnly, `SameSite=Strict` cookie.
+- The server and runner listen on **127.0.0.1 only** by default. **Network access** for your phone or tablet is opt-in, needs a password (stored only as a salted hash), and never exposes the runner or the agents' MCP endpoint. See [Phones, tablets and network access](docs/remote-access.md).
+- Every local HTTP, WebSocket and MCP request needs a **per-install random token**. The browser gets it once through the launch URL, then holds it in an HttpOnly, `SameSite=Strict` cookie.
 - `Host` and `Origin` headers are checked, which blocks other websites and DNS rebinding from reaching the local API.
 - Agent MCP tokens are **per session and role-scoped**, stored only as hashes, and revoked when the session ends.
 - The default autonomy level, **Auto, risky actions ask**, lets agents edit and run normal commands inside their worktree, and sends risky actions to your inbox: writes outside the worktree, force pushes, branch deletion, global installs, piping downloads into a shell, and secrets access.
@@ -224,6 +224,8 @@ codeden [options]      Start CodeDen and open it in the browser
 codeden doctor         Check the installation (--install: add Claude Code support now)
 codeden update         Install the latest version and switch to it (--rollback: go back)
 codeden stop           Stop the server and the runner
+codeden password       Set the network access password (--generate: make one up)
+codeden network on|off Let phones on your network open CodeDen, or stop it
 
 Options:
   --port <n>     Port to listen on (default 4317)
@@ -277,6 +279,9 @@ The server stops; the runner, and any agent mid-turn, keeps going. The next `cod
 **Which platforms?**
 Windows, macOS and Linux. Windows is tested first.
 
+**Can I use it from my phone?**
+Yes. Turn on **Settings › Network access**, set a password, and scan the QR code with your phone on the same Wi-Fi (or over your own VPN such as Tailscale). The UI adapts to phones and tablets, and **Add to Home Screen** opens it full screen. Plain http addresses mean no notifications or microphone on the phone. See [Phones, tablets and network access](docs/remote-access.md).
+
 **Is the dark factory safe to leave running?**
 It's experimental. Read [Autonomy and the dark factory](docs/autonomy-and-dark-factory.md) first, start with Autopilot on a sandbox repository, set a budget and protected areas, and keep the kill switch in reach.
 
@@ -294,6 +299,7 @@ It's experimental. Read [Autonomy and the dark factory](docs/autonomy-and-dark-f
 | [Agent configuration](docs/agent-config.md) | Memory, skills, subagents and MCP servers |
 | [Voice and images](docs/voice-and-images.md) | Dictation, read-aloud and image generation |
 | [Usage and costs](docs/usage-and-costs.md) | The ledger, reports, budgets and rate limits |
+| [Phones, tablets and network access](docs/remote-access.md) | Opening CodeDen from your phone, the QR code, Add to Home Screen and VPNs |
 | [Security](docs/security.md) | The security model in detail |
 | [Troubleshooting](docs/troubleshooting.md) | `doctor`, logs and common issues |
 | [Architecture](docs/architecture.md) | How the pieces fit, with a link to the full design |
