@@ -8,6 +8,7 @@ import {
   ClaudeSdkStatus,
   ClientToServerMessage,
   CODEDEN_VERSION,
+  compareProjects,
   defaultSettings,
   EventEnvelope,
   InboxItem,
@@ -22,6 +23,7 @@ import {
   Settings,
   Snapshot,
   SOURCE_VERSION,
+  sortProjects,
 } from "../src";
 import {
   sampleAgentEvents,
@@ -116,6 +118,12 @@ describe("persisted events", () => {
   it("round-trips domain events", () => {
     const events = [
       { type: "project.created", sessionId: null, payload: { project: sampleProject } },
+      {
+        type: "project.updated",
+        sessionId: null,
+        payload: { project: { ...sampleProject, pinned: true, sortOrder: 3 } },
+      },
+      { type: "projects.reordered", sessionId: null, payload: { projectIds: ["p2", "p1"] } },
       { type: "session.created", sessionId: "s1", payload: { session: sampleSession } },
       { type: "inbox.created", sessionId: "s1", payload: { item: sampleInboxItem } },
       { type: "automation.saved", sessionId: null, payload: { automation: sampleAutomation } },
@@ -137,6 +145,33 @@ describe("persisted events", () => {
     });
   });
 
+  it("parses project events written before pinning and ordering existed", () => {
+    // A `project.created` payload from an older log: no `pinned`, no `sortOrder`.
+    const { pinned: _pinned, sortOrder: _sortOrder, ...old } = sampleProject;
+    const envelope = roundTrip(EventEnvelope, {
+      type: "project.created",
+      sessionId: null,
+      payload: { project: old },
+      seq: 1,
+      ts,
+    });
+    expect(envelope.type === "project.created" && envelope.payload.project).toMatchObject({
+      pinned: false,
+      sortOrder: 0,
+    });
+  });
+
+  it("rejects a reorder without ids", () => {
+    const result = EventEnvelope.safeParse({
+      type: "projects.reordered",
+      sessionId: null,
+      payload: {},
+      seq: 1,
+      ts,
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("requires a session id on agent events", () => {
     const result = EventEnvelope.safeParse({
       ...agentEventToNewEvent("s1", sampleAgentEvents[0] as AgentEvent),
@@ -155,6 +190,32 @@ describe("entities", () => {
     roundTrip(Session, sampleSession);
     roundTrip(InboxItem, sampleInboxItem);
     roundTrip(Automation, sampleAutomation);
+  });
+
+  it("orders projects pinned first, then by sortOrder, then by name", () => {
+    const p = (id: string, name: string, pinned: boolean, sortOrder: number) => ({
+      id,
+      name,
+      pinned,
+      sortOrder,
+    });
+    const list = [
+      p("a", "Zeta", false, 0),
+      p("b", "Alpha", false, 2),
+      p("c", "Beta", true, 5),
+      p("d", "Gamma", true, 1),
+      p("e", "Delta", false, 0),
+      p("f", "Delta", false, 0),
+    ];
+    expect(sortProjects(list).map((x) => x.id)).toEqual(["d", "c", "e", "f", "a", "b"]);
+    expect(list.map((x) => x.id)).toEqual(["a", "b", "c", "d", "e", "f"]);
+    const same = p("x", "X", false, 0);
+    expect(compareProjects(same, { ...same })).toBe(0);
+  });
+
+  it("rejects a negative or fractional sortOrder", () => {
+    expect(Project.safeParse({ ...sampleProject, sortOrder: -1 }).success).toBe(false);
+    expect(Project.safeParse({ ...sampleProject, sortOrder: 1.5 }).success).toBe(false);
   });
 
   it("requires github coordinates on github projects", () => {

@@ -92,8 +92,23 @@ export const UpdateProjectRequest = z.object({
   autonomy: AutonomyLevel.nullable().optional(),
   timezone: z.string().nullable().optional(),
   defaultBranch: z.string().nullable().optional(),
+  /** Pin or unpin the project in the project list (§13). */
+  pinned: z.boolean().optional(),
 });
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequest>;
+
+/**
+ * `PUT /api/projects/order`: the new manual order of the project list (§13). Lists every
+ * non-archived project exactly once; the server rejects anything else (`invalid_order`).
+ */
+export const ReorderProjectsRequest = z.object({
+  projectIds: z.array(Id).max(1000),
+});
+export type ReorderProjectsRequest = z.infer<typeof ReorderProjectsRequest>;
+
+/** `PUT /api/projects/order` response: the non-archived projects in their new order. */
+export const ReorderProjectsResponse = z.object({ projects: z.array(Project) });
+export type ReorderProjectsResponse = z.infer<typeof ReorderProjectsResponse>;
 
 // ---------------------------------------------------------------- sessions
 

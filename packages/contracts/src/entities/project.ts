@@ -23,6 +23,17 @@ const projectBase = {
   killSwitch: z.boolean().default(false),
   /** IANA timezone for cron automations; machine timezone when null. */
   timezone: z.string().nullable(),
+  /**
+   * Pinned projects are listed above the rest (§13). Defaults to false so events written
+   * before pinning existed still parse.
+   */
+  pinned: z.boolean().default(false),
+  /**
+   * Manual position in the project list, lowest first (§13). Only the relative order within
+   * the pinned and unpinned groups matters; ties fall back to the name. Set by
+   * `projects.reordered`; archived projects keep theirs.
+   */
+  sortOrder: z.int().nonnegative().default(0),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   archivedAt: Timestamp.nullable(),
@@ -47,3 +58,21 @@ export const Project = z.discriminatedUnion("kind", [
 ]);
 export type Project = z.infer<typeof Project>;
 export type ProjectKind = Project["kind"];
+
+type Orderable = Pick<Project, "id" | "name" | "pinned" | "sortOrder">;
+
+/**
+ * The canonical project order (§13): pinned first, then `sortOrder`, then name, then id.
+ * The server lists projects in this order and the UI keeps it when applying live events.
+ */
+export function compareProjects(a: Orderable, b: Orderable): number {
+  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** A sorted copy of `projects` in the canonical order. */
+export function sortProjects<T extends Orderable>(projects: readonly T[]): T[] {
+  return [...projects].sort(compareProjects);
+}
