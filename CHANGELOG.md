@@ -24,6 +24,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Archiving no longer leaves half-deleted worktrees on Windows.** Git deletes the contents of folders that a pnpm `node_modules` junction points to, and it stops at a dangling junction, so removing a pnpm-installed worktree failed halfway with "is not a working tree". CodeDen now deletes worktrees itself without ever following a symlink or junction. It cleans up the folders earlier versions left behind for archived sessions (about a minute after CodeDen starts), and recreates a session's worktree over such a leftover. If a file is in use, nothing is deleted and the toast offers **Try again**.
 - **Long questions and answers in question cards wrap** instead of overflowing; long answered questions are clamped with **Show more**.
 - **A session started just as the runner connects is no longer marked failed.** Recovery after a runner restart could mistake it for a session cut off by the restart.
+- **The PM and the orchestrator no longer miss an update that arrives while they are being woken.** Such a notice (for example, that an agent finished) used to stay undelivered until something else woke them.
 
 ## [0.2.0] - 2026-11-08
 
