@@ -244,3 +244,63 @@ describe("activity monitor", () => {
     expect((await monitor.poll()).connected).toBe(false);
   });
 });
+
+describe("update checks against a release that's still publishing or a flaky GitHub", () => {
+  const make = (failures: string[]) => {
+    const { updater, calls } = fakeUpdater("0.2.0");
+    const queue = [...failures];
+    updater.checkForUpdates = async () => {
+      calls.push("check");
+      const next = queue.shift();
+      if (next) throw new Error(next);
+      return { updateInfo: { version: "0.2.0" } };
+    };
+    const sleeps: number[] = [];
+    const controller = new UpdateController({
+      current: "0.1.1",
+      unsupported: null,
+      updater: () => updater,
+      beforeInstall: async () => undefined,
+      now: () => Date.parse("2026-11-08T10:00:00.000Z"),
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    return { controller, calls, sleeps };
+  };
+
+  it("treats a release without this platform's update file as up to date, not an error", async () => {
+    const { controller } = make([
+      "Cannot find latest.yml in the latest release artifacts (https://github.com/o/r/releases/download/v0.3.0/latest.yml): HttpError: 404\nstack",
+    ]);
+    await controller.run("check");
+    expect(controller.state).toMatchObject({ phase: "idle", error: null, latest: "0.1.1" });
+  });
+
+  it("retries a GitHub 504 and then finds the update", async () => {
+    const { controller, calls, sleeps } = make([
+      "HttpError: 504 Gateway Time-out",
+      "net::ERR_CONNECTION_RESET",
+    ]);
+    await controller.run("check");
+    expect(calls.filter((c) => c === "check")).toHaveLength(3);
+    expect(sleeps).toEqual([2_000, 6_000]);
+    expect(controller.state).toMatchObject({ phase: "available", latest: "0.2.0", error: null });
+  });
+
+  it("gives up after the retries with a plain message", async () => {
+    const { controller } = make(["HttpError: 502", "HttpError: 503", "HttpError: 504"]);
+    await expect(controller.run("check")).rejects.toThrow();
+    expect(controller.state.phase).toBe("error");
+    expect(controller.state.error).toBe(
+      "Couldn't reach GitHub to check for updates. Try again in a minute.",
+    );
+  });
+
+  it("doesn't retry errors that won't go away", async () => {
+    const { controller, calls } = make(["Code signature is invalid"]);
+    await expect(controller.run("check")).rejects.toThrow();
+    expect(calls.filter((c) => c === "check")).toHaveLength(1);
+    expect(controller.state.error).toBe("Code signature is invalid");
+  });
+});

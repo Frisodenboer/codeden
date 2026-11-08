@@ -68,7 +68,11 @@ jobs:
           npm --version
           npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public
 
-      - name: Create GitHub Release
+      # Created as a draft: the desktop jobs attach their installers and update files
+      # (latest*.yml) to it, and `publish` makes it public only once all of them are there.
+      # Desktop apps read the latest *published* release, so they never see a release
+      # without its update files (which they used to report as a 404).
+      - name: Create the GitHub Release (draft)
         if: env.DRY_RUN != 'true'
         shell: bash
         env:
@@ -76,7 +80,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" "${{ steps.pack.outputs.tarball }}" \
             --title "codeden ${{ steps.version.outputs.version }}" \
-            --generate-notes --verify-tag
+            --generate-notes --verify-tag --draft
 
       - name: Upload the packed tarball (dry run)
         if: env.DRY_RUN == 'true'
@@ -185,3 +189,19 @@ jobs:
         with:
           name: codeden-desktop-${{ matrix.os }}
           path: ${{ steps.files.outputs.dir }}
+
+  # Publish the release once every desktop build is attached. If a desktop job fails, the
+  # release stays a draft (npm is already published); re-run the failed job, and this job
+  # publishes it once everything has succeeded.
+  publish:
+    name: Publish the GitHub Release
+    needs: desktop
+    if: github.event_name != 'workflow_dispatch' || !inputs.dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release and mark it latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft,assets --jq '"draft=\(.isDraft) assets=\(.assets | length)"'

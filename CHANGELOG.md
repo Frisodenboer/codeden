@@ -4,6 +4,10 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **Desktop update checks while a release is being published.** The GitHub Release now stays a draft until every installer and update file is attached, so the desktop app no longer reports "Couldn't check for updates … 404" during a release. A release that has no update file for your platform yet counts as up to date, and GitHub hiccups (5xx, timeouts) are retried twice before a plain "Couldn't reach GitHub" message.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added

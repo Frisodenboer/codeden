@@ -26,8 +26,31 @@ export interface UpdateControllerOptions {
    */
   beforeInstall: () => Promise<void>;
   now?: () => number;
+  /** Waits between check retries (tests pass an instant one). */
+  sleep?: (ms: number) => Promise<void>;
   log?: (message: string) => void;
 }
+
+/** Waits before retrying a check that hit a transient network or GitHub error. */
+const CHECK_RETRY_DELAYS_MS = [2_000, 6_000];
+
+/**
+ * The latest release has no update file for this platform yet: a release is still being
+ * published (its installers are attached after it is created). Nothing to install yet.
+ */
+export function isMissingUpdateFile(message: string): boolean {
+  return /cannot find latest(-[a-z]+)?\.yml/i.test(message) || /\b404\b/.test(message);
+}
+
+/** A failure worth retrying: GitHub 5xx or 429, a timeout, or a dropped connection. */
+export function isTransientUpdateError(message: string): boolean {
+  return /\b(5\d\d|429)\b|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|net::ERR_|socket hang up|timed? ?out/i.test(
+    message,
+  );
+}
+
+const firstLine = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
 
 /**
  * The desktop updater (§17): electron-updater against GitHub Releases, driven by explicit
@@ -91,13 +114,33 @@ export class UpdateController {
     const busy = ["downloading", "downloaded", "installing"];
     if (busy.includes(this.current.phase)) return;
     this.set({ phase: "checking", error: null });
-    try {
-      const result = await (await this.updater()).checkForUpdates();
-      const latest = result?.updateInfo.version ?? this.opts.current;
-      const newer = isNewerVersion(latest, this.opts.current);
-      this.set({ phase: newer ? "available" : "idle", latest, checkedAt: this.nowIso() });
-    } catch (error) {
-      this.fail(error, { checkedAt: this.nowIso() });
+    const sleep = this.opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const result = await (await this.updater()).checkForUpdates();
+        const latest = result?.updateInfo.version ?? this.opts.current;
+        const newer = isNewerVersion(latest, this.opts.current);
+        this.set({ phase: newer ? "available" : "idle", latest, checkedAt: this.nowIso() });
+        return;
+      } catch (error) {
+        const message = firstLine(error);
+        if (isMissingUpdateFile(message)) {
+          // A release still being published: not an error, there's just nothing to install yet.
+          this.opts.log?.(`updates: the latest release has no update file yet (${message})`);
+          this.set({ phase: "idle", latest: this.opts.current, checkedAt: this.nowIso() });
+          return;
+        }
+        const delay = CHECK_RETRY_DELAYS_MS[attempt];
+        if (isTransientUpdateError(message) && delay !== undefined) {
+          this.opts.log?.(`updates: check failed (${message}); retrying in ${delay / 1000}s`);
+          await sleep(delay);
+          continue;
+        }
+        const friendly = isTransientUpdateError(message)
+          ? "Couldn't reach GitHub to check for updates. Try again in a minute."
+          : message;
+        this.fail(new Error(friendly), { checkedAt: this.nowIso() });
+      }
     }
   }
 
