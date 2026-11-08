@@ -1,6 +1,13 @@
 import { isFactoryMode } from "@codeden/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Bot, FileText, FolderGit2, GitBranch, MessageSquarePlus } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  FileText,
+  FolderGit2,
+  GitBranch,
+  MessageSquarePlus,
+} from "lucide-react";
 import { useEffect, useRef } from "react";
 import { AutomationsPanel } from "@/components/automations/automations-panel";
 import { SectionLabel } from "@/components/common/bits";
@@ -65,8 +72,19 @@ export function ProjectPage({
         meta={
           <span className="flex items-center gap-2">
             {project.kind === "github" ? (
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1" data-testid="project-github-repo">
                 <GitBranch className="size-3" /> {project.github.owner}/{project.github.repo}
+                {project.remoteWarning && (
+                  <button
+                    type="button"
+                    onClick={() => go({ tab: "github" })}
+                    title="The folder no longer has this GitHub remote on origin"
+                    aria-label="GitHub remote missing"
+                    className="text-status-waiting"
+                  >
+                    <AlertTriangle className="size-3" />
+                  </button>
+                )}
               </span>
             ) : (
               <span className="flex items-center gap-1">

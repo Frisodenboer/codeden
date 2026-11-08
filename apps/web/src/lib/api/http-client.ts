@@ -2,6 +2,7 @@ import {
   ClaudeSdkStatus,
   CreateProjectResponse,
   DiffResult,
+  DisconnectGithubResponse,
   FsListResponse,
   GitCommitResponse,
   GitPushResponse,
@@ -9,6 +10,7 @@ import {
   InboxItem,
   LoginCommandResponse,
   Project,
+  RefreshProjectResponse,
   ReorderProjectsResponse,
   RestoreFilesResponse,
   type SendMessageRequestInit,
@@ -103,6 +105,10 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
       call("PUT", "/projects/order", { projectIds }, (v) => ReorderProjectsResponse.parse(v)).then(
         (r) => r.projects,
       ),
+    refreshProject: (id) =>
+      post(`/projects/${enc(id)}/refresh`, {}, (v) => RefreshProjectResponse.parse(v)),
+    disconnectGithub: (id) =>
+      post(`/projects/${enc(id)}/disconnect-github`, {}, (v) => DisconnectGithubResponse.parse(v)),
     automations: httpAutomationsApi(http),
     factory: httpFactoryApi(http),
 
