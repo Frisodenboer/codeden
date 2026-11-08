@@ -1,5 +1,4 @@
 import { rmSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import {
   BrowserWsQuery,
   CODEDEN_VERSION,
@@ -8,13 +7,17 @@ import {
   TerminalQuery,
 } from "@codeden/contracts";
 import { ImageEngineRegistry } from "@codeden/providers";
-import { serve, upgradeWebSocket } from "@hono/node-server";
+import { createAdaptorServer, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { type Database, openDatabase } from "./db/client";
 import { EventStore } from "./events/store";
 import { writeJsonFile } from "./json-file";
 import { createMcpHandler } from "./mcp/endpoint";
+import { NetworkAccess } from "./network/access";
+import type { InterfaceMap } from "./network/addresses";
+import { HttpListener } from "./network/listener";
+import { RemoteAccessStore } from "./network/store";
 import { ensureHome, type HomePaths } from "./paths";
 import { BrowserBridge } from "./realtime/browser";
 import { WsHub } from "./realtime/hub";
@@ -37,7 +40,10 @@ import type { UtilityService } from "./services/utility";
 import { SettingsStore } from "./settings-store";
 
 export interface StartServerOptions {
-  /** Port to listen on (127.0.0.1 only). 0 picks a free port. */
+  /**
+   * Port to listen on: 127.0.0.1, or 0.0.0.0 while network access is on (§15.1). 0 picks a
+   * free port; a later switch keeps the port.
+   */
   port: number;
   /** Data directory (`~/.codeden` by default; resolve it with `resolveHome`). */
   dataDir: string;
@@ -112,6 +118,8 @@ export interface StartServerOptions {
   updates?: ServicesOptions["updates"];
   /** Worktree cleanup clock and sweep timings (tests). */
   worktreeCleanup?: ServicesOptions["worktreeCleanup"];
+  /** Network interfaces for the address list (tests). */
+  networkInterfaces?: () => InterfaceMap;
   log?: (message: string) => void;
 }
 
@@ -126,6 +134,8 @@ export interface RunningServer {
   database: Database;
   services: AppServices;
   runner: RunnerClient | undefined;
+  /** Network access (§15.1): the switch, password, remote sessions and the listener binding. */
+  network: NetworkAccess;
   /** Stop listening and disconnect from the runner (which keeps running). */
   close(opts?: { stopRunner?: boolean }): Promise<void>;
 }
@@ -201,22 +211,50 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   const stopUpdateEvents = services.updates.onChange((status) => hub.broadcastUpdate(status));
   services.updates.start();
 
-  let origins = new Set<string>();
+  let baseOrigins = new Set<string>();
   const app = new Hono();
+  const wss = new WebSocketServer({ noServer: true });
+  // The HTTP server never listens itself: `HttpListener` hands it connections, so network
+  // access can move between 127.0.0.1 and 0.0.0.0 without touching open connections.
+  const httpServer = createAdaptorServer({ fetch: app.fetch, websocket: { server: wss } });
+  const listener = new HttpListener(httpServer as import("node:http").Server);
+  const network = new NetworkAccess({
+    store: new RemoteAccessStore(paths.remoteAccess),
+    listener,
+    interfaces: opts.networkInterfaces,
+    securityLogFile: paths.remoteAccessLog,
+    log,
+  });
+  const sessionCookie = () => `codeden_session_${port}`;
+  const tokenCookie = () => `codeden_token_${port}`;
+  const allowedOrigins = () => {
+    const own = [...network.ownHosts()].map((h) => `http://${h}:${port}`);
+    return own.length === 0 ? baseOrigins : new Set([...baseOrigins, ...own]);
+  };
   app.use(
     "*",
     securityMiddleware({
       token: opts.token,
-      cookieName: () => `codeden_token_${port}`,
-      allowedOrigins: () => origins,
+      cookieName: tokenCookie,
+      allowedOrigins,
       // `/mcp` authenticates agents with per-session tokens instead of the install token.
       publicPaths: new Set(["/api/health", "/mcp"]),
+      // Agents only: never reachable from another device, even with network access on.
+      loopbackOnlyPaths: new Set(["/mcp"]),
+      remote: {
+        enabled: () => network.enabled,
+        ownHosts: () => network.ownHosts(),
+        port: () => port,
+        sessionCookieName: sessionCookie,
+        verifySession: (token) => network.store.verifySession(token),
+      },
     }),
   );
   const api = createApi({
     services,
     runnerStatus,
     startedAt,
+    network: { network, sessionCookie, tokenCookie, token: opts.token },
     log,
     shutdown: ({ stopRunner }) => {
       setTimeout(() => {
@@ -257,16 +295,11 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   });
   mountWeb(app, findWebDir(opts.webDir));
 
-  const wss = new WebSocketServer({ noServer: true });
-  const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
-    const s = serve(
-      { fetch: app.fetch, port: opts.port, hostname: "127.0.0.1", websocket: { server: wss } },
-      () => resolve(s),
-    );
-    s.once("error", reject);
-  });
-  port = (server.address() as AddressInfo).port;
-  origins = new Set([...loopbackOrigins(port), ...(opts.allowedOrigins ?? [])]);
+  if (network.store.enabled && !network.store.passwordSet) {
+    log("network access is on but no password is set: listening on 127.0.0.1 only");
+  }
+  port = await listener.listen(opts.port, network.desiredHost());
+  baseOrigins = new Set([...loopbackOrigins(port), ...(opts.allowedOrigins ?? [])]);
   const url = `http://127.0.0.1:${port}`;
   const lock: ServerLock = {
     pid: process.pid,
@@ -276,6 +309,14 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   };
   writeJsonFile(paths.serverLock, lock);
   log(`server listening on ${url}`);
+  if (network.enabled) {
+    log(
+      `network access on: ${network
+        .addresses()
+        .map((a) => `${a.label} ${a.url}`)
+        .join(", ")}`,
+    );
+  }
 
   if (opts.checkSetupOnStart !== false) {
     // Re-check tools silently on every launch (§14 step 6); results are cached.
@@ -331,10 +372,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       }
       hub.close();
       wss.close();
-      await new Promise<void>((resolve) => {
-        server.close(() => resolve());
-        if ("closeAllConnections" in server) server.closeAllConnections();
-      });
+      await listener.close();
+      if ("closeAllConnections" in httpServer) httpServer.closeAllConnections();
       database.close();
       rmSync(paths.serverLock, { force: true });
     })();
@@ -350,6 +389,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     database,
     services,
     runner,
+    network,
     close,
   };
 }
