@@ -393,6 +393,8 @@ The inbox is one view, also available as an MCP tool. It collects:
 
 Each item links to its session, issue and PR, and can be answered in place. The sidebar shows a count, and items also raise toasts and opt-in browser notifications.
 
+Approvals and questions block an agent, so they get stronger cues. When one arrives live, a short chime plays (synthesized in the browser, debounced so a burst plays once, on by default and switchable in Settings) and a sticky toast with **Open** stays until the item is opened or resolved. While any is open, the favicon carries an amber dot, and a background tab's title alternates with "Waiting on you". The first such toast also offers, once, to turn on browser notifications.
+
 ### 11.2 Autonomy levels
 
 Each level maps onto each provider's **native** enforcement:

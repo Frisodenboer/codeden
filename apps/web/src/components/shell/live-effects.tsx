@@ -4,10 +4,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useClient } from "@/lib/api";
+import { attentionTarget, isBlockingKind } from "@/lib/attention/blocking";
 import { platform } from "@/lib/platform";
 import { snapshotKey, useSnapshot } from "@/lib/queries";
 import { onLiveEvent } from "@/lib/realtime";
 import { startReadAloud } from "@/lib/voice/read-aloud";
+import { useAttention } from "./use-attention";
 
 const inboxVerb: Record<string, string> = {
   approval: "Approval needed",
@@ -22,7 +24,8 @@ const inboxVerb: Record<string, string> = {
 
 /**
  * Side effects of live events: toasts and browser notifications for new inbox items, the
- * unread badge, and read-aloud of the final message when a turn completes (§11.1, §11.3).
+ * unread badge, the attention cues for items that block an agent (`useAttention`), and
+ * read-aloud of the final message when a turn completes (§11.1, §11.3).
  */
 export function LiveEffects() {
   const client = useClient();
@@ -33,6 +36,8 @@ export function LiveEffects() {
   const lastStatus = useRef(new Map<string, string>());
 
   useEffect(() => platform.setBadge(openCount), [openCount]);
+  // After the badge, so a flashing title is redrawn on top of it.
+  useAttention();
 
   useEffect(() => {
     return onLiveEvent((env) => {
@@ -40,7 +45,9 @@ export function LiveEffects() {
       if (!snap) return;
       if (env.type === "inbox.created") {
         const item = env.payload.item;
-        if (snap.settings.notifications.toasts) {
+        const blocking = isBlockingKind(item);
+        // Blocking items get a sticky toast from useAttention instead.
+        if (snap.settings.notifications.toasts && !blocking) {
           toast(inboxVerb[item.kind] ?? "Inbox", {
             description: item.title,
             action: { label: "Open", onClick: () => void navigate({ to: "/inbox" }) },
@@ -50,7 +57,7 @@ export function LiveEffects() {
           platform.notify(inboxVerb[item.kind] ?? "CodeDen", {
             body: item.title,
             tag: item.id,
-            onClick: () => void navigate({ to: "/inbox" }),
+            onClick: () => void navigate(blocking ? attentionTarget(item) : { to: "/inbox" }),
           });
         }
       }

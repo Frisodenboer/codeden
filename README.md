@@ -76,7 +76,7 @@ Every unit of work carries a **work key** (`issue:142`, `automation:security-aud
 
 ### One inbox
 
-Questions, approvals, PRs ready for review, failed runs, triage decisions, duplicate-work conflicts and budget alerts all land in one **Inbox**, each linked to its session, issue and PR and answerable in place. Toasts and (opt-in) browser notifications tell you when something new arrives.
+Questions, approvals, PRs ready for review, failed runs, triage decisions, duplicate-work conflicts and budget alerts all land in one **Inbox**, each linked to its session, issue and PR and answerable in place. Toasts and (opt-in) browser notifications tell you when something new arrives, and when an agent is blocked on you a chime, a sticky toast and an amber dot on the tab icon make sure you notice.
 
 ![The inbox with a conflict, an approval and a PR ready for review](docs/images/inbox.png)
 
