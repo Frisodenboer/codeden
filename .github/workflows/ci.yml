@@ -1,9 +1,15 @@
 name: CI
 
+# Pull requests run unit checks and the browser e2e suite on Linux and Windows. Pushes to main,
+# the nightly run and manual runs add macOS unit checks and always run the desktop smoke test.
+# The `CI result` job at the end is the single check branch protection requires.
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 # A new push to a pull request cancels its older, superseded run. Every push to main gets its
 # own group (the run id), so merges in quick succession each get a full run: within one group
@@ -14,14 +20,59 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+      desktop: ${{ steps.detect.outputs.desktop }}
+      check-os: ${{ steps.detect.outputs.check-os }}
+    steps:
+      # A pull request is checked out as its merge commit, whose first parent is the base
+      # branch: `HEAD^1..HEAD` is exactly what the pull request changes.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: What does this change touch?
+        id: detect
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            # main, nightly and manual runs: everything, on every OS.
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
+            echo 'check-os=["windows-latest","macos-latest","ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'check-os=["windows-latest","ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt"
+          echo "Changed files:"; cat "$RUNNER_TEMP/changed.txt"
+          # Documentation: docs/, Markdown files (except the automation templates the server
+          # ships) and images outside apps/ and packages/ (app icons and assets are code).
+          docs='^docs/|^LICENSE$|^[^/]+\.md$|^(apps|packages)/[^/]+/README\.md$|^apps/runner/src/browser/README\.md$|^[^/]+\.(png|jpe?g|gif|svg|webp)$'
+          if [ ! -s "$RUNNER_TEMP/changed.txt" ] || grep -qvE "$docs" "$RUNNER_TEMP/changed.txt"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Documentation-only change: skipping tests and e2e."
+          fi
+          if grep -qE '^apps/desktop/' "$RUNNER_TEMP/changed.txt"; then
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "desktop=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check:
     name: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # About 3 minutes (5 on Windows): fail a hang in minutes instead of waiting for GitHub.
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: ${{ fromJSON(needs.changes.outputs.check-os) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -93,7 +144,9 @@ jobs:
 
   e2e:
     name: e2e (${{ matrix.os }})
-    # About 3 minutes (8 on Windows before the browser cache): fail a hang in minutes.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    # About 3 minutes with a warm browser cache (5 on Windows): fail a hang in minutes.
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -110,7 +163,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Playwright's browsers and the Electron binary live outside node_modules, so the pnpm
-      # cache does not cover them. They are cached per OS and version, in their default folders.
+      # cache does not cover them. They are cached per OS and version.
       - name: Resolve the Playwright and Electron versions
         id: versions
         shell: bash
@@ -124,9 +177,18 @@ jobs:
         with:
           path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.playwright }}
+      # On Linux a cache miss also installs Chromium's shared libraries from apt. On Windows,
+      # `--with-deps` only adds the Media Foundation feature (about 3 minutes), which the suite
+      # does not need.
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter @codeden/web exec playwright install chromium
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            pnpm --filter @codeden/web exec playwright install --with-deps chromium
+          else
+            pnpm --filter @codeden/web exec playwright install chromium
+          fi
       # Saved straight away, so a failing test run still fills the cache for the next one.
       - name: Save the Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
@@ -134,65 +196,56 @@ jobs:
         with:
           path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
           key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
-      # Linux needs Chromium's shared libraries from apt (not cacheable here). On Windows,
-      # `--with-deps` only installs the Windows Server Media Foundation feature (about 3 minutes);
-      # the suite does not play media, so Windows needs nothing beyond the browser.
-      - name: Install Playwright system dependencies
-        if: runner.os == 'Linux'
-        run: pnpm --filter @codeden/web exec playwright install-deps chromium
-      - run: pnpm e2e
-      # The desktop smoke test packages and launches the Electron app. Run it on main and
-      # on pull requests that change the desktop app; other PRs don't need the download.
-      - name: Does this change touch the desktop app?
-        id: desktop
+      # The runner image already has the libraries Chromium needs; install them only if one
+      # is missing (a changed image), instead of running apt on every cache hit.
+      - name: Check Chromium's system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true' && runner.os == 'Linux'
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          missing=$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
+            -exec ldd {} \; | grep "not found" || true)
+          if [ -n "$missing" ]; then
+            echo "::warning::Chromium is missing system libraries; installing them"
+            echo "$missing"
+            pnpm --filter @codeden/web exec playwright install-deps chromium
           fi
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          if git diff --name-only FETCH_HEAD HEAD | grep -qE '^apps/desktop/'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No desktop changes: skipping the desktop smoke test."
-          fi
+      - run: pnpm e2e
+      # The desktop smoke test packages and launches the Electron app: on main, nightly and
+      # manual runs, and on pull requests that change apps/desktop (see `changes`).
       # Packaging downloads the Electron binary (and, on Windows, electron-builder's icon tools)
       # from GitHub releases, which can fail with a 504; a cache hit needs no download.
       - name: Restore the Electron downloads
         id: electron-cache
-        if: steps.desktop.outputs.run == 'true'
+        if: needs.changes.outputs.desktop == 'true'
         uses: actions/cache/restore@v6
         with:
           path: |
             ${{ runner.os == 'Windows' && '~\AppData\Local\electron\Cache' || '~/.cache/electron' }}
             ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.electron }}
-      # On a cache miss a GitHub 504 is retried twice (30 s, then 60 s later); any other
-      # failure fails at once. The two desktop steps do not fail pull requests (a GitHub
-      # release-download outage blocked every PR on 2026-11-08); on main they still block.
+      # On a cache miss a GitHub 5xx or network error is retried four times (30, 60, 90 and
+      # 120 s later); any other failure fails at once.
       - name: Package the desktop app (unpacked build)
         id: package
-        if: steps.desktop.outputs.run == 'true'
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        if: needs.changes.outputs.desktop == 'true'
         shell: bash
         env:
           # Logs "Cache hit" or "Cache miss" (and the URL) for every Electron download.
           DEBUG: "@electron/get:index"
         run: |
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             if pnpm --filter @codeden/desktop package --dir 2>&1 | tee "$RUNNER_TEMP/package.log"; then
               exit 0
             fi
-            if [ "$attempt" = 3 ] || ! grep -qE "HTTPError: Response code 5[0-9][0-9]|ETIMEDOUT|ECONNRESET|EAI_AGAIN" "$RUNNER_TEMP/package.log"; then
+            if [ "$attempt" = 5 ] || ! grep -qE "HTTPError: Response code 5[0-9][0-9]|ETIMEDOUT|ECONNRESET|EAI_AGAIN" "$RUNNER_TEMP/package.log"; then
               exit 1
             fi
-            echo "::warning::A download from GitHub failed (attempt $attempt of 3); retrying in $((attempt * 30)) s"
+            echo "::warning::A download from GitHub failed (attempt $attempt of 5); retrying in $((attempt * 30)) s"
             sleep $((attempt * 30))
           done
       # Only after a successful packaging run, so a half-finished download is never saved.
       - name: Save the Electron downloads
-        if: steps.electron-cache.outputs.cache-hit != 'true' && steps.package.outcome == 'success'
+        if: needs.changes.outputs.desktop == 'true' && steps.electron-cache.outputs.cache-hit != 'true' && steps.package.outcome == 'success'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -200,9 +253,7 @@ jobs:
             ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
           key: ${{ steps.electron-cache.outputs.cache-primary-key }}
       - name: Desktop app smoke test (unpacked build)
-        id: smoke
-        if: steps.package.outcome == 'success'
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        if: needs.changes.outputs.desktop == 'true'
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
@@ -210,11 +261,6 @@ jobs:
           else
             pnpm --filter @codeden/desktop e2e
           fi
-      - name: Warn that a desktop step failed
-        if: github.event_name == 'pull_request' && (steps.package.outcome == 'failure' || steps.smoke.outcome == 'failure')
-        shell: bash
-        run: |
-          echo "::warning title=Desktop app step failed (not blocking this PR)::The desktop packaging or smoke test failed (package: ${{ steps.package.outcome }}, smoke test: ${{ steps.smoke.outcome }}). This is often a GitHub release-download outage (HTTP 504); check the step log. On main these steps still fail the build."
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
@@ -222,3 +268,30 @@ jobs:
           name: playwright-report-${{ matrix.os }}
           path: apps/web/playwright-report
           retention-days: 7
+
+  # The one check to require in branch protection: green when every job passed, or was skipped
+  # because the change only touches documentation.
+  result:
+    name: CI result
+    needs: [changes, check, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every required job passed or was skipped by change detection
+        shell: bash
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          CHECK: ${{ needs.check.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          echo "changes: $CHANGES (code: $CODE), check: $CHECK, e2e: $E2E"
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::Change detection did not succeed"; exit 1
+          fi
+          for result in "$CHECK" "$E2E"; do
+            if [ "$result" = "success" ]; then continue; fi
+            if [ "$result" = "skipped" ] && [ "$CODE" = "false" ]; then continue; fi
+            echo "::error::A required job did not pass (check: $CHECK, e2e: $E2E)"; exit 1
+          done

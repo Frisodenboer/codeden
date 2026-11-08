@@ -64,7 +64,7 @@ Package READMEs go deeper: [apps/server](apps/server/README.md), [packages/provi
 | `pnpm e2e` | Build the web app, then Playwright against a real server + runner with an isolated home and the Fake provider |
 | `pnpm db:generate` | Generate a Drizzle migration after editing `apps/server/src/db/schema-*.ts` |
 
-Before you push: **`pnpm typecheck && pnpm lint && pnpm test`** must pass. CI runs the same on Windows, macOS and Linux, then builds, packs the npm tarball, installs it and runs `codeden --version` and `codeden doctor`.
+Before you push: **`pnpm typecheck && pnpm lint && pnpm test`** must pass. CI runs the same on Windows and Linux for pull requests (plus macOS on every push to `main` and nightly), then builds, packs the npm tarball, installs it and runs `codeden --version` and `codeden doctor`. Pull requests that only touch documentation skip the tests, and the desktop smoke test runs when `apps/desktop` changes. The **CI result** check sums it all up.
 
 ## Conventions
 
