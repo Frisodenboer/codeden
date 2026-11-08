@@ -6,12 +6,16 @@ import {
   clampEffort,
   effectiveEffort,
   effortLevels,
+  FAVORITES_TAB,
+  favoriteRows,
   modelName,
   providerAvailability,
   providerTabs,
   resolveModel,
   searchRows,
   sortEfforts,
+  tabRows,
+  toggleFavorite,
   triggerText,
 } from "@/components/composer/model-picker/logic";
 import { providers } from "@/lib/api/mock/fixtures/world";
@@ -229,5 +233,54 @@ describe("search", () => {
     ]);
     const fast = searchRows(providers, "fast").map((r) => r.model.id);
     expect(fast).toEqual(expect.arrayContaining(["sonnet", "haiku", "gpt-6.1-sol-mini"]));
+  });
+});
+
+describe("favourites", () => {
+  const favorites = [
+    { provider: "codex", model: "gpt-6-nova" },
+    { provider: "codex", model: "gpt-4-retired" },
+    { provider: "gone", model: "x" },
+    { provider: "claude", model: "opus" },
+    { provider: "codex", model: "gpt-6-nova" },
+  ];
+
+  it("lists favourites in order, without models or providers that are gone, once each", () => {
+    expect(favoriteRows(favorites, providers).map((r) => r.key)).toEqual([
+      "codex::gpt-6-nova",
+      "claude::opus",
+    ]);
+    expect(favoriteRows(favorites, [claude]).map((r) => r.key)).toEqual(["claude::opus"]);
+  });
+
+  it("adds and removes a favourite, keeping the order of the rest", () => {
+    const list = [
+      { provider: "codex", model: "a" },
+      { provider: "claude", model: "b" },
+    ];
+    expect(toggleFavorite(list, { provider: "codex", model: "c" })).toEqual([
+      ...list,
+      { provider: "codex", model: "c" },
+    ]);
+    expect(toggleFavorite(list, { provider: "codex", model: "a" })).toEqual([list[1]]);
+  });
+
+  it("puts the Favourites tab first and can move to it", () => {
+    const tabs = providerTabs(providers, undefined, undefined, { favorites: true });
+    expect(tabs.map((t) => t.id)).toEqual([FAVORITES_TAB, "claude", "codex"]);
+    expect(adjacentTab(tabs, "claude", -1)?.id).toBe(FAVORITES_TAB);
+    expect(tabRows(tabs[0], providers, favorites).map((r) => r.model.id)).toEqual([
+      "gpt-6-nova",
+      "opus",
+    ]);
+  });
+
+  it("ranks favourites first among equal search matches", () => {
+    const starred = [{ provider: "codex", model: "gpt-5.6-luna-mini" }];
+    expect(searchRows(providers, "mini", starred).map((r) => r.model.id)).toEqual([
+      "gpt-5.6-luna-mini",
+      "gpt-6.1-sol-mini",
+      "gpt-6-astra-mini",
+    ]);
   });
 });

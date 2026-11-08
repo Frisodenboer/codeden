@@ -10,10 +10,13 @@ import {
   chooseModel,
   effectiveEffort,
   effortLevels,
+  favoriteRows,
   type ModelChoice,
   type ModelRow,
   modelName,
+  openProviderTabs,
   type PickerTab,
+  providerAvailability,
   providerTabs,
   resolveModel,
   rowKey,
@@ -23,6 +26,7 @@ import {
 import { ModelList, SetupNotice } from "./model-list";
 import { ProviderRail } from "./provider-rail";
 import { PickerTrigger } from "./trigger";
+import { useFavoriteModels } from "./use-favorites";
 
 export interface ModelPickerProps {
   providers: ProviderInfo[];
@@ -79,8 +83,9 @@ export function ModelPicker({
   }
   const shown = optimistic ?? value;
 
-  const tabs = providerTabs(providers, checks, lockedProvider);
-  const openTabs = tabs.filter((t) => !t.lockedReason);
+  const { favorites, toggle: toggleFavorite } = useFavoriteModels();
+  const tabs = providerTabs(providers, checks, lockedProvider, { favorites: true });
+  const openTabs = openProviderTabs(tabs);
   const tab: PickerTab | undefined = tabs.find((t) => t.id === tabId) ?? openTabs[0];
   const provider = providers.find((p) => p.id === shown?.provider);
   const resolved = resolveModel(provider, shown?.model ?? null);
@@ -93,10 +98,11 @@ export function ModelPicker({
   const searching = query.trim().length > 0;
   const searchable = openTabs.map((t) => t.provider);
   const rowsFor = (q: string, t: PickerTab | undefined): ModelRow[] =>
-    q.trim() ? searchRows(searchable, q) : t ? tabRows(t) : [];
+    q.trim() ? searchRows(searchable, q, favorites) : tabRows(t, searchable, favorites);
   const rows = rowsFor(query, tab);
+  const starred = new Set(favorites.map((f) => rowKey(f.provider, f.model)));
   const notice =
-    !searching && tab && !tab.availability.ready ? (
+    !searching && tab?.kind === "provider" && !tab.availability.ready ? (
       <SetupNotice
         name={tab.provider.displayName}
         availability={tab.availability}
@@ -120,7 +126,11 @@ export function ModelPicker({
 
   const openPicker = (next: boolean) => {
     if (next) {
+      // Starred models come first, except when the provider is fixed for this session.
       const start =
+        (!lockedProvider && favoriteRows(favorites, searchable).length > 0
+          ? tabs.find((t) => t.kind === "favorites")
+          : undefined) ??
         openTabs.find((t) => t.id === shown?.provider) ??
         openTabs.find((t) => t.id === lockedProvider) ??
         openTabs[0];
@@ -199,7 +209,7 @@ export function ModelPicker({
           effort={offerEffort ? effort : null}
           levels={offerEffort ? levels : []}
           placeholder={placeholder}
-          ready={!provider || (tabs.find((t) => t.id === provider.id)?.availability.ready ?? true)}
+          ready={!provider || providerAvailability(provider.id, checks).ready}
         />
       </PopoverTrigger>
       <PopoverContent
@@ -242,6 +252,15 @@ export function ModelPicker({
                   highlight={highlight}
                   onHighlight={setHighlight}
                   notice={notice}
+                  empty={
+                    tab?.kind === "favorites"
+                      ? "No favourites yet. Star a model to pin it here."
+                      : undefined
+                  }
+                  isFavorite={(row) => starred.has(row.key)}
+                  onToggleFavorite={(row) =>
+                    toggleFavorite({ provider: row.provider.id, model: row.model.id })
+                  }
                   onPick={pick}
                   onFocusRail={() =>
                     contentRef.current

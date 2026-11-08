@@ -6,7 +6,9 @@ import {
   ModelPicker,
   type ModelPickerProps,
 } from "@/components/composer/model-picker/model-picker";
+import { createMockClient } from "@/lib/api/mock";
 import { providers } from "@/lib/api/mock/fixtures/world";
+import { snapshotKey } from "@/lib/queries";
 import { renderWithClient } from "./utils";
 
 function Harness({
@@ -31,11 +33,15 @@ function Harness({
   );
 }
 
-async function setup(props: Parameters<typeof Harness>[0]) {
+async function setup(props: Parameters<typeof Harness>[0], client = createMockClient()) {
   const onPick = vi.fn();
-  renderWithClient(<Harness onPick={onPick} {...props} />, undefined, { withRouter: true });
+  const { queryClient } = renderWithClient(<Harness onPick={onPick} {...props} />, client, {
+    withRouter: true,
+  });
   const trigger = await screen.findByRole("button", { name: /^Provider and model/ });
-  return { onPick, trigger };
+  // Favourites live in the snapshot's settings.
+  await waitFor(() => expect(queryClient.getQueryData(snapshotKey)).toBeTruthy());
+  return { onPick, trigger, client };
 }
 
 async function openPicker(trigger: HTMLElement) {
@@ -243,5 +249,94 @@ describe("ModelPicker", () => {
     fireEvent.click(within(picker).getByRole("button", { name: "Use Auto" }));
     expect(onAuto).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByTestId("model-picker")).toBeNull());
+  });
+});
+
+describe("ModelPicker favourites", () => {
+  it("stars a model, saves it to settings and lists it under Favourites", async () => {
+    const client = createMockClient();
+    const save = vi.spyOn(client, "updateSettings");
+    const { trigger } = await setup(
+      { initial: { provider: "claude", model: "opus", effort: null } },
+      client,
+    );
+    const picker = await openPicker(trigger);
+    const star = within(picker).getByRole("button", { name: "Add Sonnet to favourites" });
+    fireEvent.click(star);
+    // Starring doesn't pick the model.
+    expect(
+      await within(picker).findByRole("button", { name: "Remove Sonnet from favourites" }),
+    ).toBeTruthy();
+    expect(save).toHaveBeenCalledWith({
+      models: { favorites: [{ provider: "claude", model: "sonnet" }] },
+    });
+    fireEvent.click(within(picker).getByRole("button", { name: "Favourites" }));
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual([expect.stringContaining("Sonnet")]);
+    expect(trigger.getAttribute("aria-label")).toContain("Opus");
+  });
+
+  it("opens on Favourites and leaves out models a provider no longer lists", async () => {
+    const client = createMockClient();
+    await client.updateSettings({
+      models: {
+        favorites: [
+          { provider: "codex", model: "gpt-6-nova" },
+          { provider: "codex", model: "gpt-4-retired" },
+          { provider: "claude", model: "opus" },
+        ],
+      },
+    });
+    const { trigger } = await setup(
+      { initial: { provider: "claude", model: "opus", effort: null } },
+      client,
+    );
+    const picker = await openPicker(trigger);
+    expect(
+      within(picker).getByRole("button", { name: "Favourites" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    const names = within(picker)
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "");
+    expect(names).toHaveLength(2);
+    expect(names[0]).toContain("gpt-6-nova");
+    expect(names[1]).toContain("Opus");
+  });
+
+  it("shows only the fixed provider's favourites in a running session", async () => {
+    const client = createMockClient();
+    await client.updateSettings({
+      models: {
+        favorites: [
+          { provider: "claude", model: "opus" },
+          { provider: "codex", model: "gpt-6-nova" },
+        ],
+      },
+    });
+    const { trigger } = await setup(
+      { initial: { provider: "codex", model: "default", effort: null }, lockedProvider: "codex" },
+      client,
+    );
+    const picker = await openPicker(trigger);
+    // A fixed provider opens on its own tab.
+    expect(option("gpt-6.1-sol")).toBeTruthy();
+    fireEvent.click(within(picker).getByRole("button", { name: "Favourites" }));
+    const names = within(picker)
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "");
+    expect(names).toHaveLength(1);
+    expect(names[0]).toContain("gpt-6-nova");
+  });
+
+  it("explains an empty Favourites tab", async () => {
+    const { trigger } = await setup({
+      initial: { provider: "claude", model: "opus", effort: null },
+    });
+    const picker = await openPicker(trigger);
+    fireEvent.click(within(picker).getByRole("button", { name: "Favourites" }));
+    expect(within(picker).getByText(/No favourites yet/)).toBeTruthy();
   });
 });

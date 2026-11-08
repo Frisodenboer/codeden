@@ -1,4 +1,10 @@
-import type { ModelInfo, ProviderInfo, ReasoningEffort, SetupCheck } from "@codeden/contracts";
+import type {
+  ModelInfo,
+  ModelRef,
+  ProviderInfo,
+  ReasoningEffort,
+  SetupCheck,
+} from "@codeden/contracts";
 
 /**
  * Pure rules behind the provider, model and effort picker. Nothing here branches on a provider
@@ -169,25 +175,30 @@ export function providerAvailability(
 
 // ---------------------------------------------------------------- tabs and search
 
-/**
- * One tab in the provider rail. Only providers today; the union leaves room for collections
- * such as favourites without changing how the rail and list render.
- */
-export type PickerTab = {
-  kind: "provider";
-  id: string;
-  provider: ProviderInfo;
-  availability: Availability;
-  /** Set when the tab cannot be opened, e.g. a session's provider is fixed. */
-  lockedReason: string | null;
-};
+/** Id of the Favourites tab; provider ids can't clash with it (they never contain a colon). */
+export const FAVORITES_TAB = ":favorites";
 
+/** One tab in the rail: the starred models across providers, or one provider's models. */
+export type PickerTab =
+  | { kind: "favorites"; id: typeof FAVORITES_TAB; lockedReason: null }
+  | {
+      kind: "provider";
+      id: string;
+      provider: ProviderInfo;
+      availability: Availability;
+      /** Set when the tab cannot be opened, e.g. a session's provider is fixed. */
+      lockedReason: string | null;
+    };
+export type ProviderTab = Extract<PickerTab, { kind: "provider" }>;
+
+/** The rail's tabs: Favourites first (when offered), then one per provider. */
 export function providerTabs(
   providers: readonly ProviderInfo[],
   checks: readonly SetupCheck[] | undefined,
   lockedProvider: string | undefined,
+  opts: { favorites?: boolean } = {},
 ): PickerTab[] {
-  return providers.map((provider) => ({
+  const tabs: PickerTab[] = providers.map((provider) => ({
     kind: "provider" as const,
     id: provider.id,
     provider,
@@ -197,9 +208,17 @@ export function providerTabs(
         ? `${provider.displayName} can't be used in this session. Start a new session to switch providers.`
         : null,
   }));
+  return opts.favorites
+    ? [{ kind: "favorites", id: FAVORITES_TAB, lockedReason: null }, ...tabs]
+    : tabs;
 }
 
-/** The next tab that can be opened, wrapping around; used by the provider shortcuts. */
+/** Provider tabs that can be opened. */
+export function openProviderTabs(tabs: readonly PickerTab[]): ProviderTab[] {
+  return tabs.filter((t): t is ProviderTab => t.kind === "provider" && !t.lockedReason);
+}
+
+/** The next tab that can be opened (Favourites included), wrapping around. */
 export function adjacentTab(
   tabs: readonly PickerTab[],
   currentId: string,
@@ -227,9 +246,43 @@ function rows(provider: ProviderInfo): ModelRow[] {
   return provider.models.map((model) => ({ key: rowKey(provider.id, model.id), provider, model }));
 }
 
-/** The rows of one tab. */
-export function tabRows(tab: PickerTab): ModelRow[] {
-  return rows(tab.provider);
+/**
+ * Starred models as rows, in the order they were starred. Favourites of providers that can't be
+ * used here, or whose model the provider no longer lists, are left out (but stay saved).
+ */
+export function favoriteRows(
+  favorites: readonly ModelRef[],
+  providers: readonly ProviderInfo[],
+): ModelRow[] {
+  const seen = new Set<string>();
+  const out: ModelRow[] = [];
+  for (const ref of favorites) {
+    const provider = providers.find((p) => p.id === ref.provider);
+    const model = provider?.models.find((m) => m.id === ref.model);
+    const key = rowKey(ref.provider, ref.model);
+    if (!provider || !model || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, provider, model });
+  }
+  return out;
+}
+
+/** The rows of one tab; `providers` are the ones that can be used here. */
+export function tabRows(
+  tab: PickerTab | undefined,
+  providers: readonly ProviderInfo[],
+  favorites: readonly ModelRef[],
+): ModelRow[] {
+  if (!tab) return [];
+  return tab.kind === "favorites" ? favoriteRows(favorites, providers) : rows(tab.provider);
+}
+
+/** Add or remove a favourite, keeping the order of the rest. */
+export function toggleFavorite(favorites: readonly ModelRef[], ref: ModelRef): ModelRef[] {
+  const has = favorites.some((f) => f.provider === ref.provider && f.model === ref.model);
+  return has
+    ? favorites.filter((f) => f.provider !== ref.provider || f.model !== ref.model)
+    : [...favorites, ref];
 }
 
 const normalize = (s: string) =>
@@ -264,16 +317,29 @@ function scoreRow(row: ModelRow, tokens: string[], phrase: string): number | nul
   return score;
 }
 
-/** Rank models across providers for a search; ties keep provider and model order. */
-export function searchRows(providers: readonly ProviderInfo[], query: string): ModelRow[] {
+/**
+ * Rank models across providers for a search. Equal matches put favourites first, then keep
+ * provider and model order.
+ */
+export function searchRows(
+  providers: readonly ProviderInfo[],
+  query: string,
+  favorites: readonly ModelRef[] = [],
+): ModelRow[] {
   const phrase = normalize(query);
   const tokens = phrase.split(" ").filter(Boolean);
   const all = providers.flatMap(rows);
   if (tokens.length === 0) return all;
+  const starred = new Set(favorites.map((f) => rowKey(f.provider, f.model)));
   return all
-    .map((row, order) => ({ row, order, score: scoreRow(row, tokens, phrase) }))
-    .filter((r): r is { row: ModelRow; order: number; score: number } => r.score !== null)
-    .sort((a, b) => a.score - b.score || a.order - b.order)
+    .map((row, order) => ({
+      row,
+      order,
+      score: scoreRow(row, tokens, phrase),
+      star: starred.has(row.key) ? 0 : 1,
+    }))
+    .filter((r): r is typeof r & { score: number } => r.score !== null)
+    .sort((a, b) => a.score - b.score || a.star - b.star || a.order - b.order)
     .map((r) => r.row);
 }
 
