@@ -146,8 +146,16 @@ export function Sidebar({ width }: { width: number }) {
 
       <WaitingOnYou sessions={waiting} projectName={projectName} />
 
-      <ScrollArea className="mt-3 min-h-0 flex-1">
-        <div className="flex flex-col gap-1 px-3 pb-3">
+      {/*
+        The scroll area wraps its content in a `display: table` box that grows to the widest
+        row, which stops `truncate` from ever applying. A block box keeps rows at the sidebar's
+        width, so titles end in an ellipsis and trailing details stay visible.
+      */}
+      <ScrollArea
+        data-testid="sidebar-projects"
+        className="mt-3 min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!"
+      >
+        <div className="flex min-w-0 flex-col gap-1 px-3 pb-3">
           {pinned.length > 0 && (
             <section aria-label="Pinned projects" className="flex flex-col gap-1">
               <div className="flex h-7 items-center gap-1.5 pt-1 pl-2">
