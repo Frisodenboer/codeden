@@ -13,7 +13,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ### Changed
 
-- **Archiving always removes the worktree**, uncommitted changes included, and says when it discarded any. The branch and checkpoints stay. The removal is instant: the folder moves to `~/.codeden/wt/.trash` and is deleted in the background.
+- **Archiving removes the worktree instantly**: the folder moves to `~/.codeden/wt/.trash` and is deleted in the background. A worktree with uncommitted changes is still kept unless you choose **Remove anyway**, and the toast says when changes were discarded. If a file in the worktree is in use, the toast offers **Try again**, and the hourly cleanup retries archived sessions on its own. The branch and checkpoints stay.
 
 ### Fixed
 

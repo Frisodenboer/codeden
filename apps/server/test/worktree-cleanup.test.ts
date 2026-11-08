@@ -61,7 +61,7 @@ describe("worktree cleanup (§9)", () => {
     expect(existsSync(worktree)).toBe(true);
   }, 60_000);
 
-  it("archive removes a worktree with uncommitted changes and says so; the sweep keeps one", async () => {
+  it("keeps a worktree with uncommitted changes unless forced, and says when it discarded them", async () => {
     const archived = await h.startFakeSession();
     const idle = await h.startFakeSession();
     const archivedTree = (await h.detail(archived)).session.worktreePath as string;
@@ -69,14 +69,23 @@ describe("worktree cleanup (§9)", () => {
     writeFileSync(join(archivedTree, "notes.txt"), "not committed\n");
     writeFileSync(join(idleTree, "notes.txt"), "not committed\n");
 
-    const result = await archive(archived);
-    expect(result.worktree).toEqual({
+    const kept = await archive(archived);
+    expect(kept.worktree.status).toBe("kept_changes");
+    expect(kept.session.archivedAt).toBeTruthy();
+    expect(kept.session.worktreeRemovedAt).toBeFalsy();
+    expect(existsSync(join(archivedTree, "notes.txt"))).toBe(true);
+    // The sweep retries archived sessions, but never discards changes the user didn't.
+    expect(await services().worktreeCleanup.sweep()).not.toContain(archived);
+    expect(existsSync(join(archivedTree, "notes.txt"))).toBe(true);
+
+    const forced = await archive(archived, { force: true });
+    expect(forced.worktree).toEqual({
       status: "removed",
       message: "Its uncommitted changes were discarded",
     });
-    expect(result.session.worktreeRemovedAt).toBeTruthy();
+    expect(forced.session.worktreeRemovedAt).toBeTruthy();
     expect(existsSync(archivedTree)).toBe(false);
-    expect(branches()).toContain(result.session.branch as string);
+    expect(branches()).toContain(forced.session.branch as string);
 
     clock = Date.now() + 8 * DAY;
     expect(await services().worktreeCleanup.sweep()).not.toContain(idle);

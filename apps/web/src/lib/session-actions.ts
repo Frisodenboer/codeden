@@ -19,12 +19,13 @@ const brief = (text: string | null) =>
   text && text.length > 160 ? `${text.slice(0, 159).trimEnd()}…` : (text ?? undefined);
 
 /**
- * Toast for an archive: what happened to the worktree, with Undo. Archiving always removes
- * the worktree; when that fails (a file still in use), the toast offers Try again.
+ * Toast for an archive: what happened to the worktree, with Undo. A worktree kept because of
+ * uncommitted changes offers Remove anyway; a removal that failed (a file still in use) offers
+ * Try again.
  */
 export function announceArchive(
   result: ArchiveSessionResponse,
-  actions: { undo: () => void; retry: () => void },
+  actions: { undo: () => void; retry: () => void; force: () => void },
 ): void {
   const undo = { label: "Undo", onClick: actions.undo };
   const { status, message: detail } = result.worktree;
@@ -35,6 +36,12 @@ export function announceArchive(
     });
   } else if (status === "none") {
     toast.success("Session archived", { action: undo });
+  } else if (status === "kept_changes") {
+    toast("Session archived. The worktree has uncommitted changes, so it was kept.", {
+      action: { label: "Remove anyway", onClick: actions.force },
+      cancel: undo,
+      duration: 10_000,
+    });
   } else {
     toast.warning("Session archived, but its worktree couldn't be removed yet", {
       description: brief(detail),
@@ -66,11 +73,12 @@ export function useSessionActions(session: Session) {
     onError,
   });
   const archive = useMutation({
-    mutationFn: () => client.archiveSession(session.id),
-    onSuccess: (result) =>
+    mutationFn: (force: boolean) => client.archiveSession(session.id, { force }),
+    onSuccess: (result, force) =>
       announceArchive(result, {
         undo: () => unarchive.mutate(),
-        retry: () => archive.mutate(),
+        retry: () => archive.mutate(force),
+        force: () => archive.mutate(true),
       }),
     onError,
   });
@@ -97,7 +105,7 @@ export function useSessionActions(session: Session) {
     canStop: canStop(session),
     stop: () => stop.mutate(),
     archived: Boolean(session.archivedAt),
-    archive: () => archive.mutate(),
+    archive: () => archive.mutate(false),
     unarchive: () => unarchive.mutate(),
   };
 }

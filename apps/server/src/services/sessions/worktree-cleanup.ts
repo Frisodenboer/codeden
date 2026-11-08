@@ -60,13 +60,12 @@ export function cleanupDue(session: Session, now: Date, settings: Settings["work
 }
 
 /**
- * Worktree cleanup (§9). Archiving a session removes its worktree right away, uncommitted
- * changes included (an archived session holds no disk space); the hourly sweep retries archived
- * sessions whose removal failed and removes worktrees of sessions inactive for the configured
- * number of days; archiving a project cleans up its sessions. The sweep and project cleanup keep
- * a worktree with uncommitted changes. Everything goes through the runner's workspace commands,
- * so a remote runner cleans up its own storage. The branch and checkpoints stay, and the next
- * message recreates the worktree.
+ * Worktree cleanup (§9). Archiving a session removes its worktree right away; the hourly sweep
+ * retries archived sessions whose removal failed and removes worktrees of sessions inactive for
+ * the configured number of days; archiving a project cleans up its sessions. Uncommitted changes
+ * always keep a worktree unless the user forces removal. Everything goes through the runner's
+ * workspace commands, so a remote runner cleans up its own storage. The branch and checkpoints
+ * stay, and the next message recreates the worktree.
  */
 export class WorktreeCleanup {
   private timer: NodeJS.Timeout | undefined;
@@ -74,6 +73,8 @@ export class WorktreeCleanup {
   private sweeping = false;
   /** Sessions the sweep could not clean (dirty, locked), keyed to the `updatedAt` it saw. */
   private readonly kept = new Map<string, string>();
+  /** Archived sessions whose user chose to discard uncommitted changes, until removed. */
+  private readonly forced = new Set<string>();
 
   constructor(private readonly deps: WorktreeCleanupDeps) {}
 
@@ -117,10 +118,11 @@ export class WorktreeCleanup {
   }
 
   /**
-   * Stop the session if needed, hide it from the sidebar and remove its worktree, uncommitted
-   * changes included. Calling it again on an archived session retries a failed removal.
+   * Stop the session if needed, hide it from the sidebar and remove its worktree. A worktree
+   * with uncommitted changes is kept unless `force`. Calling it again on an archived session
+   * retries a failed removal; a forced archive that failed is finished by the sweep.
    */
-  async archive(id: string): Promise<ArchiveSessionResponse> {
+  async archive(id: string, opts: { force?: boolean } = {}): Promise<ArchiveSessionResponse> {
     const current = this.deps.repo.get(id);
     if (current.role !== "agent") {
       throw badRequest("Only agent sessions can be archived", "not_archivable");
@@ -131,12 +133,15 @@ export class WorktreeCleanup {
     this.deps.repo.update(id, (s) =>
       s.archivedAt ? s : { ...s, archivedAt: this.now().toISOString() },
     );
-    const worktree = await this.removeWorktree(id, { force: true });
+    const force = opts.force === true;
+    if (force) this.forced.add(id);
+    const worktree = await this.removeWorktree(id, { force });
     return { session: this.deps.repo.get(id), worktree };
   }
 
   /** Show an archived session again. Its worktree comes back with the next message. */
   unarchive(id: string): Session {
+    this.forced.delete(id);
     return this.deps.repo.update(id, (s) => (s.archivedAt ? { ...s, archivedAt: null } : s));
   }
 
@@ -186,16 +191,17 @@ export class WorktreeCleanup {
     }
     this.deps.repo.update(id, (s) => ({ ...s, worktreeRemovedAt: this.now().toISOString() }));
     this.kept.delete(id);
+    this.forced.delete(id);
     this.deps.log?.(`worktree cleanup: removed ${session.worktreePath}`);
     return outcome("removed", discarded ? "Its uncommitted changes were discarded" : null);
   }
 
   /**
-   * Remove every worktree that is due (see `cleanupDue`). Archived sessions are removed like
-   * archive does, uncommitted changes included, so a removal that failed (a file in use, or a
-   * folder an older version left half-deleted) finishes here. A worktree kept for uncommitted
-   * changes is skipped until its session changes; failures are retried every sweep. Returns
-   * the cleaned session ids.
+   * Remove every worktree that is due (see `cleanupDue`), so an archive whose removal failed (a
+   * file in use, or a folder an older version left half-deleted) finishes here. Uncommitted
+   * changes keep a worktree unless the user forced its archive (remembered until restart). A
+   * worktree kept for uncommitted changes is skipped until its session changes; failures are
+   * retried every sweep. Returns the cleaned session ids.
    */
   async sweep(): Promise<string[]> {
     if (this.sweeping || !this.deps.runner.isConnected()) return [];
@@ -207,7 +213,7 @@ export class WorktreeCleanup {
       for (const session of this.deps.repo.list({ role: "agent" })) {
         if (!cleanupDue(session, now, settings)) continue;
         if (this.kept.get(session.id) === session.updatedAt) continue;
-        const force = Boolean(session.archivedAt);
+        const force = Boolean(session.archivedAt) && this.forced.has(session.id);
         const result = await this.removeWorktree(session.id, { force });
         if (result.status === "removed") removed.push(session.id);
         else if (result.status === "kept_changes") {

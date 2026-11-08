@@ -62,7 +62,7 @@ describe("useSessionActions", () => {
     const unarchive = vi.spyOn(client, "unarchiveSession");
     actions.archive();
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
-    expect(archive).toHaveBeenCalledWith("s-search");
+    expect(archive).toHaveBeenCalledWith("s-search", { force: false });
     const [message, options] = toast.success.mock.calls[0] ?? [];
     expect(message).toBe("Session archived and its worktree removed");
     expect(options.action.label).toBe("Undo");
@@ -109,7 +109,31 @@ describe("useSessionActions", () => {
     expect(options.cancel.label).toBe("Undo");
     options.action.onClick();
     await waitFor(() => expect(archive).toHaveBeenCalledTimes(2));
-    expect(archive).toHaveBeenLastCalledWith("s-deps");
+    expect(archive).toHaveBeenLastCalledWith("s-deps", { force: false });
+    options.cancel.onClick();
+    await waitFor(() => expect(unarchive).toHaveBeenCalledWith("s-deps"));
+  });
+
+  it("offers Remove anyway and Undo when the worktree had changes", async () => {
+    toast.mockClear();
+    const client = createMockClient();
+    const kept: ArchiveSessionResponse = {
+      session: { ...session("s-deps"), archivedAt: new Date().toISOString() },
+      worktree: { status: "kept_changes", message: null },
+    };
+    const archive = vi
+      .spyOn(client, "archiveSession")
+      .mockResolvedValueOnce(kept)
+      .mockResolvedValueOnce({ ...kept, worktree: { status: "removed", message: null } });
+    const unarchive = vi.spyOn(client, "unarchiveSession");
+    const { actions } = await actionsFor(session("s-deps"), client);
+    actions.archive();
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    const [, options] = toast.mock.calls[0] ?? [];
+    expect(options.action.label).toBe("Remove anyway");
+    expect(options.cancel.label).toBe("Undo");
+    options.action.onClick();
+    await waitFor(() => expect(archive).toHaveBeenLastCalledWith("s-deps", { force: true }));
     options.cancel.onClick();
     await waitFor(() => expect(unarchive).toHaveBeenCalledWith("s-deps"));
   });

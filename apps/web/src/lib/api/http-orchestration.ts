@@ -79,8 +79,8 @@ export function httpSessionConflictApi(http: Fetcher): SessionAndConflictApi {
   return {
     updateSession: (id, patch) =>
       http.call("PATCH", `/sessions/${enc(id)}`, patch, (v) => Session.parse(v)),
-    archiveSession: (id) =>
-      http.post(`/sessions/${enc(id)}/archive`, {}, (v) => ArchiveSessionResponse.parse(v)),
+    archiveSession: (id, opts) =>
+      http.post(`/sessions/${enc(id)}/archive`, opts ?? {}, (v) => ArchiveSessionResponse.parse(v)),
     unarchiveSession: (id) =>
       http.post(`/sessions/${enc(id)}/unarchive`, {}, (v) => Session.parse(v)),
     listConflicts: (q = {}) =>
