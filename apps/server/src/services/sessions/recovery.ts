@@ -39,6 +39,13 @@ export class SessionRecovery {
 
   private async recover(): Promise<void> {
     const { repo, runner, sessions, log } = this.deps;
+    // Only sessions that were cut off before this runner was ready. A session started on it
+    // meanwhile can turn `running` while `runner.status` is in flight (its first events can
+    // arrive in the same read as the reply) and must not be mistaken for a cut-off one.
+    const candidates = repo
+      .list({ status: [...CUT_OFF] })
+      .filter((s) => !sessions.launching.has(s.id))
+      .map((s) => s.id);
     let hosted: Set<string>;
     try {
       const status = await runner.request({ name: "runner.status" }, 10_000);
@@ -47,8 +54,12 @@ export class SessionRecovery {
       log?.(`recovery: runner status failed: ${errorMessage(error)}`);
       return;
     }
-    const cutOff = repo.list({ status: [...CUT_OFF] }).filter((s) => !hosted.has(s.id));
-    for (const session of cutOff) await this.resume(session);
+    for (const id of candidates) {
+      const session = repo.find(id)?.session;
+      if (!session || hosted.has(id) || sessions.launching.has(id)) continue;
+      if (!(CUT_OFF as readonly string[]).includes(session.status)) continue;
+      await this.resume(session);
+    }
 
     for (const id of sessions.sessionsWithQueuedMessages()) {
       const session = repo.find(id)?.session;
