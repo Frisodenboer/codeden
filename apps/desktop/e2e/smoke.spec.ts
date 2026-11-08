@@ -136,9 +136,9 @@ test("the desktop app starts, bridges, tracks, follows links and quits cleanly",
     await expect(page.getByText("Keep running in the tray")).toBeVisible();
     await shot(page, "settings-app");
     await page.goto(`${origin}/`);
-    // Wait for the shell (and its shortcut listener) before pressing the palette shortcut.
-    await expect(page.getByRole("button", { name: /Search or run/ })).toBeVisible();
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+    // Open the palette from its button: under a virtual display (Linux CI) the window may not
+    // have keyboard focus, and the shortcut itself is covered by the web tests.
+    await page.getByRole("button", { name: /Search or run/ }).click();
     await page.getByText("Add project…").click();
     await expect(page.getByTestId("native-folder-field")).toBeVisible();
     await expect(page.getByRole("button", { name: /Choose folder/ })).toBeVisible();
@@ -148,7 +148,13 @@ test("the desktop app starts, bridges, tracks, follows links and quits cleanly",
   });
 
   await test.step("a codeden:// link from a second launch opens in this window", async () => {
-    const second = spawnSync(exe, ["--home", home, "codeden://inbox"], { env, timeout: 60_000 });
+    // Linux CI has no setuid sandbox helper, so every launch needs --no-sandbox, not just the first.
+    const extra = process.platform === "linux" ? ["--no-sandbox"] : [];
+    const second = spawnSync(exe, ["--home", home, ...extra, "codeden://inbox"], {
+      env,
+      timeout: 60_000,
+    });
+    expect(second.error ?? null).toBeNull();
     expect(second.status).toBe(0);
     await expect(page).toHaveURL(`${origin}/inbox`);
   });
