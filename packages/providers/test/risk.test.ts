@@ -252,8 +252,12 @@ describe("the OS temp directory", () => {
   });
 
   it("still asks for secrets in temp, the temp root itself and other folders", () => {
-    expect(classifyWrite("/tmp/.env", posix)).toMatchObject({ action: "secrets" });
-    expect(action("cp .env.production /tmp/x.env")).toBe("secrets");
+    // A secrets file in temp asks as a write outside the worktree, so Full asks for it too.
+    expect(classifyWrite("/tmp/.env", posix)).toMatchObject({ action: "outside_worktree" });
+    expect(action("echo x > /tmp/.npmrc")).toBe("outside_worktree");
+    expect(classifyWrite(".env", posix)).toMatchObject({ action: "secrets" });
+    expect(action("cp .env.production /tmp/x.env")).toBe("outside_worktree");
+    expect(action("cp .env.production /tmp/notes.txt")).toBe("secrets");
     expect(action("rm -rf /tmp")).toBe("outside_worktree");
     expect(action("echo x > /var/tmp/x")).toBe("outside_worktree");
     expect(action("echo x > /tmpfoo/x")).toBe("outside_worktree");

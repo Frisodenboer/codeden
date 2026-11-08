@@ -19,8 +19,8 @@ export type Gate = { ask: false } | { ask: true; action: ApprovalAction; reason:
  * Native permission mode per autonomy level (§11.2):
  * - supervised -> `default`, and every edit/command is forced to ask via a PreToolUse hook
  * - auto       -> `acceptEdits`, plus the risky-action classifier
- * - full       -> `bypassPermissions`, asking only for writes outside the worktree and the
- *                 OS temp directory, and for secrets
+ * - full       -> `bypassPermissions`, asking only for writes outside the worktree (the OS
+ *                 temp directory counts as inside, except for secrets files there)
  * Plan mode overrides all of them with `plan`.
  */
 export function permissionModeFor(autonomy: AutonomyLevel, planMode: boolean): PermissionMode {
@@ -29,9 +29,6 @@ export function permissionModeFor(autonomy: AutonomyLevel, planMode: boolean): P
   if (autonomy === "auto") return "acceptEdits";
   return "bypassPermissions";
 }
-
-/** Risky actions Full autonomy still asks about (§11.2). */
-const FULL_ASKS = new Set<ApprovalAction>(["outside_worktree", "secrets"]);
 
 /**
  * CodeDen's approval policy for Claude tool calls. `gate()` runs in a PreToolUse hook (so it
@@ -95,7 +92,7 @@ export class ClaudePolicy {
       return { ask: false };
     }
     if (!risk.risky) return { ask: false };
-    if (this.autonomy === "full" && !FULL_ASKS.has(risk.action)) return { ask: false };
+    if (this.autonomy === "full" && risk.action !== "outside_worktree") return { ask: false };
     return { ask: true, action: risk.action, reason: risk.reason };
   }
 

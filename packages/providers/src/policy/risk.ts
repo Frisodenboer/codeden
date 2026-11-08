@@ -1,5 +1,5 @@
 import type { ApprovalAction } from "@codeden/contracts";
-import { isSecretPath, isWritable, type PathContext, resolveAgainst } from "./paths";
+import { isInWorkspace, isSecretPath, isWritable, type PathContext, resolveAgainst } from "./paths";
 import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
 
 /**
@@ -177,9 +177,8 @@ function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): Ri
 
   for (const target of cmd.writes) {
     if (DISCARD.test(target)) continue;
-    if (!isWritable(target, ctx))
-      return risky("outside_worktree", `Writes ${target}, outside the worktree`);
-    if (isSecretPath(target)) return risky("secrets", `Writes the secrets file ${target}`);
+    const write = classifyWrite(target, ctx);
+    if (write.risky) return write;
   }
 
   if (bin === "git") return classifyGit(lower);
@@ -200,8 +199,9 @@ function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): Ri
   }
 
   const dest = copyDestination(bin, args);
-  if (dest && !isWritable(dest, ctx)) {
-    return risky("outside_worktree", `Writes ${dest}, outside the worktree`);
+  if (dest) {
+    const write = classifyWrite(dest, ctx);
+    if (write.risky) return write;
   }
 
   // Secrets: any argument naming a credentials file.
@@ -343,12 +343,19 @@ function classifyInstall(bin: string, args: string[]): RiskAssessment {
   return SAFE;
 }
 
-/** Classify a file write/edit. The worktree, extra roots and OS temp are fine; secrets ask. */
+/**
+ * Classify a file write/edit. The worktree, extra roots and OS temp are fine; secrets ask. A
+ * secrets file in temp counts as outside the worktree, so Full autonomy (which only asks for
+ * writes outside the worktree) still asks for it.
+ */
 export function classifyWrite(target: string, ctx: RiskContext): RiskAssessment {
   if (!isWritable(target, ctx))
     return risky("outside_worktree", `Writes ${target}, outside the worktree`);
-  if (isSecretPath(target)) return risky("secrets", `Writes the secrets file ${target}`);
-  return SAFE;
+  if (!isSecretPath(target)) return SAFE;
+  if (!isInWorkspace(target, ctx)) {
+    return risky("outside_worktree", `Writes the secrets file ${target} in the temp directory`);
+  }
+  return risky("secrets", `Writes the secrets file ${target}`);
 }
 
 /** Classify a file read or search. Reads anywhere are fine except credential files. */

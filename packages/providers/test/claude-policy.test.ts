@@ -46,7 +46,7 @@ describe("ClaudePolicy", () => {
     expect(p.gate("AskUserQuestion", {}).ask).toBe(true);
   });
 
-  it("full asks only for writes outside the worktree and temp, and for secrets", () => {
+  it("full asks only for writes outside the worktree (temp counts as inside, but not its secrets)", () => {
     const p = new ClaudePolicy("full", ctx);
     expect(p.gate("Bash", { command: "git push --force" }).ask).toBe(false);
     expect(p.gate("Bash", { command: "npm i -g x" }).ask).toBe(false);
@@ -56,8 +56,18 @@ describe("ClaudePolicy", () => {
     });
     expect(p.gate("Write", { file_path: "/tmp/x/probe.ts" }).ask).toBe(false);
     expect(p.gate("Bash", { command: "pnpm build > /tmp/build.log" }).ask).toBe(false);
-    expect(p.gate("Read", { file_path: ".env" })).toMatchObject({ ask: true, action: "secrets" });
-    expect(p.gate("Write", { file_path: "/tmp/.env" })).toMatchObject({ action: "secrets" });
+    // Inside the worktree nothing asks, secrets included (§11.2).
+    expect(p.gate("Read", { file_path: ".env" }).ask).toBe(false);
+    expect(p.gate("Write", { file_path: ".env" }).ask).toBe(false);
+    // A secrets file in temp is still outside the worktree.
+    expect(p.gate("Write", { file_path: "/tmp/.env" })).toMatchObject({
+      ask: true,
+      action: "outside_worktree",
+    });
+    expect(p.gate("Bash", { command: "cp .env /tmp/x/.env" })).toMatchObject({
+      ask: true,
+      action: "outside_worktree",
+    });
   });
 
   it("auto and supervised treat temp writes by their own rules", () => {
