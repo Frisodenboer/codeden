@@ -13,12 +13,34 @@ Both directions sit behind swappable engines. The defaults are free and run in y
 | Engine | Needs | Notes |
 |---|---|---|
 | Browser (default) | A browser with the Web Speech API (Chrome, Edge) | Free |
+| Local (Whisper) | A one-off download (about 58 MB for the default model) | Free, offline, works in any browser and the desktop app |
 | ElevenLabs | An ElevenLabs API key | Scribe transcription |
 | OpenAI | An OpenAI API key (shared with OpenAI Images) | `gpt-4o-mini-transcribe` |
 
-- **Language:** leave it on auto to follow the browser, or pick one.
+- **Language:** leave it on auto to follow the browser (or, for server engines, to detect the language), or pick one.
 
 Cloud dictation records in the browser and sends the audio to the CodeDen server, which forwards it to the provider with your key. The key never reaches the page.
+
+If your browser has no working speech recognition (Firefox, the desktop app), the Browser engine is marked unavailable and Settings suggests Local (Whisper).
+
+### Local Whisper
+
+Whisper runs on your own machine through the CodeDen server; your audio never leaves it.
+
+1. In **Settings → Voice**, choose **Local (Whisper)** (or turn on **Use local Whisper for dictation** during first-run setup).
+2. Pick a model and press **Download**. CodeDen downloads a small runtime for your platform (about 1.3 MB) and the model, checks both against pinned SHA-256 checksums and shows the progress. You can keep working meanwhile; an interrupted download resumes where it stopped.
+3. Press **Test**, say a sentence, and see the transcript and how long it took.
+
+| Model | Download | Speed and accuracy |
+|---|---|---|
+| Tiny / Tiny (English) | 31 MB | Fastest, lower accuracy |
+| **Base (English)** (default) / Base | 57 MB | Fast, good accuracy |
+| Small / Small (English) | 181 MB | Slower, best accuracy |
+
+- "(English)" models only transcribe English and are the most accurate choice for it; the others handle many languages.
+- Files live in `~/.codeden/deps/whisper/` (runtime) and `~/.codeden/models/whisper/` (models). **Delete** in Settings removes a model.
+- Supported on Windows, macOS and Linux (x64 and arm64). Linux needs glibc 2.34 or newer (Ubuntu 22.04+, Debian 12+) and `libgomp1`.
+- The runtime is whisper.cpp built as a Node add-on (from the npm registry); models come from Hugging Face. Neither needs an account.
 
 ### Read-aloud (text to speech)
 

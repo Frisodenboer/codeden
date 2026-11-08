@@ -13,9 +13,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useClient } from "@/lib/api";
 import { formatCombo, shortcut } from "@/lib/shortcuts";
-import { stt, tts } from "@/lib/voice/engines";
+import { browserSttAvailability, resetBrowserSttAvailability, tts } from "@/lib/voice/engines";
 import { speak } from "@/lib/voice/speak";
 import { SecretField, useSecrets } from "./secret-field";
+import { LocalWhisperRows } from "./sections-voice-local";
 import { Segmented, SettingRow, SettingsSection, useSettings } from "./settings-ui";
 import { QuietHoursRow, ShortcutRecorder } from "./voice-controls";
 
@@ -57,6 +58,7 @@ export function VoiceSettings() {
     onError: (e) => toast.error("Couldn't play the voice", { description: e.message }),
   });
   const dictationKey = v.dictation.engine === "openai" ? "openai.apiKey" : "elevenlabs.apiKey";
+  const browserAvailable = browserSttAvailability() === "available";
 
   return (
     <>
@@ -67,26 +69,61 @@ export function VoiceSettings() {
         <SettingRow
           label="Engine"
           help={
-            v.dictation.engine === "browser"
-              ? stt.supported
-                ? "The browser engine works in Chrome and Edge."
-                : "This browser has no speech recognition; choose a cloud engine."
-              : has(dictationKey)
-                ? "Records while you hold or toggle, then transcribes through the CodeDen server."
-                : `Add the ${v.dictation.engine === "openai" ? "OpenAI" : "ElevenLabs"} key below to use this engine.`
+            v.dictation.engine === "browser" ? (
+              browserAvailable ? (
+                "The browser engine works in Chrome and Edge."
+              ) : (
+                <span data-testid="browser-stt-unavailable">
+                  Speech recognition isn't available here.{" "}
+                  <button
+                    type="button"
+                    className="text-foreground underline underline-offset-2"
+                    onClick={() => update({ voice: { dictation: { engine: "local" } } })}
+                  >
+                    Use Local (Whisper)
+                  </button>
+                  , which runs on this machine, or a cloud engine.
+                </span>
+              )
+            ) : v.dictation.engine === "local" ? (
+              "Runs Whisper on this machine through the CodeDen server; audio never leaves it."
+            ) : has(dictationKey) ? (
+              "Records while you hold or toggle, then transcribes through the CodeDen server."
+            ) : (
+              `Add the ${v.dictation.engine === "openai" ? "OpenAI" : "ElevenLabs"} key below to use this engine.`
+            )
           }
         >
           <Segmented
             value={v.dictation.engine}
-            onChange={(engine) => update({ voice: { dictation: { engine } } })}
+            onChange={(engine) => {
+              // Picking the browser engine again gives a remembered failure another try.
+              if (engine === "browser") resetBrowserSttAvailability();
+              update({ voice: { dictation: { engine } } });
+            }}
             options={[
-              { value: "browser", label: "Browser" },
+              {
+                value: "browser",
+                label:
+                  browserAvailable || v.dictation.engine === "browser"
+                    ? "Browser"
+                    : "Browser (unavailable)",
+              },
+              { value: "local", label: "Local (Whisper)" },
               { value: "elevenlabs", label: "ElevenLabs" },
               { value: "openai", label: "OpenAI" },
             ]}
           />
         </SettingRow>
-        <SettingRow label="Language" help="Leave on auto to follow the browser language.">
+        {v.dictation.engine === "local" && <LocalWhisperRows />}
+        <SettingRow
+          label="Language"
+          help={
+            v.dictation.engine === "browser"
+              ? "Leave on auto to follow the browser language."
+              : "Auto detects the spoken language. English-only Whisper models always use English."
+          }
+        >
           <Select
             value={v.dictation.language ?? "auto"}
             onValueChange={(language) =>

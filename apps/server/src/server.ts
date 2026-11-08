@@ -82,6 +82,8 @@ export interface StartServerOptions {
   imageEngines?: ImageEngineRegistry;
   /** Cloud voice API base URLs (tests). */
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
+  /** Local Whisper downloads and runtime (tests). */
+  localStt?: ServicesOptions["localStt"];
   /** Orchestration seams and timings (§8): GitHub/automation ports, wake debounce, ask_pm wait. */
   orchestration?: ServicesOptions["orchestration"];
   /**
@@ -169,6 +171,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     askUserWaitMs: opts.askUserWaitMs,
     imageEngines: opts.imageEngines ?? (builtin ? undefined : new ImageEngineRegistry([])),
     voice: opts.voice,
+    localStt: opts.localStt,
     orchestration: opts.orchestration,
     github: opts.github,
     automations: opts.automations,
@@ -309,6 +312,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.factory.stop();
       services.worktreeCleanup.stop();
       services.updates.stop();
+      await services.localStt.stop();
       stopUpdateEvents();
       stopTerminalEvents();
       if (runner) {

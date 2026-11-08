@@ -10,7 +10,10 @@ import { cn } from "@/lib/utils";
 import { createCloudStt } from "@/lib/voice/cloud-stt";
 import { stt as browserStt, type SpeechToText } from "@/lib/voice/engines";
 
-/** The dictation engine from Settings: the browser's, or a cloud engine through `/api/stt`. */
+/**
+ * The dictation engine from Settings: the browser's, or a server engine (cloud or local
+ * Whisper) through `/api/stt`.
+ */
 function useDictationEngine(override?: SpeechToText): { engine: SpeechToText; cloud: boolean } {
   const client = useClient();
   const { settings } = useSettings();
@@ -24,7 +27,7 @@ function useDictationEngine(override?: SpeechToText): { engine: SpeechToText; cl
 
 /**
  * Dictation button (§11.3): toggles recording (or hold the push-to-talk shortcut), streams
- * text into the composer, and stays honest when no engine is available. Cloud engines record
+ * text into the composer, and stays honest when no engine is available. Server engines record
  * first and transcribe when you stop.
  */
 export function VoiceButton({
@@ -101,7 +104,7 @@ export function VoiceButton({
   }, [combo, pushToTalk, engine.supported]);
 
   const label = !engine.supported
-    ? "Dictation isn't supported in this browser"
+    ? "Dictation isn't available in this browser. Choose Local (Whisper) in Settings > Voice."
     : transcribing
       ? "Transcribing…"
       : recording

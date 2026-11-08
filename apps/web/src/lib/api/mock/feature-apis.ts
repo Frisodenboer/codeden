@@ -10,6 +10,7 @@ import type { CodeDenClient } from "../client";
 import type { AgentConfigApi, ImagesApi, SecretsApi, VoiceApi } from "../feature-apis";
 import { mockBrowserApi } from "./browser";
 import { configContents, configFiles, mcpServers } from "./fixtures/config";
+import { mockLocalStt } from "./local-stt";
 import type { MockWorld } from "./world";
 
 const delay = <T>(value: T, ms = 120): Promise<T> =>
@@ -203,7 +204,11 @@ function mockImages(): ImagesApi {
 }
 
 function mockVoice(): VoiceApi {
+  const local = mockLocalStt();
   return {
+    localStatus: () => delay(local.status()),
+    downloadLocalModel: (id) => delay(local.download(id)),
+    deleteLocalModel: (id) => delay(local.remove(id)),
     voices: () =>
       delay({
         voices: [
@@ -212,9 +217,16 @@ function mockVoice(): VoiceApi {
         ],
       }),
     tts: () => delay(new Blob([], { type: "audio/mpeg" })),
-    stt: () =>
+    stt: (_audio, query) =>
       delay(
-        { text: "Run the checkout tests again", language: "en", engine: "elevenlabs" as const },
+        query.engine === "local"
+          ? {
+              text: "Run the checkout tests again",
+              language: "en",
+              engine: "local",
+              elapsedMs: 640,
+            }
+          : { text: "Run the checkout tests again", language: "en", engine: "elevenlabs" },
         600,
       ),
   };

@@ -47,14 +47,58 @@ function recognitionCtor(): RecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+const UNAVAILABLE_KEY = "codeden.voice.browserSttUnavailable";
+/**
+ * Recognition errors that mean the speech service itself is missing here (some browsers and
+ * embedded runtimes ship the API without a service behind it), not a one-off problem.
+ */
+const SERVICE_ERRORS = new Set(["network", "service-not-allowed"]);
+
+/**
+ * Whether browser speech recognition works here, by capability: `unsupported` when the API
+ * is missing, `failed` once its service has failed (remembered per browser), else
+ * `available`.
+ */
+export function browserSttAvailability(): "available" | "unsupported" | "failed" {
+  if (!recognitionCtor()) return "unsupported";
+  try {
+    if (window.localStorage.getItem(UNAVAILABLE_KEY) === "1") return "failed";
+  } catch {
+    // storage blocked: assume it works
+  }
+  return "available";
+}
+
+/** Forget a remembered failure (the user picked the browser engine again). */
+export function resetBrowserSttAvailability(): void {
+  try {
+    window.localStorage.removeItem(UNAVAILABLE_KEY);
+  } catch {
+    // storage blocked
+  }
+}
+
+function markBrowserSttFailed(): void {
+  try {
+    window.localStorage.setItem(UNAVAILABLE_KEY, "1");
+  } catch {
+    // storage blocked
+  }
+}
+
+export const BROWSER_STT_UNAVAILABLE =
+  "Browser speech recognition isn't available here. Choose Local (Whisper) in Settings > Voice.";
+
 export function createBrowserStt(): SpeechToText {
   const Ctor = recognitionCtor();
   let rec: Recognition | null = null;
   return {
-    supported: Ctor !== null,
+    get supported() {
+      return browserSttAvailability() === "available";
+    },
     start({ language, onText, onEnd, onError }) {
       if (!Ctor) {
-        onError("Dictation isn't supported in this browser. Try Chrome or Edge.");
+        onError(BROWSER_STT_UNAVAILABLE);
         return;
       }
       rec = new Ctor();
@@ -72,8 +116,14 @@ export function createBrowserStt(): SpeechToText {
         }
         onText((finalText + interim).trim(), interim === "");
       };
-      rec.onerror = (e) =>
+      rec.onerror = (e) => {
+        if (SERVICE_ERRORS.has(e.error)) {
+          markBrowserSttFailed();
+          onError(BROWSER_STT_UNAVAILABLE);
+          return;
+        }
         onError(e.error === "not-allowed" ? "Microphone access was blocked." : e.error);
+      };
       rec.onend = () => {
         rec = null;
         onEnd();

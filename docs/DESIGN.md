@@ -419,7 +419,20 @@ Both sides sit behind provider interfaces, so engines can be swapped:
 - **Speech to text** (composer dictation, push-to-talk with a keyboard shortcut):
   - **Default:** the browser speech API.
   - **Optional:** a cloud engine (ElevenLabs or OpenAI).
-  - **Later:** local Whisper, which is needed for Electron and Firefox.
+  - **Optional:** **local Whisper**, offline and private, for browsers and shells without a working speech service (Firefox, Electron). Details below.
+  - **Feature detection.** The browser engine counts as available only when the recognition API exists and its speech service has not failed here (a `network` or `service-not-allowed` error is remembered per browser until the user picks the browser engine again). Where it is unavailable, Settings and setup say so and suggest Local (Whisper). This is capability detection, never a check for a particular browser or shell.
+
+**Local Whisper.** `voice.dictation.engine: "local"` with `voice.dictation.local.model`.
+
+- **Where it runs.** On the CodeDen server, like the cloud engines: the UI records with `MediaRecorder`, decodes and resamples the clip in the browser (Web Audio) to **WAV, 16-bit PCM, mono, 16 kHz**, and uploads it to `POST /api/stt?engine=local`. The server validates the WAV (format, at most 120 s) and transcribes it in-process, so no audio decoder (ffmpeg) is needed on the server, and the same path works in a plain browser, in the desktop app and later from a phone on the LAN. One clip is transcribed at a time; the loaded model is freed after ten idle minutes.
+- **Runtime: whisper.cpp as a Node-API addon.** The prebuilt `index.node` for the platform is fetched from the npm registry as the tarball of `@fugood/node-whisper-<platform>-<arch>` (MIT) and extracted by CodeDen itself, so **no npm, compiler or system Node.js** is involved. Node-API keeps it loadable from any Node or Electron version. Prebuilt for all six targets (Windows, macOS, Linux; x64 and arm64), about 1.2 to 1.6 MB to download (2.5 to 4.8 MB on disk). Apple silicon uses Metal; elsewhere it runs on the CPU. Linux needs glibc 2.34+ and `libgomp1`; anything else reports "not supported" honestly.
+- **Alternatives weighed.**
+  - *whisper.cpp release binaries:* official builds cover Windows and Ubuntu but not a macOS command line (only an Xcode framework), and a CLI means temp files and process spawning per clip.
+  - *whisper.cpp compiled to WASM:* one portable file, but several times slower than native on the CPU, the part that decides whether 30 s of dictation feels instant.
+  - *transformers.js with ONNX Runtime:* `onnxruntime-node` ships every platform in one 300 MB package and needs npm to install sensibly; the WASM backend is slower again, and the JS library plus its dependencies would have to be assembled at runtime.
+- **Models.** whisper.cpp GGML models from Hugging Face (`ggerganov/whisper.cpp`, MIT) at a pinned revision, 5-bit quantised (`q5_1`, about 40% the size of the full models with nearly the same accuracy): tiny / tiny.en (31 MB, fastest), **base / base.en (57 MB, default `base.en`)**, small / small.en (181 MB, most accurate). `.en` models are English-only and ignore the language setting; the others detect the language or take `voice.dictation.language`.
+- **Downloads.** On demand, into `<home>/deps/whisper/<version>-<platform>/` and `<home>/models/whisper/`. Every file is pinned by size and **SHA-256** (a mismatch deletes it), written to a `.partial` file and resumed with an HTTP range request after an interruption (or restarted if the server ignores the range). `GET /api/voice/local` reports progress; `POST /api/voice/local/models/:id/download` starts or joins a download and `DELETE /api/voice/local/models/:id` cancels or deletes it. Nothing is in the published npm package, and nothing is fetched unless the user asks.
+- **Speed.** Measured on Windows (AMD Ryzen 9 9950X3D) for a 4.7 s clip: `tiny.en` about 0.9 s, `base.en` about 2.0 s (2.1 s including the model load). Both transcribed it correctly apart from one word ("pool" for "pull" in synthesized speech). Measure on your machine with the opt-in test: `CODEDEN_REAL_WHISPER=1 pnpm --filter @codeden/server exec vitest run test/live/whisper.live.test.ts` (set `CODEDEN_REAL_WHISPER_MODEL=base.en` for the default model).
 - **Text to speech** (reads an agent's final message when its turn completes):
   - **Default:** the browser's `speechSynthesis` (free).
   - **Optional:** ElevenLabs.
@@ -549,7 +562,7 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
    - API keys are only an advanced alternative, never the default ask.
 
    At least one agent provider is required; GitHub is recommended but optional (local-only projects work without it).
-4. **Optional extras,** skippable: voice (test the mic, choose read-aloud on or off, optional ElevenLabs key into the keychain) and notifications permission.
+4. **Optional extras,** skippable: voice (test the mic, choose read-aloud on or off, optional ElevenLabs key into the keychain) and notifications permission. A **"Use local Whisper for dictation"** card (§11.3) picks the local engine, starts downloading the runtime and the default model with live progress and offers the same five-second test as Settings. It is recommended when the browser has no working speech recognition, never blocks finishing setup, and the download carries on in the background when the user moves on.
 5. **First project.** Pick a local folder or clone a GitHub repo. CodeDen detects the package manager and suggests a worktree setup script.
 6. **Re-check on every launch,** silently. Warnings appear only when something changes, such as an expiring Claude login (`loginExpiresAt`), a logged-out CLI or a version too old for the adapter.
 
@@ -579,8 +592,8 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
   - **Restart.** After the install the server announces `restarting` and calls the CLI's restart hook: the CLI closes the server (the runner keeps running), starts the new version's CLI as a child in the same terminal with the original arguments plus the port in use and `--no-open`, and stays as a thin parent that passes on signals and the exit code. The new server finds the old runner, sees the version mismatch and drains it (§4.2), so interrupted turns resume through the existing path. The browser polls `/api/health`, reloads when the new version answers (same port and install token, so the cookie still works) and confirms "CodeDen updated to X". If the new version exits before answering, the CLI restores `current.json`, records the failure (`<home>/app/last-update.json`) and starts the old version again; the UI shows the error with Retry. A server not started by the CLI (development) cannot restart itself and shows "Update installed, restart CodeDen to finish" with the command.
   - **Rollback.** About and `codeden update --rollback` point `current.json` back at the previous version (or clear it to run the launched copy) and restart.
   - **Tests.** `CODEDEN_UPDATE_REGISTRY` and `CODEDEN_RELEASE_NOTES_URL` point the check, the install and the release notes at a local fake registry; they exist for tests only.
-- **Telemetry.** None. CodeDen sends nothing anywhere; the only outbound requests are the optional npm registry version lookup and, when you open "What's new", the release notes from GitHub.
-- **Native dependencies.** Kept to `node-pty` and `@napi-rs/keyring`, both with prebuilt binaries. Installing through `npx` on Windows, macOS and Linux is checked in CI.
+- **Telemetry.** None. CodeDen sends nothing anywhere; the only outbound requests are the optional npm registry version lookup, the release notes from GitHub when you open "What's new", and downloads you start yourself (Claude Code support, local Whisper).
+- **Native dependencies.** Kept to `node-pty` and `@napi-rs/keyring`, both with prebuilt binaries. Installing through `npx` on Windows, macOS and Linux is checked in CI. The local Whisper runtime (§11.3) is a native addon too, but it is not a package dependency: it is downloaded on demand, checksum-verified, only when the user turns local dictation on.
 
 ## 17. Electron (after v1)
 
@@ -593,7 +606,7 @@ Electron is a thin shell that starts the same server, as a child process, and lo
 5. Secrets are already in the OS keychain.
 6. Native dependencies are kept minimal.
 
-Known gap: browser speech recognition doesn't work inside Electron, so the speech-to-text interface needs local Whisper or a cloud engine there.
+Browser speech recognition doesn't work inside Electron, so dictation there uses local Whisper (§11.3) or a cloud engine; the UI finds this out by feature detection.
 
 ## 18. Testing
 
