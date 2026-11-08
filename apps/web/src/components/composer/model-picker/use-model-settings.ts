@@ -7,7 +7,7 @@ import { type HiddenModels, toggleHidden } from "./hidden";
 import { toggleFavorite } from "./logic";
 
 type ModelsSettings = Settings["models"];
-const NONE: ModelsSettings = { favorites: [], hidden: {} };
+const NONE: ModelsSettings = { favorites: [], hidden: {}, custom: {} };
 
 const read = (s: Snapshot | undefined): ModelsSettings => s?.settings.models ?? NONE;
 

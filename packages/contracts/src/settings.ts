@@ -36,6 +36,24 @@ export const ModelRef = z.object({
 export type ModelRef = z.infer<typeof ModelRef>;
 
 /**
+ * A model id the user added for a provider that doesn't list it (a new model, or one only
+ * exposed through the provider's own config). The id is sent to the provider unchanged.
+ */
+export const CustomModel = z.object({
+  id: z.string().trim().min(1).max(200),
+  /** Shown instead of the id in the picker. */
+  label: z.string().trim().min(1).max(100).optional(),
+});
+export type CustomModel = z.infer<typeof CustomModel>;
+
+/** A provider's custom models: ids are unique. */
+const CustomModelList = z
+  .array(CustomModel)
+  .refine((list) => new Set(list.map((m) => m.id)).size === list.length, {
+    message: "Custom model ids must be unique",
+  });
+
+/**
  * User settings persisted in `<home>/settings.json` (non-secret; API keys live in the OS
  * keychain). Every field has a default, so `Settings.parse({})` yields a complete object and
  * older files keep working as fields are added.
@@ -88,6 +106,12 @@ export const Settings = z.object({
        * somewhere (a session, a default, an automation) keeps showing there.
        */
       hidden: z.record(ProviderId, z.array(z.string().min(1))).default({}),
+      /**
+       * Model ids added by the user, by provider id, merged into the picker after the models
+       * the provider lists (a listed id wins). Their effort levels are those of the provider's
+       * default model, or none when the provider has no effort levels.
+       */
+      custom: z.record(ProviderId, CustomModelList).default({}),
     })
     .prefault({}),
   /** Follow-up prompt chips (§7.5). */
