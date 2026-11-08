@@ -126,4 +126,6 @@ The inbox collects everything waiting on you:
 
 Each item links to its session, issue and PR, and can be answered in place. The sidebar shows the count, and the **Waiting on you** box lists the top items. Toasts are on by default; browser notifications are opt-in in **Settings → Notifications**.
 
+Approvals and questions block an agent until you answer, so they also play a short chime (turn it off with **Sound when an agent needs you**), keep a toast on screen until you open or resolve them, put an amber dot on the tab icon, and make a background tab's title alternate with "⏳ Waiting on you".
+
 ![The inbox](images/inbox.png)

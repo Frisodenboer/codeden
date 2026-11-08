@@ -8,6 +8,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 - **Archive sessions.** **Archive session** in the session menu stops the session, hides it from the sidebar and removes its worktree; **Unarchive** (or sending it a message) brings it back.
 - **Worktree cleanup.** Worktrees of sessions inactive for 7 days are removed automatically, unless the pull request is still open or there are uncommitted changes; archiving a project cleans up its sessions' worktrees. Configure it in Settings > General > Worktrees. Branches and checkpoints are kept, and the worktree is recreated from its branch the next time you message the session.
+- **Know when an agent is waiting on you.** When an approval or a question arrives, CodeDen plays a short chime (once per burst; Settings > Notifications > **Sound when an agent needs you**, with a Test button) and keeps a toast on screen until you open the item or it is resolved; **Open** goes straight to the session. While anything is waiting, the tab icon gets an amber dot and a background tab's title alternates with "⏳ Waiting on you". The first such toast offers, once, to turn on desktop notifications.
 
 ## [0.1.1] - 2026-11-07
 
