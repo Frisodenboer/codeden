@@ -9,6 +9,7 @@ import {
   type ScheduledRun,
 } from "@codeden/contracts";
 import type { AutomationsApi } from "../automations-api";
+import { mockSharingApi } from "./automations-sharing";
 import { uid } from "./live";
 import type { MockWorld } from "./world";
 
@@ -113,8 +114,8 @@ export function mockAutomationsApi(world: MockWorld): AutomationsApi {
     automation: a,
     states: [state(a, projectOf(a))],
     lastRun: runs.find((r) => r.automationId === a.id) ?? null,
-    path: null,
-    readOnly: false,
+    path: a.source === "project_file" ? `.codeden/automations/${a.templateId}.md` : null,
+    readOnly: a.source !== "database",
   });
   const save = (a: Automation) => {
     world.emitDomain({ type: "automation.saved", sessionId: null, payload: { automation: a } });
@@ -159,9 +160,16 @@ export function mockAutomationsApi(world: MockWorld): AutomationsApi {
       const base = fromTemplate(req.templateId ?? "security-audit", req.projectId ?? "", false);
       return save({
         ...base,
+        templateId: req.templateId ?? null,
         ...(req.name ? { name: req.name } : {}),
+        ...(req.description !== undefined ? { description: req.description } : {}),
         ...(req.trigger ? { trigger: req.trigger } : {}),
         ...(req.action ? { action: AutomationAction.parse(req.action) } : {}),
+        workKey: req.workKey ?? (req.templateId ? base.workKey : undefined),
+        guards: AutomationGuards.parse({ ...base.guards, ...req.guards }),
+        target: req.projectId
+          ? { type: "project", projectId: req.projectId }
+          : { type: "all_projects" },
         enabled: req.enabled ?? false,
       });
     },
@@ -173,6 +181,8 @@ export function mockAutomationsApi(world: MockWorld): AutomationsApi {
         ...(req.description !== undefined ? { description: req.description } : {}),
         ...(req.trigger ? { trigger: req.trigger } : {}),
         ...(req.action ? { action: req.action } : {}),
+        ...(req.target ? { target: req.target } : {}),
+        ...(req.workKey !== undefined ? { workKey: req.workKey ?? undefined } : {}),
         guards: AutomationGuards.parse({ ...a.guards, ...req.guards }),
         updatedAt: new Date().toISOString(),
       });
@@ -298,5 +308,11 @@ export function mockAutomationsApi(world: MockWorld): AutomationsApi {
       world.emitDomain({ type: "inbox.updated", sessionId: null, payload: { item: closed } });
       return { item: closed, start: null };
     },
+    ...mockSharingApi({
+      find,
+      all: (projectId) =>
+        world.snapshot.automations.filter((a) => !projectId || projectOf(a) === projectId),
+      save,
+    }),
   };
 }

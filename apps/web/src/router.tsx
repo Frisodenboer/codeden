@@ -10,6 +10,7 @@ import { UnauthorizedScreen } from "@/components/shell/unauthorized";
 import { Toaster } from "@/components/ui/sonner";
 import { AgentsPage, type AgentTab } from "@/routes/agents";
 import { AutomationPage } from "@/routes/automation";
+import { NewAutomationPage } from "@/routes/automation-new";
 import { AutomationsPage, type AutomationsTab } from "@/routes/automations";
 import { FactoryItemPage } from "@/routes/factory-item";
 import { HomePage } from "@/routes/home";
@@ -97,6 +98,24 @@ const automationsRoute = createRoute({
   },
 });
 
+const newAutomationRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/automations/new",
+  validateSearch: (s: Record<string, unknown>): { template?: string } =>
+    typeof s.template === "string" && s.template ? { template: s.template } : {},
+  component: function NewAutomation() {
+    const { projectId } = newAutomationRoute.useParams();
+    const { template } = newAutomationRoute.useSearch();
+    return (
+      <NewAutomationPage
+        key={`${projectId}:${template ?? ""}`}
+        projectId={projectId}
+        templateId={template}
+      />
+    );
+  },
+});
+
 const automationRoute = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId/automations/$automationId",
@@ -167,6 +186,7 @@ const routeTree = rootRoute.addChildren([
     projectRoute,
     pmRoute,
     automationsRoute,
+    newAutomationRoute,
     automationRoute,
     factoryItemRoute,
     visionRoute,

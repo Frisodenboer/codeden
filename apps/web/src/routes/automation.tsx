@@ -1,40 +1,37 @@
-import type { Automation, UpdateAutomationRequest } from "@codeden/contracts";
+import type { AutonomyLevel } from "@codeden/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChevronLeft, Lock, Save, Workflow } from "lucide-react";
+import { ChevronLeft, Save, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ActionEditor } from "@/components/automations/action-editor";
-import { EditorSection, Field } from "@/components/automations/form-bits";
-import { GuardsEditor } from "@/components/automations/guards-editor";
+import { AutomationForm } from "@/components/automations/automation-form";
+import { DetailActions, OriginBadges } from "@/components/automations/detail-actions";
+import {
+  type AutomationDraft,
+  draftFromAutomation,
+  draftProblems,
+  toUpdateRequest,
+} from "@/components/automations/draft";
+import { ExportMenu } from "@/components/automations/export-menu";
 import { ACTION_LABEL, describeTrigger } from "@/components/automations/meta";
 import { RunConflictCard } from "@/components/automations/run-conflict";
 import { RunsTable } from "@/components/automations/runs-table";
 import { ScheduleCard } from "@/components/automations/schedule-card";
-import { TriggerEditor } from "@/components/automations/trigger-editor";
 import { useAutomationActions } from "@/components/automations/use-automation-actions";
 import { SectionLabel } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClient } from "@/lib/api";
 import { automationKeys, useAutomation } from "@/lib/automations";
-import { cronError, localTimezone } from "@/lib/cron";
-import { useProject } from "@/lib/queries";
+import { localTimezone } from "@/lib/cron";
+import { useProject, useSnapshotData } from "@/lib/queries";
 import { PageHeader } from "./page-header";
 
-type Draft = Pick<Automation, "name" | "description" | "trigger" | "action" | "guards" | "workKey">;
-
-const draftOf = (a: Automation): Draft => ({
-  name: a.name,
-  description: a.description,
-  trigger: a.trigger,
-  action: a.action,
-  guards: a.guards,
-  workKey: a.workKey,
-});
-
-/** Automation detail (§10): trigger, action, guards and prompt editor, schedule and runs. */
+/**
+ * Automation detail (§10): the same editor as New automation, always editable for automations
+ * stored in CodeDen; file-based ones are read-only with "Duplicate to edit". Export, duplicate
+ * and delete, the schedule and recent runs.
+ */
 export function AutomationPage({
   projectId,
   automationId,
@@ -45,27 +42,22 @@ export function AutomationPage({
   const client = useClient();
   const queryClient = useQueryClient();
   const project = useProject(projectId);
+  const defaultAutonomy = useSnapshotData<AutonomyLevel>(
+    (s) => s.settings.autonomy.default,
+    "auto",
+  );
   const { data: item, isLoading, error } = useAutomation(automationId);
   const actions = useAutomationActions(projectId);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<AutomationDraft | null>(null);
   const savedAt = item?.automation.updatedAt;
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset the draft when the saved version changes.
   useEffect(() => {
-    if (item) setDraft(draftOf(item.automation));
+    if (item) setDraft(draftFromAutomation(item.automation));
   }, [savedAt, automationId]);
 
   const save = useMutation({
-    mutationFn: (d: Draft) => {
-      const req: UpdateAutomationRequest = {
-        name: d.name,
-        description: d.description,
-        trigger: d.trigger,
-        action: d.action,
-        guards: d.guards,
-        workKey: d.workKey ?? null,
-      };
-      return client.automations.update(automationId, req);
-    },
+    mutationFn: (d: AutomationDraft) =>
+      client.automations.update(automationId, toUpdateRequest(d, projectId)),
     onSuccess: () => {
       toast.success("Automation saved");
       void queryClient.invalidateQueries({ queryKey: automationKeys.all });
@@ -82,18 +74,15 @@ export function AutomationPage({
   const a = item.automation;
   const readOnly = item.readOnly;
   const tz = project.timezone ?? localTimezone();
-  const dirty = JSON.stringify(draftOf(a)) !== JSON.stringify(draft);
-  const invalid =
-    !draft.name.trim() ||
-    (draft.trigger.type === "cron" && cronError(draft.trigger.expression, tz) !== null);
-  const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
+  const dirty = JSON.stringify(draftFromAutomation(a)) !== JSON.stringify(draft);
+  const problems = draftProblems(draft, tz);
 
   return (
     <>
       <PageHeader
         icon={<Workflow />}
         title={
-          <span className="flex items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5">
             <Link
               to="/projects/$projectId/automations"
               params={{ projectId }}
@@ -101,97 +90,66 @@ export function AutomationPage({
             >
               <ChevronLeft className="size-4" /> {project.name}
             </Link>
-            <span className="text-muted-foreground">/</span> {a.name}
+            <span className="text-muted-foreground">/</span>
+            <span className="truncate">{a.name}</span>
+            <OriginBadges item={item} />
           </span>
         }
         meta={`${describeTrigger(a.trigger)} · ${ACTION_LABEL[a.action.type]}`}
         actions={
-          readOnly ? (
-            <span className="flex items-center gap-1 text-2xs text-muted-foreground">
-              <Lock className="size-3" /> Read-only (file)
-            </span>
-          ) : (
-            <>
-              {dirty && (
-                <Button size="sm" variant="ghost" onClick={() => setDraft(draftOf(a))}>
-                  Revert
+          <>
+            <DetailActions item={item} projectId={projectId} />
+            <ExportMenu automationId={a.id} />
+            {!readOnly && (
+              <>
+                {dirty && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDraft(draftFromAutomation(a))}
+                  >
+                    Revert
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={!dirty || problems.length > 0 || save.isPending}
+                  title={problems.join(" ")}
+                  onClick={() => save.mutate(draft)}
+                >
+                  <Save /> {save.isPending ? "Saving…" : "Save"}
                 </Button>
-              )}
-              <Button
-                size="sm"
-                disabled={!dirty || invalid || save.isPending}
-                onClick={() => save.mutate(draft)}
-              >
-                <Save /> {save.isPending ? "Saving…" : "Save"}
-              </Button>
-            </>
-          )
+              </>
+            )}
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
         <div className="mx-auto grid w-full max-w-6xl gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0 space-y-5" data-testid="automation-editor">
-            <EditorSection title="Basics">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Name" htmlFor="auto-name">
-                  <Input
-                    id="auto-name"
-                    value={draft.name}
-                    disabled={readOnly}
-                    onChange={(e) => set({ name: e.target.value })}
-                    className="text-[13px]"
-                  />
-                </Field>
-                <Field
-                  label="Work key"
-                  htmlFor="auto-key"
-                  help="Runs with the same key are treated as the same work (§8.4)."
-                >
-                  <Input
-                    id="auto-key"
-                    value={draft.workKey ?? ""}
-                    placeholder={`automation:${a.templateId ?? "name"}`}
-                    disabled={readOnly}
-                    onChange={(e) => set({ workKey: e.target.value.trim() || undefined })}
-                    className="font-mono text-[13px]"
-                  />
-                </Field>
-              </div>
-              <Field label="Description" htmlFor="auto-desc">
-                <Input
-                  id="auto-desc"
-                  value={draft.description ?? ""}
-                  disabled={readOnly}
-                  onChange={(e) => set({ description: e.target.value || null })}
-                  className="text-[13px]"
-                />
-              </Field>
-            </EditorSection>
-            <EditorSection title="Trigger" description="When it runs.">
-              <TriggerEditor
-                trigger={draft.trigger}
-                onChange={(trigger) => set({ trigger })}
-                disabled={readOnly}
-                projectTimezone={tz}
-                allowCron={draft.action.type !== "triage"}
-              />
-            </EditorSection>
-            <EditorSection title="Action" description="What a run does.">
-              <ActionEditor
-                action={draft.action}
-                onChange={(action) => set({ action })}
-                disabled={readOnly}
-                docKey={`${a.id}:${savedAt}`}
-              />
-            </EditorSection>
-            <EditorSection title="Guards" description="Safety rails on every run.">
-              <GuardsEditor
-                guards={draft.guards}
-                onChange={(guards) => set({ guards })}
-                disabled={readOnly}
-                projectTimezone={tz}
-              />
-            </EditorSection>
+          <div className="min-w-0 space-y-3">
+            {readOnly && (
+              <p className="rounded-lg border border-border bg-surface px-3 py-2 text-2xs text-muted-foreground">
+                This automation comes from{" "}
+                <code className="font-mono">{item.path ?? "a built-in template"}</code>. Edit the
+                file, or use <span className="font-medium text-foreground">Duplicate to edit</span>{" "}
+                for a copy you can change here.
+              </p>
+            )}
+            {a.createdBy === "pm" && (
+              <p className="rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-2 text-2xs text-muted-foreground">
+                Created by the PM. It stays off until you switch it on; check the prompt and
+                permissions first.
+              </p>
+            )}
+            <AutomationForm
+              draft={draft}
+              onChange={setDraft}
+              disabled={readOnly}
+              projectTimezone={tz}
+              defaultAutonomy={defaultAutonomy}
+              docKey={`${a.id}:${savedAt}`}
+              defaultWorkKey={`automation:${a.templateId ?? "name"}`}
+            />
           </div>
           <aside className="space-y-4">
             <ScheduleCard item={item} projectId={projectId} actions={actions} />

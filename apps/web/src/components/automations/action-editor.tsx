@@ -1,35 +1,33 @@
 import type { AutomationAction, TriagePolicy } from "@codeden/contracts";
 import { Bot, Filter, MessageSquare } from "lucide-react";
-import { useId } from "react";
 import { ModelPicker } from "@/components/composer/model-picker/model-picker";
-import { AutonomyPicker } from "@/components/composer/pickers";
-import { CodeEditor } from "@/components/editor/code-editor";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useSnapshotData } from "@/lib/queries";
-import { Field, Segmented } from "./form-bits";
+import { Segmented } from "./form-bits";
 
 type SessionAction = Extract<AutomationAction, { type: "start_session" }>;
 
-const PLACEHOLDERS =
-  "{{project.name}} {{date}} {{time}} {{issue.number}} {{issue.title}} {{pr.number}} {{pr.branch}} {{session.summary}}";
-
-/** Provider, model, effort and autonomy of the sessions a run starts. */
-function SessionSettings({
-  action,
-  onChange,
-  disabled,
-}: {
-  action: SessionAction;
-  onChange: (a: AutomationAction) => void;
-  disabled?: boolean;
-}) {
+/** The provider a session action runs on: its own, else the agent default, else the first. */
+export function useSessionProvider(action: SessionAction) {
   const providers = useSnapshotData((s) => s.runner.providers, []);
   const fallback = useSnapshotData((s) => s.settings.providers.agent.provider, null);
   const known = (id: string | null | undefined) =>
     id && providers.some((p) => p.id === id) ? id : null;
   const providerId = action.provider ?? known(fallback) ?? providers[0]?.id ?? null;
-  const provider = providers.find((p) => p.id === providerId);
+  return { providers, provider: providers.find((p) => p.id === providerId) };
+}
+
+/** The unified provider, model and effort picker for the sessions a run starts. */
+export function AgentPicker({
+  action,
+  onChange,
+  disabled,
+}: {
+  action: SessionAction;
+  onChange: (a: SessionAction) => void;
+  disabled?: boolean;
+}) {
+  const { providers, provider } = useSessionProvider(action);
   const custom = Boolean(action.provider || action.model || action.effort);
   return (
     <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-border px-1 py-0.5">
@@ -56,10 +54,6 @@ function SessionSettings({
           {action.provider ?? "Default provider"} (not connected)
         </span>
       )}
-      <AutonomyPicker
-        value={action.autonomy ?? "auto"}
-        onChange={(autonomy) => onChange({ ...action, autonomy })}
-      />
       {custom && !disabled && (
         <button
           type="button"
@@ -68,14 +62,15 @@ function SessionSettings({
             onChange({ ...action, provider: undefined, model: undefined, effort: undefined })
           }
         >
-          Use project default
+          Use the default agent
         </button>
       )}
     </div>
   );
 }
 
-function TriagePolicyFields({
+/** How triage applies its decision: comment, close rejected issues, start ready ones. */
+export function TriagePolicyFields({
   policy,
   onChange,
   disabled,
@@ -123,112 +118,48 @@ function TriagePolicyFields({
   );
 }
 
-/**
- * Action editor (§10): start a session (provider, model, effort, autonomy and a Markdown prompt
- * template), message the PM, or triage the issue.
- */
-export function ActionEditor({
+/** The text of an action: the prompt, the PM message or the extra triage guidance. */
+export function actionText(action: AutomationAction): string {
+  if (action.type === "start_session") return action.prompt;
+  if (action.type === "message_pm") return action.message;
+  return action.instructions ?? "";
+}
+
+/** The action with new text. */
+export function withActionText(action: AutomationAction, text: string): AutomationAction {
+  if (action.type === "start_session") return { ...action, prompt: text };
+  if (action.type === "message_pm") return { ...action, message: text };
+  return { ...action, instructions: text || undefined };
+}
+
+/** What a run does: start an agent session (default), message the PM, or triage the issue. */
+export function ActionKindPicker({
   action,
   onChange,
   disabled,
-  docKey,
 }: {
   action: AutomationAction;
   onChange: (a: AutomationAction) => void;
   disabled?: boolean;
-  /** Recreates the prompt editor when the automation changes. */
-  docKey: string;
 }) {
-  const id = useId();
   const switchTo = (type: AutomationAction["type"]) => {
     if (type === action.type) return;
-    const text =
-      action.type === "start_session"
-        ? action.prompt
-        : action.type === "message_pm"
-          ? action.message
-          : (action.instructions ?? "");
-    if (type === "start_session") onChange({ type, prompt: text || "Describe the task…" });
-    else if (type === "message_pm") onChange({ type, message: text || "Check in on…" });
+    const text = actionText(action);
+    if (type === "start_session") onChange({ type, prompt: text });
+    else if (type === "message_pm") onChange({ type, message: text });
     else onChange({ type, instructions: text || undefined });
   };
-  const text =
-    action.type === "start_session"
-      ? action.prompt
-      : action.type === "message_pm"
-        ? action.message
-        : (action.instructions ?? "");
-  const setText = (value: string) => {
-    if (action.type === "start_session") onChange({ ...action, prompt: value });
-    else if (action.type === "message_pm") onChange({ ...action, message: value });
-    else onChange({ ...action, instructions: value || undefined });
-  };
   return (
-    <div className="space-y-4">
-      <Segmented
-        label="Action"
-        value={action.type}
-        disabled={disabled}
-        onChange={switchTo}
-        options={[
-          { id: "start_session", label: "Start a session", icon: <Bot /> },
-          { id: "message_pm", label: "Message the PM", icon: <MessageSquare /> },
-          { id: "triage", label: "Triage", icon: <Filter /> },
-        ]}
-      />
-      {action.type === "start_session" && (
-        <>
-          <Field label="Session title" htmlFor={`${id}-title`}>
-            <Input
-              id={`${id}-title`}
-              value={action.title ?? ""}
-              placeholder="Defaults to the automation name"
-              disabled={disabled}
-              onChange={(e) => onChange({ ...action, title: e.target.value || undefined })}
-              className="text-[13px]"
-            />
-          </Field>
-          <Field label="Provider, model and autonomy">
-            <SessionSettings action={action} onChange={onChange} disabled={disabled} />
-          </Field>
-        </>
-      )}
-      {action.type === "triage" && (
-        <TriagePolicyFields
-          policy={action.policy}
-          disabled={disabled}
-          onChange={(policy) => onChange({ ...action, policy: policy as TriagePolicy })}
-        />
-      )}
-      <Field
-        label={
-          action.type === "start_session"
-            ? "Prompt template"
-            : action.type === "message_pm"
-              ? "Message to the PM"
-              : "Extra guidance for the PM"
-        }
-        help={<span className="font-mono">{PLACEHOLDERS}</span>}
-      >
-        <div
-          className="h-80 overflow-hidden rounded-lg border border-border bg-surface"
-          data-testid="prompt-editor"
-        >
-          {disabled ? (
-            <pre className="h-full overflow-auto p-4 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-muted-foreground scroll-thin">
-              {text}
-            </pre>
-          ) : (
-            <CodeEditor
-              value={text}
-              onChange={setText}
-              path="prompt.md"
-              docKey={`${docKey}:${action.type}`}
-              placeholder="Markdown; {{placeholders}} are filled from the trigger."
-            />
-          )}
-        </div>
-      </Field>
-    </div>
+    <Segmented
+      label="What it does"
+      value={action.type}
+      disabled={disabled}
+      onChange={switchTo}
+      options={[
+        { id: "start_session", label: "Start an agent session", icon: <Bot /> },
+        { id: "message_pm", label: "Message the PM", icon: <MessageSquare /> },
+        { id: "triage", label: "Triage the issue", icon: <Filter /> },
+      ]}
+    />
   );
 }

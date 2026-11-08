@@ -1,13 +1,13 @@
 import type { AutomationListItem } from "@codeden/contracts";
 import { Link } from "@tanstack/react-router";
-import { Clock, FileCode2, Hand, Pause, Play, Zap } from "lucide-react";
+import { Clock, Hand, Pause, Play, Zap } from "lucide-react";
 import { StatusDot } from "@/components/common/status-dot";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { stateIn, switchValue } from "@/lib/automations";
 import { ago, until } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { OriginBadges } from "./detail-actions";
 import { describeTrigger, RUN_STATUS, SKIP_REASON } from "./meta";
 import type { useAutomationActions } from "./use-automation-actions";
 
@@ -54,16 +54,7 @@ export function AutomationRow({
           >
             {a.name}
           </Link>
-          {item.path && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-px text-3xs text-muted-foreground">
-                  <FileCode2 className="size-3" /> file
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="font-mono">{item.path}</TooltipContent>
-            </Tooltip>
-          )}
+          <OriginBadges item={item} />
           {state?.paused && (
             <span className="rounded bg-status-waiting/12 px-1.5 py-px text-3xs text-status-waiting">
               Paused

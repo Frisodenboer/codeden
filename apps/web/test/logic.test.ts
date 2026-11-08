@@ -134,15 +134,15 @@ describe("formatting", () => {
     );
     expect(describeTrigger({ type: "cron", expression: "0 6 * * *" })).toBe("Every day at 06:00");
     expect(describeTrigger({ type: "event", event: "pr.opened" })).toBe(
-      "When a pull request opens",
+      "When a pull request is opened",
     );
-    expect(describeTrigger({ type: "manual" })).toBe("Manual only");
+    expect(describeTrigger({ type: "manual" })).toBe("Only when you run it");
   });
   it("describes cron expressions in plain English", () => {
     expect(describeCron("*/15 * * * *")).toBe("Every 15 minutes");
     expect(describeCron("30 * * * *")).toBe("Every hour at :30");
     expect(describeCron("0 */6 * * *")).toBe("Every 6 hours at :00");
-    expect(describeCron("30 9 * * 1-5")).toBe("Weekdays at 09:30");
+    expect(describeCron("30 9 * * 1-5")).toBe("Every weekday at 09:30");
     expect(describeCron("0 3 * * 1,4")).toBe("Mondays and Thursdays at 03:00");
     expect(describeCron("0 4 1 * *")).toBe("Monthly on the 1st at 04:00");
     expect(describeCron("0 4 1,15 * *")).toBe("Monthly on the 1st and 15th at 04:00");

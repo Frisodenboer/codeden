@@ -26,10 +26,10 @@ function dayNumber(token: string): number | null {
   return DAY_ALIASES[t] ?? null;
 }
 
-/** "every Monday", "Mondays and Thursdays", "weekdays", "Monday to Wednesday", or null. */
+/** "every Monday", "Mondays and Thursdays", "every weekday", "Monday to Wednesday", or null. */
 function describeDays(field: string): string | null {
-  if (field === "1-5" || field.toLowerCase() === "mon-fri") return "weekdays";
-  if (field === "0,6" || field === "6,0") return "weekends";
+  if (field === "1-5" || field.toLowerCase() === "mon-fri") return "every weekday";
+  if (field === "0,6" || field === "6,0") return "every weekend day";
   const range = field.split("-");
   if (range.length === 2) {
     const [a, b] = range.map((d) => dayNumber(d));
@@ -91,10 +91,15 @@ export function cronError(expression: string, timezone?: string): string | null 
   }
 }
 
-/** The next `count` occurrences after now, or [] for an invalid expression. */
-export function nextRuns(expression: string, timezone: string | undefined, count: number): Date[] {
+/** The next `count` occurrences after `after` (now), or [] for an invalid expression. */
+export function nextRuns(
+  expression: string,
+  timezone: string | undefined,
+  count: number,
+  after?: Date,
+): Date[] {
   try {
-    return new Cron(expression, timezone ? { timezone } : {}).nextRuns(count);
+    return new Cron(expression, timezone ? { timezone } : {}).nextRuns(count, after);
   } catch {
     return [];
   }

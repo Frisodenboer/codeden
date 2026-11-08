@@ -1,7 +1,7 @@
 import type { AutomationTemplate } from "@codeden/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { Check, FileCode2, GitBranch, Plus, Sparkles } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Check, FileCode2, GitBranch, Pencil, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,12 +18,14 @@ function TemplateCard({
   unavailable,
   onAdd,
   busy,
+  projectId,
 }: {
   template: AutomationTemplate;
   added: boolean;
   unavailable: boolean;
   onAdd: (enable: boolean) => void;
   busy: boolean;
+  projectId: string;
 }) {
   const Icon = triggerIcon[template.trigger.type];
   return (
@@ -66,20 +68,28 @@ function TemplateCard({
         )}
       </div>
       <div className="mt-3 flex items-center gap-1.5 border-t border-border pt-3">
-        {added ? (
-          <span className="flex items-center gap-1 text-2xs text-status-done">
-            <Check className="size-3.5" /> In this project
-          </span>
-        ) : unavailable ? (
+        {unavailable ? (
           <span className="text-2xs text-muted-foreground">Needs a GitHub project</span>
         ) : (
           <>
-            <Button size="xs" onClick={() => onAdd(true)} disabled={busy}>
-              <Plus /> Add and enable
+            <Button size="xs" asChild>
+              <Link
+                to="/projects/$projectId/automations/new"
+                params={{ projectId }}
+                search={{ template: template.id }}
+              >
+                <Pencil /> Use template
+              </Link>
             </Button>
-            <Button size="xs" variant="ghost" onClick={() => onAdd(false)} disabled={busy}>
-              Add, off
-            </Button>
+            {added ? (
+              <span className="flex items-center gap-1 text-2xs text-status-done">
+                <Check className="size-3.5" /> In this project
+              </span>
+            ) : (
+              <Button size="xs" variant="ghost" onClick={() => onAdd(true)} disabled={busy}>
+                <Plus /> Add and enable
+              </Button>
+            )}
           </>
         )}
       </div>
@@ -160,6 +170,7 @@ export function TemplatesGallery({ projectId }: { projectId: string }) {
             added={added.has(t.id)}
             unavailable={t.requiresGithub && !isGithub}
             busy={add.isPending}
+            projectId={projectId}
             onAdd={(enable) => add.mutate({ template: t, enable })}
           />
         ))}

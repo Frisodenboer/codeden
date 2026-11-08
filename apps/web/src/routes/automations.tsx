@@ -1,11 +1,14 @@
-import { useNavigate } from "@tanstack/react-router";
-import { Workflow } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Plus, Workflow } from "lucide-react";
 import { AutomationsPanel } from "@/components/automations/automations-panel";
+import { ExportAllButton } from "@/components/automations/export-menu";
+import { ImportDialog } from "@/components/automations/import-dialog";
 import { RunsTable } from "@/components/automations/runs-table";
 import { TemplatesGallery } from "@/components/automations/templates-gallery";
 import { SectionLabel } from "@/components/common/bits";
 import { NextRuns } from "@/components/project/now-next";
 import { ProjectTile } from "@/components/shell/sidebar/project-group";
+import { Button } from "@/components/ui/button";
 import { useAutomations } from "@/lib/automations";
 import { useProject } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -45,6 +48,17 @@ export function AutomationsPage({ projectId, tab }: { projectId: string; tab: Au
           </span>
         }
         meta={`${on} of ${data?.automations.length ?? 0} on`}
+        actions={
+          <>
+            <ExportAllButton projectId={projectId} />
+            <ImportDialog projectId={projectId} />
+            <Button size="sm" asChild>
+              <Link to="/projects/$projectId/automations/new" params={{ projectId }}>
+                <Plus /> New automation
+              </Link>
+            </Button>
+          </>
+        }
       />
       <div
         className="flex h-10 shrink-0 items-end gap-4 border-b border-border px-6"
