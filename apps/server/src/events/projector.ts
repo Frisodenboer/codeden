@@ -83,6 +83,7 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
     case "checkpoint.created":
     case "message.queued":
     case "message.dequeued":
+    case "message.edited":
       applyWorkbenchProjection(tx, e);
       return [];
     case "notice.created":

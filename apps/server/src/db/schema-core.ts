@@ -8,6 +8,7 @@ import type {
   GitHubRepo,
   Item,
   JsonValue,
+  QueueSender,
   SessionResult,
   StartedBy,
   Usage,
@@ -281,6 +282,8 @@ export const queuedMessages = sqliteTable(
     id: text("id").primaryKey(),
     sessionId: text("session_id").notNull(),
     input: json<UserInput>("input").notNull(),
+    /** Who queued it; null for rows written before senders were recorded (the user). */
+    sender: text("sender").$type<QueueSender>(),
     createdAt: text("created_at").notNull(),
   },
   (t) => [index("queued_messages_session").on(t.sessionId, t.createdAt)],

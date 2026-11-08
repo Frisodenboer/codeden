@@ -129,10 +129,14 @@ export const messageSession = defineTool({
   }),
   handler: async ({ sessionId, text, whenBusy }, { services, projectId }) => {
     agentSessionOf(services, sessionId, projectId);
-    const res = await services.sessions.send(sessionId, {
-      input: { text: `Message from your project manager:\n${text}`, attachments: [] },
-      whenBusy: whenBusy ?? "queue",
-    });
+    const res = await services.sessions.send(
+      sessionId,
+      {
+        input: { text: `Message from your project manager:\n${text}`, attachments: [] },
+        whenBusy: whenBusy ?? "queue",
+      },
+      "pm",
+    );
     return `Message ${res.status}.`;
   },
 });
