@@ -152,8 +152,11 @@ jobs:
             ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.electron }}
       # On a cache miss a GitHub 504 is retried twice (30 s, then 60 s later); any other
-      # failure fails at once.
+      # failure fails at once. The two desktop steps do not fail pull requests (a GitHub
+      # release-download outage blocked every PR on 2026-11-08); on main they still block.
       - name: Package the desktop app (unpacked build)
+        id: package
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         shell: bash
         env:
           # Logs "Cache hit" or "Cache miss" (and the URL) for every Electron download.
@@ -169,8 +172,9 @@ jobs:
             echo "::warning::A download from GitHub failed (attempt $attempt of 3); retrying in $((attempt * 30)) s"
             sleep $((attempt * 30))
           done
+      # Only after a successful packaging run, so a half-finished download is never saved.
       - name: Save the Electron downloads
-        if: steps.electron-cache.outputs.cache-hit != 'true'
+        if: steps.electron-cache.outputs.cache-hit != 'true' && steps.package.outcome == 'success'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -178,6 +182,9 @@ jobs:
             ${{ runner.os == 'Windows' && '~\AppData\Local\electron-builder\Cache' || '~/.cache/electron-builder' }}
           key: ${{ steps.electron-cache.outputs.cache-primary-key }}
       - name: Desktop app smoke test (unpacked build)
+        id: smoke
+        if: steps.package.outcome == 'success'
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
@@ -185,6 +192,11 @@ jobs:
           else
             pnpm --filter @codeden/desktop e2e
           fi
+      - name: Warn that a desktop step failed
+        if: github.event_name == 'pull_request' && (steps.package.outcome == 'failure' || steps.smoke.outcome == 'failure')
+        shell: bash
+        run: |
+          echo "::warning title=Desktop app step failed (not blocking this PR)::The desktop packaging or smoke test failed (package: ${{ steps.package.outcome }}, smoke test: ${{ steps.smoke.outcome }}). This is often a GitHub release-download outage (HTTP 504); check the step log. On main these steps still fail the build."
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
