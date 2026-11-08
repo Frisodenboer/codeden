@@ -1,4 +1,4 @@
-import type { Attachment, ItemOf } from "@codeden/contracts";
+import { type Attachment, type ItemOf, splitSender } from "@codeden/contracts";
 import { Copy, FileText } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { foldDigest } from "@/lib/orchestration";
 import { platform } from "@/lib/platform";
 import { DigestDisclosure, WakeLine } from "./digest-fold";
 import { Markdown } from "./markdown";
+import { SenderMessage } from "./sender-message";
 
 /** A file (or an image shown by name): long names are cut with an ellipsis, full on hover. */
 function FileChip({ label }: { label: string }) {
@@ -83,20 +84,27 @@ function Attachments({ id, attachments }: { id: string; attachments: Attachment[
 /**
  * User message: a soft right-aligned bubble with attachments above the text. The status digest
  * CodeDen adds for role sessions is folded away; automatic wake-ups become a quiet divider.
+ * A message from the PM or the orchestrator becomes a Markdown card headed by its sender.
  */
 export function UserMessage({ item }: { item: ItemOf<"user_message"> }) {
-  const { attachments } = item.input;
+  const { attachments, from: recorded } = item.input;
   const folded = useMemo(() => foldDigest(item.input.text), [item.input.text]);
+  const sender = useMemo(() => splitSender(folded.text, recorded), [folded.text, recorded]);
   if (folded.wake && attachments.length === 0) return <WakeLine folded={folded} />;
+  const role = sender.from === "pm" || sender.from === "orchestrator" ? sender.from : null;
   const text = folded.text;
   return (
     <div className="group flex flex-col items-end gap-1.5 animate-rise">
       <DigestDisclosure folded={folded} />
       {attachments.length > 0 && <Attachments id={item.id} attachments={attachments} />}
-      {text && (
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-message px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap text-foreground">
-          {text}
-        </div>
+      {role ? (
+        <SenderMessage from={role} text={sender.text} />
+      ) : (
+        text && (
+          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-message px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap text-foreground">
+            {text}
+          </div>
+        )
       )}
     </div>
   );
