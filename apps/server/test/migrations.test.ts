@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,11 +14,17 @@ function tempDir(): string {
   return dir;
 }
 
-/** A migrations folder with only some of the migrations, to stand in for an older build. */
+/**
+ * A migrations folder with only some of the migrations, to stand in for an older build. Only
+ * `migration.sql` is copied: the migrator reads nothing else, and each `snapshot.json` is
+ * thousands of lines that a Windows runner's virus scanner checks file by file.
+ */
 function partialMigrations(keep: (name: string) => boolean): string {
   const dir = tempDir();
-  for (const name of names.filter(keep))
-    cpSync(join(all, name), join(dir, name), { recursive: true });
+  for (const name of names.filter(keep)) {
+    mkdirSync(join(dir, name));
+    copyFileSync(join(all, name, "migration.sql"), join(dir, name, "migration.sql"));
+  }
   return dir;
 }
 
@@ -70,7 +76,9 @@ afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("migrations", () => {
+// Each case creates and migrates SQLite databases through every migration; on a busy Windows
+// runner that has taken longer than the default 5 s.
+describe("migrations", { timeout: 30_000 }, () => {
   it("chain in timestamp order: GitHub sync, orchestration, usage ledger, factory loop, automations", () => {
     expect(names).toEqual([...names].sort());
     const at = (suffix: string) => names.findIndex((n) => n.endsWith(suffix));
