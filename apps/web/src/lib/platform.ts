@@ -1,14 +1,21 @@
+import type { CodedenDesktopApi } from "@codeden/contracts";
+import { createDesktopPlatform } from "./platform-desktop";
+
 /**
  * PlatformBridge (§13): every platform feature the UI uses goes through this interface.
- * A web implementation ships now; a desktop shell can provide its own later. Features are
- * detected through `capabilities`, never by asking which shell we're in.
+ * The web implementation runs in any browser; the desktop app (§17) exposes
+ * `window.codedenDesktop` and gets its own implementation. Features are detected through
+ * `capabilities`, never by asking which shell we're in.
  */
 export interface PlatformBridge {
   readonly capabilities: {
     notifications: boolean;
     badge: boolean;
     clipboardImages: boolean;
+    /** A native folder picker that returns real paths (`pickFolder`). */
     folderPicker: boolean;
+    /** OS integration settings: launch at login, close to tray, keep awake (Settings > App). */
+    osIntegration: boolean;
   };
   notificationPermission(): NotificationPermission | "unsupported";
   requestNotificationPermission(): Promise<NotificationPermission | "unsupported">;
@@ -19,6 +26,12 @@ export interface PlatformBridge {
   writeClipboard(text: string): Promise<void>;
   readClipboardImage(): Promise<Blob | null>;
   isFocused(): boolean;
+  /** Native folder picker (when `capabilities.folderPicker`); null when cancelled or absent. */
+  pickFolder(opts?: { title?: string; defaultPath?: string }): Promise<string | null>;
+  /** Routes opened from outside the UI (`codeden://` links); returns the unsubscribe. */
+  onNavigate(listener: (path: string) => void): () => void;
+  /** Launch at login is possible on this OS (only meaningful with `osIntegration`). */
+  launchAtLoginSupported(): Promise<boolean>;
 }
 
 const baseTitle = typeof document !== "undefined" ? document.title : "CodeDen";
@@ -40,6 +53,7 @@ export function createWebPlatform(): PlatformBridge {
       clipboardImages: Boolean(nav?.clipboard && "read" in nav.clipboard),
       // Browsers can't return real paths; the server-side picker is used instead (§13).
       folderPicker: false,
+      osIntegration: false,
     },
     notificationPermission: () => (hasNotifications ? Notification.permission : "unsupported"),
     async requestNotificationPermission() {
@@ -75,7 +89,20 @@ export function createWebPlatform(): PlatformBridge {
       return null;
     },
     isFocused: () => document.hasFocus() && document.visibilityState === "visible",
+    pickFolder: async () => null,
+    onNavigate: () => () => {},
+    launchAtLoginSupported: async () => false,
   };
 }
 
-export const platform: PlatformBridge = createWebPlatform();
+/** The desktop bridge when the desktop app's preload exposed one, else the web bridge. */
+export function selectPlatform(
+  target: { codedenDesktop?: CodedenDesktopApi } | undefined,
+): PlatformBridge {
+  const web = createWebPlatform();
+  return target?.codedenDesktop ? createDesktopPlatform(target.codedenDesktop, web) : web;
+}
+
+export const platform: PlatformBridge = selectPlatform(
+  typeof window !== "undefined" ? (window as { codedenDesktop?: CodedenDesktopApi }) : undefined,
+);

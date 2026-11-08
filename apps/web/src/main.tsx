@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ApiRequestError, ClientProvider, createClient } from "@/lib/api";
+import { platform } from "@/lib/platform";
 import { startRealtime } from "@/lib/realtime";
 import { router } from "@/router";
 import { applyTheme, useThemeStore } from "@/stores/theme";
@@ -26,6 +27,8 @@ const client = createClient();
 applyTheme(useThemeStore.getState().preference);
 useThemeStore.subscribe((s) => applyTheme(s.preference));
 startRealtime(client, queryClient);
+// `codeden://` links opened while the desktop app runs (§17).
+platform.onNavigate((path) => router.history.push(path));
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
