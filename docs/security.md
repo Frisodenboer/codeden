@@ -35,9 +35,13 @@ Each session runs at an autonomy level (the default comes from **Settings → Au
 | **Auto, risky actions ask** (default) | `acceptEdits`, plus CodeDen's risk classifier on every tool call | `on-request` approvals, workspace-write sandbox, network off |
 | **Full autonomy**: no approvals inside the worktree | `bypassPermissions`; only writes outside the worktree ask | `never`, workspace-write sandbox, network on |
 
+Changing the level in the composer while a session runs is saved on the session and sent to the running agent. Claude follows it from its next tool call; Codex from its next turn (the composer tells you which). Approvals that are already waiting stay waiting.
+
+**The OS temp directory counts as part of the workspace** under Auto and Full: writing or deleting files in `os.tmpdir()`, `%TEMP%`/`%TMP%`, `$TMPDIR` or `/tmp` (including Git Bash's `/tmp` on Windows) doesn't ask, and Codex's sandbox may write there. Only the temp directories themselves qualify, never a filesystem root or your home directory, even if an environment variable points there. Secrets files written to temp still ask, and Supervised still asks for everything.
+
 Under **Auto**, edits and ordinary commands inside the worktree run freely, and these go to an approval card (and your inbox):
 
-- writes or deletes **outside the worktree**, and changes to global git config;
+- writes or deletes **outside the worktree** (and outside the OS temp directory), and changes to global git config;
 - **force pushes**, deleting branches, tags or refs;
 - **global installs** (`npm -g`, `pip` outside a project, system package managers) and elevated commands (`sudo`);
 - **piping a downloaded script into a shell** or executing a download;

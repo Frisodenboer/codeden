@@ -23,7 +23,7 @@ Everything an agent touches sits next to its chat. Open the right panel with **C
 
 - Text, pasted images and file attachments.
 - `@` to mention files, `/` for commands and skills.
-- Pickers for **provider**, **model** and **reasoning effort**, plus the session's **autonomy level**. Model and effort can be changed mid-session; they apply from the next turn.
+- Pickers for **provider**, **model** and **reasoning effort**, plus the session's **autonomy level**. Model and effort can be changed mid-session; they apply from the next turn. The autonomy level can be changed too: it is saved on the session and applies from the next tool call where the provider allows (Claude), otherwise from the next turn (Codex).
 - **While a turn runs:** Enter **queues** your message for when it ends. With providers that support it, you can **steer** instead, injecting the message into the running turn.
 - **Stop** the running turn with **Ctrl/Cmd+.**.
 - The **microphone** button dictates (see [Voice and images](voice-and-images.md)).

@@ -406,6 +406,9 @@ Each level maps onto each provider's **native** enforcement:
   - **Claude:** `acceptEdits` plus a `canUseTool` policy classifier.
   - **Codex:** workspace-write sandbox plus on-request approvals.
 - **Full autonomy:** no approvals inside the worktree.
+- **The OS temp directory** (`os.tmpdir()`, `%TEMP%`/`%TMP%`, `$TMPDIR`, `/tmp`, and Git Bash's `/tmp` on Windows) counts as inside the worktree for writes and deletes under Auto and Full, so logs and scratch files there don't ask. Only the temp directories themselves qualify: never their root, a filesystem root or the home directory, and a secrets file written there still asks. Supervised is unchanged.
+- **The classifier reads commands like a shell:** quoted text, heredoc bodies and PowerShell here-strings are data, redirects count only outside quotes, and relative paths resolve from where a `cd` (in the same command, or an earlier one Claude reports) moved the shell.
+- **Changing the level on a running session** saves it on the session (`PATCH /api/sessions/:id`, recorded as `session.updated`) and sends it to the live provider session. Claude applies it from the next tool call (`liveAutonomy`); Codex from the next turn, through per-turn approval and sandbox overrides. Approvals already waiting stay waiting.
 
 The orchestrator and PMs have no write access to project code; they act only through CodeDen tools.
 

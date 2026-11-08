@@ -263,7 +263,7 @@ export const providers: ProviderInfo[] = [
   {
     id: "claude",
     displayName: "Claude Code",
-    capabilities: caps,
+    capabilities: { ...caps, liveAutonomy: true },
     models: [
       {
         id: "opus",
@@ -294,7 +294,13 @@ export const providers: ProviderInfo[] = [
   {
     id: "codex",
     displayName: "Codex",
-    capabilities: { ...caps, subagents: false, userQuestions: false, skills: true },
+    capabilities: {
+      ...caps,
+      subagents: false,
+      userQuestions: false,
+      skills: true,
+      liveAutonomy: false,
+    },
     // What a Codex install reports once discovered: every model takes low to max, each with
     // its own default effort, and exactly one is the default model.
     models: [
