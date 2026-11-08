@@ -109,8 +109,34 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Playwright's browsers live outside node_modules, so the pnpm cache does not cover them.
+      # They are cached per OS and Playwright version, in Playwright's default folder.
+      - name: Resolve the Playwright version
+        id: playwright
+        shell: bash
+        run: echo "version=$(pnpm --filter @codeden/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright Chromium
-        run: pnpm --filter @codeden/web exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @codeden/web exec playwright install chromium
+      # Saved straight away, so a failing test run still fills the cache for the next one.
+      - name: Save the Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
+      # Linux needs Chromium's shared libraries from apt (not cacheable here). On Windows,
+      # `--with-deps` only installs the Windows Server Media Foundation feature (about 3 minutes);
+      # the suite does not play media, so Windows needs nothing beyond the browser.
+      - name: Install Playwright system dependencies
+        if: runner.os == 'Linux'
+        run: pnpm --filter @codeden/web exec playwright install-deps chromium
       - run: pnpm e2e
       - name: Desktop app smoke test (unpacked build)
         shell: bash
