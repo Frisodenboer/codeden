@@ -2,6 +2,7 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { sweepProcesses } from "./process-sweep";
 
 export interface E2eServer {
   url: string;
@@ -122,6 +123,8 @@ export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<
           done();
         });
       });
+      // Backstop: nothing started from this run's temp folder (runner, terminals) survives it.
+      await sweepProcesses(base, 5_000);
       try {
         rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
       } catch {

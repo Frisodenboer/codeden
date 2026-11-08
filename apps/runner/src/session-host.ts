@@ -128,16 +128,24 @@ export class SessionHost {
     await this.get(sessionId).session.interrupt();
   }
 
-  /** Model/effort for the next turn, when the provider can change them live. */
+  /**
+   * Model/effort for the next turn and the autonomy level, when the provider can change them
+   * live. Checks every requested setting before applying any.
+   */
   async configure(cmd: RunnerCommandOf<"session.configure">): Promise<void> {
     const { session } = this.get(cmd.sessionId);
-    if (!session.configure) {
-      throw new CommandError("unsupported", "This provider cannot change model or effort live");
-    }
     const change: { model?: string | null; effort?: typeof cmd.effort } = {};
     if (cmd.model !== undefined) change.model = cmd.model;
     if (cmd.effort !== undefined) change.effort = cmd.effort;
-    await session.configure(change);
+    const modelOrEffort = Object.keys(change).length > 0;
+    if (modelOrEffort && !session.configure) {
+      throw new CommandError("unsupported", "This provider cannot change model or effort live");
+    }
+    if (cmd.autonomy !== undefined && !session.setAutonomy) {
+      throw new CommandError("unsupported", "This provider cannot change autonomy live");
+    }
+    if (modelOrEffort) await session.configure?.(change);
+    if (cmd.autonomy !== undefined) await session.setAutonomy?.(cmd.autonomy);
   }
 
   async respond(cmd: RunnerCommandOf<"session.respond">): Promise<void> {

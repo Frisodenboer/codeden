@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { StartSessionResponse } from "./api";
-import { Id, ReasoningEffort } from "./common";
+import { AutonomyLevel, Id, ReasoningEffort } from "./common";
 import { InboxItemStatus } from "./entities/inbox";
 import { Session } from "./entities/session";
 import { UserInput } from "./input";
@@ -53,18 +53,30 @@ export const ResolveConflictResponse = z.object({
 export type ResolveConflictResponse = z.infer<typeof ResolveConflictResponse>;
 
 /**
- * `PATCH /api/sessions/:id`: change the model or effort mid-session. Applied on the next turn
- * (a running turn keeps its settings). `null` returns to the role default.
+ * `PATCH /api/sessions/:id`: change the model, effort, autonomy or title mid-session.
+ * Model and effort apply on the next turn (a running turn keeps its settings); `null` returns
+ * to the role default.
  */
 export const UpdateSessionRequest = z
   .object({
     model: z.string().min(1).nullable().optional(),
     effort: ReasoningEffort.nullable().optional(),
+    /**
+     * Autonomy level (§11.2), saved on the session and pushed to the live provider session.
+     * It applies from the next tool call when the provider reports `liveAutonomy`, otherwise
+     * from the next turn. Approvals already waiting stay waiting.
+     */
+    autonomy: AutonomyLevel.optional(),
     title: z.string().trim().min(1).max(200).optional(),
   })
-  .refine((r) => r.model !== undefined || r.effort !== undefined || r.title !== undefined, {
-    message: "Nothing to change",
-  });
+  .refine(
+    (r) =>
+      r.model !== undefined ||
+      r.effort !== undefined ||
+      r.autonomy !== undefined ||
+      r.title !== undefined,
+    { message: "Nothing to change" },
+  );
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequest>;
 
 /**

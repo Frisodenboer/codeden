@@ -34,6 +34,8 @@ const capabilities: ProviderCapabilities = {
   reasoningEffort: true,
   mcp: true,
   skills: true,
+  // Approval and sandbox policy are per turn (`turn/start` overrides): changes wait for it.
+  liveAutonomy: false,
 };
 
 const CONFIGURED_MODEL = "The model configured in ~/.codex/config.toml";

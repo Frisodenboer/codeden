@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   CanUseTool,
   HookCallback,
@@ -7,6 +8,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AgentEvent,
+  AutonomyLevel,
   ItemOf,
   RuntimeResponse,
   SessionOptions,
@@ -21,7 +23,7 @@ import { explicitModel } from "../util/model";
 import { str, toJson } from "../util/text";
 import { ClaudeEventMapper } from "./mapper";
 import { buildQueryOptions, claudeEffort, toSdkUserMessage } from "./options";
-import { ClaudePolicy } from "./permissions";
+import { ClaudePolicy, permissionModeFor } from "./permissions";
 import type { ClaudeSdkModule } from "./sdk";
 import { approvalTitle, QUESTION_TOOL } from "./tools";
 
@@ -50,6 +52,10 @@ export class ClaudeSession implements ProviderSession {
   private abort: AbortController | undefined;
   private stderrTail = "";
   private closed = false;
+  /** The shell's current directory from the latest PreToolUse hook, for relative paths. */
+  private shellDir: string | undefined;
+  /** Current autonomy: a query restarted after the CLI exits starts with it. */
+  private autonomy: AutonomyLevel;
 
   constructor(
     private readonly opts: SessionOptions,
@@ -58,6 +64,7 @@ export class ClaudeSession implements ProviderSession {
     const emit = (event: AgentEvent) => this.events.push(event);
     this.mapper = new ClaudeEventMapper({ sessionId: opts.sessionId, cwd: opts.cwd, emit });
     this.broker = new ApprovalBroker(emit);
+    this.autonomy = opts.autonomy;
     this.policy = new ClaudePolicy(
       opts.autonomy,
       { cwd: opts.cwd, extraRoots: opts.additionalDirectories },
@@ -69,6 +76,27 @@ export class ClaudeSession implements ProviderSession {
 
   resumeToken(): string | undefined {
     return this.mapper.resumeToken ?? this.opts.resumeToken;
+  }
+
+  /**
+   * Switch autonomy. The policy changes at once, so the next tool call (even in a running
+   * turn) follows the new level; approvals already waiting stay waiting. The CLI's own
+   * permission mode follows where it can (`setPermissionMode`); when the CLI refuses a mode
+   * (`bypassPermissions` needs a launch flag), it keeps `acceptEdits` and CodeDen's policy
+   * decides through the PreToolUse hook and `canUseTool` either way. Plan mode is left alone.
+   */
+  async setAutonomy(level: AutonomyLevel): Promise<void> {
+    this.autonomy = level;
+    this.policy.setAutonomy(level);
+    const q = this.q;
+    if (!q || this.opts.planMode) return;
+    const mode = permissionModeFor(level, false);
+    try {
+      await q.setPermissionMode(mode);
+    } catch {
+      if (mode !== "bypassPermissions") return;
+      await q.setPermissionMode("acceptEdits").catch(() => {});
+    }
   }
 
   /** Model/effort for the following turns, applied live through the SDK's streaming query. */
@@ -156,6 +184,9 @@ export class ClaudeSession implements ProviderSession {
         string,
         unknown
       >;
+      // The shell's current directory: a `cd` in an earlier Bash call persists.
+      const cwd = str(hookInput, "cwd");
+      if (cwd && (path.isAbsolute(cwd) || path.win32.isAbsolute(cwd))) this.shellDir = cwd;
       const denied = this.policy.denial(name, toolInput);
       if (denied) {
         return {
@@ -166,7 +197,7 @@ export class ClaudeSession implements ProviderSession {
           },
         };
       }
-      const gate = this.policy.gate(name, toolInput);
+      const gate = this.policy.gate(name, toolInput, this.shellDir);
       if (!gate.ask) return {};
       return {
         hookSpecificOutput: {
@@ -179,7 +210,7 @@ export class ClaudeSession implements ProviderSession {
     const q = this.config.query({
       prompt: prompts,
       options: buildQueryOptions({
-        session: this.opts,
+        session: { ...this.opts, autonomy: this.autonomy },
         executable: this.config.executable,
         canUseTool: this.canUseTool,
         hooks: { PreToolUse: [{ hooks: [preToolUse] }] },
@@ -233,7 +264,7 @@ export class ClaudeSession implements ProviderSession {
       return this.askQuestion(input, options.toolUseID, options.signal);
     const denied = this.policy.denial(toolName, input);
     if (denied) return { behavior: "deny", message: denied };
-    const gate = this.policy.needsUser(toolName, input);
+    const gate = this.policy.needsUser(toolName, input, this.shellDir);
     if (!gate.ask) return { behavior: "allow", updatedInput: input };
     const ctx = this.mapper.ctxForTool(options.toolUseID);
     const item: ItemOf<"approval_request"> = {

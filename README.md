@@ -19,6 +19,8 @@ npx codeden
 
 That's the whole install. CodeDen starts a local server, opens your browser on an already signed-in URL, and reuses the Claude Code, Codex, GitHub and git setup you already have. No accounts, no license keys, no hosted backend, no telemetry.
 
+Prefer an app? **[Download the desktop app](https://github.com/leonvanzyl/codeden/releases/latest)** for Windows, macOS or Linux: the same CodeDen in its own window, with a tray icon, notifications and automatic updates, and no Node.js needed. See [The desktop app](docs/desktop.md).
+
 ---
 
 ## Contents
@@ -52,6 +54,8 @@ That's the whole install. CodeDen starts a local server, opens your browser on a
 npx codeden            # or: npm i -g codeden && codeden
 ```
 
+Or install the **desktop app** from the [latest release](https://github.com/leonvanzyl/codeden/releases/latest) (`CodeDen-Setup-<version>.exe` on Windows, a `.dmg` on macOS, an AppImage or `.deb` on Linux). It needs no Node.js, uses the same data as `npx codeden` (`~/.codeden`), lives in the tray and updates itself. Unsigned builds show a SmartScreen or Gatekeeper warning the first time; see [The desktop app](docs/desktop.md).
+
 1. The **setup checklist** detects Claude Code, Codex, GitHub, your git identity and a browser, and only asks about what's missing. Each failed check has one fix: an install command, or a **Sign in** button that runs the tool's own login in an embedded terminal.
 2. **Add a project:** pick a local folder (a server-side folder picker) or paste a GitHub URL to clone.
 3. **Start a session.** The agent works in its own git worktree and branch, so your checkout is never touched.
@@ -76,7 +80,7 @@ Every unit of work carries a **work key** (`issue:142`, `automation:security-aud
 
 ### One inbox
 
-Questions, approvals, PRs ready for review, failed runs, triage decisions, duplicate-work conflicts and budget alerts all land in one **Inbox**, each linked to its session, issue and PR and answerable in place. Toasts and (opt-in) browser notifications tell you when something new arrives.
+Questions, approvals, PRs ready for review, failed runs, triage decisions, duplicate-work conflicts and budget alerts all land in one **Inbox**, each linked to its session, issue and PR and answerable in place. Toasts and (opt-in) browser notifications tell you when something new arrives, and when an agent is blocked on you a chime, a sticky toast and an amber dot on the tab icon make sure you notice.
 
 ![The inbox with a conflict, an approval and a PR ready for review](docs/images/inbox.png)
 
@@ -248,6 +252,7 @@ CodeDen checks npm for a new version when it starts and every 6 hours (only the 
 - **Running from source** (a clone of this repository) never switches versions: pull and rebuild (`git pull && pnpm install && pnpm build`).
 - **The old way still works:** `npm i -g codeden@latest`, or `npx codeden@latest`. A globally installed version newer than the side-by-side one always wins.
 - **Upgrading from 0.1.0:** 0.1.0 predates one-click updates; update it once by hand (`npm i -g codeden@latest` or `npx codeden@latest`).
+- **The desktop app** updates itself from GitHub Releases with the same banner and the same setting; see [The desktop app](docs/desktop.md#updates).
 
 ## FAQ
 
@@ -280,6 +285,7 @@ It's experimental. Read [Autonomy and the dark factory](docs/autonomy-and-dark-f
 | Guide | |
 |---|---|
 | [Getting started](docs/getting-started.md) | Install, first-run setup, first project and session |
+| [The desktop app](docs/desktop.md) | Install, tray, notifications, updates, signing and where data lives |
 | [Orchestration](docs/orchestration.md) | Orchestrator, PMs, agents, work keys, conflicts and notices |
 | [GitHub](docs/github.md) | Issues, PRs, checks, reviews and the evidence branch |
 | [Automations](docs/automations.md) | Triggers, guards, templates and writing your own |

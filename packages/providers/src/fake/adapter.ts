@@ -35,6 +35,7 @@ const capabilities: ProviderCapabilities = {
   reasoningEffort: false,
   mcp: false,
   skills: false,
+  liveAutonomy: true,
 };
 
 /**

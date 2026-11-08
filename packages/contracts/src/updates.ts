@@ -12,9 +12,10 @@ export type UpdateMode = z.infer<typeof UpdateMode>;
 /**
  * Where the running CodeDen came from. `packaged`: an npm install (`npx`, global or a
  * side-by-side version in `<home>/app`), which can update itself. `source`: the repository or
- * a workspace build, which never switches versions (pull and rebuild instead).
+ * a workspace build, which never switches versions (pull and rebuild instead). `desktop`: the
+ * desktop app, which updates itself from GitHub Releases (the npm path is off; §17).
  */
-export const InstallSource = z.enum(["packaged", "source"]);
+export const InstallSource = z.enum(["packaged", "source", "desktop"]);
 export type InstallSource = z.infer<typeof InstallSource>;
 
 /**

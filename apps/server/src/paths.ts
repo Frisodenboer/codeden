@@ -32,6 +32,8 @@ export function homePaths(home: string) {
     backups: join(home, "backups"),
     /** Dependencies installed on demand, e.g. Claude Code support (§14). */
     deps: join(home, "deps"),
+    /** Models downloaded on demand, e.g. local Whisper for dictation (§11.3). */
+    models: join(home, "models"),
   };
 }
 export type HomePaths = ReturnType<typeof homePaths>;

@@ -28,6 +28,7 @@ import type {
   ImageTestRequest,
   ImageTestResponse,
   LoadedAgentConfig,
+  LocalSttStatus,
   McpServerDiffRequest,
   McpServerListResponse,
   McpServerTarget,
@@ -50,6 +51,7 @@ import type {
   TtsRequest,
   UserInputInit,
   VoiceListResponse,
+  WhisperModelId,
 } from "@codeden/contracts";
 
 /**
@@ -136,8 +138,14 @@ export interface VoiceApi {
   voices(): Promise<VoiceListResponse>;
   /** Spoken audio (`audio/mpeg`) from the server's ElevenLabs proxy. */
   tts(req: TtsRequest): Promise<Blob>;
-  /** Transcribe recorded audio with a cloud engine. */
+  /** Transcribe recorded audio with a cloud engine or local Whisper (WAV for local). */
   stt(audio: Blob, query: SttQuery): Promise<SttResponse>;
+  /** Local Whisper: runtime and model download status on the server. */
+  localStatus(): Promise<LocalSttStatus>;
+  /** Start (or join) downloading the runtime and a model. */
+  downloadLocalModel(id: WhisperModelId): Promise<LocalSttStatus>;
+  /** Cancel a model download or delete the downloaded model. */
+  deleteLocalModel(id: WhisperModelId): Promise<LocalSttStatus>;
 }
 
 export interface SecretsApi {

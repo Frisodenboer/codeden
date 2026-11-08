@@ -1,5 +1,8 @@
-/** The version written into the source; kept in sync with `apps/cli/package.json` (tested). */
-export const SOURCE_VERSION = "0.1.1";
+/**
+ * The version written into the source; kept in sync with `apps/cli/package.json` and
+ * `apps/desktop/package.json` (tested).
+ */
+export const SOURCE_VERSION = "0.2.0";
 
 /**
  * CodeDen release version. Server and runner exchange it during the runner handshake to detect

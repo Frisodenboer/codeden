@@ -1,42 +1,79 @@
 import { randomUUID } from "node:crypto";
-import type { QueuedMessage, UserInput } from "@codeden/contracts";
-import { asc, eq } from "drizzle-orm";
+import type { QueuedMessage, QueueSender, UserInput } from "@codeden/contracts";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../../db/client";
-import { queuedMessages } from "../../db/schema";
+import { events, queuedMessages } from "../../db/schema";
 import type { EventStore } from "../../events/store";
+
+/** Why a message left the queue (`message.dequeued`). */
+export type DequeueReason = "sent" | "dropped" | "deleted";
+
+type Row = typeof queuedMessages.$inferSelect;
+
+const toMessage = (r: Row): QueuedMessage => ({
+  id: r.id,
+  sessionId: r.sessionId,
+  input: r.input,
+  from: r.sender ?? "user",
+  createdAt: r.createdAt,
+});
 
 /**
  * Messages sent while a turn runs, delivered one at a time when the session goes idle.
- * Stored through `message.queued` / `message.dequeued` events, so the queue survives server
- * restarts and can be rebuilt from the log.
+ * Stored through `message.queued` / `message.dequeued` / `message.edited` events, so the queue
+ * survives server restarts and can be rebuilt from the log.
+ *
+ * Every method is synchronous. Delivery takes a message out with `remove(…, "sent")` before
+ * it awaits anything, so an edit or delete either lands before delivery (and is what gets
+ * sent) or finds the message gone; a half-edited message can never be sent.
  */
 export class Outbox {
+  /** Last `createdAt` handed out (ms), so timestamps strictly increase. */
+  private lastAt = 0;
+
   constructor(
     private readonly db: Db,
     private readonly store: EventStore,
   ) {}
 
-  push(sessionId: string, input: UserInput): QueuedMessage {
+  push(sessionId: string, input: UserInput, from: QueueSender = "user"): QueuedMessage {
+    // `createdAt` orders the queue, so two messages in the same millisecond still get distinct
+    // times, and a message put back by `restore` returns to exactly its place.
+    this.lastAt = Math.max(Date.now(), this.lastAt + 1);
     const message: QueuedMessage = {
       id: randomUUID(),
       sessionId,
       input,
-      createdAt: new Date().toISOString(),
+      from,
+      createdAt: new Date(this.lastAt).toISOString(),
     };
     this.store.append([{ type: "message.queued", sessionId, payload: { message } }]);
     return message;
   }
 
-  /** Oldest queued message of a session, if any. */
-  peek(sessionId: string): QueuedMessage | undefined {
-    const row = this.db
+  /** A session's queued messages, next to be delivered first. */
+  list(sessionId: string): QueuedMessage[] {
+    return this.db
       .select()
       .from(queuedMessages)
       .where(eq(queuedMessages.sessionId, sessionId))
-      .orderBy(asc(queuedMessages.createdAt))
-      .limit(1)
+      .orderBy(asc(queuedMessages.createdAt), asc(sql`rowid`))
+      .all()
+      .map(toMessage);
+  }
+
+  /** Oldest queued message of a session, if any. */
+  peek(sessionId: string): QueuedMessage | undefined {
+    return this.list(sessionId)[0];
+  }
+
+  get(sessionId: string, messageId: string): QueuedMessage | undefined {
+    const row = this.db
+      .select()
+      .from(queuedMessages)
+      .where(and(eq(queuedMessages.sessionId, sessionId), eq(queuedMessages.id, messageId)))
       .get();
-    return row ?? undefined;
+    return row ? toMessage(row) : undefined;
   }
 
   count(sessionId: string): number {
@@ -56,7 +93,24 @@ export class Outbox {
     return rows.map((r) => r.id);
   }
 
-  remove(message: QueuedMessage, reason: "sent" | "dropped"): void {
+  /** Replace a queued message's text; its attachments stay. */
+  edit(message: QueuedMessage, text: string): QueuedMessage {
+    this.store.append([
+      {
+        type: "message.edited",
+        sessionId: message.sessionId,
+        payload: {
+          sessionId: message.sessionId,
+          messageId: message.id,
+          text,
+          at: new Date().toISOString(),
+        },
+      },
+    ]);
+    return { ...message, input: { ...message.input, text } };
+  }
+
+  remove(message: QueuedMessage, reason: DequeueReason): void {
     this.store.append([
       {
         type: "message.dequeued",
@@ -66,20 +120,42 @@ export class Outbox {
     ]);
   }
 
-  /** Drop every queued message of a session (interrupt, stop). */
-  clear(sessionId: string): void {
-    const rows = this.db
-      .select()
-      .from(queuedMessages)
-      .where(eq(queuedMessages.sessionId, sessionId))
-      .all();
-    if (rows.length === 0) return;
+  /** Put a message taken out for delivery back in its place (the delivery failed). */
+  restore(message: QueuedMessage): void {
+    this.store.append([
+      { type: "message.queued", sessionId: message.sessionId, payload: { message } },
+    ]);
+  }
+
+  /** Drop every queued message of a session (interrupt, stop). Returns what was dropped. */
+  clear(sessionId: string): QueuedMessage[] {
+    const dropped = this.list(sessionId);
+    if (dropped.length === 0) return [];
     this.store.append(
-      rows.map((m) => ({
+      dropped.map((m) => ({
         type: "message.dequeued" as const,
         sessionId,
         payload: { sessionId, messageId: m.id, reason: "dropped" as const },
       })),
     );
+    return dropped;
+  }
+
+  /** Why a message is no longer queued, from the log; `undefined` if it never was. */
+  dequeuedReason(sessionId: string, messageId: string): DequeueReason | undefined {
+    const row = this.db
+      .select({ payload: events.payload })
+      .from(events)
+      .where(
+        and(
+          eq(events.sessionId, sessionId),
+          eq(events.type, "message.dequeued"),
+          sql`json_extract(${events.payload}, '$.messageId') = ${messageId}`,
+        ),
+      )
+      .orderBy(desc(events.seq))
+      .limit(1)
+      .get();
+    return (row?.payload as { reason?: DequeueReason } | undefined)?.reason;
   }
 }

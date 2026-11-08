@@ -36,6 +36,14 @@
       "trailingCommas": "all"
     }
   },
+  "overrides": [
+    {
+      "includes": ["apps/desktop/electron-builder.config.mjs"],
+      "linter": {
+        "rules": { "suspicious": { "noTemplateCurlyInString": "off" } }
+      }
+    }
+  ],
   "css": {
     "parser": {
       "tailwindDirectives": true

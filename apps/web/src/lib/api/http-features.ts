@@ -13,6 +13,7 @@ import {
   ImageEnginesResponse,
   ImageTestResponse,
   LoadedAgentConfig,
+  LocalSttStatus,
   McpServerListResponse,
   McpServerWriteResponse,
   SecretsStatus,
@@ -133,6 +134,15 @@ export function httpVoiceApi(http: Fetcher): VoiceApi {
       });
       return SttResponse.parse(await res.json());
     },
+    localStatus: () => http.get("/voice/local", (v) => LocalSttStatus.parse(v)),
+    downloadLocalModel: (id) =>
+      http.post(`/voice/local/models/${enc(id)}/download`, undefined, (v) =>
+        LocalSttStatus.parse(v),
+      ),
+    deleteLocalModel: (id) =>
+      http.call("DELETE", `/voice/local/models/${enc(id)}`, undefined, (v) =>
+        LocalSttStatus.parse(v),
+      ),
   };
 }
 

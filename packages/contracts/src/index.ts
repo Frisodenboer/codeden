@@ -8,6 +8,7 @@ export * from "./api";
 export * from "./automations-api";
 export * from "./browser-api";
 export * from "./common";
+export * from "./desktop";
 export * from "./entities/artifact";
 export * from "./entities/automation";
 export * from "./entities/inbox";

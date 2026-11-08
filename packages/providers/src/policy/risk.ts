@@ -1,11 +1,13 @@
 import type { ApprovalAction } from "@codeden/contracts";
-import { isInWorkspace, isSecretPath, type PathContext } from "./paths";
+import { isInWorkspace, isSecretPath, isWritable, type PathContext, resolveAgainst } from "./paths";
+import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
 
 /**
- * Risky-action classifier for the `auto` autonomy level (§11.2). Provider-neutral: adapters
- * translate their tool calls into `classifyCommand` / `classifyWrite` / `classifyRead` /
- * `classifyFetch` calls. A risky result is turned into an approval request; everything else
- * runs freely.
+ * Risky-action classifier for the `auto` and `full` autonomy levels (§11.2). Provider-neutral:
+ * adapters translate their tool calls into `classifyCommand` / `classifyWrite` /
+ * `classifyRead` / `classifyFetch` calls. A risky result is turned into an approval request;
+ * everything else runs freely. Writes inside the worktree, the extra roots and the OS temp
+ * directory are not risky; secrets files are, wherever they are.
  */
 export type RiskAssessment =
   | { risky: false }
@@ -14,6 +16,8 @@ export type RiskAssessment =
 export interface RiskContext extends PathContext {
   /** Hosts the agent may fetch freely. When omitted, web fetches are not flagged. */
   allowedHosts?: readonly string[];
+  /** The shell a command runs in, for its quoting rules. Default `auto`. */
+  shell?: ShellDialect;
 }
 
 const SAFE: RiskAssessment = { risky: false };
@@ -23,26 +27,16 @@ const risky = (action: ApprovalAction, reason: string): RiskAssessment => ({
   reason,
 });
 
-/** Split a shell command line into simple commands (on `;`, `&&`, `||`, `|`, newlines). */
-export function splitCommands(command: string): string[] {
-  return command
-    .split(/\r?\n|;|&&|\|\||\|/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
+/** How deep `bash -c "…"` style inline scripts are followed. */
+const MAX_DEPTH = 4;
 
-/** Tokenize one simple command, honouring single and double quotes. */
-export function tokenize(command: string): string[] {
-  const tokens: string[] = [];
-  const re = /"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g;
-  for (const m of command.matchAll(re)) tokens.push(m[1] ?? m[2] ?? m[3] ?? "");
-  return tokens;
-}
-
-/** Strip wrappers that don't change what runs (`sudo`, `env X=1`, `command`, `exec`). */
-function unwrap(tokens: string[]): { tokens: string[]; elevated: boolean } {
+/**
+ * Words that don't change what runs: elevation (`sudo`), wrappers (`env X=1`, `command`,
+ * `exec`) and shell keywords that start a compound command (`if`, `then`, `do`, `{`, ...).
+ */
+function unwrap(words: string[]): { tokens: string[]; elevated: boolean } {
   let elevated = false;
-  let rest = tokens;
+  let rest = words;
   for (;;) {
     const head = rest[0]?.toLowerCase();
     if (head === "sudo" || head === "doas" || head === "runas" || head === "gsudo") {
@@ -50,12 +44,16 @@ function unwrap(tokens: string[]): { tokens: string[]; elevated: boolean } {
       rest = rest.slice(1).filter((t, i) => !(i === 0 && t.startsWith("-")));
     } else if (head === "env" || head === "command" || head === "exec" || head === "nohup") {
       rest = rest.slice(1);
+    } else if (head && KEYWORDS.has(head)) {
+      rest = rest.slice(1);
     } else if (head && /^[A-Za-z_][A-Za-z0-9_]*=/.test(head)) {
       rest = rest.slice(1);
     } else break;
   }
   return { tokens: rest, elevated };
 }
+
+const KEYWORDS = new Set(["if", "then", "else", "elif", "do", "while", "until", "time", "!", "{"]);
 
 const binName = (token: string | undefined): string =>
   (token ?? "")
@@ -91,20 +89,97 @@ export function classifyCommand(command: string, ctx: RiskContext): RiskAssessme
   ) {
     return risky("network", "Executes a downloaded script");
   }
+  return classifyList(parseShell(command, ctx.shell ?? "auto"), ctx, 0);
+}
 
-  for (const simple of splitCommands(command)) {
-    const result = classifySimple(simple, ctx);
+/**
+ * Classify commands in order. A `cd` moves where later relative paths resolve; commands in
+ * substitutions and subshells are classified too, without their `cd` leaking out.
+ */
+function classifyList(list: SimpleCommand[], ctx: RiskContext, depth: number): RiskAssessment {
+  let here = ctx;
+  for (const cmd of list) {
+    for (const nested of cmd.nested) {
+      const result = classifyList(nested, here, depth);
+      if (result.risky) return result;
+    }
+    const result = classifySimple(cmd, here, depth);
     if (result.risky) return result;
+    here = afterCd(cmd, here);
   }
   return SAFE;
 }
 
-function classifySimple(simple: string, ctx: RiskContext): RiskAssessment {
-  const { tokens, elevated } = unwrap(tokenize(simple));
+const CD = new Set(["cd", "pushd", "chdir", "set-location", "sl", "push-location"]);
+
+/** The context after `cmd` when it changes directory (`cd dir`, `Set-Location -Path dir`). */
+function afterCd(cmd: SimpleCommand, ctx: RiskContext): RiskContext {
+  const { tokens } = unwrap(cmd.words);
+  if (!CD.has(binName(tokens[0]))) return ctx;
+  const args = tokens.slice(1);
+  if (args.includes("-")) return ctx;
+  const target =
+    namedArg(args, ["-path", "-literalpath"]) ?? args.find((a) => !a.startsWith("-")) ?? "~";
+  return { ...ctx, dir: resolveAgainst(target, ctx) };
+}
+
+/** The value after a PowerShell-style named parameter (`-Path x`), if present. */
+function namedArg(args: string[], names: string[]): string | undefined {
+  const i = args.findIndex((a) => names.includes(a.toLowerCase()));
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+/** The script of an inline shell invocation (`bash -c "…"`, `pwsh -Command …`, `cmd /c …`). */
+function inlineScript(
+  bin: string,
+  args: string[],
+): { text: string; dialect: ShellDialect } | undefined {
+  if (["sh", "bash", "zsh", "dash", "ksh", "ash", "fish"].includes(bin)) {
+    const flag = args.findIndex((a) => /^-[a-z]*c[a-z]*$/i.test(a));
+    const text = flag >= 0 ? args.slice(flag + 1).find((a) => !a.startsWith("-")) : undefined;
+    return text ? { text, dialect: "posix" } : undefined;
+  }
+  if (bin === "pwsh" || bin === "powershell") {
+    const flag = args.findIndex((a) => /^-(c|command)$/i.test(a));
+    return flag >= 0 ? { text: args.slice(flag + 1).join(" "), dialect: "powershell" } : undefined;
+  }
+  if (bin === "cmd") {
+    const flag = args.findIndex((a) => /^\/[ck]$/i.test(a));
+    return flag >= 0 ? { text: args.slice(flag + 1).join(" "), dialect: "auto" } : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The argument as a path, or undefined when it can't be one: inline code, multi-line text
+ * or anything with shell or code punctuation (`selected={row.key`) is not a file name.
+ */
+function asPath(arg: string): string | undefined {
+  const value = arg.replace(/^-+[a-z-]*=/i, "");
+  if (!value || /[\n\r{}()<>|;=`]/.test(value)) return undefined;
+  return value;
+}
+
+const DISCARD = /^(\/dev\/(null|stdout|stderr|tty)|nul|\$null)$/i;
+
+function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): RiskAssessment {
+  const { tokens, elevated } = unwrap(cmd.words);
   if (elevated) return risky("other", "Runs a command with elevated privileges");
   const bin = binName(tokens[0]);
   const args = tokens.slice(1);
   const lower = args.map((a) => a.toLowerCase());
+
+  const script = inlineScript(bin, args);
+  if (script && depth < MAX_DEPTH) {
+    const inner = classifyList(parseShell(script.text, script.dialect), ctx, depth + 1);
+    if (inner.risky) return inner;
+  }
+
+  for (const target of cmd.writes) {
+    if (DISCARD.test(target)) continue;
+    const write = classifyWrite(target, ctx);
+    if (write.risky) return write;
+  }
 
   if (bin === "git") return classifyGit(lower);
 
@@ -117,46 +192,23 @@ function classifySimple(simple: string, ctx: RiskContext): RiskAssessment {
       if (target === "*" || /^[\\/]$/.test(target) || /^[a-z]:[\\/]?$/i.test(target)) {
         return risky("outside_worktree", `Deletes ${target}`);
       }
-      if (!isInWorkspace(target, ctx)) {
+      if (!isWritable(target, ctx)) {
         return risky("outside_worktree", `Deletes ${target}, outside the worktree`);
       }
     }
   }
 
-  // Redirects or copy/move destinations outside the worktree.
-  for (const m of simple.matchAll(/(?:^|[^0-9&])>>?\s*("[^"]+"|'[^']+'|[^\s;&|]+)/g)) {
-    const target = m[1] ?? "";
-    if (/^(\/dev\/null|nul|\$null)$/i.test(target) || /^&\d$/.test(target)) continue;
-    if (!isInWorkspace(target, ctx))
-      return risky("outside_worktree", `Writes ${target}, outside the worktree`);
-    if (isSecretPath(target)) return risky("secrets", `Writes the secrets file ${target}`);
-  }
-  if (
-    [
-      "cp",
-      "mv",
-      "copy",
-      "move",
-      "copy-item",
-      "move-item",
-      "xcopy",
-      "robocopy",
-      "tee",
-      "set-content",
-      "out-file",
-      "add-content",
-    ].includes(bin)
-  ) {
-    const positional = args.filter((a) => !a.startsWith("-") && !/^\/[a-z]+$/i.test(a));
-    const dest = ["tee", "set-content", "out-file", "add-content"].includes(bin)
-      ? positional[0]
-      : positional.at(-1);
-    if (dest && !isInWorkspace(dest, ctx))
-      return risky("outside_worktree", `Writes ${dest}, outside the worktree`);
+  const dest = copyDestination(bin, args);
+  if (dest) {
+    const write = classifyWrite(dest, ctx);
+    if (write.risky) return write;
   }
 
   // Secrets: any argument naming a credentials file.
-  const secret = args.find((a) => isSecretPath(a.replace(/^-+[a-z-]*=/i, "")));
+  const secret = args.find((a) => {
+    const value = asPath(a);
+    return value !== undefined && isSecretPath(value);
+  });
   if (secret) return risky("secrets", `Accesses the secrets file ${secret}`);
 
   const listsEnvDrive =
@@ -165,6 +217,20 @@ function classifySimple(simple: string, ctx: RiskContext): RiskAssessment {
     return risky("secrets", "Dumps environment variables");
   }
   return SAFE;
+}
+
+const COPIES = ["cp", "mv", "copy", "move", "copy-item", "move-item", "xcopy", "robocopy"];
+const WRITERS = ["tee", "set-content", "out-file", "add-content"];
+
+/** Where a copy, move or file-writing command writes. */
+function copyDestination(bin: string, args: string[]): string | undefined {
+  if (!COPIES.includes(bin) && !WRITERS.includes(bin)) return undefined;
+  const named = WRITERS.includes(bin)
+    ? namedArg(args, ["-path", "-filepath", "-literalpath"])
+    : namedArg(args, ["-destination"]);
+  if (named) return named;
+  const positional = args.filter((a) => !a.startsWith("-") && !/^\/[a-z]+$/i.test(a));
+  return WRITERS.includes(bin) ? positional[0] : positional.at(-1);
 }
 
 function classifyGit(args: string[]): RiskAssessment {
@@ -277,12 +343,19 @@ function classifyInstall(bin: string, args: string[]): RiskAssessment {
   return SAFE;
 }
 
-/** Classify a file write/edit. */
+/**
+ * Classify a file write/edit. The worktree, extra roots and OS temp are fine; secrets ask. A
+ * secrets file in temp counts as outside the worktree, so Full autonomy (which only asks for
+ * writes outside the worktree) still asks for it.
+ */
 export function classifyWrite(target: string, ctx: RiskContext): RiskAssessment {
-  if (!isInWorkspace(target, ctx))
+  if (!isWritable(target, ctx))
     return risky("outside_worktree", `Writes ${target}, outside the worktree`);
-  if (isSecretPath(target)) return risky("secrets", `Writes the secrets file ${target}`);
-  return SAFE;
+  if (!isSecretPath(target)) return SAFE;
+  if (!isInWorkspace(target, ctx)) {
+    return risky("outside_worktree", `Writes the secrets file ${target} in the temp directory`);
+  }
+  return risky("secrets", `Writes the secrets file ${target}`);
 }
 
 /** Classify a file read or search. Reads anywhere are fine except credential files. */

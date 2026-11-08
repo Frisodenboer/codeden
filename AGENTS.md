@@ -10,6 +10,7 @@ apps/
   runner/     Runner process: provider sessions, event journal, lock file, WebSocket protocol server
   web/        React 19 + Vite SPA (Tailwind v4, shadcn/ui, TanStack Router + Query, Zustand)
   cli/        The published `codeden` package: CLI entry, bundles server + runner + web with tsdown
+  desktop/    The desktop app (Electron): main process, preload bridge, server host, electron-builder packaging
 packages/
   contracts/  zod schemas for everything that crosses a boundary (events, entities, protocols, settings)
   providers/  ProviderAdapter / ProviderSession interfaces, the Fake provider, Claude/Codex stubs
@@ -22,6 +23,7 @@ Key entry points:
 - Runner: `apps/runner/src/runner.ts` (`startRunner`), process entry `src/main.ts`.
 - Web shell: `apps/web/src/components/shell/`.
 - CLI: `apps/cli/src/cli.ts`.
+- Desktop: `apps/desktop/src/main/main.ts` (entry), `desktop-app.ts` (wiring), `src/server/host.ts` (server child), `src/preload/preload.ts` (`window.codedenDesktop`); the UI side is `apps/web/src/lib/platform-desktop.ts`. User guide: `docs/desktop.md`.
 
 ## Commands
 
@@ -36,6 +38,9 @@ Node 24+ and pnpm 10 (`corepack enable`).
 | `pnpm lint` / `pnpm format` | Biome check / Biome fix + format |
 | `pnpm test` | Vitest across all packages (includes a server -> runner -> Fake provider end-to-end test) |
 | `pnpm e2e` | Build the web app and the CLI, then Playwright (`apps/web/e2e`) against a real server + runner with an isolated home and the Fake provider; the update spec also runs the built CLI against a local fake npm registry (first run: `pnpm --filter @codeden/web exec playwright install chromium`) |
+| `pnpm desktop:dev` | Build the web UI and the desktop bundle, then run the desktop app from the checkout with home `.codeden-dev/` and the Fake provider (attaches to `pnpm dev`'s server when it runs). Pass options after `--`, e.g. `pnpm desktop:dev -- --home <dir>` |
+| `pnpm desktop:build` | `pnpm build`, then the unpacked desktop app for this OS in `apps/desktop/release/` (`pnpm desktop:dist` builds the installers) |
+| `pnpm e2e:desktop` | `pnpm desktop:build`, then Playwright's Electron smoke test against the unpacked app with an isolated home and the Fake provider (plus a local update feed test on Windows). Separate from `pnpm e2e` because packaging is slow |
 | `VITE_CODEDEN_MOCK=1 pnpm --filter @codeden/web dev` | The UI against the in-memory mock client, no server needed (dev only; builds always use the real server) |
 | `pnpm db:generate` | Generate a Drizzle migration after editing a table file `apps/server/src/db/schema-*.ts` (`schema.ts` is the barrel that re-exports them) |
 | `node apps/cli/dist/cli.js --home <dir>` | Run the built CLI (`doctor`, `update`, `stop`, `--port`, `--no-open`). A repository build never switches versions; self-update is tested with the fake registry in `apps/cli/test/support/` |
@@ -57,7 +62,7 @@ Node 24+ and pnpm 10 (`corepack enable`).
 
 The published package is `apps/cli` (`codeden` on npm). `.github/workflows/release.yml` builds, tests, checks versions, publishes and creates a GitHub Release.
 
-1. Bump the version in `apps/cli/package.json` **and** `CODEDEN_VERSION` in `packages/contracts/src/version.ts` (a test keeps them in sync). Commit.
+1. Bump the version in `apps/cli/package.json`, `apps/desktop/package.json` **and** `SOURCE_VERSION` in `packages/contracts/src/version.ts` (a test keeps them in sync). Commit.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag must match the package version or the workflow fails.
-3. The workflow publishes with `npm publish --provenance --access public` using **npm Trusted Publishing** (OIDC): the `codeden` package on npmjs.com trusts `leonvanzyl/codeden` + `release.yml`, so no token secret is needed. It then creates the GitHub Release with the packed `.tgz`. Provenance requires a public repository.
+3. The workflow publishes with `npm publish --provenance --access public` using **npm Trusted Publishing** (OIDC): the `codeden` package on npmjs.com trusts `leonvanzyl/codeden` + `release.yml`, so no token secret is needed. It then creates the GitHub Release with the packed `.tgz`. Provenance requires a public repository. A `desktop` matrix job (Windows, macOS, Linux) then builds the desktop installers and attaches them with the updater metadata (`latest*.yml`, blockmaps) to the same release. Signing is optional: repository secrets `CSC_LINK`/`CSC_KEY_PASSWORD` (Windows .pfx or macOS Developer ID .p12) and `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` (notarization); without them the installers are unsigned, and unsigned macOS builds can't update themselves.
 4. To rehearse, run the workflow manually (Actions > Release > Run workflow) with **dry run** on: it builds and packs and uploads the tarball as an artifact, without publishing.

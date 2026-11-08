@@ -32,17 +32,20 @@ import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
 import { Outbox } from "./sessions/outbox";
 import { QuestionBroker } from "./sessions/questions";
+import { QueueService } from "./sessions/queue";
 import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
 import { WorktreeCleanup, type WorktreeCleanupDeps } from "./sessions/worktree-cleanup";
 import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
+import { DesktopUpdateService } from "./updates/desktop";
 import { notesSources, updateRegistry } from "./updates/registry";
-import { type SelfUpdateHost, UpdateService } from "./updates/service";
+import { type SelfUpdateHost, UpdateService, type Updates } from "./updates/service";
 import { billingFromSetup } from "./usage/billing";
 import { UsageService } from "./usage/usage-service";
 import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
+import { LocalSttService, type LocalSttServiceDeps } from "./voice/local/local-stt-service";
 import { VoiceService } from "./voice/voice-service";
 import { WorkbenchService } from "./workbench/workbench-service";
 
@@ -65,6 +68,11 @@ export interface ServicesOptions {
   imageEngines?: ImageEngineRegistry;
   /** Cloud voice API base URLs (tests point them at a local stub). */
   voice?: { elevenLabsBaseUrl?: string; openAiBaseUrl?: string };
+  /** Local Whisper downloads and runtime (tests serve fixtures and inject a fake runtime). */
+  localStt?: Pick<
+    LocalSttServiceDeps,
+    "fetch" | "platform" | "runtimePins" | "models" | "loadRuntime" | "idleUnloadMs"
+  >;
   /** Orchestration seams and timings (§8): GitHub and automation ports, wake debounce. */
   orchestration?: OrchestrationOptions & { github?: GithubPort; automation?: AutomationPort };
   /** GitHub API transport and poll intervals (tests point them at a fake GitHub). */
@@ -94,6 +102,8 @@ export interface AppServices {
   projects: ProjectService;
   sessionRepo: SessionRepo;
   sessions: SessionService;
+  /** The queued-message tray: list, edit, delete and send-now. */
+  queue: QueueService;
   lifecycle: SessionLifecycle;
   recovery: SessionRecovery;
   questions: QuestionBroker;
@@ -109,8 +119,10 @@ export interface AppServices {
   images: ImageService;
   /** Optional cloud text to speech and transcription (§11.3). */
   voice: VoiceService;
-  /** Update checks and one-click self-update (§16). */
-  updates: UpdateService;
+  /** Local Whisper: runtime and model downloads, and transcription (§11.3). */
+  localStt: LocalSttService;
+  /** Update checks and one-click self-update (§16; the desktop app's own updater, §17). */
+  updates: Updates;
   setup: SetupService;
   /** Claude Code support: the Claude Agent SDK, installed on demand (§14). */
   claudeSdk: ClaudeSdkService;
@@ -186,6 +198,13 @@ export function createServices(opts: ServicesOptions): AppServices {
     outbox,
     questions,
   });
+  const queue = new QueueService({
+    outbox,
+    repo: sessionRepo,
+    sessions,
+    artifacts,
+    providers: () => opts.runner.providers(),
+  });
   const lifecycle = new SessionLifecycle({
     db: opts.db,
     store: opts.store,
@@ -216,6 +235,13 @@ export function createServices(opts: ServicesOptions): AppServices {
     onChecked: () => redetectProviders(opts.runner, opts.log),
   });
   const claudeSdk = new ClaudeSdkService({ depsDir: opts.paths.deps, log: opts.log });
+  const localStt = new LocalSttService({
+    runtimeDir: join(opts.paths.deps, "whisper"),
+    modelsDir: join(opts.paths.models, "whisper"),
+    settings: opts.settings,
+    ...opts.localStt,
+    log: opts.log,
+  });
   const automations = new AutomationService({
     db: opts.db,
     store: opts.store,
@@ -285,6 +311,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     projects,
     sessionRepo,
     sessions,
+    queue,
     lifecycle,
     recovery: new SessionRecovery({
       repo: sessionRepo,
@@ -296,17 +323,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     inbox,
     artifacts,
     browser: new BrowserService({ runner: opts.runner, repo: sessionRepo }),
-    updates: new UpdateService({
-      home: opts.paths.home,
-      mode: () => opts.settings.get().updates.mode,
-      checksDisabled: process.env.CODEDEN_UPDATE_CHECK === "0",
-      host: opts.selfUpdate,
-      registry: updateRegistry(),
-      notes: notesSources(),
-      fetch: opts.updates?.fetch,
-      intervalMs: opts.updates?.intervalMs,
-      log: opts.log,
-    }),
+    updates: createUpdates(opts),
     images: new ImageService({
       registry: opts.imageEngines ?? defaultImageEngines(opts.secrets),
       settings: opts.settings,
@@ -316,7 +333,13 @@ export function createServices(opts: ServicesOptions): AppServices {
       generatedDir: join(opts.paths.home, "generated"),
       log: opts.log,
     }),
-    voice: new VoiceService({ secrets: opts.secrets, settings: opts.settings, ...opts.voice }),
+    voice: new VoiceService({
+      secrets: opts.secrets,
+      settings: opts.settings,
+      local: localStt,
+      ...opts.voice,
+    }),
+    localStt,
     setup,
     claudeSdk,
     usage,
@@ -354,5 +377,25 @@ function defaultImageEngines(secrets: SecretStore): ImageEngineRegistry {
   return createImageEngineRegistry({
     gemini: { apiKey: key("gemini.apiKey") },
     openai: { apiKey: key("openai.apiKey") },
+  });
+}
+
+/** npm self-update for `codeden`, or the desktop app's own updater when it hosts the server. */
+function createUpdates(opts: ServicesOptions): Updates {
+  const common = {
+    mode: () => opts.settings.get().updates.mode,
+    checksDisabled: process.env.CODEDEN_UPDATE_CHECK === "0",
+    notes: notesSources(),
+    fetch: opts.updates?.fetch,
+    intervalMs: opts.updates?.intervalMs,
+    log: opts.log,
+  };
+  const desktop = opts.selfUpdate?.desktop;
+  if (desktop) return new DesktopUpdateService({ ...common, desktop });
+  return new UpdateService({
+    ...common,
+    home: opts.paths.home,
+    host: opts.selfUpdate,
+    registry: updateRegistry(),
   });
 }

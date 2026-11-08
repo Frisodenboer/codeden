@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -209,4 +209,30 @@ describe("git.diff and git.status", () => {
       ]),
     );
   });
+
+  it("sees a same-size rewrite in the same timestamp tick as the index (racy git)", async () => {
+    // Pin every timestamp git compares to one second, as when an agent rewrites a file in the
+    // same second the index was written. The stat data then matches the index entry, and only
+    // git's racy-clean check (index mtime <= entry mtime: re-read the content) catches it. The
+    // temporary index must keep the real one's mtime for that check to work: on Linux a plain
+    // copy is stamped "now" and this rewrite went missing (issue #8).
+    const tick = new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000);
+    const dir = repo({ "README.md": "# demo\n" });
+    sh(dir, "config", "core.trustctime", "false"); // a rewrite changes ctime; pin it out
+    write(dir, "a.txt", "a\n");
+    utimesSync(join(dir, "a.txt"), tick, tick);
+    sh(dir, "add", "a.txt");
+    sh(dir, "commit", "-q", "-m", "add a");
+    utimesSync(join(dir, ".git", "index"), tick, tick);
+    write(dir, "a.txt", "b\n");
+    utimesSync(join(dir, "a.txt"), tick, tick);
+
+    const result = await gitDiff({ name: "git.diff", cwd: dir, fromRef: "HEAD" });
+    expect(result.files?.map((f) => `${f.status}:${f.path}`)).toEqual(["modified:a.txt"]);
+    await createCheckpoint(dir, "s1", 0);
+    expect(sh(dir, "show", `${refComponentRef("s1", 0)}:a.txt`)).toBe("b");
+  });
 });
+
+const refComponentRef = (sessionId: string, index: number) =>
+  `refs/codeden/checkpoints/${refComponent(sessionId)}/${index}`;

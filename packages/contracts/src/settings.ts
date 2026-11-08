@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AutonomyLevel, ProviderId, QuietHours, ReasoningEffort } from "./common";
 import { UpdateMode } from "./updates";
+import { DictationEngine, WhisperModelId } from "./voice-api";
 
 /** `auto` lets CodeDen pick the first ready provider (Claude, then Codex). */
 export const ProviderChoice = z.union([z.literal("auto"), ProviderId]);
@@ -27,6 +28,31 @@ export const RoleDefaults = z.object({
   effort: ReasoningEffort.nullable().default(null),
 });
 export type RoleDefaults = z.infer<typeof RoleDefaults>;
+
+/** A model named by its provider and the provider's model id. */
+export const ModelRef = z.object({
+  provider: ProviderId,
+  model: z.string().min(1),
+});
+export type ModelRef = z.infer<typeof ModelRef>;
+
+/**
+ * A model id the user added for a provider that doesn't list it (a new model, or one only
+ * exposed through the provider's own config). The id is sent to the provider unchanged.
+ */
+export const CustomModel = z.object({
+  id: z.string().trim().min(1).max(200),
+  /** Shown instead of the id in the picker. */
+  label: z.string().trim().min(1).max(100).optional(),
+});
+export type CustomModel = z.infer<typeof CustomModel>;
+
+/** A provider's custom models: ids are unique. */
+const CustomModelList = z
+  .array(CustomModel)
+  .refine((list) => new Set(list.map((m) => m.id)).size === list.length, {
+    message: "Custom model ids must be unique",
+  });
 
 /**
  * User settings persisted in `<home>/settings.json` (non-secret; API keys live in the OS
@@ -68,6 +94,27 @@ export const Settings = z.object({
         .prefault({}),
     })
     .prefault({}),
+  /** The model picker (§13). */
+  models: z
+    .object({
+      /**
+       * Starred models, listed in this order in the picker's Favourites section. Entries whose
+       * model a provider no longer lists are kept (it may come back) but not shown.
+       */
+      favorites: z.array(ModelRef).default([]),
+      /**
+       * Model ids left out of the picker, by provider id. A hidden model that is still chosen
+       * somewhere (a session, a default, an automation) keeps showing there.
+       */
+      hidden: z.record(ProviderId, z.array(z.string().min(1))).default({}),
+      /**
+       * Model ids added by the user, by provider id, merged into the picker after the models
+       * the provider lists (a listed id wins). Their effort levels are those of the provider's
+       * default model, or none when the provider has no effort levels.
+       */
+      custom: z.record(ProviderId, CustomModelList).default({}),
+    })
+    .prefault({}),
   /** Follow-up prompt chips (§7.5). */
   followups: z
     .object({
@@ -81,9 +128,19 @@ export const Settings = z.object({
     .object({
       dictation: z
         .object({
-          engine: z.enum(["browser", "elevenlabs", "openai"]).default("browser"),
+          engine: DictationEngine.default("browser"),
           pushToTalkShortcut: z.string().nullable().default(null),
+          /**
+           * BCP 47 tag such as `en-US`; null is auto (the browser engine follows the browser
+           * language, the server engines detect it). English-only Whisper models ignore it.
+           */
           language: z.string().nullable().default(null),
+          /** Local Whisper: which downloaded model transcribes (§11.3). */
+          local: z
+            .object({
+              model: WhisperModelId.default("base.en"),
+            })
+            .prefault({}),
         })
         .prefault({}),
       readAloud: z
@@ -114,6 +171,8 @@ export const Settings = z.object({
     .object({
       toasts: z.boolean().default(true),
       browser: z.boolean().default(false),
+      /** A short chime when an agent is blocked on the user (an approval or a question). */
+      sound: z.boolean().default(true),
     })
     .prefault({}),
   /** Global factory controls (§10.1). */
@@ -158,6 +217,17 @@ export const Settings = z.object({
       })
       .prefault({}),
   ),
+  /** The desktop app (§17). Read by the desktop app only; `npx codeden` ignores it. */
+  desktop: z
+    .object({
+      /** Start CodeDen (in the tray, window hidden) when you log in. */
+      launchAtLogin: z.boolean().default(false),
+      /** Closing the window keeps CodeDen running in the tray / menu bar; Quit really quits. */
+      closeToTray: z.boolean().default(true),
+      /** Keep the computer from sleeping while an agent is running. */
+      keepAwake: z.boolean().default(true),
+    })
+    .prefault({}),
   /** First-run setup (§14): set once the user finishes the detection checklist. */
   setup: z
     .object({

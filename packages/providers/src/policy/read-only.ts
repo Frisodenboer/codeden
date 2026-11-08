@@ -1,10 +1,27 @@
-import { splitCommands, tokenize } from "./risk";
-
 /**
  * Read-only sessions (the orchestrator and PMs, §11.2) may inspect a repository but never
  * change it. This allowlist decides which shell commands they may run: commands that only
  * read, with no output redirection and no command substitution. Anything else is denied.
  */
+
+/**
+ * Split on every `;`, `&&`, `||`, `|` and newline, even inside quotes. Deliberately cruder
+ * than the risk classifier's lexer: for an allowlist, over-splitting only denies more.
+ */
+function splitCommands(command: string): string[] {
+  return command
+    .split(/\r?\n|;|&&|\|\||\|/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Tokenize one simple command, honouring single and double quotes. */
+function tokenize(command: string): string[] {
+  const tokens: string[] = [];
+  const re = /"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g;
+  for (const m of command.matchAll(re)) tokens.push(m[1] ?? m[2] ?? m[3] ?? "");
+  return tokens;
+}
 
 /** Programs that only read (or print). */
 const READ_ONLY_BINS = new Set([

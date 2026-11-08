@@ -28,6 +28,11 @@ export const ProviderCapabilities = z.object({
   /** MCP servers can be injected (required for CodeDen tools). */
   mcp: z.boolean(),
   skills: z.boolean(),
+  /**
+   * An autonomy change reaches a running turn from its next tool call. When false (or absent),
+   * a running turn keeps its autonomy and the change applies from the next turn.
+   */
+  liveAutonomy: z.boolean().optional(),
 });
 export type ProviderCapabilities = z.infer<typeof ProviderCapabilities>;
 

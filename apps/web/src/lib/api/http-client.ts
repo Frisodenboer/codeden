@@ -36,6 +36,7 @@ import {
 } from "./http-features";
 import { httpGithubApi, httpOrchestrationApi, httpSessionConflictApi } from "./http-orchestration";
 import { configApi } from "./http-unwired";
+import { httpQueueApi } from "./queue-api";
 import { RealtimeSocket } from "./realtime-socket";
 import { openTerminalSocket } from "./terminal-channel";
 import type { MentionCandidate } from "./types";
@@ -89,6 +90,7 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     async stopSession(id) {
       await post(`/sessions/${enc(id)}/stop`);
     },
+    queue: httpQueueApi(http),
 
     ...httpSessionConflictApi(http),
     resolveInbox: (id, resolution) =>

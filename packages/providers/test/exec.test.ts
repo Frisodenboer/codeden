@@ -3,12 +3,31 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  isElectronRuntime,
+  ownNodeEnv,
   quoteCmdArg,
   resolveExecutable,
   runCommand,
   scriptFromCmdShim,
+  scriptRuntime,
   spawnArgs,
 } from "../src/util/exec";
+
+describe("the desktop app's runtime", () => {
+  const electron = { ...process.versions, electron: "45.2.3" } as NodeJS.ProcessVersions;
+
+  it("runs CodeDen's own scripts on the Electron binary as Node.js", () => {
+    expect(isElectronRuntime(process.versions)).toBe(false);
+    expect(isElectronRuntime(electron)).toBe(true);
+    expect(ownNodeEnv({ A: "1" }, electron)).toEqual({ A: "1", ELECTRON_RUN_AS_NODE: "1" });
+    expect(ownNodeEnv({ A: "1" }, process.versions)).toEqual({ A: "1" });
+  });
+
+  it("uses this Node.js for user scripts outside the desktop app", () => {
+    expect(scriptRuntime()).toEqual({ path: process.execPath, electron: false });
+  });
+});
+
 import { compareVersions, parseVersion } from "../src/util/version";
 
 const NPM_SHIM = `@ECHO off

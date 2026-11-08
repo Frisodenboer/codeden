@@ -7,6 +7,7 @@ import {
   type Notice,
   type Overview,
   type ProjectStatus,
+  type QueueSender,
   type RawEventEnvelope,
   type RoleMessageResponse,
   type Session,
@@ -198,25 +199,32 @@ export class OrchestrationService {
 
   // ---------------------------------------------------------------- messaging
 
-  /** Send a message to the orchestrator or a project's PM, creating the session if needed. */
+  /**
+   * Send a message to the orchestrator or a project's PM, creating the session if needed.
+   * `from` labels the message in the queue tray when it has to wait for a running turn.
+   */
   async sendToRole(
     role: OrchestrationRole,
     projectId: string | null,
     input: UserInput,
     whenBusy: "queue" | "steer" | "reject" = "queue",
+    from: QueueSender = "user",
   ): Promise<RoleMessageResponse> {
     const session = await this.roles.ensure(role, projectId);
-    const res = await this.deps.sessions.send(session.id, { input, whenBusy });
+    const res = await this.deps.sessions.send(session.id, { input, whenBusy }, from);
     return { sessionId: session.id, status: res.status };
   }
 
   /** `message_pm`: hand a PM a task without waiting. */
   async messagePm(projectId: string, text: string): Promise<RoleMessageResponse> {
     this.guard(`pm:${projectId}`);
-    return this.sendToRole("pm", projectId, {
-      text: `Message from the orchestrator:\n${text}`,
-      attachments: [],
-    });
+    return this.sendToRole(
+      "pm",
+      projectId,
+      { text: `Message from the orchestrator:\n${text}`, attachments: [] },
+      "queue",
+      "orchestrator",
+    );
   }
 
   /** `ask_pm`: ask a PM and wait (up to `timeoutMs`) for the answer. */
@@ -240,7 +248,11 @@ export class OrchestrationService {
       "",
       "Answer in your final message of this turn: it is returned to the orchestrator directly.",
     ].join("\n");
-    await this.deps.sessions.send(pm.id, { input: { text, attachments: [] }, whenBusy: "queue" });
+    await this.deps.sessions.send(
+      pm.id,
+      { input: { text, attachments: [] }, whenBusy: "queue" },
+      "orchestrator",
+    );
     return { ...(await answer), pmSessionId: pm.id };
   }
 
@@ -380,10 +392,11 @@ export class OrchestrationService {
     if (this.notices.undelivered(role, projectId).length === 0) return "empty";
     const session = await this.roles.ensure(role, projectId);
     if (NOT_READY.has(session.status)) return "busy";
-    await this.deps.sessions.send(session.id, {
-      input: { text: WAKE_TEXT, attachments: [] },
-      whenBusy: "reject",
-    });
+    await this.deps.sessions.send(
+      session.id,
+      { input: { text: WAKE_TEXT, attachments: [] }, whenBusy: "reject" },
+      "codeden",
+    );
     return "sent";
   }
 

@@ -122,9 +122,13 @@ describe("orchestration (§8): role sessions, digest, tools, notices, conflicts"
       ).body,
     );
     pmId = sent.sessionId;
+    // A lazily created PM is idle once it has started, before its queued first message
+    // is flushed, so wait for the message's turn to finish rather than for the first idle.
     await waitUntil(async () => {
       const d = await h.detail(pmId);
-      return d.session.status === "idle" && d.session.rootThreadId ? true : undefined;
+      if (d.session.status !== "idle" || !d.session.rootThreadId) return undefined;
+      const hasMessage = (await items(pmId)).some((r) => r.item.kind === "user_message");
+      return hasMessage && (await h.detail(pmId)).session.status === "idle" ? true : undefined;
     });
     const pm = (await h.detail(pmId)).session;
     expect(pm).toMatchObject({

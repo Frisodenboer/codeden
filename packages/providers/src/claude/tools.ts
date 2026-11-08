@@ -218,7 +218,11 @@ export function completeToolCall(
 
 /** Risk of a Claude tool call under the `auto` policy (§11.2). */
 export function assessClaudeTool(name: string, input: Input, ctx: RiskContext): RiskAssessment {
-  if (COMMAND_TOOLS.has(name)) return classifyCommand(str(input, "command") ?? "", ctx);
+  if (COMMAND_TOOLS.has(name)) {
+    // The Bash tool is a POSIX shell (Git Bash on Windows).
+    const shell = name === "PowerShell" ? "powershell" : "posix";
+    return classifyCommand(str(input, "command") ?? "", { ...ctx, shell });
+  }
   if (EDIT_TOOLS.has(name)) return classifyWrite(editPath(input), ctx);
   if (name === "Read") return classifyRead(str(input, "file_path") ?? "", ctx);
   if (name === "Grep" || name === "Glob") {

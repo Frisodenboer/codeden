@@ -1,7 +1,8 @@
-import type { SttResponse, TtsRequest, VoiceInfo } from "@codeden/contracts";
+import type { SttEngine, SttResponse, TtsRequest, VoiceInfo } from "@codeden/contracts";
 import type { SettingsStore } from "../../settings-store";
 import { ServiceError } from "../errors";
 import type { SecretStore } from "../secrets";
+import type { LocalSttService } from "./local/local-stt-service";
 
 /** A stock ElevenLabs voice used when none is chosen in Settings. */
 export const DEFAULT_ELEVENLABS_VOICE = "JBFqnCBsd6RMkjVDRZzb";
@@ -14,6 +15,8 @@ export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 export interface VoiceServiceDeps {
   secrets: SecretStore;
   settings: SettingsStore;
+  /** Local Whisper, for the `local` engine. */
+  local?: LocalSttService;
   /** Overridable for tests. */
   elevenLabsBaseUrl?: string;
   openAiBaseUrl?: string;
@@ -80,18 +83,28 @@ export class VoiceService {
     });
   }
 
-  /** Transcribe recorded audio with the chosen (or configured) cloud engine. */
+  /** Transcribe recorded audio with the chosen (or configured) engine. */
   async transcribe(
     audio: AudioUpload,
-    opts: { engine?: "elevenlabs" | "openai"; language?: string; signal?: AbortSignal },
+    opts: { engine?: SttEngine; language?: string; signal?: AbortSignal },
   ): Promise<SttResponse> {
     if (audio.bytes.length === 0) throw new ServiceError(400, "empty_audio", "No audio was sent");
     if (audio.bytes.length > MAX_AUDIO_BYTES) {
       throw new ServiceError(413, "audio_too_large", "Audio is larger than 25 MB");
     }
     const configured = this.deps.settings.get().voice.dictation;
-    const engine = opts.engine ?? (configured.engine === "openai" ? "openai" : "elevenlabs");
+    const engine =
+      opts.engine ??
+      (configured.engine === "openai" || configured.engine === "local"
+        ? configured.engine
+        : "elevenlabs");
     const language = opts.language ?? configured.language ?? undefined;
+    if (engine === "local") {
+      if (!this.deps.local) {
+        throw new ServiceError(503, "local_unavailable", "Local Whisper is not available");
+      }
+      return this.deps.local.transcribe(audio.bytes, { language, signal: opts.signal });
+    }
     const form = new FormData();
     form.append(
       "file",

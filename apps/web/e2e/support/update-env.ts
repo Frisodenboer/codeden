@@ -14,6 +14,7 @@ import {
   startFakeRegistry,
 } from "../../../cli/test/support/fake-registry";
 import { installPublishedCopy } from "../../../cli/test/support/published-install";
+import { sweepProcesses } from "./process-sweep";
 
 export const NEXT_VERSION = "99.0.0-test";
 
@@ -105,6 +106,12 @@ export async function startUpdateEnv(): Promise<UpdateEnv> {
             done();
           });
         });
+      }
+      // Runners are detached and both versions start them from inside `base` (the installed
+      // copy and `home/app/<version>`); stop anything still running from there.
+      const leftovers = await sweepProcesses(base, 10_000);
+      if (leftovers.length > 0) {
+        console.warn(`update e2e: stopped ${leftovers.length} leftover process(es) in ${base}`);
       }
       await registry.close();
       try {

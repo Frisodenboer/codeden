@@ -1,8 +1,9 @@
-import { BellRing } from "lucide-react";
+import { BellRing, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { chime } from "@/lib/attention/chime";
 import { platform } from "@/lib/platform";
 import { SettingRow, SettingsSection, useSettings } from "./settings-ui";
 
@@ -21,11 +22,37 @@ export function NotificationSettings() {
         />
       </SettingRow>
       <SettingRow
-        label="Browser notifications"
+        label="Sound when an agent needs you"
+        help="A short chime when an approval or a question arrives, even in the background."
+      >
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              chime.unlock();
+              chime.play();
+            }}
+          >
+            <Volume2 /> Test
+          </Button>
+          <Switch
+            aria-label="Sound when an agent needs you"
+            checked={settings.notifications.sound}
+            onCheckedChange={(sound) => update({ notifications: { sound } })}
+          />
+        </div>
+      </SettingRow>
+      <SettingRow
+        label={
+          platform.capabilities.osIntegration ? "System notifications" : "Browser notifications"
+        }
         help={
           permission === "denied"
             ? "Blocked in your browser settings."
-            : "Shown when the CodeDen tab isn't focused."
+            : platform.capabilities.osIntegration
+              ? "Shown when the CodeDen window isn't focused."
+              : "Shown when the CodeDen tab isn't focused."
         }
       >
         <div className="flex items-center gap-2">

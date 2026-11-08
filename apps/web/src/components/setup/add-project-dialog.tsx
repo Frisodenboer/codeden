@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useClient } from "@/lib/api";
+import { platform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
 import { FolderBrowser } from "./folder-browser";
+import { NativeFolderField } from "./native-folder-field";
 
 /** Pick a local folder (server-side picker) or clone a GitHub repo. Shared by setup and the sidebar. */
 export function ProjectSourcePicker({
@@ -95,7 +97,11 @@ export function ProjectSourcePicker({
         ))}
       </div>
       {source === "folder" ? (
-        <FolderBrowser value={folder} onChange={setFolder} />
+        platform.capabilities.folderPicker ? (
+          <NativeFolderField value={folder} onChange={setFolder} />
+        ) : (
+          <FolderBrowser value={folder} onChange={setFolder} />
+        )
       ) : (
         <Input
           value={url}

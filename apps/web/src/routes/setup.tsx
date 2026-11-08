@@ -8,6 +8,7 @@ import { useSettings } from "@/components/settings/settings-ui";
 import { ProjectSourcePicker } from "@/components/setup/add-project-dialog";
 import { SetupChecklist, useSetupStatus } from "@/components/setup/checklist";
 import { useClaudeSdkStatus, useInstallClaudeSdk } from "@/components/setup/claude-support";
+import { LocalWhisperCard } from "@/components/setup/local-whisper-card";
 import { Logo } from "@/components/shell/logo";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -23,6 +24,7 @@ function Extras() {
   const { settings, update } = useSettings();
   const [permission, setPermission] = useState(platform.notificationPermission());
   const row = "flex items-center gap-3 px-4 py-3.5";
+  const browserStt = stt.supported;
   return (
     <div className="divide-y divide-border rounded-xl border border-border bg-card">
       <div className={row}>
@@ -30,17 +32,16 @@ function Extras() {
         <div className="flex-1">
           <div className="text-[13.5px] font-medium">Dictation</div>
           <div className="text-2xs text-muted-foreground">
-            {stt.supported
+            {browserStt
               ? "Your browser supports speech to text. Press Ctrl Shift M in the composer."
-              : "Not supported in this browser — a cloud engine can be chosen in Settings."}
+              : "This browser has no speech recognition. Use local Whisper below, or a cloud engine in Settings."}
           </div>
         </div>
-        <span
-          className={cn("text-2xs", stt.supported ? "text-status-done" : "text-muted-foreground")}
-        >
-          {stt.supported ? "Available" : "Unavailable"}
+        <span className={cn("text-2xs", browserStt ? "text-status-done" : "text-muted-foreground")}>
+          {browserStt ? "Available" : "Unavailable"}
         </span>
       </div>
+      <LocalWhisperCard recommended={!browserStt} />
       <div className={row}>
         <Volume2 className="size-4 text-muted-foreground" />
         <div className="flex-1">

@@ -103,13 +103,50 @@ export function scriptFromCmdShim(shimPath: string, content?: string): string | 
   return script;
 }
 
+/** True inside the desktop app, where `process.execPath` is the Electron binary (§17). */
+export function isElectronRuntime(versions: NodeJS.ProcessVersions = process.versions): boolean {
+  return typeof (versions as { electron?: unknown }).electron === "string";
+}
+
+/**
+ * Environment for running one of CodeDen's own scripts (the runner, npm, Playwright's CLI)
+ * with `process.execPath`. In the desktop app that is the Electron binary, which only acts
+ * as Node.js with `ELECTRON_RUN_AS_NODE=1`; elsewhere the environment is returned unchanged.
+ */
+export function ownNodeEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  versions: NodeJS.ProcessVersions = process.versions,
+): NodeJS.ProcessEnv {
+  return isElectronRuntime(versions) ? { ...env, ELECTRON_RUN_AS_NODE: "1" } : env;
+}
+
+let systemNode: string | null | undefined;
+
+/**
+ * The Node.js that runs `node-script` commands (npm-style shims of the user's own tools, such
+ * as a globally installed Codex on Windows). Normally the Node running CodeDen. In the desktop
+ * app the user's `node` from PATH is preferred, so their tools run exactly as in a terminal
+ * and `ELECTRON_RUN_AS_NODE` never leaks into agent processes; without one, the Electron
+ * binary runs them as Node.js.
+ */
+export function scriptRuntime(): { path: string; electron: boolean } {
+  if (!isElectronRuntime()) return { path: process.execPath, electron: false };
+  if (systemNode === undefined) {
+    const found = resolveExecutable("node");
+    systemNode = found?.kind === "native" ? found.path : null;
+  }
+  return systemNode
+    ? { path: systemNode, electron: false }
+    : { path: process.execPath, electron: true };
+}
+
 /** The `[command, args]` to pass to `spawn` for a resolved executable (never needs `shell`). */
 export function spawnArgs(cmd: ResolvedCommand, args: readonly string[]): [string, string[]] {
   switch (cmd.kind) {
     case "native":
       return [cmd.path, [...args]];
     case "node-script":
-      return [process.execPath, [cmd.script, ...args]];
+      return [scriptRuntime().path, [cmd.script, ...args]];
     case "shell-script":
       return [
         process.env.ComSpec ?? "cmd.exe",
@@ -131,9 +168,11 @@ export function spawnResolved(
   options: SpawnOptions = {},
 ): ChildProcess {
   const [file, argv] = spawnArgs(cmd, args);
+  const asNode = cmd.kind === "node-script" && scriptRuntime().electron;
   return spawn(file, argv, {
     windowsHide: true,
     ...options,
+    ...(asNode ? { env: ownNodeEnv(options.env ?? process.env) } : {}),
     ...(cmd.kind === "shell-script" ? { windowsVerbatimArguments: true } : {}),
   });
 }

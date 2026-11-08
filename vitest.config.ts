@@ -42,6 +42,7 @@ export default defineConfig({
       "packages/*",
       "apps/web",
       "apps/cli",
+      "apps/desktop",
       {
         test: {
           name: "@codeden/runner",

@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   DiffResult,
   DiffScope,
+  EditQueuedMessageRequest,
   EventEnvelope,
+  QueuedMessage,
+  QueuedMessageList,
   RestoreFilesRequest,
   RunnerCommand,
   RunnerEvent,
+  SendQueuedNowResponse,
   SessionResult,
   TerminalClientMessage,
   TerminalQuery,
@@ -46,15 +50,63 @@ describe("workbench contracts", () => {
             id: "m",
             sessionId: "s",
             input: { text: "hi", attachments: [] },
+            from: "pm",
             createdAt: ts,
           },
         },
       },
       { type: "message.dequeued", payload: { sessionId: "s", messageId: "m", reason: "sent" } },
+      { type: "message.dequeued", payload: { sessionId: "s", messageId: "m", reason: "deleted" } },
+      {
+        type: "message.edited",
+        payload: { sessionId: "s", messageId: "m", text: "hello instead", at: ts },
+      },
       { type: "pty.exited", payload: { ptyId: "p", exitCode: null } },
     ];
     for (const e of events)
       roundTrip(EventEnvelope, { seq: 1, sessionId: null, ts, ...e } as never);
+  });
+
+  it("still parses queued messages written before senders were recorded", () => {
+    const old = {
+      seq: 1,
+      sessionId: "s",
+      ts,
+      type: "message.queued",
+      payload: { message: { id: "m", sessionId: "s", input: { text: "hi" }, createdAt: ts } },
+    };
+    const parsed = EventEnvelope.parse(old);
+    expect(parsed.type === "message.queued" && parsed.payload.message).toEqual({
+      id: "m",
+      sessionId: "s",
+      input: { text: "hi", attachments: [] },
+      from: "user",
+      createdAt: ts,
+    });
+    const dropped = {
+      ...old,
+      type: "message.dequeued",
+      payload: { sessionId: "s", messageId: "m", reason: "dropped" },
+    };
+    expect(EventEnvelope.parse(dropped)).toEqual(dropped);
+  });
+
+  it("round-trips the queue API shapes", () => {
+    const message = {
+      id: "m",
+      sessionId: "s",
+      input: { text: "hi", attachments: [] },
+      from: "user" as const,
+      createdAt: ts,
+    };
+    roundTrip(QueuedMessageList, {
+      messages: [message, { ...message, id: "n", from: "orchestrator" }],
+    });
+    roundTrip(EditQueuedMessageRequest, { text: "hello instead" });
+    roundTrip(SendQueuedNowResponse, { status: "steered" });
+    // Send-now only ever steers a running turn.
+    expect(SendQueuedNowResponse.safeParse({ status: "sent" }).success).toBe(false);
+    expect(QueuedMessage.safeParse({ ...message, from: "someone" }).success).toBe(false);
   });
 
   it("carries runner exit reasons and the oneShot command", () => {

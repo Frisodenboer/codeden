@@ -1,7 +1,13 @@
 import { execFile } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { acquireInstallLock, type ResolvedCommand, resolveNpm, runNpm } from "@codeden/providers";
+import {
+  acquireInstallLock,
+  ownNodeEnv,
+  type ResolvedCommand,
+  resolveNpm,
+  runNpm,
+} from "@codeden/providers";
 import {
   appDir,
   installProblem,
@@ -100,7 +106,7 @@ export function reportedVersion(entry: string): Promise<string> {
       process.execPath,
       [entry, "--version"],
       {
-        env: { ...process.env, CODEDEN_NO_SWITCH: "1" },
+        env: ownNodeEnv({ ...process.env, CODEDEN_NO_SWITCH: "1" }),
         timeout: 60_000,
         windowsHide: true,
       },

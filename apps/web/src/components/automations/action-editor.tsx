@@ -1,7 +1,8 @@
 import type { AutomationAction, TriagePolicy } from "@codeden/contracts";
 import { Bot, Filter, MessageSquare } from "lucide-react";
 import { useId } from "react";
-import { AutonomyPicker, EffortPicker, ModelPicker } from "@/components/composer/pickers";
+import { ModelPicker } from "@/components/composer/model-picker/model-picker";
+import { AutonomyPicker } from "@/components/composer/pickers";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -29,40 +30,43 @@ function SessionSettings({
     id && providers.some((p) => p.id === id) ? id : null;
   const providerId = action.provider ?? known(fallback) ?? providers[0]?.id ?? null;
   const provider = providers.find((p) => p.id === providerId);
-  const model =
-    provider?.models.find((m) => m.id === action.model) ??
-    provider?.models.find((m) => m.isDefault);
+  const custom = Boolean(action.provider || action.model || action.effort);
   return (
     <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-border px-1 py-0.5">
       {provider ? (
         <ModelPicker
           providers={providers}
-          provider={provider.id}
-          model={action.model ?? null}
+          value={{
+            provider: provider.id,
+            model: action.model ?? null,
+            effort: action.effort ?? null,
+          }}
           disabled={disabled}
-          onChange={(p, m) => onChange({ ...action, provider: p, model: m, effort: undefined })}
+          onChange={(next) =>
+            onChange({
+              ...action,
+              provider: next.provider,
+              model: next.model ?? undefined,
+              effort: next.effort ?? undefined,
+            })
+          }
         />
       ) : (
         <span className="px-2 text-xs text-muted-foreground">
           {action.provider ?? "Default provider"} (not connected)
         </span>
       )}
-      {provider?.capabilities.reasoningEffort && (
-        <EffortPicker
-          efforts={model?.efforts ?? []}
-          value={action.effort ?? model?.defaultEffort ?? null}
-          onChange={(effort) => onChange({ ...action, effort })}
-        />
-      )}
       <AutonomyPicker
         value={action.autonomy ?? "auto"}
         onChange={(autonomy) => onChange({ ...action, autonomy })}
       />
-      {(action.provider || action.model) && !disabled && (
+      {custom && !disabled && (
         <button
           type="button"
           className="ml-auto px-2 text-3xs text-muted-foreground hover:text-foreground"
-          onClick={() => onChange({ ...action, provider: undefined, model: undefined })}
+          onClick={() =>
+            onChange({ ...action, provider: undefined, model: undefined, effort: undefined })
+          }
         >
           Use project default
         </button>

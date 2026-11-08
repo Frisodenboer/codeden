@@ -95,7 +95,7 @@ export class TriageService {
       .join("\n");
     const res = await this.deps
       .orchestration()
-      .sendToRole("pm", project.id, { text, attachments: [] });
+      .sendToRole("pm", project.id, { text, attachments: [] }, "queue", "automation");
     return res.sessionId;
   }
 

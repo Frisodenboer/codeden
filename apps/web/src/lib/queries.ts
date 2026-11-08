@@ -23,6 +23,22 @@ export function useSnapshotData<T>(select: (s: Snapshot) => T, fallback: T): T {
   return data ? select(data) : fallback;
 }
 
+export const setupKey = ["setup"] as const;
+
+/**
+ * Setup detection (installed? signed in?) for agent providers and tools (§14). The server
+ * caches detection, so reading it is cheap; `staleTime` limits refetching from places that only
+ * need a recent answer, such as the model picker.
+ */
+export function useSetupStatus(opts: { staleTime?: number } = {}) {
+  const client = useClient();
+  return useQuery({
+    queryKey: setupKey,
+    queryFn: () => client.getSetupStatus(),
+    ...(opts.staleTime !== undefined ? { staleTime: opts.staleTime } : {}),
+  });
+}
+
 export function useSession(sessionId: string | undefined): Session | undefined {
   return useSnapshotData((s) => s.sessions.find((x) => x.id === sessionId), undefined);
 }
