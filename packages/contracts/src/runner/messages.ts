@@ -14,8 +14,9 @@ import { RunnerEvent, RunnerStream } from "./events";
  *   4. runner replays journaled events with `seq > lastAckedSeq`, then streams live.
  *
  * After the handshake the server sends `command`s (answered by `result` with the same `id`)
- * and cumulative `ack`s; the runner sends `event`s (durable, with `seq`) and `stream`s
- * (ephemeral). Either side may `ping`.
+ * and cumulative `ack`s; the runner sends `event`s (durable, with `seq`), `stream`s
+ * (ephemeral) and `providers` (the current provider list, whenever it changes). Either side
+ * may `ping`.
  */
 
 /** Request id correlating a `command` with its `result`. */
@@ -115,12 +116,24 @@ export const RunnerStreamMessage = z.object({
   stream: RunnerStream,
 });
 
+/**
+ * The runner's full, current provider list, replacing the one from `welcome`. Sent after
+ * `resume` and whenever a provider's models change (model discovery, a session reporting its
+ * models). Ephemeral: not journaled, since the next handshake carries the latest list anyway.
+ */
+export const RunnerProvidersMessage = z.object({
+  type: z.literal("providers"),
+  providers: z.array(ProviderInfo),
+});
+export type RunnerProvidersMessage = z.infer<typeof RunnerProvidersMessage>;
+
 export const RunnerToServerMessage = z.discriminatedUnion("type", [
   RunnerWelcome,
   RunnerReject,
   RunnerResult,
   RunnerEventMessage,
   RunnerStreamMessage,
+  RunnerProvidersMessage,
   Ping,
   Pong,
 ]);
