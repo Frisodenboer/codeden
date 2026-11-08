@@ -1,13 +1,13 @@
-import { type Project, Settings, type SettingsPatch } from "@codeden/contracts";
+import { Settings, type SettingsPatch } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { startAmbient } from "./ambient";
 import { mockAutomationsApi } from "./automations";
 import { mockFactoryApi } from "./factory";
 import { mockFeatureApis } from "./feature-apis";
 import { makeSession } from "./fixtures/helpers";
-import { defaultFactoryLimits } from "./fixtures/ops";
 import { type Script, scriptedTurn, uid } from "./live";
 import { mockOrchestration } from "./orchestration";
+import { mockProjectApi } from "./projects";
 import { respond } from "./responses";
 import { workbenchApi } from "./workbench-api";
 import { MockWorld } from "./world";
@@ -210,58 +210,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       return next;
     },
 
-    async createProject(input) {
-      const { source } = input;
-      const path =
-        source.type === "local"
-          ? source.path
-          : `C:\\Users\\leon\\Code\\${source.url
-              .split("/")
-              .at(-1)
-              ?.replace(/\.git$/, "")}`;
-      const name = input.name ?? path.split("\\").at(-1) ?? "project";
-      const slug =
-        name
-          .toLowerCase()
-          .replace(/[^a-z0-9-]+/g, "-")
-          .slice(0, 40) || "project";
-      const now = new Date().toISOString();
-      const project: Project = {
-        id: uid("p"),
-        kind: "local",
-        name,
-        slug,
-        path,
-        defaultBranch: "main",
-        defaultProvider: null,
-        autonomy: null,
-        autonomyMode: "assisted",
-        visionPath: ".codeden/VISION.md",
-        factoryLimits: defaultFactoryLimits,
-        killSwitch: false,
-        timezone: null,
-        createdAt: now,
-        updatedAt: now,
-        archivedAt: null,
-      };
-      world.emitDomain({ type: "project.created", sessionId: null, payload: { project } });
-      return delay(
-        {
-          project,
-          detected: {
-            isGitRepo: true,
-            gitRoot: path,
-            remoteUrl: null,
-            github: null,
-            defaultBranch: "main",
-            currentBranch: "main",
-            packageManager: "pnpm" as const,
-            suggestedSetupCommands: ["pnpm install"],
-          },
-        },
-        400,
-      );
-    },
+    ...mockProjectApi(world),
     automations: mockAutomationsApi(world),
     factory: mockFactoryApi(world),
 

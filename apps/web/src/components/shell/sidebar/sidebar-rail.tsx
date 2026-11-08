@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Bot, Inbox, PanelLeftOpen, Search } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSnapshot } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -83,17 +83,22 @@ export function SidebarRail() {
       </div>
       <div className="my-3 h-px w-6 bg-sidebar-border" />
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto scroll-thin">
-        {data?.projects.map((p) => {
+        {data?.projects.map((p, i) => {
           const waiting = data.sessions.some((s) => s.projectId === p.id && s.status === "waiting");
+          // Same order as the sidebar; a thin rule ends the pinned group.
+          const endsPinned = p.pinned && data.projects[i + 1]?.pinned === false;
           return (
-            <RailItem key={p.id} label={p.name}>
-              <Link to="/projects/$projectId" params={{ projectId: p.id }} aria-label={p.name}>
-                <ProjectTile project={p} className="size-6 rounded-md text-xs" />
-                {waiting && (
-                  <span className="absolute top-1 right-1 size-2 rounded-full bg-status-waiting ring-2 ring-sidebar" />
-                )}
-              </Link>
-            </RailItem>
+            <Fragment key={p.id}>
+              <RailItem label={p.pinned ? `${p.name} · pinned` : p.name}>
+                <Link to="/projects/$projectId" params={{ projectId: p.id }} aria-label={p.name}>
+                  <ProjectTile project={p} className="size-6 rounded-md text-xs" />
+                  {waiting && (
+                    <span className="absolute top-1 right-1 size-2 rounded-full bg-status-waiting ring-2 ring-sidebar" />
+                  )}
+                </Link>
+              </RailItem>
+              {endsPinned && <div className="my-1 h-px w-4 shrink-0 bg-sidebar-border" />}
+            </Fragment>
           );
         })}
       </div>

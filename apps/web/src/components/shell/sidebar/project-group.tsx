@@ -1,7 +1,8 @@
 import type { Project, Session } from "@codeden/contracts";
+import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { Link } from "@tanstack/react-router";
-import { Bot, ChevronRight, House, Plus } from "lucide-react";
-import { useState } from "react";
+import { Bot, ChevronRight, GripVertical, House, Plus } from "lucide-react";
+import { type CSSProperties, useState } from "react";
 import { IssueBadge, PrBadge } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import { ageShort, statusTone } from "@/lib/format";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
 import { NavRow, rowBase, useIsActive } from "./nav-row";
 import { ProjectAutomations } from "./project-automations";
+import { type GroupPosition, ProjectMenu } from "./project-menu";
 
 const order: Record<string, number> = { waiting: 0, running: 1, starting: 1, failed: 2, queued: 3 };
 const LIMIT = 5;
@@ -69,8 +71,32 @@ function SessionRow({ session }: { session: Session }) {
   );
 }
 
-/** One project in the sidebar: header, PM, sessions and automations. */
-export function ProjectGroup({ project, sessions }: { project: Project; sessions: Session[] }) {
+/** Drag wiring from `useSortable`, for a project row in a sortable list (§13). */
+export interface ProjectDrag {
+  setNodeRef: (element: HTMLElement | null) => void;
+  setActivatorNodeRef: (element: HTMLElement | null) => void;
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  style: CSSProperties;
+  isDragging: boolean;
+}
+
+/**
+ * One project in the sidebar: header, PM, sessions and automations. With `drag`, the header
+ * row can be dragged (after a few pixels, so clicks still expand and open) and a grip in the
+ * gutter starts a keyboard move; `position` adds the ⋯ menu with pin and move actions.
+ */
+export function ProjectGroup({
+  project,
+  sessions,
+  drag,
+  position,
+}: {
+  project: Project;
+  sessions: Session[];
+  drag?: ProjectDrag;
+  position?: GroupPosition;
+}) {
   const open = useLayoutStore((s) => s.expandedProjects[project.id] ?? false);
   const toggle = useLayoutStore((s) => s.toggleProject);
   const [showAll, setShowAll] = useState(false);
@@ -84,10 +110,31 @@ export function ProjectGroup({ project, sessions }: { project: Project; sessions
   const running = agents.filter((s) => statusTone[s.status] === "running").length;
 
   return (
-    <div className="flex flex-col gap-px">
+    <div
+      ref={drag?.setNodeRef}
+      style={drag?.style}
+      data-project-id={project.id}
+      className={cn(
+        "flex flex-col gap-px",
+        drag?.isDragging &&
+          "relative z-10 rounded-md bg-sidebar shadow-md ring-1 ring-sidebar-border",
+      )}
+    >
       <div
+        {...drag?.listeners}
         className={cn(rowBase, "group/head pr-1", homeActive && "text-sidebar-accent-foreground")}
       >
+        {drag && (
+          <button
+            type="button"
+            ref={drag.setActivatorNodeRef}
+            {...drag.attributes}
+            aria-label={`Reorder ${project.name}`}
+            className="absolute top-1/2 -left-3 flex h-5 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground/70 opacity-0 outline-none transition-opacity group-hover/head:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring active:cursor-grabbing"
+          >
+            <GripVertical className="size-3" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => toggle(project.id)}
@@ -111,7 +158,11 @@ export function ProjectGroup({ project, sessions }: { project: Project; sessions
             </span>
           )}
         </button>
-        <div className="flex items-center opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100">
+        {/* Actions never start a drag; the row around them does. */}
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="flex items-center opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100"
+        >
           <Link
             to="/projects/$projectId"
             params={{ projectId: project.id }}
@@ -129,6 +180,7 @@ export function ProjectGroup({ project, sessions }: { project: Project; sessions
           >
             <Plus className="size-3.5" />
           </Link>
+          {position && <ProjectMenu project={project} position={position} />}
         </div>
       </div>
 

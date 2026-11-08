@@ -15,6 +15,7 @@ import type {
   GitStatusResponse,
   InboxItem,
   LoginCommandResponse,
+  Project,
   ResolveConflictResponse,
   RestoreFilesRequest,
   RestoreFilesResponse,
@@ -33,6 +34,7 @@ import type {
   StartSessionResponse,
   TranscriptMessage,
   UiServerMessage,
+  UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateStatus,
   UserInputInit,
@@ -114,6 +116,13 @@ export interface CodeDenClient {
 
   // Projects, automations (§10), factory.
   createProject(input: CreateProjectRequest): Promise<CreateProjectResponse>;
+  /** Rename, change defaults, or pin and unpin a project (§13). */
+  updateProject(projectId: string, patch: UpdateProjectRequest): Promise<Project>;
+  /**
+   * Save the manual project order (§13): every non-archived project id, exactly once.
+   * Resolves with the projects in their new order.
+   */
+  reorderProjects(projectIds: string[]): Promise<Project[]>;
   readonly automations: AutomationsApi;
   /** Autonomy modes, the vision, the factory panel and kill switches (§10.1, experimental). */
   readonly factory: FactoryApi;
