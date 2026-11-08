@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "751fb30b-e0a4-4ee2-9a63-b8e686b44773",
+  "id": "d439687a-3d8e-4cb3-8803-8600c31a7569",
   "prevIds": [
-    "f8d3d2c9-0af3-49b9-8b7b-8ed5cda39ccc"
+    "d911a21b-5634-4182-9fb1-deb0fd8c0ef6"
   ],
   "ddl": [
     {
@@ -613,6 +613,16 @@
     {
       "table": "automations",
       "name": "work_key",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automations",
+      "name": "created_by",
       "type": "text",
       "notNull": false,
       "autoincrement": false,
