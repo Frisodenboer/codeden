@@ -7,7 +7,7 @@ import {
   type Session,
   type Usage,
 } from "@codeden/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Database, openDatabase } from "../src/db/client";
 import { githubPrs, inboxItems, turns } from "../src/db/schema";
 import { rateLimitWindows, usageLedger } from "../src/db/schema-usage";
@@ -43,6 +43,9 @@ function turn(sessionId: string, turnId: string, report: Usage) {
 }
 
 beforeEach(() => {
+  // Events are stamped with the wall clock; pin it so the fixed report window always matches.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
   dir = mkdtempSync(join(tmpdir(), "codeden-usage-"));
   database = openDatabase(join(dir, "codeden.db"));
   store = new EventStore(database.db);
@@ -93,6 +96,7 @@ afterEach(() => {
   usage.stop();
   database.close();
   rmSync(dir, { recursive: true, force: true });
+  vi.useRealTimers();
 });
 
 describe("usage ledger projection", () => {
