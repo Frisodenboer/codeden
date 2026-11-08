@@ -8,11 +8,15 @@ import { platform } from "@/lib/platform";
 import { DigestDisclosure, WakeLine } from "./digest-fold";
 import { Markdown } from "./markdown";
 
+/** A file (or an image shown by name): long names are cut with an ellipsis, full on hover. */
 function FileChip({ label }: { label: string }) {
   return (
-    <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 font-mono text-2xs text-muted-foreground">
-      <FileText className="size-3.5" />
-      {label}
+    <span
+      title={label}
+      className="inline-flex h-7 max-w-64 items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 font-mono text-2xs text-muted-foreground"
+    >
+      <FileText className="size-3.5 shrink-0" />
+      <span className="truncate">{label}</span>
     </span>
   );
 }
