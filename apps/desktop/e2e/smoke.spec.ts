@@ -9,7 +9,8 @@ import { unpackedApp } from "./support";
 /**
  * Desktop smoke test (§17): the unpacked app for this OS (`pnpm desktop:build`) starts its
  * own server and runner in an isolated home with the Fake provider, loads the UI through the
- * token bootstrap, exposes the preload bridge and the tray, follows `codeden://` links from a
+ * token bootstrap, exposes the preload bridge and the tray, zooms and remembers the zoom
+ * (View menu), follows `codeden://` links from a
  * second launch, hides to the tray on close, and quits leaving the runner running (which the
  * test then stops, so nothing outlives it).
  */
@@ -18,6 +19,7 @@ type TestHooks = {
   status(): { connected: boolean; activity: unknown };
   ownsServer(): boolean;
   keepAwake(): boolean;
+  zoomFactor(): number;
 };
 
 /** Call one of the read-only hooks the app exposes with `CODEDEN_DESKTOP_TEST=1`. */
@@ -127,6 +129,46 @@ test("the desktop app starts, bridges, tracks, follows links and quits cleanly",
       .toEqual(expect.arrayContaining(["No agents running", "Open CodeDen", "Quit CodeDen"]));
     expect(await (await api("/api/activity")).json()).toEqual({ running: 0, waiting: 0, inbox: 0 });
     expect(await hook(app as ElectronApplication, "keepAwake")).toBe(false);
+  });
+
+  await test.step("View menu zoom scales the UI, survives a reload and is saved", async () => {
+    const electronApp = app as ElectronApplication;
+    // Synthetic key presses never reach native menu accelerators, so run the items the keys
+    // are bound to (which keys map to which item is covered by the unit tests).
+    const zoomBy = (accelerator: string) =>
+      electronApp.evaluate(({ Menu }, acc) => {
+        const view = Menu.getApplicationMenu()?.items.find((i) => i.label === "View");
+        const item = view?.submenu?.items.find((i) => i.accelerator === acc);
+        if (!item) throw new Error(`no View menu item for ${acc}`);
+        item.click();
+      }, accelerator);
+    const pageZoom = () =>
+      electronApp.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor(),
+      );
+    const savedZoom = () => {
+      try {
+        return JSON.parse(readFileSync(join(home, "desktop", "window-state.json"), "utf8"))
+          .zoomFactor as number;
+      } catch {
+        return null;
+      }
+    };
+    expect(await pageZoom()).toBe(1);
+    await zoomBy("CommandOrControl+=");
+    await zoomBy("CommandOrControl+Plus");
+    await zoomBy("CommandOrControl+numadd");
+    await zoomBy("CommandOrControl+-");
+    expect(await pageZoom()).toBe(1.2);
+    expect(await hook(electronApp, "zoomFactor")).toBe(1.2);
+    await page.reload();
+    await expect(page.getByTestId("setup-checklist")).toBeVisible();
+    expect(await pageZoom()).toBe(1.2);
+    await expect.poll(savedZoom).toBe(1.2);
+    await shot(page, "zoom-120");
+    await zoomBy("CommandOrControl+0");
+    expect(await pageZoom()).toBe(1);
+    await expect.poll(savedZoom).toBe(1);
   });
 
   await test.step("Settings has the App section and projects use the native picker", async () => {

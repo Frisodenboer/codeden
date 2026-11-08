@@ -42,7 +42,15 @@ Then the window opens on the UI, already signed in. A first launch shows the sam
 - **Keep awake.** While an agent is running, CodeDen keeps the computer from going to sleep (the screen can still turn off). Settings > App > Keep the computer awake.
 - **Open at login** (Windows, macOS): Settings > App > Open at login starts CodeDen in the tray when you log in.
 - **Adding a project** uses the system folder picker. "Browse folders in CodeDen instead" opens the in-app browser if you prefer it.
-- The window remembers its size and position.
+- **Zoom** makes the whole UI larger or smaller in 10% steps, from 50% to 200% (View menu). The keys work even when the menu bar is hidden:
+
+  | Action | Windows, Linux | macOS |
+  |---|---|---|
+  | Zoom in | Ctrl+= or Ctrl+Shift+= (Ctrl+Plus), Ctrl+Num+ | Cmd+= or Cmd+Shift+=, Cmd+Num+ |
+  | Zoom out | Ctrl+- or Ctrl+Shift+-, Ctrl+Num- | Cmd+- or Cmd+Shift+-, Cmd+Num- |
+  | Actual size (100%) | Ctrl+0, Ctrl+Num0 | Cmd+0, Cmd+Num0 |
+
+- The window remembers its size, position and zoom (also after a reload or a restart).
 
 ### Links
 

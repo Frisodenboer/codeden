@@ -198,6 +198,7 @@ describe("app menu", () => {
     openDocs: noop,
     openLogs: noop,
     quit: noop,
+    zoom: noop,
   };
 
   it("has the standard edit, view and window menus on every OS", () => {

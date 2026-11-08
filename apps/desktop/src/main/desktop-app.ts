@@ -326,6 +326,7 @@ export class DesktopApp {
       openDocs: () => void shell.openExternal(DOCS_URL),
       openLogs: () => void shell.openPath(homeFiles(this.args.home).logs),
       quit: () => app.quit(),
+      zoom: (command) => this.window?.zoom(command),
     });
   }
 
@@ -339,6 +340,7 @@ export class DesktopApp {
       serverPid: () => this.conn?.server?.pid ?? null,
       keepAwake: () => this.keepAwake.active,
       updateState: () => this.updates.state,
+      zoomFactor: () => this.window.zoomFactor,
     };
   }
 }
