@@ -57,7 +57,8 @@ jobs:
             echo "code=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Documentation-only change: skipping tests and e2e."
           fi
-          if grep -qE '^apps/desktop/' "$RUNNER_TEMP/changed.txt"; then
+          # The desktop app, or this workflow (so a change to the desktop steps is tested).
+          if grep -qE '^apps/desktop/|^\.github/workflows/ci\.yml$' "$RUNNER_TEMP/changed.txt"; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
           else
             echo "desktop=false" >> "$GITHUB_OUTPUT"
