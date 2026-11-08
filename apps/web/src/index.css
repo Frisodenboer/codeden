@@ -196,6 +196,8 @@
 /* Dense, readable markdown for transcripts. */
 .markdown {
   @apply text-[14px] leading-[1.65] text-foreground/90;
+  /* Long URLs and tokens wrap; code blocks and tables scroll inside their own boxes. */
+  overflow-wrap: break-word;
 }
 .markdown > * + * {
   margin-top: 0.7em;

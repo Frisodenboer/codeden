@@ -92,6 +92,7 @@ export function TodoCard({ item }: { item: ItemOf<"todo_list"> }) {
             )}
             <span
               className={cn(
+                "min-w-0 wrap-break-word",
                 t.status === "completed" &&
                   "text-muted-foreground line-through decoration-muted-foreground/40",
               )}

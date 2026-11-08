@@ -50,9 +50,11 @@ export function SubagentCard({ item, sessionId }: { item: ItemOf<"subagent">; se
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
-          <span className="text-[13px] font-medium">{item.description ?? "Subagent"}</span>
+          <span className="min-w-0 truncate text-[13px] font-medium">
+            {item.description ?? "Subagent"}
+          </span>
           {item.agentType && (
-            <span className="rounded-full bg-muted px-2 py-px font-mono text-3xs text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-muted px-2 py-px font-mono text-3xs text-muted-foreground">
               {item.agentType}
             </span>
           )}

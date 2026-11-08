@@ -46,8 +46,10 @@ export function ApprovalCard({
     const Icon = denied ? ShieldX : ShieldCheck;
     return (
       <div className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2 text-[13px] text-muted-foreground">
-        <Icon className={cn("size-4", denied ? "text-status-failed" : "text-status-done")} />
-        <span className="truncate">{item.title}</span>
+        <Icon
+          className={cn("size-4 shrink-0", denied ? "text-status-failed" : "text-status-done")}
+        />
+        <span className="min-w-0 truncate">{item.title}</span>
         <span className="ml-auto shrink-0 text-2xs">
           {item.decision ? decisionLabel[item.decision] : "Cancelled"}
           {item.decidedBy && item.decidedBy !== "user" ? ` by ${item.decidedBy}` : ""}
@@ -68,7 +70,7 @@ export function ApprovalCard({
           {actionLabel[item.action]}
         </span>
       </div>
-      <div className="space-y-2.5 px-3.5 py-3">
+      <div className="space-y-2.5 px-3.5 py-3 wrap-break-word">
         <p className="text-[14px] font-medium">{item.title}</p>
         {item.reason && !compact && (
           <p className="text-[13px] leading-relaxed text-muted-foreground">{item.reason}</p>
