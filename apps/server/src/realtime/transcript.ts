@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { rowToItemRecord, rowToThread, rowToTurn } from "../db/rows";
 import { items, sessions, threads, turns } from "../db/schema";
-import { previewRecord } from "../services/sessions/preview";
+import { type ArtifactLookup, clientItemRecord } from "../services/sessions/client-items";
 
 /** Transcript rows of one session touched by events, waiting to be sent. */
 export interface Dirty {
@@ -71,8 +71,16 @@ export function collectDirty(
   }
 }
 
-/** Load the latest state of dirty rows as a `transcript` message (outputs previewed). */
-export function loadTranscript(db: Db, sessionId: string, dirty: Dirty): TranscriptMessage {
+/**
+ * Load the latest state of dirty rows as a `transcript` message (outputs previewed, image
+ * paths mapped to artifacts, see `clientItemRecord`).
+ */
+export function loadTranscript(
+  db: Db,
+  sessionId: string,
+  dirty: Dirty,
+  artifacts: ArtifactLookup,
+): TranscriptMessage {
   const ids = (set: Set<string>) => [...set];
   const msg: TranscriptMessage = {
     type: "transcript",
@@ -104,7 +112,7 @@ export function loadTranscript(db: Db, sessionId: string, dirty: Dirty): Transcr
             .from(items)
             .where(and(eq(items.sessionId, sessionId), inArray(items.id, ids(dirty.items))))
             .all()
-            .map((r) => previewRecord(rowToItemRecord(r)))
+            .map((r) => clientItemRecord(rowToItemRecord(r), artifacts))
             .sort((a, b) => a.position - b.position),
   };
   if (dirty.usage) {

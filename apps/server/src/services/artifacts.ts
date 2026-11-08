@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import type { Artifact, ArtifactKind, UserInput } from "@codeden/contracts";
+import { join, resolve } from "node:path";
+import type { Artifact, ArtifactKind, Attachment, UserInput } from "@codeden/contracts";
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { rowToArtifact } from "../db/rows";
@@ -71,9 +71,9 @@ export class ArtifactService {
   }
 
   get(id: string): Artifact {
-    const row = this.db.select().from(artifacts).where(eq(artifacts.id, id)).get();
-    if (!row) throw notFound(`No artifact ${id}`, "artifact_not_found");
-    return rowToArtifact(row);
+    const artifact = this.find(id);
+    if (!artifact) throw notFound(`No artifact ${id}`, "artifact_not_found");
+    return artifact;
   }
 
   list(filter: { sessionId?: string; projectId?: string } = {}): Artifact[] {
@@ -96,11 +96,19 @@ export class ArtifactService {
   }
 
   /**
-   * Store pasted (base64) images as artifacts and point the attachment at the file, so large
-   * payloads never land in the event log. The runner reads the file by path.
+   * Store pasted (base64) images as artifacts and point the attachment at the artifact, so
+   * large payloads never land in the event log and stored input (queued messages, pending
+   * starts) never carries a filesystem path. `resolveAttachments` turns the reference into a
+   * file path when the input is handed to the runner.
    */
-  externalizeAttachments(input: UserInput, owner: { sessionId: string; projectId: string | null }) {
-    const attachments = input.attachments.map((a) => {
+  externalizeAttachments(
+    input: UserInput,
+    owner: { sessionId: string; projectId: string | null },
+  ): UserInput {
+    if (!input.attachments.some((a) => a.type === "image" && a.source.type === "base64")) {
+      return input;
+    }
+    const attachments = input.attachments.map((a): Attachment => {
       if (a.type !== "image" || a.source.type !== "base64") return a;
       const bytes = Buffer.from(a.source.data, "base64");
       if (bytes.length > MAX_ATTACHMENT_BYTES) {
@@ -113,8 +121,49 @@ export class ArtifactService {
         kind: "image",
         ...owner,
       });
+      return { ...a, source: { type: "artifact" as const, artifactId: artifact.id } };
+    });
+    return { ...input, attachments };
+  }
+
+  /**
+   * Point artifact image attachments at their file, for the runner: providers read images by
+   * path. Only call this on input that goes to the runner, never on what the browser sees.
+   */
+  resolveAttachments(input: UserInput): UserInput {
+    if (!input.attachments.some((a) => a.type === "image" && a.source.type === "artifact")) {
+      return input;
+    }
+    const attachments = input.attachments.map((a): Attachment => {
+      if (a.type !== "image" || a.source.type !== "artifact") return a;
+      const artifact = this.find(a.source.artifactId);
+      if (!artifact) throw badRequest(`No artifact ${a.source.artifactId}`, "unknown_artifact");
       return { ...a, source: { type: "path" as const, path: this.filePath(artifact) } };
     });
     return { ...input, attachments };
   }
+
+  /**
+   * The artifact whose own file is `path`, or `undefined`. Providers echo the input they were
+   * given, so a user message's image comes back as the resolved path (and older transcripts
+   * stored it that way); this maps it back to the artifact the browser can load. Only an exact
+   * match with an artifact's file inside the artifacts folder counts; nothing is read from disk.
+   */
+  artifactForPath(path: string): Artifact | undefined {
+    const file = path.split(/[\\/]/).pop() ?? "";
+    const id = file.replace(/\.[^.]*$/, "");
+    if (!id) return undefined;
+    const artifact = this.find(id);
+    if (!artifact) return undefined;
+    const expected = resolve(this.dir, artifact.path);
+    return comparable(resolve(path)) === comparable(expected) ? artifact : undefined;
+  }
+
+  private find(id: string): Artifact | undefined {
+    const row = this.db.select().from(artifacts).where(eq(artifacts.id, id)).get();
+    return row ? rowToArtifact(row) : undefined;
+  }
 }
+
+const caseInsensitive = process.platform === "win32" || process.platform === "darwin";
+const comparable = (p: string) => (caseInsensitive ? p.toLowerCase() : p);

@@ -12,7 +12,7 @@ import {
 import { Hono } from "hono";
 import type { AppServices } from "../services/container";
 import { badRequest, notFound } from "../services/errors";
-import { previewRecord } from "../services/sessions/preview";
+import { clientItemRecord } from "../services/sessions/client-items";
 import { jsonBody, queryOf } from "./validate";
 
 /**
@@ -58,7 +58,7 @@ export function sessionRoutes(s: AppServices) {
       const id = c.req.param("id");
       s.sessionRepo.get(id);
       const page = s.sessionRepo.threadPage(id, c.req.param("threadId"), c.req.valid("query"));
-      return c.json({ ...page, items: page.items.map((r) => previewRecord(r)) });
+      return c.json({ ...page, items: page.items.map((r) => clientItemRecord(r, s.artifacts)) });
     })
     .get("/:id/items/:itemId/output", (c) => {
       const record = s.sessionRepo.item(c.req.param("id"), c.req.param("itemId"));
