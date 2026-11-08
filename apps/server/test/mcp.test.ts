@@ -114,6 +114,8 @@ describe("CodeDen MCP endpoint", () => {
       "update_project_notes",
       "list_automations",
       "run_automation",
+      "create_automation",
+      "update_automation",
     ]);
     await pm.close();
   });

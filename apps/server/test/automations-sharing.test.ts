@@ -299,4 +299,50 @@ describe("automations API: create, duplicate, export and import", () => {
     const res = await h.api("POST", "/automations/import/preview", { zipBase64: zip });
     expect(res.status).toBe(413);
   });
+
+  it("lets the PM create and update automations, created off and marked", async () => {
+    const pmTool = async (name: string, args: unknown) =>
+      h.server.services.tools.call(name, args, {
+        role: "pm",
+        sessionId: "pm-test",
+        projectId: h.projectId,
+        caller: "mcp",
+        signal: new AbortController().signal,
+      });
+    const res = await pmTool("create_automation", {
+      name: "Nightly lint report",
+      trigger: { type: "cron", expression: "0 2 * * *" },
+      action: { type: "start_session", prompt: "Run the linter and report", autonomy: "read_only" },
+    });
+    expect(res.isError).toBeFalsy();
+    const { created } = JSON.parse(res.text) as { created: { id: string; enabled: boolean } };
+    expect(created.enabled).toBe(false);
+    const saved = h.server.services.automations.definitions.get(created.id);
+    expect(saved).toMatchObject({
+      createdBy: "pm",
+      enabled: false,
+      target: { type: "project", projectId: h.projectId },
+    });
+    const bad = await pmTool("create_automation", {
+      name: "Bad",
+      trigger: { type: "cron", expression: "not cron" },
+      action: { type: "message_pm", message: "x" },
+    });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toMatch(/cron/i);
+    const updated = await pmTool("update_automation", {
+      automationId: created.id,
+      trigger: { type: "manual" },
+    });
+    expect(updated.isError).toBeFalsy();
+    expect(h.server.services.automations.definitions.get(created.id).trigger).toEqual({
+      type: "manual",
+    });
+    const file = (await list()).automations.find((i) => i.automation.source === "project_file");
+    const readOnly = await pmTool("update_automation", {
+      automationId: file?.automation.id,
+      name: "Renamed",
+    });
+    expect(readOnly.isError).toBe(true);
+  });
 });
