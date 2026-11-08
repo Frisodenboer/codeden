@@ -144,6 +144,24 @@ describe("SetupService", () => {
     expect(calls.length).toBe(first * 2);
   });
 
+  it("reports every completed check, but not cached results", async () => {
+    const checked: string[] = [];
+    const service = new SetupService({
+      exec: fakeExec(happy),
+      settings,
+      platform: "linux",
+      onChecked: (status) => {
+        checked.push(status.checkedAt);
+        throw new Error("a failing listener does not fail the check");
+      },
+    });
+    await service.status();
+    await service.status();
+    expect(checked).toHaveLength(1);
+    await expect(service.status({ refresh: true })).resolves.toMatchObject({ ready: true });
+    expect(checked).toHaveLength(2);
+  });
+
   it("times out slow checks instead of hanging", async () => {
     const slow: Exec = (command, args) =>
       command === "claude" ? new Promise(() => {}) : fakeExec(happy)(command, args);

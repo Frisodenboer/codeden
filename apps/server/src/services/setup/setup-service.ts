@@ -21,6 +21,11 @@ export interface SetupServiceDeps {
   nodeVersion?: string;
   browserProbe?: Partial<BrowserProbe>;
   now?: () => number;
+  /**
+   * Called after every completed check (not for cached results), e.g. so the runner re-detects
+   * its providers after an install or a login and refreshes their model lists.
+   */
+  onChecked?: (status: SetupStatus) => void;
 }
 
 const ORDER: SetupToolId[] = ["claude", "codex", "gh", "git", "browser", "node"];
@@ -90,6 +95,11 @@ export class SetupService {
       warnings,
     };
     this.cached = status;
+    try {
+      this.deps.onChecked?.(status);
+    } catch {
+      // A failing listener must not fail the check.
+    }
     return status;
   }
 

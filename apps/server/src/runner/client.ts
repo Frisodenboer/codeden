@@ -280,6 +280,10 @@ export class RunnerClient {
       case "stream":
         this.opts.onStream?.(msg.stream);
         return;
+      case "providers":
+        // Model lists found after the handshake (discovery, sessions); broadcast to the UI.
+        this.setStatus({ ...this.current, providers: msg.providers });
+        return;
       case "ping":
         this.send({ type: "pong", id: msg.id });
         return;

@@ -26,7 +26,7 @@ import {
 } from "./orchestration/orchestration-service";
 import type { AutomationPort, GithubPort } from "./orchestration/ports";
 import { ProjectService } from "./projects/project-service";
-import type { RunnerPort } from "./runner-port";
+import { type RunnerPort, redetectProviders } from "./runner-port";
 import type { SecretStore } from "./secrets";
 import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
@@ -209,7 +209,12 @@ export function createServices(opts: ServicesOptions): AppServices {
     ...opts.github,
     log: opts.log,
   });
-  const setup = new SetupService({ exec, settings: opts.settings });
+  const setup = new SetupService({
+    exec,
+    settings: opts.settings,
+    // After an install or a login is re-checked, the runner's model lists follow.
+    onChecked: () => redetectProviders(opts.runner, opts.log),
+  });
   const claudeSdk = new ClaudeSdkService({ depsDir: opts.paths.deps, log: opts.log });
   const automations = new AutomationService({
     db: opts.db,
