@@ -32,14 +32,43 @@ export const SetupStep = z.object({
 });
 export type SetupStep = z.infer<typeof SetupStep>;
 
+/**
+ * Who queued a message: the user, the orchestrator (to a PM), a PM (to its sessions), an
+ * automation, or CodeDen itself (automatic wake-ups, the factory loop).
+ */
+export const QueueSender = z.enum(["user", "orchestrator", "pm", "automation", "codeden"]);
+export type QueueSender = z.infer<typeof QueueSender>;
+
 /** A message sent while a turn was running, waiting to be delivered (survives restarts). */
 export const QueuedMessage = z.object({
   id: Id,
   sessionId: Id,
   input: UserInput,
+  /** Who queued it. Events written before senders were recorded were all the user's. */
+  from: QueueSender.default("user"),
   createdAt: Timestamp,
 });
 export type QueuedMessage = z.infer<typeof QueuedMessage>;
+
+/** `GET /api/sessions/:id/queue`: the session's queued messages, next to be delivered first. */
+export const QueuedMessageList = z.object({ messages: z.array(QueuedMessage) });
+export type QueuedMessageList = z.infer<typeof QueuedMessageList>;
+
+/**
+ * `PATCH /api/sessions/:id/queue/:messageId`: replace a queued message's text (attachments
+ * stay). Answers 409 `already_sent` once delivery has taken the message.
+ */
+export const EditQueuedMessageRequest = z.object({ text: z.string().max(200_000) });
+export type EditQueuedMessageRequest = z.infer<typeof EditQueuedMessageRequest>;
+
+/**
+ * `POST /api/sessions/:id/queue/:messageId/send-now`: deliver a queued message ahead of its
+ * turn. `steered` while a turn runs (needs `capabilities.steer`), `sent` when the session was
+ * idle. `DELETE /api/sessions/:id/queue/:messageId` answers `{ ok: true }`; both answer 409
+ * `already_sent` once delivery has taken the message.
+ */
+export const SendQueuedNowResponse = z.object({ status: z.enum(["steered", "sent"]) });
+export type SendQueuedNowResponse = z.infer<typeof SendQueuedNowResponse>;
 
 /** Structured result an agent reports with the `finish` tool (§8.3). */
 export const SessionResult = z.object({

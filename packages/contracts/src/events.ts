@@ -109,10 +109,15 @@ export const EventEnvelope = z.discriminatedUnion("type", [
   globalEvent("checkpoint.created", z.object({ checkpoint: Checkpoint })),
   /** A message was queued behind the running turn. */
   globalEvent("message.queued", z.object({ message: QueuedMessage })),
-  /** A queued message left the queue: delivered, or dropped (interrupt, stop). */
+  /** A queued message left the queue: delivered, dropped (interrupt, stop) or deleted. */
   globalEvent(
     "message.dequeued",
-    z.object({ sessionId: Id, messageId: Id, reason: z.enum(["sent", "dropped"]) }),
+    z.object({ sessionId: Id, messageId: Id, reason: z.enum(["sent", "dropped", "deleted"]) }),
+  ),
+  /** A queued message's text was edited before delivery; its attachments stay. */
+  globalEvent(
+    "message.edited",
+    z.object({ sessionId: Id, messageId: Id, text: z.string(), at: Timestamp }),
   ),
   /** A typed orchestration notice for a PM or the orchestrator (§8.2). */
   globalEvent("notice.created", z.object({ notice: Notice })),
