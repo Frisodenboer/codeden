@@ -23,6 +23,7 @@ import { factoryRoutes, projectFactoryRoutes } from "./factory";
 import { githubRoutes, projectGithubRoutes, prRoutes, sessionGithubRoutes } from "./github";
 import { imageRoutes } from "./images";
 import { inboxRoutes } from "./inbox";
+import { authRoutes, type NetworkRouteContext, networkRoutes } from "./network";
 import { conflictRoutes, orchestrationRoutes } from "./orchestration";
 import { projectRoutes } from "./projects";
 import { sessionFileRoutes } from "./session-files";
@@ -40,6 +41,8 @@ export interface ApiContext {
   startedAt: number;
   /** Stop the server (and optionally the runner) after the response is sent. */
   shutdown: (opts: { stopRunner: boolean }) => void;
+  /** Network access (§15.1). */
+  network: NetworkRouteContext;
   log?: (message: string) => void;
 }
 
@@ -92,6 +95,8 @@ export function createApi(ctx: ApiContext) {
     .route("/updates", updateRoutes(s))
     .route("/artifacts", artifactRoutes(s))
     .route("/secrets", secretRoutes(s))
+    .route("/network", networkRoutes(ctx.network))
+    .route("/auth", authRoutes(ctx.network))
     .route("/", fileRoutes(s))
     .get("/settings", (c) => c.json(s.settings.get()))
     .patch("/settings", async (c) => {

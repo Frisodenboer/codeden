@@ -1,4 +1,8 @@
 /** @codeden/server public API. */
+export type { NetworkAccess } from "./network/access";
+export { isLoopbackAddress, listAddresses } from "./network/addresses";
+export { generatePassphrase } from "./network/password";
+export { PasswordRuleError, RemoteAccessStore } from "./network/store";
 export { ensureHome, type HomePaths, homePaths, resolveHome } from "./paths";
 export { RunnerClient, RunnerCommandError } from "./runner/client";
 export { defaultRunnerLaunch, type RunnerLaunchConfig } from "./runner/launcher";

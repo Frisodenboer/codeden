@@ -25,7 +25,7 @@ function RailItem({
       <TooltipTrigger asChild>
         <div
           className={cn(
-            "relative flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground [&>a]:flex [&>a]:size-full [&>a]:items-center [&>a]:justify-center [&>button]:flex [&>button]:size-full [&>button]:items-center [&>button]:justify-center",
+            "relative flex size-9 pointer-coarse:size-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground [&>a]:flex [&>a]:size-full [&>a]:items-center [&>a]:justify-center [&>button]:flex [&>button]:size-full [&>button]:items-center [&>button]:justify-center",
             active && "bg-sidebar-accent text-foreground",
           )}
         >
@@ -38,9 +38,11 @@ function RailItem({
 }
 
 /** Collapsed sidebar: a 56px icon rail with the same destinations. */
-export function SidebarRail() {
+export function SidebarRail({ onExpand }: { onExpand?: () => void } = {}) {
   const { data } = useSnapshot();
-  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
+  const toggleLayout = useLayoutStore((s) => s.toggleSidebar);
+  // On touch tablets the rail stays, and expanding opens the drawer over the page.
+  const toggleSidebar = onExpand ?? toggleLayout;
   const openPalette = useUiStore((s) => s.setPaletteOpen);
   const orchestratorActive = useIsActive("/");
   const inboxActive = useIsActive("/inbox");

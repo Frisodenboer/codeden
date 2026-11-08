@@ -10,6 +10,7 @@ import {
   composerPlaceholders,
   isSendKey,
 } from "@/components/composer/composer-box";
+import { MobileNavButton } from "@/components/shell/mobile-nav";
 import { ThreadView } from "@/components/thread/thread-view";
 import { Button } from "@/components/ui/button";
 import { useClient } from "@/lib/api";
@@ -117,6 +118,7 @@ export function RoleChat({
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="role-chat-start">
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
+        <MobileNavButton />
         <RoleBadge role={role} />
         <h1 className="truncate text-[14px] font-medium">
           {role === "orchestrator"

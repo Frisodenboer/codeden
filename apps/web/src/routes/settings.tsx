@@ -1,5 +1,5 @@
 import { CODEDEN_VERSION } from "@codeden/contracts";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AppWindow,
   Bell,
@@ -14,6 +14,7 @@ import {
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
+  Smartphone,
   Sparkles,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -27,6 +28,7 @@ import { DesktopSettings } from "@/components/settings/sections-desktop";
 import { GithubSettings } from "@/components/settings/sections-github";
 import { ImageSettings } from "@/components/settings/sections-images";
 import { NotificationSettings } from "@/components/settings/sections-media";
+import { NetworkSettings } from "@/components/settings/sections-network";
 import { VoiceSettings } from "@/components/settings/sections-voice";
 import { SettingsSection } from "@/components/settings/settings-ui";
 import { UpdateCheck } from "@/components/settings/update-check";
@@ -80,6 +82,7 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon; render: () => Rea
     icon: Bell,
     render: () => <NotificationSettings />,
   },
+  { id: "network", label: "Network access", icon: Smartphone, render: () => <NetworkSettings /> },
   ...(platform.capabilities.osIntegration
     ? [{ id: "desktop", label: "App", icon: AppWindow, render: () => <DesktopSettings /> }]
     : []),
@@ -90,18 +93,37 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon; render: () => Rea
 /** Settings with a left section nav. */
 export function SettingsPage({ section }: { section: string }) {
   const active = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];
+  const navigate = useNavigate();
   return (
     <>
       <PageHeader icon={<Settings2 />} title="Settings" meta={active?.label} />
+      {/* Phones: a section picker instead of the side nav. */}
+      <div className="shrink-0 border-b border-border px-4 py-2 md:hidden">
+        <select
+          aria-label="Settings section"
+          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-[13px]"
+          value={active?.id}
+          onChange={(e) =>
+            void navigate({ to: "/settings/$section", params: { section: e.target.value } })
+          }
+          data-testid="settings-section-picker"
+        >
+          {SECTIONS.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="flex min-h-0 flex-1">
-        <nav className="w-56 shrink-0 space-y-0.5 border-r border-border p-3">
+        <nav className="hidden w-56 shrink-0 space-y-0.5 border-r border-border p-3 md:block">
           {SECTIONS.map((s) => (
             <Link
               key={s.id}
               to="/settings/$section"
               params={{ section: s.id }}
               className={cn(
-                "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground",
+                "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground pointer-coarse:h-10",
                 s.id === active?.id && "bg-accent text-foreground",
               )}
             >
@@ -124,7 +146,9 @@ export function SettingsPage({ section }: { section: string }) {
           </Link>
         </nav>
         <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-          <div className="mx-auto w-full max-w-3xl px-8 py-8">{active?.render()}</div>
+          <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
+            {active?.render()}
+          </div>
         </div>
       </div>
     </>

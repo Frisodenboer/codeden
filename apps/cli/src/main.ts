@@ -4,6 +4,8 @@
  *   codeden doctor [--install]
  *   codeden update [--rollback]
  *   codeden stop
+ *   codeden password [--generate]
+ *   codeden network [on|off]
  * Loaded by `cli.ts` once the launcher has picked the version to run.
  */
 import { join } from "node:path";
@@ -18,6 +20,7 @@ import {
 } from "@codeden/server";
 import { doctor } from "./doctor";
 import type { LaunchInfo } from "./launcher";
+import { networkCommand, passwordCommand } from "./network-command";
 import { openBrowser } from "./open-browser";
 import { handOver } from "./restart";
 import { findRunningServer } from "./running";
@@ -33,6 +36,8 @@ Usage:
   codeden doctor         Check the installation (--install: add Claude Code support now)
   codeden update         Install the latest version and switch to it (--rollback: go back)
   codeden stop           Stop the server and the runner
+  codeden password       Set the network access password (--generate: make one up)
+  codeden network on|off Let phones on your network open CodeDen, or stop it
 
 Options:
   --port <n>     Port to listen on (default ${DEFAULT_PORT})
@@ -69,6 +74,7 @@ async function main(): Promise<number> {
       "no-open": { type: "boolean", default: false },
       install: { type: "boolean", default: false },
       rollback: { type: "boolean", default: false },
+      generate: { type: "boolean", default: false },
       version: { type: "boolean", short: "v", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -93,6 +99,8 @@ async function main(): Promise<number> {
   if (command === "doctor") return doctor(home, { install: values.install, launch });
   if (command === "stop") return stop(home);
   if (command === "update") return updateCommand(home, { rollback: values.rollback, launch });
+  if (command === "password") return passwordCommand(home, { generate: values.generate });
+  if (command === "network") return networkCommand(home, positionals[1]);
   if (command) {
     console.error(`Unknown command "${command}".\n\n${HELP}`);
     return 2;
@@ -158,6 +166,10 @@ async function main(): Promise<number> {
 
   console.log(`CodeDen ${CODEDEN_VERSION} is running at ${server.url}`);
   console.log(`Open: ${server.launchUrl}`);
+  if (server.network.enabled) {
+    console.log("Network access is on. Open CodeDen on your phone or tablet at:");
+    for (const a of server.network.addresses()) console.log(`  ${a.label.padEnd(16)} ${a.url}`);
+  }
   console.log("Press Ctrl+C to stop the server (agents keep running in the runner).");
   if (!values["no-open"]) openBrowser(server.launchUrl);
 

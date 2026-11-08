@@ -210,7 +210,7 @@ export function AutonomyModeButton({ project }: { project: Project }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1 rounded-full border border-border px-1.5 py-px hover:border-primary/40 hover:text-foreground"
+        className="flex items-center gap-1 rounded-full border border-border px-1.5 py-px hover:border-primary/40 hover:text-foreground pointer-coarse:min-h-10 pointer-coarse:px-3"
         aria-label={`Autonomy mode: ${MODE_LABEL[project.autonomyMode]}`}
         data-testid="autonomy-mode-button"
       >

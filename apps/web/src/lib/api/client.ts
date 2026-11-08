@@ -52,6 +52,7 @@ import type {
   SecretsApi,
   VoiceApi,
 } from "./feature-apis";
+import type { AuthApi, NetworkApi } from "./network-api";
 import type { QueueApi } from "./queue-api";
 import type { MentionCandidate, OpenTerminalOptions, SlashCommand, TerminalChannel } from "./types";
 import type { UpdatesApi } from "./updates-api";
@@ -143,6 +144,10 @@ export interface CodeDenClient {
   updateSettings(patch: SettingsPatch): Promise<Settings>;
   /** OS keychain secrets (API keys). Values are never echoed back. */
   readonly secrets: SecretsApi;
+  /** Network access (§15.1): on/off, the password, signed-in devices. */
+  readonly network: NetworkApi;
+  /** Sign-in for remote devices (§15.1). */
+  readonly auth: AuthApi;
 
   // First-run setup (§14).
   /** Detection results; `refresh` re-runs every check instead of using the cache. */

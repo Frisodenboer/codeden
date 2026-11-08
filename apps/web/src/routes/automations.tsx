@@ -61,7 +61,7 @@ export function AutomationsPage({ projectId, tab }: { projectId: string; tab: Au
         }
       />
       <div
-        className="flex h-10 shrink-0 items-end gap-4 border-b border-border px-6"
+        className="flex h-10 shrink-0 items-end gap-4 overflow-x-auto border-b border-border px-4 sm:px-6"
         role="tablist"
       >
         {TABS.map((t) => (
@@ -81,13 +81,13 @@ export function AutomationsPage({ projectId, tab }: { projectId: string; tab: Au
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-        <div className="mx-auto w-full max-w-6xl px-6 py-6">
+        <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">
           {tab === "templates" ? (
             <TemplatesGallery projectId={projectId} />
           ) : tab === "runs" ? (
             <RunsTable projectId={projectId} />
           ) : (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
               <AutomationsPanel projectId={projectId} />
               <aside>
                 <SectionLabel className="mb-2">Next</SectionLabel>

@@ -9,6 +9,7 @@ import {
   Pin,
   Plus,
   Search,
+  X,
 } from "lucide-react";
 import { Hotkey, SectionLabel } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
@@ -64,8 +65,11 @@ function WaitingOnYou({
   );
 }
 
-/** Left sidebar (§13): orchestrator, inbox, waiting work, projects, runner status. */
-export function Sidebar({ width }: { width: number }) {
+/**
+ * Left sidebar (§13): orchestrator, inbox, waiting work, projects, runner status. In the
+ * phone/tablet drawer, `onClose` replaces the collapse button.
+ */
+export function Sidebar({ width, onClose }: { width: number | string; onClose?: () => void }) {
   const { data } = useSnapshot();
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const openPalette = useUiStore((s) => s.setPaletteOpen);
@@ -86,27 +90,39 @@ export function Sidebar({ width }: { width: number }) {
       <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
         <Logo className="size-[22px]" />
         <span className="text-[15px] font-semibold tracking-tight">CodeDen</span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-auto text-muted-foreground"
-              onClick={toggleSidebar}
-              aria-label="Collapse sidebar"
-            >
-              <PanelLeftClose />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Collapse sidebar · Ctrl B</TooltipContent>
-        </Tooltip>
+        {onClose ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto text-muted-foreground"
+            onClick={onClose}
+            aria-label="Close menu"
+          >
+            <X />
+          </Button>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="ml-auto text-muted-foreground"
+                onClick={toggleSidebar}
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Collapse sidebar · Ctrl B</TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       <div className="px-3 pb-2">
         <button
           type="button"
           onClick={() => openPalette(true)}
-          className="flex h-8 w-full items-center gap-2 rounded-md border border-sidebar-border bg-background/40 px-2.5 text-[13px] text-muted-foreground shadow-xs transition-colors hover:border-input hover:text-foreground"
+          className="flex h-8 w-full items-center gap-2 rounded-md border border-sidebar-border bg-background/40 px-2.5 text-[13px] text-muted-foreground shadow-xs transition-colors hover:border-input hover:text-foreground pointer-coarse:h-10"
         >
           <Search className="size-3.5" />
           <span>Search or run…</span>

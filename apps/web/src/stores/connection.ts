@@ -2,11 +2,14 @@ import type { RunnerConnectionStatus } from "@codeden/contracts";
 import { create } from "zustand";
 
 export type SocketState = "connecting" | "open" | "closed";
-export type AuthState = "unknown" | "ok" | "unauthorized";
+export type AuthState = "unknown" | "ok" | "unauthorized" | "signin";
 
 interface ConnectionState {
   socket: SocketState;
-  /** `unauthorized` after a 401: the browser has no valid CodeDen cookie. */
+  /**
+   * `unauthorized` after a 401: the browser has no valid CodeDen cookie. `signin`: a remote
+   * device (network access, §15.1) that has to sign in with the password.
+   */
   auth: AuthState;
   /** Highest event seq applied by this client. */
   seq: number;

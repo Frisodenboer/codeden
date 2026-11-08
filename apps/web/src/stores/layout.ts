@@ -13,6 +13,11 @@ interface LayoutState {
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   rightOpen: boolean;
+  /**
+   * The right panel as an overlay sheet (phones and tablets). Not persisted, so a phone
+   * never opens on a sheet covering the transcript.
+   */
+  rightSheetOpen: boolean;
   rightWidth: number;
   rightTab: RightTab;
   /** Subagent thread shown in the right panel's Thread tab. */
@@ -38,6 +43,7 @@ export const useLayoutStore = create<LayoutState>()(
       sidebarWidth: SIDEBAR.default,
       sidebarCollapsed: false,
       rightOpen: true,
+      rightSheetOpen: false,
       rightWidth: RIGHT.default,
       rightTab: "diff",
       childThread: null,
@@ -47,10 +53,19 @@ export const useLayoutStore = create<LayoutState>()(
       setSidebarWidth: (w) => set({ sidebarWidth: clamp(w, SIDEBAR.min, SIDEBAR.max) }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setRightWidth: (w) => set({ rightWidth: clamp(w, RIGHT.min, RIGHT.max) }),
-      toggleRight: (open) => set((s) => ({ rightOpen: open ?? !s.rightOpen })),
-      openRightTab: (tab) => set({ rightTab: tab, rightOpen: true }),
+      toggleRight: (open) =>
+        set((s) => {
+          const next = open ?? !s.rightOpen;
+          return { rightOpen: next, rightSheetOpen: next };
+        }),
+      openRightTab: (tab) => set({ rightTab: tab, rightOpen: true, rightSheetOpen: true }),
       openChildThread: (sessionId, threadId) =>
-        set({ childThread: { sessionId, threadId }, rightTab: "thread", rightOpen: true }),
+        set({
+          childThread: { sessionId, threadId },
+          rightTab: "thread",
+          rightOpen: true,
+          rightSheetOpen: true,
+        }),
       setDrawerHeight: (h) => set({ drawerHeight: clamp(h, DRAWER.min, DRAWER.max) }),
       toggleDrawer: (open) => set((s) => ({ drawerOpen: open ?? !s.drawerOpen })),
       toggleProject: (id, open) =>
@@ -60,7 +75,7 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: "codeden.layout",
-      partialize: ({ childThread: _c, ...rest }) => rest,
+      partialize: ({ childThread: _c, rightSheetOpen: _s, ...rest }) => rest,
     },
   ),
 );

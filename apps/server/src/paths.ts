@@ -20,6 +20,10 @@ export function homePaths(home: string) {
     db: join(home, "codeden.db"),
     settings: join(home, "settings.json"),
     token: join(home, "install-token"),
+    /** Network access switch, password hash and remote sessions (§15.1). */
+    remoteAccess: join(home, "remote-access.json"),
+    /** Failed remote sign-ins (address and time, never the password). */
+    remoteAccessLog: join(home, "logs", "remote-access.log"),
     serverLock: join(home, "server.json"),
     runnerDir: join(home, "runner"),
     runnerLock: join(home, "runner", "runner.json"),

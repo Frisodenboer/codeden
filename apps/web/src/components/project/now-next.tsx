@@ -118,7 +118,7 @@ function NextRow({ run }: { run: ScheduledRun }) {
           onClick={() => skip.mutate()}
           disabled={skip.isPending || !run.projectId}
           aria-label={`Skip the next ${run.name} run`}
-          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:min-h-10 pointer-coarse:px-2.5"
         >
           <SkipForward className="size-3" /> Skip
         </button>
@@ -162,7 +162,10 @@ export function NowNext({
 }) {
   const running = work.filter((w) => w.status !== "queued").length;
   return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_300px]" data-testid="now-next">
+    <section
+      className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_300px]"
+      data-testid="now-next"
+    >
       <div className="min-w-0">
         <SectionLabel className="mb-2 flex items-center gap-2">
           Now{" "}

@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { ProviderMark } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import { ReadOnlyBadge, RoleBadge } from "@/components/orchestration/role-badge";
+import { MobileNavButton } from "@/components/shell/mobile-nav";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -34,6 +35,7 @@ import { platform } from "@/lib/platform";
 import { useProject, useSnapshotData } from "@/lib/queries";
 import { useSessionActions } from "@/lib/session-actions";
 import { cn } from "@/lib/utils";
+import { useViewport } from "@/lib/viewport";
 import { useLayoutStore } from "@/stores/layout";
 import { AutonomyBadge } from "./autonomy";
 import { SessionGithubBadges } from "./session-github-badges";
@@ -68,6 +70,8 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
   const client = useClient();
   const project = useProject(session.projectId);
   const layout = useLayoutStore();
+  const { sheetPanels, phone } = useViewport();
+  const panelOpen = sheetPanels ? layout.rightSheetOpen : layout.rightOpen;
   const provider = useSnapshotData(
     (s) => s.runner.providers.find((p) => p.id === session.provider),
     undefined,
@@ -89,12 +93,13 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
 
   return (
     <header className="@container flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
+      <MobileNavButton />
       {session.role === "agent" ? (
         <StatusDot status={session.status} />
       ) : (
         <RoleBadge role={session.role} short />
       )}
-      <div className="flex min-w-[10rem] shrink items-baseline gap-2 overflow-hidden">
+      <div className="flex min-w-0 shrink items-baseline gap-2 overflow-hidden sm:min-w-[10rem]">
         {project && session.role !== "orchestrator" && (
           <Link
             to="/projects/$projectId"
@@ -116,7 +121,7 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
         </span>
       </div>
 
-      <div className="ml-1 hidden min-w-0 shrink-0 items-center gap-1.5 @[36rem]:flex">
+      <div className="ml-1 hidden min-w-0 shrink items-center gap-1.5 overflow-hidden @[36rem]:flex">
         <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border/80 px-2 text-2xs whitespace-nowrap text-muted-foreground">
           <ProviderMark provider={session.provider} className="size-3.5 text-[8px]" />
           {provider?.displayName ?? session.provider}
@@ -172,6 +177,8 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
               className={cn(
                 "text-muted-foreground",
                 layout.drawerOpen && "bg-accent text-foreground",
+                // Phones use the panel's Terminal tab instead of the bottom drawer.
+                phone && "hidden",
               )}
               onClick={() => layout.toggleDrawer()}
               aria-label="Toggle terminal"
@@ -187,11 +194,8 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className={cn(
-                  "text-muted-foreground",
-                  layout.rightOpen && "bg-accent text-foreground",
-                )}
-                onClick={() => layout.toggleRight()}
+                className={cn("text-muted-foreground", panelOpen && "bg-accent text-foreground")}
+                onClick={() => layout.toggleRight(!panelOpen)}
                 aria-label="Toggle right panel"
               >
                 <PanelRight />

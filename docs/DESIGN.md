@@ -1,6 +1,6 @@
 # CodeDen: Design
 
-> Status: **locked for v1**, 2026-11-07. Changes to anything in "Locked decisions" need an explicit design discussion and an update to this file. The desktop app (§17) was approved on 2026-11-08.
+> Status: **locked for v1**, 2026-11-07. Changes to anything in "Locked decisions" need an explicit design discussion and an update to this file. The desktop app (§17) was approved on 2026-11-08. Opt-in network access for phones and tablets (§15.1) was approved on 2026-11-08.
 
 ## 1. What CodeDen is
 
@@ -54,6 +54,7 @@ Installed with `npx codeden`, or as the desktop app (§17). Open source under th
 | Projects | GitHub repos get the full issue/PR/evidence flow. **Local-only folders are supported** without the GitHub features |
 | Forges | GitHub only in v1 |
 | Platforms | Windows, macOS and Linux. **Windows is tested first** |
+| Network exposure | The runner, its MCP proxy and the server's `/mcp` listen on or answer **127.0.0.1 only**, always. The server's web UI, HTTP API and UI WebSockets are 127.0.0.1 only **by default**; **opt-in network access** (decided 2026-11-08, §15.1) moves just that HTTP listener to `0.0.0.0` on the same port, behind a password sign-in, for phones and tablets on the LAN or the user's own VPN |
 | Tooling | Biome (lint and format), tsdown (bundling), Vitest, Playwright (end-to-end) |
 
 ## 4. Architecture
@@ -553,6 +554,7 @@ Detailed, trustworthy reports on spend and usage across every provider, project 
   - **follow-up chips** after a turn completes (§7.5)
 - **Right panel** (tabs): diff, files, browser, terminal, issue/PR, session details. A bottom terminal drawer is optional.
 - **Global:** command palette, keyboard shortcuts, settings, light and dark themes.
+- **Phones and tablets.** The same layout adapts rather than a separate app (narrow desktop windows with a mouse keep the desktop layout): on phones (< 768 px) and portrait touch tablets (< 1024 px) the sidebar is a slide-out drawer opened from a menu button in every header; touch tablets in landscape (1024–1279 px) keep the icon rail, which expands into the drawer. In both, the right panel opens as an overlay sheet (full screen on phones) instead of squeezing the transcript, and phones use its Terminal tab instead of the bottom drawer. Touch screens get tap targets of at least 40 px and 16 px form fields, and hover-only affordances (row menus, copy buttons) are always shown when the device can't hover. A web app manifest and icons make **Add to Home Screen** open CodeDen full screen; there is no service worker (§15.1).
 - **Platform bridge.** Notifications, opening links, folder picking, global shortcuts, clipboard images and badge counts go through one `PlatformBridge` interface in the UI. It has a web implementation and a desktop one (§17), chosen by detecting the desktop app's `window.codedenDesktop` bridge; features are read from `capabilities`, never "am I in Electron?". Browsers can't return real folder paths, so projects are added through a **server-side folder picker**, which also suits remote use; the desktop app (`capabilities.folderPicker`) uses the system folder picker, with the server-side one as a fallback.
 
 ## 14. First-run setup and inheriting credentials
@@ -579,13 +581,26 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
 
 ## 15. Security
 
-- **Network.** The server and runner listen on **127.0.0.1 only**. A per-install random token is required on every HTTP, WebSocket and MCP request.
-- **Request checks.** `Origin` and `Host` headers are checked, which blocks other websites and DNS rebinding from reaching the local API.
+- **Network.** The server and runner listen on **127.0.0.1 only** by default. A per-install random token is required on every local HTTP, WebSocket and MCP request. Network access for phones and tablets is opt-in (§15.1).
+- **Request checks.** `Origin` and `Host` headers are checked, which blocks other websites and DNS rebinding from reaching the local API. While network access is on they also accept the machine's own LAN and VPN addresses on the server port, and nothing else.
 - **The UI token.** It's delivered once through the launch URL and then held in an HttpOnly, SameSite=Strict cookie.
 - **MCP tokens** are per session and role-scoped, and revoked when the session ends.
 - **Agent environments.** Agent processes inherit the user's environment minus CodeDen's own secrets. Tokens are never logged or written into transcripts.
 - **Approvals.** Risky-action approvals follow §11.2. The orchestrator and PMs can't write project code.
-- **Remote access** (phone, LAN) isn't in v1. When added, it requires explicit opt-in and a password or pairing.
+- **Remote access** (phone, tablet, LAN, the user's own VPN) is opt-in and password-protected; see §15.1.
+
+### 15.1 Network access (decided 2026-11-08)
+
+The owner can open CodeDen from a phone or tablet on the same network or over their own VPN (Tailscale's `100.64.0.0/10` is recognised). v1 is deliberately small: a password, sessions, plain http.
+
+- **Off by default.** With it off nothing changes: the HTTP listener binds 127.0.0.1 and only the install token works.
+- **Turning it on** (Settings › Network access, `PUT /api/network`, or `codeden network on`) needs a password and moves **only the HTTP listener** to `0.0.0.0` on the same port. The HTTP server takes its connections from a swappable TCP listener, so open connections, the UI WebSockets and the runner carry on; off moves it back and drops remote connections. The server refuses to bind beyond loopback without a password, at startup too. The desktop app behaves the same (its server is the same `startServer`).
+- **Password.** At least 15 characters; very common passwords, repeats and sequences are refused (`passwordProblem` in contracts, shared by the UI and the server). **Generate** returns a five-word passphrase once. Stored only as a salted **scrypt** hash in `<home>/remote-access.json` (mode 0600), kept out of `settings.json` so the settings API can't switch access on. Changing it signs out every remote device.
+- **Who is remote.** The socket's peer address: anything but `127.0.0.0/8`, `::1` and their IPv4-mapped forms. Forwarding headers are never read.
+- **Sign-in.** Remote devices without a session get the SPA shell (public, it is the open-source bundle), whose API calls answer `401 sign_in_required`, so the UI shows a mobile sign-in page. `POST /api/auth/sign-in` sets a random 90-day session token in an HttpOnly, `SameSite=Lax` cookie (`Secure` over HTTPS); only its SHA-256 hash is stored, with the user agent and last-seen time. Failed attempts are throttled per address (free for three, then 1 s doubling to 30 s; ten in 15 minutes lock the address for 15 minutes; in memory) and logged with the address to `logs/remote-access.log`.
+- **Reachable remotely:** the UI, the HTTP API and the UI WebSockets (`/ws`, `/ws/pty`, `/ws/browser`), behind the session. **Never reachable remotely:** `/mcp` (404 to remote peers), the runner and its MCP proxy (always 127.0.0.1), and network management (the switch and the password are loopback-only; remote devices see the status and can sign devices out). The install token is never accepted from a remote peer.
+- **Signed-in devices** are listed with Sign out and Sign out all; revoking closes remote connections so the device notices at once.
+- **Plain http.** There is no certificate for a LAN address, so phones allow no service worker, push notifications or microphone there; CodeDen ships a manifest and icons for Add to Home Screen, but no service worker. HTTPS (for example behind the user's own reverse proxy) is a later step.
 
 ## 16. Distribution and operations
 
@@ -594,6 +609,7 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
   - `codeden doctor` (diagnostics, including installed versions and which one starts)
   - `codeden update` (install the latest version and switch to it), `codeden update --rollback`
   - `codeden stop`
+  - `codeden password [--generate]`, `codeden network on|off` (network access, §15.1)
   - `codeden --port`, `--home`
 - **Updates: one click, side by side.**
   - **Check.** On server start and every 6 hours the server asks the npm registry for `codeden`'s `latest` dist-tag (only the package name is sent). The status is served at `GET /api/updates` and pushed live as an ephemeral `update` WebSocket message (like runner status, not in the event log). Setting `updates.mode`: `off`, `notify` (default) or `auto` (download in the background; it starts on the next launch, or now with "Restart now").

@@ -31,7 +31,7 @@ const TABS: { id: RightTab; label: string; icon: LucideIcon }[] = [
 ];
 
 /** Right panel (§13): diff, files, browser, terminal, issue/PR, details, and subagent threads. */
-export function RightPanel({ sessionId, width }: { sessionId: string; width: number }) {
+export function RightPanel({ sessionId, width }: { sessionId: string; width: number | string }) {
   const tab = useLayoutStore((s) => s.rightTab);
   const openTab = useLayoutStore((s) => s.openRightTab);
   const toggleRight = useLayoutStore((s) => s.toggleRight);
@@ -63,7 +63,7 @@ export function RightPanel({ sessionId, width }: { sessionId: string; width: num
               onClick={() => openTab(t.id)}
               icon={t.icon}
               label={t.label}
-              compact={width < 470}
+              compact={typeof width === "number" && width < 470}
             />
           ))}
         </div>

@@ -113,7 +113,7 @@ export function ToolRow({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={showDetails}
         className={cn(
-          "group/tool grid h-[26px] w-full min-w-0 items-center rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
+          "group/tool grid h-[26px] pointer-coarse:h-10 w-full min-w-0 items-center rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
           ROW_COLUMNS,
         )}
       >

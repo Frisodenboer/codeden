@@ -126,4 +126,5 @@ Open **Settings** (**Ctrl/Cmd+,**):
 - [Workbench](workbench.md): diffs, checkpoints, terminal and browser.
 - [GitHub](github.md): issues, PRs and evidence.
 - [Automations](automations.md): put routine work on a schedule.
+- [Phones, tablets and network access](remote-access.md): open CodeDen from your phone.
 - [Troubleshooting](troubleshooting.md) if anything doesn't start.

@@ -136,7 +136,7 @@ export function Composer({ session, running }: { session: Session; running: bool
         running &&
         canSteer && (
           <div
-            className="mr-1 flex h-7 items-center rounded-lg border border-border p-0.5 text-2xs"
+            className="mr-1 flex h-7 items-center rounded-lg border border-border p-0.5 text-2xs pointer-coarse:h-10"
             title="While a turn runs"
           >
             {(["queue", "steer"] as const).map((m) => (

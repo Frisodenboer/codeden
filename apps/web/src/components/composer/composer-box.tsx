@@ -99,7 +99,7 @@ export function ComposerBox({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[46rem] px-6 pb-5">
+    <div className="mx-auto w-full max-w-[46rem] px-3 pb-3 sm:px-6 sm:pb-5">
       <div className="relative">
         {menu}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for files; the textarea and attach button stay keyboard accessible. */}
@@ -134,7 +134,7 @@ export function ComposerBox({
             aria-label="Message"
             className="block max-h-64 min-h-[56px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground/70"
           />
-          <div className="flex items-center gap-0.5 px-2 pb-2">
+          <div className="flex flex-wrap items-center gap-0.5 gap-y-1 px-2 pb-2">
             <input
               ref={fileInput}
               type="file"

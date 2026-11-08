@@ -31,7 +31,7 @@ export interface Fetcher {
  * JSON fetch against `<origin>/api`. Auth rides on the HttpOnly cookie set by the launch URL
  * (§15); a 401 calls `onUnauthorized` so the app can show the "open from the terminal" screen.
  */
-export function createFetcher(origin: string, onUnauthorized: () => void): Fetcher {
+export function createFetcher(origin: string, onUnauthorized: (code: string) => void): Fetcher {
   const base = `${origin}/api`;
   async function send(
     method: string,
@@ -45,11 +45,11 @@ export function createFetcher(origin: string, onUnauthorized: () => void): Fetch
     } catch {
       throw new ApiRequestError(0, "network", "Can't reach the CodeDen server");
     }
-    if (res.status === 401) onUnauthorized();
     if (!res.ok) {
       const payload = (await res.json().catch(() => null)) as {
         error?: { code?: string; message?: string };
       } | null;
+      if (res.status === 401) onUnauthorized(payload?.error?.code ?? "unauthorized");
       throw new ApiRequestError(
         res.status,
         payload?.error?.code ?? (res.status === 404 ? "not_found" : "http_error"),

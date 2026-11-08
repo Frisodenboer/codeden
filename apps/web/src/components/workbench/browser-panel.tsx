@@ -112,7 +112,7 @@ function BrowserTabs({ sessionId, browser }: { sessionId: string; browser: Sessi
                 client.browser.closeTab(sessionId, t.tabId),
               )
             }
-            className="rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent"
+            className="rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent touch:opacity-100"
           >
             <X className="size-3" />
           </button>

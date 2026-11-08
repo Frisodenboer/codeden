@@ -75,7 +75,7 @@ export function AttachmentStrip({
             type="button"
             aria-label={`Remove ${a.name}`}
             onClick={() => onRemove(a.id)}
-            className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-popover text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-foreground"
+            className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-popover text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-foreground touch:opacity-100"
           >
             <X className="size-3" />
           </button>

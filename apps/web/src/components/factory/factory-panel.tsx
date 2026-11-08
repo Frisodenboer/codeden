@@ -47,10 +47,10 @@ function Meter(props: {
         ? "bg-status-waiting"
         : "bg-primary";
   return (
-    <div className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2">
+    <div className="min-w-[9rem] flex-1 rounded-lg border border-border bg-surface px-3 py-2">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-3xs tracking-wider text-muted-foreground uppercase">{label}</span>
-        <span className="text-[13px] font-medium tabular-nums">{display}</span>
+        <span className="text-[13px] font-medium whitespace-nowrap tabular-nums">{display}</span>
       </div>
       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full", bar)} style={{ width: `${pct}%` }} />
@@ -244,7 +244,7 @@ export function FactoryPanel({ project }: { project: Project }) {
             display={`${f.consecutiveFailures} / ${f.limits.pauseAfterConsecutiveFailures}`}
           />
         </div>
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-3">
           <BacklogColumn projectId={projectId} backlog={f.backlog} inProgress={f.inProgress} />
           <ChecksColumn projectId={projectId} checks={f.mergeChecks} />
           <RecentColumn projectId={projectId} recent={f.recent} />

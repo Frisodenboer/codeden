@@ -95,7 +95,7 @@ export function RateLimitMeters({ data }: { data: RateLimitsResponse | undefined
     );
   }
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2">
       {providers.map((provider) => {
         const billing = data.billing[provider];
         return (

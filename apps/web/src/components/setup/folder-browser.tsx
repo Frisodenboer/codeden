@@ -137,7 +137,7 @@ export function FolderBrowser({
               <button
                 type="button"
                 onClick={() => setPath(e.path)}
-                className="mr-1 flex size-6 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-background focus-visible:opacity-100"
+                className="mr-1 flex size-6 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-background focus-visible:opacity-100 touch:opacity-100"
                 aria-label={`Open ${e.name}`}
               >
                 <ChevronRight className="size-3.5" />
