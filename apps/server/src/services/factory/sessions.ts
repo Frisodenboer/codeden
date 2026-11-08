@@ -138,10 +138,11 @@ export class FactorySessions {
 
   /** Send a follow-up to a session (queued behind a running turn). */
   async message(sessionId: string, text: string): Promise<void> {
-    await this.deps.sessions.send(sessionId, {
-      input: { text, attachments: [] },
-      whenBusy: "queue",
-    });
+    await this.deps.sessions.send(
+      sessionId,
+      { input: { text, attachments: [] }, whenBusy: "queue" },
+      "codeden",
+    );
   }
 
   /** Stop every live factory session of a project (kill switch). Returns the stopped ids. */

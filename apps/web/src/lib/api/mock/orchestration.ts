@@ -145,7 +145,8 @@ export function mockOrchestration(world: MockWorld, deps: Deps): OrchestrationPa
       ensure: (role, projectId) => delay(ensure(role, projectId)),
       async send(role, projectId, input, whenBusy = "queue") {
         const session = ensure(role, projectId);
-        await deps.sendMessage(session.id, input, whenBusy === "steer" ? "steer" : "send");
+        // Like the server: a message to a busy role session waits in its queue.
+        await deps.sendMessage(session.id, input, whenBusy === "steer" ? "steer" : "queue");
         return { sessionId: session.id, status: "sent" };
       },
       projectStatus: (id) => delay(projectStatus(id)),

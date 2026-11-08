@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   JsonValue,
   ProviderInfo,
+  QueueSender,
   RespondRequest,
   SendMessageRequest,
   SendMessageResponse,
@@ -107,7 +108,9 @@ export class SessionService {
           if (target.projectId !== req.projectId) {
             throw badRequest("Can only join a session in the same project", "join_mismatch");
           }
-          if (req.input) await this.send(target.id, { input: req.input, whenBusy: "queue" });
+          if (req.input) {
+            await this.send(target.id, { input: req.input, whenBusy: "queue" }, req.startedBy.kind);
+          }
           return { status: "joined", sessionId: target.id };
         }
         case "wait":
@@ -154,16 +157,21 @@ export class SessionService {
     this.launchInBackground(session.id, pending.input, pending.workspace);
   }
 
-  async send(id: string, req: SendMessageRequest): Promise<SendMessageResponse> {
+  /** Send now, steer or queue (`whenBusy`); `from` labels the message if it is queued. */
+  async send(
+    id: string,
+    req: SendMessageRequest,
+    from: QueueSender = "user",
+  ): Promise<SendMessageResponse> {
     const session = this.deps.repo.get(id);
-    if (NOT_STARTED.has(session.status)) return this.enqueue(id, req.input);
+    if (NOT_STARTED.has(session.status)) return this.enqueue(id, req.input, from);
     if (BUSY.has(session.status)) {
       if (req.whenBusy === "reject") throw conflict("A turn is running", "turn_running");
       if (req.whenBusy === "steer") {
         await this.steer(id, req.input);
         return { status: "steered" };
       }
-      return this.enqueue(id, req.input);
+      return this.enqueue(id, req.input, from);
     }
     await this.sendNow(session, req.input);
     return { status: "sent" };
@@ -295,9 +303,9 @@ export class SessionService {
     }
   }
 
-  private enqueue(id: string, input: UserInput): SendMessageResponse {
+  private enqueue(id: string, input: UserInput, from: QueueSender): SendMessageResponse {
     const session = this.deps.repo.get(id);
-    this.deps.outbox.push(id, this.externalize(session, input));
+    this.deps.outbox.push(id, this.externalize(session, input), from);
     return { status: "queued" };
   }
 

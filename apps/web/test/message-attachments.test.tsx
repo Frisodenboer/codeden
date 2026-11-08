@@ -41,4 +41,12 @@ describe("user message attachments", () => {
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByText("photo.png")).toBeTruthy();
   });
+
+  it("truncates a long file name and keeps the full name on hover", () => {
+    const name = `${"very-long-screenshot-name-".repeat(6)}.png`;
+    renderWithClient(message([{ type: "file", path: `src/${name}`, name }]));
+    const label = screen.getByText(name);
+    expect(label.className).toContain("truncate");
+    expect(label.closest("[title]")?.getAttribute("title")).toBe(name);
+  });
 });

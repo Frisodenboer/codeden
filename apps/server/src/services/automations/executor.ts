@@ -206,10 +206,16 @@ export class AutomationExecutor {
           return await this.startSession(req, run, decision);
         case "message_pm": {
           const text = renderTemplate(automation.action.message, req.vars);
-          const res = await this.deps.orchestration().sendToRole("pm", project.id, {
-            text: `Automation "${automation.name}" (${TRIGGER_TEXT[triggeredBy]}):\n\n${text}`,
-            attachments: [],
-          });
+          const res = await this.deps.orchestration().sendToRole(
+            "pm",
+            project.id,
+            {
+              text: `Automation "${automation.name}" (${TRIGGER_TEXT[triggeredBy]}):\n\n${text}`,
+              attachments: [],
+            },
+            "queue",
+            "automation",
+          );
           return this.finished(run, res.sessionId);
         }
         case "triage": {

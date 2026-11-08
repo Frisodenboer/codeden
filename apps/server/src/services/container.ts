@@ -32,6 +32,7 @@ import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
 import { Outbox } from "./sessions/outbox";
 import { QuestionBroker } from "./sessions/questions";
+import { QueueService } from "./sessions/queue";
 import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
@@ -94,6 +95,8 @@ export interface AppServices {
   projects: ProjectService;
   sessionRepo: SessionRepo;
   sessions: SessionService;
+  /** The queued-message tray: list, edit, delete and send-now. */
+  queue: QueueService;
   lifecycle: SessionLifecycle;
   recovery: SessionRecovery;
   questions: QuestionBroker;
@@ -185,6 +188,13 @@ export function createServices(opts: ServicesOptions): AppServices {
     launcher,
     outbox,
     questions,
+  });
+  const queue = new QueueService({
+    outbox,
+    repo: sessionRepo,
+    sessions,
+    artifacts,
+    providers: () => opts.runner.providers(),
   });
   const lifecycle = new SessionLifecycle({
     db: opts.db,
@@ -285,6 +295,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     projects,
     sessionRepo,
     sessions,
+    queue,
     lifecycle,
     recovery: new SessionRecovery({
       repo: sessionRepo,

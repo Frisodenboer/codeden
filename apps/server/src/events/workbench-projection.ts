@@ -8,7 +8,7 @@ import type { Tx } from "./projection-db";
 export const SETUP_OUTPUT_LIMIT = 16_000;
 
 type WorkbenchEvent = EventOf<
-  "session.setup" | "checkpoint.created" | "message.queued" | "message.dequeued"
+  "session.setup" | "checkpoint.created" | "message.queued" | "message.dequeued" | "message.edited"
 >;
 
 /** Projections for workbench domain events: setup output, checkpoints, queued messages. */
@@ -50,7 +50,13 @@ export function applyWorkbenchProjection(tx: Tx, e: WorkbenchEvent): void {
     case "message.queued": {
       const m = e.payload.message;
       tx.insert(queuedMessages)
-        .values({ id: m.id, sessionId: m.sessionId, input: m.input, createdAt: m.createdAt })
+        .values({
+          id: m.id,
+          sessionId: m.sessionId,
+          input: m.input,
+          sender: m.from,
+          createdAt: m.createdAt,
+        })
         .onConflictDoNothing()
         .run();
       return;
@@ -58,6 +64,19 @@ export function applyWorkbenchProjection(tx: Tx, e: WorkbenchEvent): void {
     case "message.dequeued":
       tx.delete(queuedMessages).where(eq(queuedMessages.id, e.payload.messageId)).run();
       return;
+    case "message.edited": {
+      const row = tx
+        .select({ input: queuedMessages.input })
+        .from(queuedMessages)
+        .where(eq(queuedMessages.id, e.payload.messageId))
+        .get();
+      if (!row) return;
+      tx.update(queuedMessages)
+        .set({ input: { ...row.input, text: e.payload.text } })
+        .where(eq(queuedMessages.id, e.payload.messageId))
+        .run();
+      return;
+    }
   }
 }
 

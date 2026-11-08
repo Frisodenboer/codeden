@@ -82,8 +82,7 @@ export function Composer({ session, running }: { session: Session; running: bool
     },
     onMutate: () => clear(session.id),
     onSuccess: (_d, { sendMode }) => {
-      if (sendMode === "queue")
-        toast("Queued", { description: "Sends when the current turn finishes." });
+      // Queued messages show in the tray above the composer.
       if (sendMode === "steer") toast("Sent to the running turn");
     },
     onError: (e, { input }) => {
