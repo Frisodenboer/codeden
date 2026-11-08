@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AutonomyLevel,
   ModelInfo,
   ProviderCapabilities,
   ProviderInfo,
@@ -59,6 +60,12 @@ export interface ProviderSession {
    * without it, CodeDen applies the change by reopening the session through its resume token.
    */
   configure?(change: SessionConfigChange): Promise<void>;
+  /**
+   * Change the autonomy level (§11.2). With `capabilities().liveAutonomy` it applies from the
+   * next tool call, even inside a running turn; otherwise from the next turn. Approvals
+   * already waiting stay waiting. Optional: without it, the level applies on the next resume.
+   */
+  setAutonomy?(level: AutonomyLevel): Promise<void>;
   /** Close the session and end `events`. Idempotent. */
   close(): Promise<void>;
   /** Provider session/thread id for resume, once known. */

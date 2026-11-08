@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AutonomyLevel,
   ReasoningEffort,
   RuntimeResponse,
   SessionOptions,
@@ -11,7 +12,7 @@ import { AsyncQueue } from "../async-queue";
 import type { ResolvedCommand } from "../util/exec";
 import { explicitModel } from "../util/model";
 import { handleServerRequest } from "./approvals";
-import { codexConfigOverrides, codexPolicy, toCodexInput } from "./config";
+import { codexConfigOverrides, codexPolicy, codexSandboxPolicy, toCodexInput } from "./config";
 import { CodexEventMapper } from "./mapper";
 import { startAppServer } from "./process";
 import type { ServerNotification } from "./protocol";
@@ -19,6 +20,7 @@ import type {
   Model,
   ThreadResumeResponse,
   ThreadStartResponse,
+  TurnStartParams,
   TurnStartResponse,
 } from "./protocol/v2";
 import type { CodexRpc } from "./rpc";
@@ -57,6 +59,9 @@ export class CodexSession implements ProviderSession {
   private turnPending = false;
   /** Model/effort changes from `configure`, applied on every following turn. */
   private nextTurn: SessionConfigChange = {};
+  /** Current autonomy; after `setAutonomy`, every following `turn/start` carries it. */
+  private autonomy: AutonomyLevel;
+  private autonomyChanged = false;
   private closed = false;
   /** The model the thread started with (the user's Codex config when none was chosen). */
   private threadModel: string | undefined;
@@ -80,6 +85,7 @@ export class CodexSession implements ProviderSession {
     this.mapper = new CodexEventMapper(opts.sessionId, emit);
     this.mapper.codexThreadId = opts.resumeToken;
     this.broker = new ApprovalBroker(emit);
+    this.autonomy = opts.autonomy;
   }
 
   /** Start the app-server and the thread. Called by the adapter before returning the session. */
@@ -95,6 +101,15 @@ export class CodexSession implements ProviderSession {
   /** Model/effort applied from the next `turn/start` on (Codex takes both per turn). */
   async configure(change: SessionConfigChange): Promise<void> {
     this.nextTurn = { ...this.nextTurn, ...change };
+  }
+
+  /**
+   * Autonomy from the next `turn/start` on, as approval-policy and sandbox overrides. A running
+   * turn keeps the policy it started with (the app-server fixes it per turn).
+   */
+  async setAutonomy(level: AutonomyLevel): Promise<void> {
+    this.autonomy = level;
+    this.autonomyChanged = true;
   }
 
   async send(input: UserInput): Promise<void> {
@@ -116,6 +131,7 @@ export class CodexSession implements ProviderSession {
         input: toCodexInput(input),
         ...(effort ? { effort } : {}),
         ...(model !== undefined ? { model } : {}),
+        ...(this.autonomyChanged ? this.policyOverride() : {}),
       });
       this.mapper.beginTurn(res.turn.id);
     } catch (error) {
@@ -164,6 +180,20 @@ export class CodexSession implements ProviderSession {
 
   // ---------------------------------------------------------------- internals
 
+  /** Session options with the current autonomy (a restarted app-server resumes with it). */
+  private currentOptions(): SessionOptions {
+    return { ...this.opts, autonomy: this.autonomy };
+  }
+
+  /** `turn/start` overrides that carry the current autonomy (§11.2). */
+  private policyOverride(): Pick<TurnStartParams, "approvalPolicy" | "sandboxPolicy"> {
+    const opts = this.currentOptions();
+    return {
+      approvalPolicy: codexPolicy(opts.autonomy, opts.readOnly).approvalPolicy,
+      sandboxPolicy: codexSandboxPolicy(opts),
+    };
+  }
+
   private threadId(): string {
     const id = this.mapper.codexThreadId;
     if (!id) throw new ProviderSessionError("not_started", "Codex thread is not started");
@@ -195,12 +225,13 @@ export class CodexSession implements ProviderSession {
       { env: this.opts.env, cwd: this.opts.cwd },
     );
     this.rpc = rpc;
-    const { approvalPolicy, sandbox } = codexPolicy(this.opts.autonomy, this.opts.readOnly);
+    const opts = this.currentOptions();
+    const { approvalPolicy, sandbox } = codexPolicy(opts.autonomy, opts.readOnly);
     const common = {
       cwd: this.opts.cwd,
       approvalPolicy,
       sandbox,
-      config: codexConfigOverrides(this.opts),
+      config: codexConfigOverrides(opts),
       // "Default" is left out so Codex uses the model from the user's config.
       ...(explicitModel(this.opts.model) ? { model: explicitModel(this.opts.model) } : {}),
       ...(this.opts.systemPrompt ? { developerInstructions: this.opts.systemPrompt } : {}),

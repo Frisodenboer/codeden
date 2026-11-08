@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AutonomyLevel,
   Item,
   RuntimeResponse,
   SessionOptions,
@@ -34,6 +35,7 @@ export class FakeSession implements ProviderSession {
     private readonly opts: SessionOptions,
     private readonly fake: FakeProviderOptions,
   ) {
+    this.autonomy = opts.autonomy;
     this.token = opts.resumeToken ?? `fake-${opts.sessionId}`;
     this.rootThreadId = `${opts.sessionId}:thread-root`;
     this.events.push({ type: "thread.started", thread: { id: this.rootThreadId } });
@@ -52,6 +54,13 @@ export class FakeSession implements ProviderSession {
     if (change.model !== undefined) {
       this.events.push({ type: "session.updated", model: change.model ?? "fake-1" });
     }
+  }
+
+  /** Current autonomy. Full skips the scripted command approval, as it would for real. */
+  autonomy: AutonomyLevel;
+
+  async setAutonomy(level: AutonomyLevel): Promise<void> {
+    this.autonomy = level;
   }
 
   async send(input: UserInput): Promise<void> {
@@ -128,8 +137,9 @@ export class FakeSession implements ProviderSession {
       await this.streamAssistant(turn, threadId, this.replyFor(prompt));
       await this.todoList(turn);
       if (prompt.includes("[mcp]")) await this.mcpToolCall(turn);
-      const approved =
-        this.fake.approval || prompt.includes("[approval]") ? await this.approval(turn) : true;
+      const asks =
+        (this.fake.approval || prompt.includes("[approval]")) && this.autonomy !== "full";
+      const approved = asks ? await this.approval(turn) : true;
       if (approved) await this.commandToolCall(turn);
       if (this.fake.subagent || prompt.includes("[subagent]")) await this.subagent(turn);
       if (this.fake.followups ?? true) {

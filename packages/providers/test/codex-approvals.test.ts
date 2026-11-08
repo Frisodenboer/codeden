@@ -154,9 +154,7 @@ describe("Codex config", () => {
       codexConfigOverrides({ ...opts, autonomy: "supervised", additionalDirectories: [] }, temp),
     ).not.toHaveProperty("sandbox_workspace_write.writable_roots");
     // The defaults come from the running platform.
-    expect(codexWritableRoots({ ...opts, additionalDirectories: [] })).toEqual([
-      ...osTempRoots(),
-    ]);
+    expect(codexWritableRoots({ ...opts, additionalDirectories: [] })).toEqual([...osTempRoots()]);
   });
 
   it("builds the per-turn sandbox override for each level", () => {

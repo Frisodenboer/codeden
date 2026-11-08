@@ -19,7 +19,8 @@
   "planMode": true,
   "reasoningEffort": true,
   "mcp": true,
-  "skills": true
+  "skills": true,
+  "liveAutonomy": true
  },
  "preamble": [],
  "turns": [
