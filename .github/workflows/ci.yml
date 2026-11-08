@@ -104,6 +104,15 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @codeden/web exec playwright install --with-deps chromium
       - run: pnpm e2e
+      - name: Desktop app smoke test (unpacked build)
+        shell: bash
+        run: |
+          pnpm --filter @codeden/desktop package --dir
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a pnpm --filter @codeden/desktop e2e
+          else
+            pnpm --filter @codeden/desktop e2e
+          fi
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7

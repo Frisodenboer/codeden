@@ -44,11 +44,15 @@ export function NotificationSettings() {
         </div>
       </SettingRow>
       <SettingRow
-        label="Browser notifications"
+        label={
+          platform.capabilities.osIntegration ? "System notifications" : "Browser notifications"
+        }
         help={
           permission === "denied"
             ? "Blocked in your browser settings."
-            : "Shown when the CodeDen tab isn't focused."
+            : platform.capabilities.osIntegration
+              ? "Shown when the CodeDen window isn't focused."
+              : "Shown when the CodeDen tab isn't focused."
         }
       >
         <div className="flex items-center gap-2">

@@ -217,6 +217,17 @@ export const Settings = z.object({
       })
       .prefault({}),
   ),
+  /** The desktop app (§17). Read by the desktop app only; `npx codeden` ignores it. */
+  desktop: z
+    .object({
+      /** Start CodeDen (in the tray, window hidden) when you log in. */
+      launchAtLogin: z.boolean().default(false),
+      /** Closing the window keeps CodeDen running in the tray / menu bar; Quit really quits. */
+      closeToTray: z.boolean().default(true),
+      /** Keep the computer from sleeping while an agent is running. */
+      keepAwake: z.boolean().default(true),
+    })
+    .prefault({}),
   /** First-run setup (§14): set once the user finishes the detection checklist. */
   setup: z
     .object({

@@ -1,4 +1,5 @@
 import type { SetupCheck, SetupCommand, SetupToolId } from "@codeden/contracts";
+import { isElectronRuntime } from "@codeden/providers";
 import type { Exec } from "../exec";
 import { type BrowserProbe, detectBrowser } from "./browsers";
 import {
@@ -306,6 +307,10 @@ export async function checkNode({ nodeVersion, platform }: CheckEnv): Promise<Ch
       message: `Node.js ${MIN_NODE_MAJOR}+ is required`,
       fix: installFix("node", platform),
     };
+  }
+  // The desktop app runs on the Node.js built into it; no system Node.js is needed (§17).
+  if (isElectronRuntime()) {
+    return { ...check, state: "ok", message: `Node.js ${check.version} (built into the app)` };
   }
   return { ...check, state: "ok", message: `Node.js ${check.version}` };
 }

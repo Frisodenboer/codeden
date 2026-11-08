@@ -1,6 +1,7 @@
 import { CODEDEN_VERSION } from "@codeden/contracts";
 import { Link } from "@tanstack/react-router";
 import {
+  AppWindow,
   Bell,
   Bot,
   Cpu,
@@ -22,6 +23,7 @@ import {
   ProviderSettings,
   UtilitySettings,
 } from "@/components/settings/sections-core";
+import { DesktopSettings } from "@/components/settings/sections-desktop";
 import { GithubSettings } from "@/components/settings/sections-github";
 import { ImageSettings } from "@/components/settings/sections-images";
 import { NotificationSettings } from "@/components/settings/sections-media";
@@ -31,6 +33,7 @@ import { UpdateCheck } from "@/components/settings/update-check";
 import { Logo } from "@/components/shell/logo";
 import { ShortcutList } from "@/components/shell/shortcuts";
 import { isMockMode } from "@/lib/api";
+import { platform } from "@/lib/platform";
 import { useSnapshot } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "./page-header";
@@ -77,6 +80,9 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon; render: () => Rea
     icon: Bell,
     render: () => <NotificationSettings />,
   },
+  ...(platform.capabilities.osIntegration
+    ? [{ id: "desktop", label: "App", icon: AppWindow, render: () => <DesktopSettings /> }]
+    : []),
   { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard, render: () => <ShortcutList /> },
   { id: "about", label: "About", icon: Info, render: () => <About /> },
 ];

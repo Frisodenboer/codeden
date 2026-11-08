@@ -39,8 +39,9 @@ import { SessionService } from "./sessions/session-service";
 import { WorktreeCleanup, type WorktreeCleanupDeps } from "./sessions/worktree-cleanup";
 import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
+import { DesktopUpdateService } from "./updates/desktop";
 import { notesSources, updateRegistry } from "./updates/registry";
-import { type SelfUpdateHost, UpdateService } from "./updates/service";
+import { type SelfUpdateHost, UpdateService, type Updates } from "./updates/service";
 import { billingFromSetup } from "./usage/billing";
 import { UsageService } from "./usage/usage-service";
 import { ProviderUtilityService, runnerOneShot, type UtilityService } from "./utility";
@@ -120,8 +121,8 @@ export interface AppServices {
   voice: VoiceService;
   /** Local Whisper: runtime and model downloads, and transcription (§11.3). */
   localStt: LocalSttService;
-  /** Update checks and one-click self-update (§16). */
-  updates: UpdateService;
+  /** Update checks and one-click self-update (§16; the desktop app's own updater, §17). */
+  updates: Updates;
   setup: SetupService;
   /** Claude Code support: the Claude Agent SDK, installed on demand (§14). */
   claudeSdk: ClaudeSdkService;
@@ -322,17 +323,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     inbox,
     artifacts,
     browser: new BrowserService({ runner: opts.runner, repo: sessionRepo }),
-    updates: new UpdateService({
-      home: opts.paths.home,
-      mode: () => opts.settings.get().updates.mode,
-      checksDisabled: process.env.CODEDEN_UPDATE_CHECK === "0",
-      host: opts.selfUpdate,
-      registry: updateRegistry(),
-      notes: notesSources(),
-      fetch: opts.updates?.fetch,
-      intervalMs: opts.updates?.intervalMs,
-      log: opts.log,
-    }),
+    updates: createUpdates(opts),
     images: new ImageService({
       registry: opts.imageEngines ?? defaultImageEngines(opts.secrets),
       settings: opts.settings,
@@ -386,5 +377,25 @@ function defaultImageEngines(secrets: SecretStore): ImageEngineRegistry {
   return createImageEngineRegistry({
     gemini: { apiKey: key("gemini.apiKey") },
     openai: { apiKey: key("openai.apiKey") },
+  });
+}
+
+/** npm self-update for `codeden`, or the desktop app's own updater when it hosts the server. */
+function createUpdates(opts: ServicesOptions): Updates {
+  const common = {
+    mode: () => opts.settings.get().updates.mode,
+    checksDisabled: process.env.CODEDEN_UPDATE_CHECK === "0",
+    notes: notesSources(),
+    fetch: opts.updates?.fetch,
+    intervalMs: opts.updates?.intervalMs,
+    log: opts.log,
+  };
+  const desktop = opts.selfUpdate?.desktop;
+  if (desktop) return new DesktopUpdateService({ ...common, desktop });
+  return new UpdateService({
+    ...common,
+    home: opts.paths.home,
+    host: opts.selfUpdate,
+    registry: updateRegistry(),
   });
 }

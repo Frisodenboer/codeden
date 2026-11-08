@@ -124,7 +124,7 @@ export function UpdateBanner() {
           state="failed"
           onClose={() => setHidden(view.key)}
           actions={
-            data.source === "packaged" && (
+            canUpdate(data) && (
               <Button size="xs" onClick={install} disabled={actions.install.isPending}>
                 Retry
               </Button>
@@ -165,7 +165,7 @@ export function UpdateBanner() {
                 <Button size="xs" variant="ghost" onClick={() => setNotesOpen(true)}>
                   What's new
                 </Button>
-                {data.source === "packaged" && (
+                {canUpdate(data) && (
                   <Button size="xs" onClick={install} disabled={actions.install.isPending}>
                     Update now
                   </Button>
@@ -190,11 +190,16 @@ export function UpdateBanner() {
             version={view.version}
             open={notesOpen}
             onOpenChange={setNotesOpen}
-            onUpdate={data.source === "packaged" ? install : undefined}
+            onUpdate={canUpdate(data) ? install : undefined}
           />
         </>
       );
   }
+}
+
+/** The server can install updates itself: an npm install or the desktop app (not a checkout). */
+export function canUpdate(data: UpdateStatus): boolean {
+  return data.source !== "source";
 }
 
 interface BannerView {

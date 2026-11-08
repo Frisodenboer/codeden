@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, RotateCcw } from "lucide-react";
+import { canUpdate } from "@/components/shell/update-banner";
 import { Button } from "@/components/ui/button";
 import { useClient } from "@/lib/api";
 import { updatesKey, useUpdateActions, useUpdates } from "@/lib/updates";
@@ -38,7 +39,7 @@ export function UpdateCheck() {
         <span className={data.updateAvailable ? "text-status-waiting" : "text-muted-foreground"}>
           {text}
         </span>
-        {data.updateAvailable && data.source === "packaged" && data.state === "idle" && (
+        {data.updateAvailable && canUpdate(data) && data.state === "idle" && (
           <Button size="xs" onClick={() => actions.install.mutate()} disabled={busy}>
             Update now
           </Button>

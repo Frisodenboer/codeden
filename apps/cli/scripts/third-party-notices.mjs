@@ -20,7 +20,7 @@ function licenseText(root) {
   return file ? readFileSync(join(root, file), "utf8").trim() : null;
 }
 
-export function thirdPartyNotices({ forbidden = [] } = {}) {
+export function thirdPartyNotices({ forbidden = [], fileName = "THIRD-PARTY-NOTICES.txt" } = {}) {
   return {
     name: "codeden-third-party-notices",
     generateBundle() {
@@ -45,7 +45,7 @@ export function thirdPartyNotices({ forbidden = [] } = {}) {
       const body = entries.map(([, notice]) => notice).join(`\n\n${"-".repeat(72)}\n\n`);
       this.emitFile({
         type: "asset",
-        fileName: "THIRD-PARTY-NOTICES.txt",
+        fileName,
         source: `The codeden bundle includes the following third-party packages.\n\n${body}\n`,
       });
     },

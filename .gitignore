@@ -16,3 +16,6 @@ test-results/
 # Copied from the root README at pack time (apps/cli/scripts/copy-readme.mjs)
 apps/cli/README.md
 .video/
+# Desktop app packaging (apps/desktop/scripts/package.mjs)
+apps/desktop/.stage/
+apps/desktop/release/

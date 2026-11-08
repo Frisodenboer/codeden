@@ -20,6 +20,7 @@ import {
   rollbackTarget,
   writePointer,
 } from "./app-dir";
+import type { DesktopUpdater } from "./desktop";
 import { type InstallAppOptions, installAppVersion } from "./installer";
 import { takeUpdateResult } from "./last-result";
 import { fetchLatestVersion, fetchReleaseNotes, type NotesSources } from "./registry";
@@ -38,7 +39,26 @@ export interface SelfUpdateHost {
   launcherVersion: string;
   /** The launcher could not start the pinned version (shown in the UI). */
   warning?: string | null;
+  /**
+   * Set by the desktop app (`source: "desktop"`): updates come from its own updater (GitHub
+   * Releases) instead of npm, through `DesktopUpdateService` (§17).
+   */
+  desktop?: DesktopUpdater;
 }
+
+/** What the API and the UI hub use; implemented for npm installs and for the desktop app. */
+export type Updates = Pick<
+  UpdateService,
+  | "start"
+  | "stop"
+  | "onChange"
+  | "status"
+  | "snapshot"
+  | "install"
+  | "restartNow"
+  | "rollback"
+  | "notes"
+>;
 
 export interface UpdateServiceDeps {
   home: string;
@@ -177,7 +197,7 @@ export class UpdateService {
    * Returns at once with the `installing` status; progress follows through `onChange`.
    */
   install(opts: { version?: string; restart?: boolean } = {}): UpdateStatus {
-    if (this.host.source === "source") {
+    if (this.host.source !== "packaged") {
       throw conflict(
         "You're running CodeDen from source: pull and rebuild to update.",
         "running_from_source",

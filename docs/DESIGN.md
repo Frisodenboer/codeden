@@ -1,6 +1,6 @@
 # CodeDen: Design
 
-> Status: **locked for v1**, 2026-11-07. Changes to anything in "Locked decisions" need an explicit design discussion and an update to this file.
+> Status: **locked for v1**, 2026-11-07. Changes to anything in "Locked decisions" need an explicit design discussion and an update to this file. The desktop app (§17) was approved on 2026-11-08.
 
 ## 1. What CodeDen is
 
@@ -16,7 +16,7 @@ CodeDen is a local-first harness for coding agents (Claude Code and Codex at lau
 - **Image generation for every agent.** A Claude agent can create images too. One `generate_image` tool routes to whichever engine you chose in Settings (Codex, Gemini, OpenAI).
 - **Follow-up prompts.** When an agent finishes, CodeDen suggests the next prompts as one-click chips.
 
-Installed with `npx codeden`. Open source under the MIT license. No accounts, no license checks, no hosted backend.
+Installed with `npx codeden`, or as the desktop app (§17). Open source under the MIT license. No accounts, no license checks, no hosted backend.
 
 ## 2. Principles
 
@@ -33,7 +33,7 @@ Installed with `npx codeden`. Open source under the MIT license. No accounts, no
 
 | Area | Decision |
 |---|---|
-| Distribution | Web app first: `npx codeden` starts a local server and opens the browser. An Electron shell comes after v1 (see §17) |
+| Distribution | Two ways, one codebase and one data folder: `npx codeden` starts a local server and opens the browser; the **desktop app** (Electron, §17) starts or attaches to the same server and loads the same UI, installed from GitHub Releases (NSIS, dmg/zip, AppImage/deb) and updated by electron-updater |
 | License / business | Fully open source (MIT). No accounts or license gating |
 | Language | Plain TypeScript (strict), ESM. No Effect |
 | Runtime | Node.js **24+** |
@@ -121,10 +121,11 @@ codeden/
     server/     Hono server, DB, orchestration, MCP tools, scheduler, GitHub sync
     web/        React SPA
     runner/     runner process: adapters host, pty, browser, git, MCP proxy, journal
+    desktop/    the desktop app (§17): Electron main, preload bridge, server host, packaging
+    cli/        the published `codeden` package (CLI entry, bundles server + runner + web)
   packages/
     contracts/  zod schemas: event model, runner protocol, WS messages, settings
     providers/  provider adapters (claude, codex, later opencode, acp, fake, replay)
-  bin/          `codeden` CLI entry: starts server, opens browser, subcommands
   docs/
 ```
 
@@ -542,7 +543,7 @@ Detailed, trustworthy reports on spend and usage across every provider, project 
   - **follow-up chips** after a turn completes (§7.5)
 - **Right panel** (tabs): diff, files, browser, terminal, issue/PR, session details. A bottom terminal drawer is optional.
 - **Global:** command palette, keyboard shortcuts, settings, light and dark themes.
-- **Platform bridge.** Notifications, opening links, folder picking, global shortcuts, clipboard images and badge counts go through one `PlatformBridge` interface in the UI. It has a web implementation now and an Electron one later; features are detected, never "am I in Electron?". Browsers can't return real folder paths, so projects are added through a **server-side folder picker**, which also suits remote use.
+- **Platform bridge.** Notifications, opening links, folder picking, global shortcuts, clipboard images and badge counts go through one `PlatformBridge` interface in the UI. It has a web implementation and a desktop one (§17), chosen by detecting the desktop app's `window.codedenDesktop` bridge; features are read from `capabilities`, never "am I in Electron?". Browsers can't return real folder paths, so projects are added through a **server-side folder picker**, which also suits remote use; the desktop app (`capabilities.folderPicker`) uses the system folder picker, with the server-side one as a fallback.
 
 ## 14. First-run setup and inheriting credentials
 
@@ -578,7 +579,7 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
 
 ## 16. Distribution and operations
 
-- **Install.** `npx codeden` (or `npm i -g codeden`). The CLI subcommands:
+- **Install.** `npx codeden` (or `npm i -g codeden`), or the desktop app's installer from GitHub Releases (§17). The CLI subcommands:
   - `codeden` (start and open)
   - `codeden doctor` (diagnostics, including installed versions and which one starts)
   - `codeden update` (install the latest version and switch to it), `codeden update --rollback`
@@ -592,21 +593,34 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
   - **Restart.** After the install the server announces `restarting` and calls the CLI's restart hook: the CLI closes the server (the runner keeps running), starts the new version's CLI as a child in the same terminal with the original arguments plus the port in use and `--no-open`, and stays as a thin parent that passes on signals and the exit code. The new server finds the old runner, sees the version mismatch and drains it (§4.2), so interrupted turns resume through the existing path. The browser polls `/api/health`, reloads when the new version answers (same port and install token, so the cookie still works) and confirms "CodeDen updated to X". If the new version exits before answering, the CLI restores `current.json`, records the failure (`<home>/app/last-update.json`) and starts the old version again; the UI shows the error with Retry. A server not started by the CLI (development) cannot restart itself and shows "Update installed, restart CodeDen to finish" with the command.
   - **Rollback.** About and `codeden update --rollback` point `current.json` back at the previous version (or clear it to run the launched copy) and restart.
   - **Tests.** `CODEDEN_UPDATE_REGISTRY` and `CODEDEN_RELEASE_NOTES_URL` point the check, the install and the release notes at a local fake registry; they exist for tests only.
-- **Telemetry.** None. CodeDen sends nothing anywhere; the only outbound requests are the optional npm registry version lookup, the release notes from GitHub when you open "What's new", and downloads you start yourself (Claude Code support, local Whisper).
+  - **The desktop app** (§17) uses the same setting, the same 6-hour schedule and the same banner, but not npm: the server's update service runs in desktop mode (`InstallSource` `desktop`, `DesktopUpdateService`) and drives the app's updater (electron-updater, GitHub Releases) over IPC. "Update now" downloads with progress, then the app stops the runner gracefully (as `codeden stop`), installs and restarts; sessions resume through the usual path. `auto` downloads in the background and installs on quit. Side-by-side npm versions and rollback don't apply. `CODEDEN_DESKTOP_UPDATE_URL` (tests only) points the app at a local feed.
+- **Telemetry.** None. CodeDen sends nothing anywhere; the only outbound requests are the optional update check (the npm registry, or GitHub Releases in the desktop app), the release notes from GitHub when you open "What's new", and downloads you start yourself (Claude Code support, local Whisper).
 - **Native dependencies.** Kept to `node-pty` and `@napi-rs/keyring`, both with prebuilt binaries. Installing through `npx` on Windows, macOS and Linux is checked in CI. The local Whisper runtime (§11.3) is a native addon too, but it is not a package dependency: it is downloaded on demand, checksum-verified, only when the user turns local dictation on.
 
-## 17. Electron (after v1)
+## 17. The desktop app (Electron)
 
-Electron is a thin shell that starts the same server, as a child process, and loads the same UI. The seams that make this cheap are mandatory from day one:
+`apps/desktop` is a thin Electron shell that starts the same server and loads the same UI. The seams that keep it thin stay mandatory:
 
 1. The server is started through `startServer(...)` and never imports Electron.
 2. The UI talks to the server only over HTTP and WebSocket, with a configurable base URL and token.
 3. Platform features go through `PlatformBridge` (§13).
-4. Agents use the browser only through CDP; the native browser view swaps in behind the panel.
+4. Agents use the browser only through CDP.
 5. Secrets are already in the OS keychain.
-6. Native dependencies are kept minimal.
+6. Native dependencies are kept minimal and Node-API (they load in Electron without a rebuild).
 
-Browser speech recognition doesn't work inside Electron, so dictation there uses local Whisper (§11.3) or a cloud engine; the UI finds this out by feature detection.
+**Processes.** The main process (TypeScript, bundled with tsdown) owns the window, tray and updater. It uses the same home as `npx codeden` (`~/.codeden`): if a live server for that home exists (lock file, live pid, `/api/health`) it attaches to it; otherwise it forks `dist/server.js`, the same server the CLI ships, on its own binary as Node.js (`ELECTRON_RUN_AS_NODE`, the helper binary on macOS), on port 4317 or any free port. No system Node.js or npm is needed. Every place that starts CodeDen's own scripts with `process.execPath` (the runner, npm, Playwright's CLI) adds `ELECTRON_RUN_AS_NODE` explicitly; the server and runner remove it from their own environment so shells and agents never inherit it, and npm-style shims of the user's tools run on the user's `node` when there is one. The runner stays detached. Server and main talk over Node IPC with `DesktopServerMessage` / `DesktopHostMessage` (contracts). Quitting closes the server and leaves the runner running; a server stopped from outside (`codeden stop`) quits the app.
+
+**Window and bridge.** One window on the server's UI, loaded through the token launch URL (the cookie bootstrap as in the browser). `contextIsolation`, `sandbox`, no `nodeIntegration`, navigation locked to the server origin (other links open in the system browser), permissions limited to notifications, the microphone (audio only), the clipboard and fullscreen for the server's pages, no debugging port. The preload exposes only `window.codedenDesktop` (`CodedenDesktopApi`: info, folder picker, notifications with click-through, open external, badge, navigation), validated in the main process. The Chromium profile and window state live in `<home>/desktop`, so a separate `--home` is a fully separate app; one instance runs per home.
+
+**App integration.** A tray (menu bar on macOS) with running and waiting counts from `GET /api/activity` (counts by session status, never by provider), the app icon badge, native notifications, the system folder picker, `codeden://` links (`session/<id>`, `project/<id>`, `inbox`, `settings/<section>`), keep-awake (`powerSaveBlocker`) while an agent runs, open at login, close to tray, and an application menu with the standard roles. Its settings are a `desktop` section in `Settings` (launch at login, close to tray, keep awake), read by the app by polling the server.
+
+**Claude Code support** is installed on demand without npm (`CODEDEN_DEPS_INSTALLER=registry`): the pinned SDK tarball is fetched from the registry, checked against the manifest's sha512 integrity and unpacked into `<home>/deps`. It is never bundled.
+
+**Updates** (see §16): electron-updater against GitHub Releases, driven by the server's update policy, so the existing banner works unchanged. Installing stops the runner first (it may run from the install folder, and Windows locks files in use). When attached to a server started by `codeden`, the app follows the update mode on its own (tray and a notification). macOS updates need a Developer ID signature; unsigned builds say so instead of offering updates.
+
+**Packaging and release.** electron-builder from a staged app (`dist/` plus the runtime dependencies installed with npm, no asar): NSIS per-user (no admin, Start menu and desktop shortcuts, uninstaller), dmg + zip for arm64 and x64 (the zip feeds the updater), AppImage + deb. Signing is optional through `CSC_LINK`/`CSC_KEY_PASSWORD` and notarization through `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`; without them builds are unsigned (SmartScreen and Gatekeeper warn). The release workflow builds all three on a version tag after the npm publish and attaches the installers and `latest*.yml` metadata to the same GitHub Release. The desktop version always equals the CLI version.
+
+**Phase 2.** The browser panel stays the CDP screencast (§12.2); an embedded Electron browser view behind the same panel is a later step. Browser speech recognition doesn't work inside Electron, so dictation there uses local Whisper (§11.3) or a cloud engine; the UI finds this out by feature detection.
 
 ## 18. Testing
 
@@ -625,7 +639,8 @@ Browser speech recognition doesn't work inside Electron, so dictation there uses
 | M3 | Automations | Scheduler, event triggers, guards, the template library, issue triage, per-project toggles, custom automations |
 | M3b | Autonomy modes (experimental) | Project autonomy modes, the vision editor, the factory loop, merge checks with cross-provider review, automatic merge and revert, limits and kill switch, factory panel and daily digest (§10.1) |
 | v1.0 | Public launch | Polish, docs, `npx codeden` release |
-| Later | | OpenCode, ACP adapter, Electron app, remote runners (Upstash Box, SSH/VPS, Docker), webhooks, GitLab and other forges, remote/mobile access |
+| Desktop | Desktop app | The Electron app (§17): installers, tray, notifications, deep links, automatic updates |
+| Later | | OpenCode, ACP adapter, embedded browser view in the desktop app, remote runners (Upstash Box, SSH/VPS, Docker), webhooks, GitLab and other forges, remote/mobile access |
 
 ## 20. Spikes before M1 (de-risk first)
 

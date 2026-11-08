@@ -331,6 +331,12 @@ describe("version", () => {
     expect(CODEDEN_VERSION).toBe(pkg.version);
     expect(SOURCE_VERSION).toBe(pkg.version);
   });
+
+  it("matches the desktop app version (installers and the npm package ship together)", () => {
+    const desktopUrl = new URL("../../../apps/desktop/package.json", import.meta.url);
+    const desktop = JSON.parse(readFileSync(desktopUrl, "utf8")) as { version: string };
+    expect(desktop.version).toBe(SOURCE_VERSION);
+  });
 });
 
 describe("claude sdk status", () => {

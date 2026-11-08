@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
+import { ownNodeEnv } from "@codeden/providers";
 import { type Browser, chromium } from "playwright-core";
 import { CommandError } from "../errors";
 
@@ -154,7 +155,7 @@ export function installChromium(log?: (message: string) => void): Promise<void> 
     execFile(
       process.execPath,
       [cli, "install", "chromium"],
-      { windowsHide: true, timeout: 10 * 60_000 },
+      { windowsHide: true, timeout: 10 * 60_000, env: ownNodeEnv() },
       (error) => (error ? reject(error) : resolve()),
     );
   });
