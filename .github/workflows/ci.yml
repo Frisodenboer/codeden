@@ -16,6 +16,8 @@ concurrency:
 jobs:
   check:
     name: ${{ matrix.os }}
+    # About 3 minutes (5 on Windows): fail a hang in minutes instead of waiting for GitHub.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -91,6 +93,8 @@ jobs:
 
   e2e:
     name: e2e (${{ matrix.os }})
+    # About 3 minutes (8 on Windows before the browser cache): fail a hang in minutes.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
