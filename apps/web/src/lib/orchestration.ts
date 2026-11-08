@@ -56,9 +56,9 @@ export function useProjectStatus(projectId: string): {
 
 /** The `<codeden_status>` digest and notices prepended to role-session messages (§8.4). */
 export interface FoldedMessage {
-  /** The status digest block, when present. */
+  /** The status digest block (with its tags), when present. */
   status: string | null;
-  /** The "Updates since your last turn" list, when present. */
+  /** The "Updates since your last turn" list (without the `<codeden_updates>` tags). */
   updates: string | null;
   /** What the sender actually wrote. */
   text: string;
@@ -67,10 +67,15 @@ export interface FoldedMessage {
 }
 
 const STATUS_RE = /^\s*<codeden_status\b[^>]*>[\s\S]*?<\/codeden_status>\s*/;
+const UPDATES_RE = /^<codeden_updates\b[^>]*>([\s\S]*?)<\/codeden_updates>\s*/;
 const UPDATES_HEAD = "Updates since your last turn:";
 const WAKE_PREFIX = "Automatic wake-up for the updates above.";
 
-/** Split a role-session user message into the injected status, updates and the real text. */
+/**
+ * Split a role-session user message into the injected status, updates and the real text.
+ * The server wraps both injected blocks in tags; messages sent before the updates had tags
+ * fall back to `legacyUpdatesEnd`.
+ */
 export function foldDigest(raw: string): FoldedMessage {
   let rest = raw;
   let status: string | null = null;
@@ -80,11 +85,33 @@ export function foldDigest(raw: string): FoldedMessage {
     rest = rest.slice(match[0].length);
   }
   let updates: string | null = null;
-  if (rest.startsWith(UPDATES_HEAD)) {
-    const end = rest.indexOf("\n\n");
-    updates = (end === -1 ? rest : rest.slice(0, end)).trim();
-    rest = end === -1 ? "" : rest.slice(end + 2);
+  const tagged = UPDATES_RE.exec(rest);
+  if (tagged) {
+    updates = (tagged[1] ?? "").trim();
+    rest = rest.slice(tagged[0].length);
+  } else if (rest.startsWith(UPDATES_HEAD)) {
+    const end = legacyUpdatesEnd(rest);
+    updates = rest.slice(0, end).trim();
+    rest = rest.slice(end);
   }
   const text = rest.trim();
   return { status, updates, text, wake: text.startsWith(WAKE_PREFIX) };
+}
+
+/**
+ * Where an untagged updates list (older messages) ends. Notices quote free text in `"…"`,
+ * which can span paragraphs, so the list ends at the first blank line outside a quote: where
+ * the number of `"` so far is even. If quotes never balance (a stray `"` inside a notice),
+ * fall back to the first blank line rather than hiding the sender's text.
+ */
+export function legacyUpdatesEnd(rest: string): number {
+  const first = rest.indexOf("\n\n");
+  if (first === -1) return rest.length;
+  let quotes = 0;
+  let counted = 0;
+  for (let blank = first; blank !== -1; blank = rest.indexOf("\n\n", blank + 2)) {
+    for (; counted < blank; counted++) if (rest[counted] === '"') quotes++;
+    if (quotes % 2 === 0) return blank;
+  }
+  return first;
 }

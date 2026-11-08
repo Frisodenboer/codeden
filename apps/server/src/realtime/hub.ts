@@ -10,6 +10,7 @@ import {
 import type { WSContext, WSEvents } from "hono/ws";
 import type { Db } from "../db/client";
 import type { EventStore } from "../events/store";
+import { type ArtifactLookup, clientEvent } from "../services/sessions/client-items";
 import { coalesceEvents } from "./coalesce";
 import { collectDirty, type Dirty, emptyDirty, isDirty, loadTranscript } from "./transcript";
 
@@ -42,7 +43,14 @@ export interface WsHubOptions {
   flushMs?: number;
   /** The update status sent to each client on connect (§16). */
   updateStatus?: () => UpdateStatus;
+  /**
+   * Maps image paths in user messages back to their artifacts (`clientItemRecord`). Without
+   * it, such paths are cut down to their file name.
+   */
+  artifacts?: ArtifactLookup;
 }
+
+const noArtifacts: ArtifactLookup = { artifactForPath: () => undefined };
 
 /**
  * UI realtime hub (§6). Global stream: snapshot seq -> `subscribe { fromSeq }` -> catch-up ->
@@ -54,6 +62,7 @@ export class WsHub {
   private readonly clients = new Set<Client>();
   private readonly unsubscribe: () => void;
   private readonly flushMs: number;
+  private readonly artifacts: ArtifactLookup;
 
   constructor(
     private readonly store: EventStore,
@@ -62,6 +71,7 @@ export class WsHub {
     private readonly opts: WsHubOptions = {},
   ) {
     this.flushMs = opts.flushMs ?? 40;
+    this.artifacts = opts.artifacts ?? noArtifacts;
     this.unsubscribe = store.subscribe((events) => this.onEvents(events));
   }
 
@@ -167,7 +177,7 @@ export class WsHub {
       const batch = this.store.listAfter(cursor, BATCH, sessionIds);
       if (batch.length === 0) break;
       const visible = batch.filter((e) => this.visible(client, e));
-      if (visible.length > 0) send(client.ws, { type: "events", events: coalesceEvents(visible) });
+      if (visible.length > 0) send(client.ws, { type: "events", events: this.present(visible) });
       cursor = batch.at(-1)?.seq ?? cursor;
       if (batch.length < BATCH) break;
     }
@@ -235,7 +245,7 @@ export class WsHub {
     client.timer = undefined;
     if (!this.clients.has(client)) return;
     if (client.pending.length > 0) {
-      const events = coalesceEvents(client.pending);
+      const events = this.present(client.pending);
       client.pending = [];
       send(client.ws, { type: "events", events });
     }
@@ -245,8 +255,13 @@ export class WsHub {
   }
 
   private sendTranscript(client: Client, sessionId: string, watch: Watch): void {
-    send(client.ws, loadTranscript(this.db, sessionId, watch.dirty));
+    send(client.ws, loadTranscript(this.db, sessionId, watch.dirty, this.artifacts));
     watch.dirty = emptyDirty();
+  }
+
+  /** Events as sent to a client: deltas merged, attachment paths mapped. */
+  private present(events: RawEventEnvelope[]): RawEventEnvelope[] {
+    return coalesceEvents(events).map((e) => clientEvent(e, this.artifacts));
   }
 }
 

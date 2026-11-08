@@ -11,7 +11,7 @@ import { rowToAutomation, rowToItemRecord, rowToSession, rowToThread, rowToTurn 
 import { automations, items, sessions, threads, turns } from "../db/schema";
 import type { AppServices } from "../services/container";
 import { badRequest, notFound } from "../services/errors";
-import { previewRecord } from "../services/sessions/preview";
+import { clientItemRecord } from "../services/sessions/client-items";
 import { agentConfigRoutes, sessionAgentConfigRoutes } from "./agent-config";
 import { automationRoutes, projectAutomationRoutes } from "./automations";
 import { browserRoutes, sessionBrowserRoutes } from "./browser";
@@ -153,6 +153,6 @@ function buildSessionSnapshot(s: AppServices, sessionId: string): SessionSnapsho
       .where(eq(items.sessionId, sessionId))
       .orderBy(asc(items.threadId), asc(items.position))
       .all()
-      .map((r) => previewRecord(rowToItemRecord(r))),
+      .map((r) => clientItemRecord(rowToItemRecord(r), s.artifacts)),
   };
 }

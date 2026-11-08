@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 export function DigestDisclosure({ folded }: { folded: FoldedMessage }) {
   const [open, setOpen] = useState(false);
   if (!folded.status && !folded.updates) return null;
-  const updates = folded.updates ? folded.updates.split("\n").length - 1 : 0;
+  // One notice per `- (type)` entry; a quoted notice text can span several lines.
+  const updates = folded.updates?.match(/^- \(/gm)?.length ?? 0;
   return (
     <div className="flex max-w-[80%] flex-col items-end" data-testid="digest-disclosure">
       <button
@@ -21,7 +22,11 @@ export function DigestDisclosure({ folded }: { folded: FoldedMessage }) {
       >
         <Gauge className="size-3" />
         Status sent to agent
-        {updates > 0 && <span className="opacity-70">· {updates} updates</span>}
+        {updates > 0 && (
+          <span className="opacity-70">
+            · {updates} {updates === 1 ? "update" : "updates"}
+          </span>
+        )}
         <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
       </button>
       {open && (

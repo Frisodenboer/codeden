@@ -8,22 +8,27 @@ import { platform } from "@/lib/platform";
 import { DigestDisclosure, WakeLine } from "./digest-fold";
 import { Markdown } from "./markdown";
 
+function FileChip({ label }: { label: string }) {
+  return (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 font-mono text-2xs text-muted-foreground">
+      <FileText className="size-3.5" />
+      {label}
+    </span>
+  );
+}
+
 function AttachmentView({ attachment }: { attachment: Attachment }) {
   const client = useClient();
-  if (attachment.type === "file") {
-    return (
-      <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 font-mono text-2xs text-muted-foreground">
-        <FileText className="size-3.5" />
-        {attachment.name ?? attachment.path}
-      </span>
-    );
+  if (attachment.type === "file") return <FileChip label={attachment.name ?? attachment.path} />;
+  // Images are served from artifacts; the browser never loads a filesystem path. A path the
+  // server could not map to an artifact arrives as a bare file name.
+  if (attachment.source.type === "path") {
+    return <FileChip label={attachment.name ?? attachment.source.path} />;
   }
   const src =
     attachment.source.type === "base64"
       ? `data:${attachment.mediaType};base64,${attachment.source.data}`
-      : attachment.source.type === "artifact"
-        ? client.artifactUrl(attachment.source.artifactId)
-        : undefined;
+      : client.artifactUrl(attachment.source.artifactId);
   return (
     <a
       href={src}

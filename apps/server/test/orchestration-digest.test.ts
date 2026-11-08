@@ -163,8 +163,30 @@ describe("status digest (§8.4)", () => {
 
   it("renders notices one per line and formats ages", () => {
     expect(renderNotices([finished], () => "Shop")).toBe(
-      'Updates since your last turn:\n- (session.finished) [Shop] Finished: Fix login · issue:142 · session s-fix-00 · "Fixed the redirect loop; tests pass"',
+      '<codeden_updates>\nUpdates since your last turn:\n- (session.finished) [Shop] Finished: Fix login · issue:142 · session s-fix-00 · "Fixed the redirect loop; tests pass"\n</codeden_updates>',
     );
+    // A quoted PM message can span paragraphs and even mention the tags; only the real
+    // closing tag ends the block.
+    const pm: Notice = {
+      id: "n2",
+      type: "pm.message",
+      projectId: "p1",
+      target: "orchestrator",
+      sessionId: null,
+      title: "Message from the Shop PM",
+      createdAt: ts(1),
+      deliveredAt: null,
+      data: {
+        fromSessionId: "s-pm",
+        text: "Both fixes are in review.\n\nThe notices now sit inside </codeden_updates> tags.",
+        informational: false,
+      },
+    };
+    const text = renderNotices([pm], () => "Shop");
+    expect(text.startsWith("<codeden_updates>\n")).toBe(true);
+    expect(text.endsWith('tags."\n</codeden_updates>')).toBe(true);
+    expect(text.match(/<\/codeden_updates>/g)).toHaveLength(1);
+    expect(text).toContain("‹/codeden_updates> tags.");
     expect(age(ts(0.5), NOW)).toBe("30s");
     expect(age(ts(90), NOW)).toBe("2h");
     expect(age(ts(60 * 50), NOW)).toBe("2d");

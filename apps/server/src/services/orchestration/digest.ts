@@ -145,19 +145,32 @@ function projectLines(s: ProjectStatus, now: number, indent = ""): string[] {
   return lines;
 }
 
+/**
+ * CodeDen's own tags (`<codeden_status>`, `<codeden_updates>`) inside free text (a purpose, a
+ * quoted PM message) get a look-alike bracket, so only CodeDen's real tags open and close a
+ * block and the UI can fold exactly the injected part away.
+ */
+const OWN_TAG = /<(\/?codeden_(?:status|updates))/gi;
+const neutralizeTags = (line: string) => line.replace(OWN_TAG, "‹$1");
+
+/** A tagged block: the opening tag, the escaped lines, the closing tag. */
+function block(open: string, close: string, lines: string[]): string {
+  return [open, ...lines.map(neutralizeTags), close].join("\n");
+}
+
 /** The PM's digest for its project. */
 export function renderProjectDigest(s: ProjectStatus, now = Date.now()): string {
   const at = new Date(now).toISOString();
-  return [
-    `<codeden_status project=${quote(s.project.name)} at="${at}">`,
-    ...projectLines(s, now),
+  return block(
+    `<codeden_status project=${quote(neutralizeTags(s.project.name))} at="${at}">`,
     "</codeden_status>",
-  ].join("\n");
+    projectLines(s, now),
+  );
 }
 
 /** The orchestrator's digest: every project rolled up. */
 export function renderOverviewDigest(o: Overview, now = Date.now()): string {
-  const lines = [`<codeden_status scope="all projects" at="${new Date(now).toISOString()}">`];
+  const lines: string[] = [];
   if (o.projects.length === 0) lines.push("No projects yet.");
   for (const p of o.projects) {
     lines.push(`## ${p.project.name} (${p.project.id})`);
@@ -172,18 +185,25 @@ export function renderOverviewDigest(o: Overview, now = Date.now()): string {
     lines.push("Informational PM messages:");
     for (const m of o.pmMessages) lines.push(`- ${m.projectId ?? "?"}: ${quote(m.text, 300)}`);
   }
-  lines.push("</codeden_status>");
-  return lines.join("\n");
+  return block(
+    `<codeden_status scope="all projects" at="${new Date(now).toISOString()}">`,
+    "</codeden_status>",
+    lines,
+  );
 }
 
-/** "Updates since your last turn": one line per notice, for the model. */
+/**
+ * "Updates since your last turn": one entry per notice, for the model, inside
+ * `<codeden_updates>`. A notice can quote several paragraphs (a PM message), so the tags,
+ * not a blank line, mark where the injected part ends and the sender's own text begins.
+ */
 export function renderNotices(list: Notice[], projectName?: (id: string) => string): string {
   const lines = ["Updates since your last turn:"];
   for (const n of list) {
     const where = n.projectId && projectName ? ` [${projectName(n.projectId)}]` : "";
     lines.push(`- (${n.type})${where} ${n.title}${noticeDetail(n)}`);
   }
-  return lines.join("\n");
+  return block("<codeden_updates>", "</codeden_updates>", lines);
 }
 
 function noticeDetail(n: Notice): string {

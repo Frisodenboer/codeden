@@ -148,6 +148,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   const hub = new WsHub(store, database.db, runnerStatus, {
     flushMs: opts.realtimeFlushMs,
     updateStatus: () => services.updates.snapshot(),
+    artifacts: { artifactForPath: (path) => services.artifacts.artifactForPath(path) },
   });
   const secrets =
     opts.secrets === "memory"

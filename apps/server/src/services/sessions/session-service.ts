@@ -175,7 +175,7 @@ export class SessionService {
     if (!this.provider(session.provider)?.capabilities.steer) {
       throw conflict("This provider cannot steer a running turn", "unsupported");
     }
-    const input = this.externalize(session, raw);
+    const input = this.forRunner(session, raw);
     await this.deps.runner.request({ name: "session.steer", sessionId: id, input }).catch((e) => {
       throw toServiceError(e);
     });
@@ -264,7 +264,7 @@ export class SessionService {
   // ---------------------------------------------------------------- internals
 
   private async sendNow(session: Session, raw: UserInput): Promise<void> {
-    const input = this.externalize(session, this.inputDecorator?.(session, raw) ?? raw);
+    const input = this.forRunner(session, this.inputDecorator?.(session, raw) ?? raw);
     await applyPendingConfig(this.deps.repo, this.deps.runner, session);
     const previous = session.status;
     // Messaging an archived session brings it back.
@@ -301,11 +301,17 @@ export class SessionService {
     return { status: "queued" };
   }
 
+  /** Pasted images saved as artifacts: the form CodeDen stores (queued messages). */
   private externalize(session: Session, input: UserInput): UserInput {
     return this.deps.artifacts.externalizeAttachments(input, {
       sessionId: session.id,
       projectId: session.projectId,
     });
+  }
+
+  /** Input handed to the runner: artifacts resolved to the file paths providers read. */
+  private forRunner(session: Session, input: UserInput): UserInput {
+    return this.deps.artifacts.resolveAttachments(this.externalize(session, input));
   }
 
   private launchInBackground(
@@ -314,7 +320,7 @@ export class SessionService {
     workspace: StartSessionRequest["workspace"],
   ) {
     const session = this.deps.repo.get(id);
-    const prepared = input ? this.externalize(session, input) : undefined;
+    const prepared = input ? this.forRunner(session, input) : undefined;
     const promise = this.deps.launcher
       .launch(id, { input: prepared, workspace })
       .finally(() => this.launching.delete(id));
