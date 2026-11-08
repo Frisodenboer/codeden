@@ -400,6 +400,8 @@ describe("issue intake ownership (§10.1)", () => {
     factoryLimits: FactoryLimits.parse({}),
     killSwitch: false,
     timezone: null,
+    pinned: false,
+    sortOrder: 0,
     createdAt: "2026-11-07T10:00:00.000Z",
     updatedAt: "2026-11-07T10:00:00.000Z",
     archivedAt: null,

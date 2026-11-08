@@ -5,6 +5,7 @@ import {
   ClaudeSdkStatus,
   FsListResponse,
   InboxCounts,
+  ReorderProjectsResponse,
   SecretsStatus,
   SessionDetail,
   SetupStatus,
@@ -102,6 +103,41 @@ describe("api routes", () => {
     const dismissed = await call("POST", `/inbox/${item?.id}/resolve`, { status: "dismissed" });
     expect(dismissed.json()).toMatchObject({ status: "dismissed" });
     expect(InboxCounts.parse((await call("GET", "/inbox/counts")).json()).open).toBe(0);
+  });
+
+  it("pins and reorders projects, and rejects an incomplete order", async () => {
+    const add = async (name: string) => {
+      const folder = join(home, "user", "work", name);
+      mkdirSync(folder, { recursive: true });
+      const res = await call("POST", "/projects", { source: { type: "local", path: folder } });
+      return (res.json() as { project: { id: string } }).project.id;
+    };
+    const a = await add("one");
+    const b = await add("two");
+    const c = await add("three");
+    expect((await call("PATCH", `/projects/${c}`, { pinned: true })).json()).toMatchObject({
+      pinned: true,
+    });
+    const listed = async () =>
+      ((await call("GET", "/projects")).json() as Array<{ id: string }>).map((p) => p.id);
+    expect(await listed()).toEqual([c, a, b]);
+
+    const reordered = await call("PUT", "/projects/order", { projectIds: [c, b, a] });
+    expect(reordered.status).toBe(200);
+    expect(ReorderProjectsResponse.parse(reordered.json()).projects.map((p) => p.id)).toEqual([
+      c,
+      b,
+      a,
+    ]);
+    expect(await listed()).toEqual([c, b, a]);
+
+    const incomplete = await call("PUT", "/projects/order", { projectIds: [c, b] });
+    expect(incomplete.status).toBe(400);
+    expect(incomplete.json()).toMatchObject({
+      error: { code: "invalid_order", message: expect.stringContaining(`missing: ${a}`) },
+    });
+    expect((await call("PUT", "/projects/order", { projectIds: "x" })).status).toBe(400);
+    expect(await listed()).toEqual([c, b, a]);
   });
 
   it("reports Claude Code support as ready from the workspace SDK", async () => {

@@ -8,9 +8,10 @@ import {
   FactoryLimits,
   type Project,
   type ProjectDetection,
+  sortProjects,
   type UpdateProjectRequest,
 } from "@codeden/contracts";
-import { asc, eq } from "drizzle-orm";
+import { eq, max } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { rowToProject } from "../../db/rows";
 import { projects } from "../../db/schema";
@@ -48,9 +49,10 @@ const samePath = (a: string, b: string) =>
 export class ProjectService {
   constructor(private readonly deps: ProjectServiceDeps) {}
 
+  /** Projects in the canonical order (§13): pinned first, then manual order, then name. */
   list(opts: { includeArchived?: boolean } = {}): Project[] {
-    const all = this.deps.db.select().from(projects).orderBy(asc(projects.name)).all();
-    return all.map(rowToProject).filter((p) => opts.includeArchived || p.archivedAt === null);
+    const all = this.deps.db.select().from(projects).all().map(rowToProject);
+    return sortProjects(all.filter((p) => opts.includeArchived || p.archivedAt === null));
   }
 
   get(id: string): Project {
@@ -95,10 +97,45 @@ export class ProjectService {
     if (patch.autonomy !== undefined) next.autonomy = patch.autonomy;
     if (patch.timezone !== undefined) next.timezone = patch.timezone;
     if (patch.defaultBranch !== undefined) next.defaultBranch = patch.defaultBranch;
+    // Pinning keeps `sortOrder`, so a project lands in its group by its manual position.
+    if (patch.pinned !== undefined) next.pinned = patch.pinned;
     this.deps.store.append([
       { type: "project.updated", sessionId: null, payload: { project: next } },
     ]);
     return next;
+  }
+
+  /**
+   * Set the manual order of the project list (§13). `projectIds` must name every non-archived
+   * project exactly once. Pinned projects still list first; within each group the order given
+   * here applies.
+   */
+  reorder(projectIds: string[]): Project[] {
+    const active = this.list();
+    const known = new Set(active.map((p) => p.id));
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    for (const id of projectIds) {
+      if (seen.has(id)) duplicates.add(id);
+      seen.add(id);
+    }
+    const unknown = [...seen].filter((id) => !known.has(id));
+    const missing = active.filter((p) => !seen.has(p.id)).map((p) => p.id);
+    if (duplicates.size > 0 || unknown.length > 0 || missing.length > 0) {
+      const problems = [
+        duplicates.size > 0 && `listed more than once: ${[...duplicates].join(", ")}`,
+        unknown.length > 0 && `not active projects: ${unknown.join(", ")}`,
+        missing.length > 0 && `missing: ${missing.join(", ")}`,
+      ].filter(Boolean);
+      throw badRequest(
+        `The order must list every active project exactly once (${problems.join("; ")})`,
+        "invalid_order",
+      );
+    }
+    this.deps.store.append([
+      { type: "projects.reordered", sessionId: null, payload: { projectIds } },
+    ]);
+    return this.list();
   }
 
   archive(id: string): void {
@@ -128,6 +165,8 @@ export class ProjectService {
       factoryLimits: FactoryLimits.parse({}),
       killSwitch: false,
       timezone: null,
+      pinned: false,
+      sortOrder: this.nextSortOrder(),
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
@@ -135,6 +174,15 @@ export class ProjectService {
     return detected.github
       ? { ...base, kind: "github", github: detected.github }
       : { ...base, kind: "local" };
+  }
+
+  /** New projects go to the end of the unpinned group, after every slot (archived included). */
+  private nextSortOrder(): number {
+    const row = this.deps.db
+      .select({ last: max(projects.sortOrder) })
+      .from(projects)
+      .get();
+    return typeof row?.last === "number" ? row.last + 1 : 0;
   }
 
   private uniqueSlug(base: string): string {

@@ -42,6 +42,11 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
         .where(eq(projects.id, e.payload.projectId))
         .run();
       return [];
+    case "projects.reordered":
+      e.payload.projectIds.forEach((id, index) => {
+        tx.update(projects).set({ sortOrder: index }).where(eq(projects.id, id)).run();
+      });
+      return [];
     case "session.created":
     case "session.updated": {
       const row = sessionToRow(e.payload.session);
