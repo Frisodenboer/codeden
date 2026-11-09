@@ -7,6 +7,20 @@ export const rowBase =
 export const rowActive =
   "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1.5 before:-left-[5px] before:w-[3px] before:rounded-full before:bg-primary";
 
+/**
+ * The rows under a project (PM, sessions, automations, archived): a guide line drawn under the
+ * project's chevron, with the rows a little to its right.
+ */
+export const childGroup = "ml-3.5 flex flex-col gap-px border-l border-sidebar-foreground/15 pl-1";
+/**
+ * A row inside `childGroup`: its icon sits past the project tile, and the selected-row accent
+ * bar lands on the guide line.
+ */
+export const childRow = "pl-5 before:-left-[6px]";
+/** A nested group inside a child row's group (automation items): its guide sits under the icon. */
+export const grandchildGroup =
+  "ml-6.5 flex flex-col gap-px border-l border-sidebar-foreground/15 pl-1";
+
 /** True when `href` is the current path. */
 export function useIsActive(href: string, exact = true): boolean {
   const pathname = useRouterState({ select: (s) => s.location.pathname });

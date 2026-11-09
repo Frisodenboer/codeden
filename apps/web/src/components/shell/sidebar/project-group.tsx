@@ -7,7 +7,7 @@ import { StatusDot } from "@/components/common/status-dot";
 import { statusTone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
-import { NavRow, rowBase, useIsActive } from "./nav-row";
+import { childGroup, childRow, NavRow, rowBase, useIsActive } from "./nav-row";
 import { ProjectAutomations } from "./project-automations";
 import { type GroupPosition, useProjectMenu } from "./project-menu";
 import { RowMenu, RowMenuButton, useRowMenu } from "./row-menu";
@@ -89,6 +89,7 @@ export function ProjectGroup({
       data-project-id={project.id}
       className={cn(
         "flex flex-col gap-px",
+        open && "pb-1.5",
         drag.isDragging &&
           "relative z-10 rounded-md bg-sidebar shadow-md ring-1 ring-sidebar-border",
       )}
@@ -158,11 +159,11 @@ export function ProjectGroup({
       </RowMenu>
 
       {open && (
-        <div className="flex flex-col gap-px">
+        <div className={childGroup}>
           <NavRow
             href={`/projects/${project.id}/pm`}
             link={{ to: "/projects/$projectId/pm", params: { projectId: project.id } }}
-            className="pl-7"
+            className={childRow}
           >
             <Bot className="size-3.5 shrink-0 text-primary/80" />
             <span className="flex-1 truncate">Project manager</span>
@@ -178,7 +179,7 @@ export function ProjectGroup({
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className={cn(rowBase, "h-7 pl-7 text-xs text-muted-foreground")}
+              className={cn(rowBase, childRow, "h-7 text-xs text-muted-foreground")}
             >
               {showAll ? "Show less" : `Show ${agents.length - LIMIT} more`}
             </button>
@@ -189,7 +190,7 @@ export function ProjectGroup({
               to="/projects/$projectId"
               params={{ projectId: project.id }}
               search={{ archived: true }}
-              className={cn(rowBase, "h-7 pl-7 text-xs text-muted-foreground/70")}
+              className={cn(rowBase, childRow, "h-7 text-xs text-muted-foreground/70")}
             >
               <Archive className="size-3.5 shrink-0" />
               <span className="truncate">{archived} archived</span>

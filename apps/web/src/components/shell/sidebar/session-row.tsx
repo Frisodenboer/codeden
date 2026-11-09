@@ -5,7 +5,7 @@ import { StatusDot } from "@/components/common/status-dot";
 import { ageShort, statusTone } from "@/lib/format";
 import { useSessionActions } from "@/lib/session-actions";
 import { cn } from "@/lib/utils";
-import { NavRow, rowBase } from "./nav-row";
+import { childRow, NavRow, rowBase } from "./nav-row";
 import { RowMenu, RowMenuButton, useRowMenu } from "./row-menu";
 import { sessionMenuEntries } from "./session-menu";
 
@@ -66,7 +66,7 @@ export function SessionRow({ session }: { session: Session }) {
     <RowMenu menu={menu} entries={entries}>
       <div ref={row} className="group/session relative" data-session-id={session.id}>
         {renaming ? (
-          <div className={cn(rowBase, "pl-7 hover:bg-transparent")}>
+          <div className={cn(rowBase, childRow, "hover:bg-transparent")}>
             <StatusDot status={session.status} />
             <RenameField
               title={title}
@@ -82,7 +82,7 @@ export function SessionRow({ session }: { session: Session }) {
           <NavRow
             href={`/sessions/${session.id}`}
             link={{ to: "/sessions/$sessionId", params: { sessionId: session.id } }}
-            className="pl-7"
+            className={childRow}
             title={session.progress?.text ?? session.purpose}
           >
             <StatusDot status={session.status} />
