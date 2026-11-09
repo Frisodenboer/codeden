@@ -3,23 +3,49 @@ import { ago } from "./helpers";
 
 const SF = "https://github.com/hearth-co/storefront";
 
-function checks(list: [string, "success" | "failure" | null][]): GithubChecksSummary {
-  const failed = list.filter(([, c]) => c === "failure").length;
-  const pending = list.filter(([, c]) => c === null).length;
+const FAILED = new Set(["failure", "timed_out", "cancelled", "action_required", "error"]);
+
+/**
+ * A checks summary from `[name, conclusion]` pairs; a `null` conclusion is still running, and
+ * `"queued"` hasn't started.
+ */
+export function checks(list: [string, string | null][]): GithubChecksSummary {
+  const failed = list.filter(([, c]) => c !== null && FAILED.has(c)).length;
+  const pending = list.filter(([, c]) => c === null || c === "queued").length;
   return {
     state: list.length === 0 ? "none" : failed ? "failure" : pending ? "pending" : "success",
     total: list.length,
     passed: list.length - failed - pending,
     failed,
     pending,
-    checks: list.map(([name, conclusion]) => ({
+    checks: list.map(([name, c]) => ({
       name,
-      status: conclusion ? "completed" : "in_progress",
-      conclusion,
+      status: c === null ? "in_progress" : c === "queued" ? "queued" : "completed",
+      conclusion: c === null || c === "queued" ? null : c,
       url: null,
     })),
   };
 }
+
+/** PR 57's checks: e2e is running and the preview deploy is queued. */
+export const searchPrChecks: [string, string | null][] = [
+  ["ci / typecheck", "success"],
+  ["ci / lint", "success"],
+  ["ci / unit", "success"],
+  ["ci / e2e", null],
+  ["preview / deploy", "queued"],
+  ["docs / build", "skipped"],
+];
+
+/** PR 57 a little later: e2e passed and the deploy started. */
+export const searchPrChecksLater: [string, string | null][] = [
+  ["ci / typecheck", "success"],
+  ["ci / lint", "success"],
+  ["ci / unit", "success"],
+  ["ci / e2e", "success"],
+  ["preview / deploy", null],
+  ["docs / build", "skipped"],
+];
 
 function issue(
   number: number,
@@ -120,14 +146,25 @@ export const mockPrs: GithubPrDetails[] = [
   }),
   pr(57, "Product search with filters", "draft", "s-search", {
     body: "Fixes #139.\n\n- Category chips and max-price filter\n- URL is the source of truth",
-    checks: checks([
-      ["ci / typecheck", "success"],
-      ["ci / unit", "success"],
-      ["ci / e2e", null],
-    ]),
+    checks: checks(searchPrChecks),
     linkedIssues: [139],
     additions: 61,
     deletions: 3,
     files: [{ path: "src/search/filters.tsx", status: "added", additions: 61, deletions: 3 }],
+  }),
+  pr(55, "Serve webp through the image CDN", "open", "s-cdn", {
+    body: "Fixes #131. Adds `image/webp` to the CDN's allowed types.",
+    sessionId: null,
+    checks: checks([
+      ["ci / typecheck", "success"],
+      ["ci / unit", "failure"],
+      ["ci / e2e", "timed_out"],
+      ["ci / lighthouse", "cancelled"],
+      ["security / audit", "neutral"],
+    ]),
+    linkedIssues: [131],
+    additions: 7,
+    deletions: 1,
+    files: [{ path: "infra/cdn.ts", status: "modified", additions: 7, deletions: 1 }],
   }),
 ];
