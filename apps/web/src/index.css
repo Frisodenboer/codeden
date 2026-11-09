@@ -331,7 +331,71 @@
   }
 }
 
+/* PR check icons: a queued dot breathes; a finished check pops in, its tick draws, a cross shakes. */
+@keyframes codeden-check-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+}
+@utility animate-check-breathe {
+  animation: codeden-check-breathe 1.8s ease-in-out infinite;
+}
+@keyframes codeden-check-pop {
+  0% {
+    transform: scale(0.55);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@utility animate-check-pop {
+  animation: codeden-check-pop 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes codeden-check-draw {
+  from {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+}
+@utility animate-check-draw {
+  animation: codeden-check-draw 320ms 80ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+@keyframes codeden-check-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-1.5px);
+  }
+  40%,
+  80% {
+    transform: translateX(1.5px);
+  }
+}
+@utility animate-check-shake {
+  animation: codeden-check-shake 360ms ease-in-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .animate-check-breathe,
+  .animate-check-pop,
+  .animate-check-draw,
+  .animate-check-shake,
   .text-shine,
   .animate-rise,
   .animate-border-shimmer::before {

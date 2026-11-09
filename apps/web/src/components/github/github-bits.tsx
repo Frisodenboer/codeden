@@ -4,19 +4,45 @@ import type {
   GithubConnection,
   ReviewDecision,
 } from "@codeden/contracts";
-import { CheckCircle2, Circle, Clock, GitPullRequest, XCircle } from "lucide-react";
+import { GitPullRequest } from "lucide-react";
 import type { ReactNode } from "react";
+import {
+  CHECK_STATES,
+  checkState,
+  checksBreakdown,
+  summaryLabel,
+  summaryState,
+} from "@/lib/github-checks";
 import { cn } from "@/lib/utils";
+import { CheckGlyph, checkToneClass } from "./check-glyph";
 
-const checksTone = {
-  none: "text-muted-foreground/60",
-  pending: "text-status-waiting",
-  success: "text-status-done",
-  failure: "text-status-failed",
-};
-const checksIcon = { none: Circle, pending: Clock, success: CheckCircle2, failure: XCircle };
+/** Thin segmented bar of a PR's checks: passed, failed, running, queued, then the rest. */
+function ChecksBar({ checks }: { checks: GithubChecksSummary }) {
+  const b = checksBreakdown(checks.checks);
+  const segments = [
+    { n: b.passed, cls: "bg-status-done" },
+    { n: b.failed, cls: "bg-status-failed" },
+    { n: b.running, cls: "bg-status-running motion-safe:animate-pulse" },
+    { n: b.queued, cls: "bg-status-waiting/60" },
+    { n: b.other, cls: "bg-muted-foreground/35" },
+  ].filter((s) => s.n > 0);
+  return (
+    <span className="flex h-1 w-10 gap-px overflow-hidden rounded-full" aria-hidden>
+      {segments.map((s) => (
+        <span
+          key={s.cls}
+          className={cn("h-full transition-[flex-grow] duration-500", s.cls)}
+          style={{ flexGrow: s.n }}
+        />
+      ))}
+    </span>
+  );
+}
 
-/** Combined checks state: an icon, optionally with `3/4`. */
+/**
+ * Combined checks state: a spinner while any check runs, a tick or cross once they finish,
+ * optionally with `3/4` and a small progress bar while they're not all green.
+ */
 export function ChecksBadge({
   checks,
   withCount = true,
@@ -26,39 +52,48 @@ export function ChecksBadge({
   withCount?: boolean;
   className?: string;
 }) {
-  const Icon = checksIcon[checks.state];
-  const label =
-    checks.state === "none"
-      ? "No checks"
-      : `${checks.passed}/${checks.total} checks passed${checks.failed ? `, ${checks.failed} failed` : ""}`;
+  const state = summaryState(checks);
+  const label = summaryLabel(checks);
   return (
     <span
-      className={cn("inline-flex items-center gap-1 text-2xs tabular-nums", className)}
+      className={cn("inline-flex items-center gap-1.5 text-2xs tabular-nums", className)}
       title={label}
       data-checks={checks.state}
     >
-      <Icon className={cn("size-3.5", checksTone[checks.state])} />
+      <CheckGlyph state={state} title={label} />
       {withCount && checks.total > 0 && (
-        <span className="text-muted-foreground">
-          {checks.passed}/{checks.total}
-        </span>
+        <>
+          {checks.state !== "success" && checks.checks.length > 0 && <ChecksBar checks={checks} />}
+          <span
+            className={checks.state === "success" ? "text-status-done" : "text-muted-foreground"}
+          >
+            {checks.passed}/{checks.total}
+          </span>
+        </>
       )}
     </span>
   );
 }
 
-/** Tone of one check run from its status and conclusion. */
-export function checkTone(status: string, conclusion: string | null): keyof typeof checksTone {
-  if (status !== "completed") return "pending";
-  if (conclusion === "success") return "success";
-  if (conclusion === "neutral" || conclusion === "skipped") return "none";
-  return "failure";
+/** The icon for one check run or commit status. */
+export function CheckIcon({ status, conclusion }: { status: string; conclusion: string | null }) {
+  return <CheckGlyph state={checkState(status, conclusion)} />;
 }
 
-export function CheckIcon({ status, conclusion }: { status: string; conclusion: string | null }) {
-  const tone = checkTone(status, conclusion);
-  const Icon = checksIcon[tone];
-  return <Icon className={cn("size-3.5 shrink-0", checksTone[tone])} />;
+/** Short human label for one check ("Running", "Passed", "Timed out"), tinted by its state. */
+export function CheckLabel({ status, conclusion }: { status: string; conclusion: string | null }) {
+  const state = checkState(status, conclusion);
+  const { label, tone } = CHECK_STATES[state];
+  return (
+    <span
+      className={cn(
+        "text-2xs whitespace-nowrap",
+        tone === "running" || tone === "failed" ? checkToneClass(state) : "text-muted-foreground",
+      )}
+    >
+      {label}
+    </span>
+  );
 }
 
 const decisionText: Record<ReviewDecision, string> = {

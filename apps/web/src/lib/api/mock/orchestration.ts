@@ -1,13 +1,14 @@
 import type {
   GithubConnection,
   GithubPr,
+  GithubPrDetails,
   ProjectStatus,
   Session,
   StartSessionResponse,
   WorkSummary,
 } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
-import { mockIssues, mockPrs } from "./fixtures/github";
+import { checks, mockIssues, mockPrs, searchPrChecksLater } from "./fixtures/github";
 import { makeSession } from "./fixtures/helpers";
 import { uid } from "./live";
 import type { MockWorld } from "./world";
@@ -98,14 +99,21 @@ export function mockOrchestration(world: MockWorld, deps: Deps): OrchestrationPa
       recent: [],
     };
   };
+  // PR 57's checks move on 20 s after the mock starts, so the next refetch shows a check finish.
+  const startedAt = Date.now();
+  const live = (p: GithubPrDetails): GithubPrDetails =>
+    p.number === 57 && Date.now() - startedAt > 20_000
+      ? { ...p, checks: checks(searchPrChecksLater) }
+      : p;
   const prsFor = (projectId: string): GithubPr[] =>
     mockPrs
       .filter((p) => p.projectId === projectId)
+      .map(live)
       .map(({ body: _b, additions: _a, deletions: _d, files: _f, ...rest }) => rest);
   const prById = (id: string) => {
     const found = mockPrs.find((p) => p.id === id);
     if (!found) throw new Error(`No PR ${id}`);
-    return found;
+    return live(found);
   };
 
   return {

@@ -7,6 +7,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 ### Changed
 
 - The npm page and the desktop app's package metadata now link to the website, [codeden.app](https://www.codeden.app).
+- **Livelier PR checks.** In a pull request's checks, a running check shows a spinner, a queued one a softly pulsing dot, and finished ones a tick, a cross or a dash, with short labels ("Running", "Queued", "Passed", "Failed", "Skipped", "Timed out") instead of GitHub's raw status strings. When a check finishes while you're watching, its tick draws in (a cross gives a small shake). The checks badge spins while anything is running and adds a small progress bar until everything passes. With reduced motion turned on, the icons stay still.
 
 ## [0.4.2] - 2026-11-09
 

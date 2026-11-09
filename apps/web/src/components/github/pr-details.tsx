@@ -12,7 +12,13 @@ import { ago } from "@/lib/format";
 import { platform } from "@/lib/platform";
 import { useSession } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { CheckIcon, ChecksBadge, PrStateBadge, ReviewDecisionBadge } from "./github-bits";
+import {
+  CheckIcon,
+  CheckLabel,
+  ChecksBadge,
+  PrStateBadge,
+  ReviewDecisionBadge,
+} from "./github-bits";
 
 function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
@@ -158,7 +164,7 @@ export function PrDetailsView({
               >
                 <CheckIcon status={c.status} conclusion={c.conclusion} />
                 <span className="flex-1 truncate font-mono text-[12px]">{c.name}</span>
-                <span className="text-2xs text-muted-foreground">{c.conclusion ?? c.status}</span>
+                <CheckLabel status={c.status} conclusion={c.conclusion} />
               </button>
             ))}
           </div>
