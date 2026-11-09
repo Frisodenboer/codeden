@@ -43,6 +43,7 @@ export default defineConfig({
       "apps/web",
       "apps/cli",
       "apps/desktop",
+      { test: { name: "scripts", root: "scripts", include: ["**/*.test.mjs"] } },
       {
         test: {
           name: "@codeden/runner",
