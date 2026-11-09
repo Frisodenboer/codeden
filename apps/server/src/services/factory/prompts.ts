@@ -116,6 +116,21 @@ export function fixPrompt(item: FactoryItem, failed: MergeCheck[]): string {
     .join("\n");
 }
 
+/** Message to the PM when a pull request is over the size limit. */
+export function tooLargePrompt(item: FactoryItem, detail: string, failed: MergeCheck[]): string {
+  const others = failed.filter((c) => c.name !== "size");
+  const pr = item.pr ? `pull request #${item.pr.number}` : "its pull request";
+  return [
+    `Item ${item.id} ("${item.title}", ${pr}) is too large to merge automatically: ${detail}.`,
+    others.length > 0
+      ? `It also failed: ${others.map((c) => `${c.name} (${c.detail ?? "failed"})`).join("; ")}.`
+      : "Every other check that ran passed.",
+    "Decide now; don't ask the user:",
+    "- If the work can be split, open the parts as smaller issues with `create_issue` (each under the limit, with acceptance criteria). They become candidates; triage them as usual. Then close the oversized pull request on GitHub.",
+    `- If it can't be split (an initial scaffold, a stack migration), call \`factory_allow_large_change\` with item ${item.id} and the reason. The checks run again${others.length > 0 ? ", the builder gets a fix round for the other failures," : ""} and it merges once the rest pass.`,
+  ].join("\n");
+}
+
 /** Ask a reviewer to look again after fixes. */
 export function reReviewPrompt(item: FactoryItem): string {
   return `The author pushed fixes to pull request #${item.pr?.number ?? "?"}. Review the updated change again against the same criteria and call \`factory_submit_review\` once with a fresh verdict.`;
@@ -139,7 +154,12 @@ export function revertPrompt(opts: { sha: string; prNumber: number; title: strin
  * The PM's structured triage instructions for new candidates. `unattended` (dark factory): the
  * PM makes every judgement call itself and records it, since nobody is watching to answer.
  */
-export function triageInstructions(items: FactoryItem[], unattended = false): string {
+export function triageInstructions(
+  items: FactoryItem[],
+  unattended = false,
+  /** The size limit as a phrase ("5,000 lines", "no limit"). */
+  sizeLimit = "no limit",
+): string {
   return [
     `The factory has ${items.length} new candidate${items.length === 1 ? "" : "s"} to triage. Score each against the project vision (read it with read_project_notes or the vision file) and decide:`,
     ...items.map(
@@ -148,6 +168,9 @@ export function triageInstructions(items: FactoryItem[], unattended = false): st
     ),
     "",
     "For each, call `factory_triage` with decision `accept` (a score from 0 to 1 and, if needed, sharper acceptance criteria) or `reject` (with the reason). Accepted items become GitHub issues and are built and merged automatically within the limits; reject anything outside the vision, too large, or touching protected areas.",
+    sizeLimit === "no limit"
+      ? ""
+      : `Size: pull requests over ${sizeLimit} (lockfiles and generated or vendored files don't count) aren't merged automatically. Split bigger work into separate items that each fit (create the extra ones with \`create_issue\`). If the work can't be split (an initial scaffold, a stack migration), accept it with \`largeChange\` and the reason instead.`,
     "The vision wins over the current code. When the code doesn't match it (a different stack or architecture, say), the work that brings it in line comes first: score it highest, or open it with `create_issue` if no candidate covers it (new issues become candidates). Reject work that change would throw away, saying it waits for it.",
     unattended
       ? "This project runs as a dark factory: nobody is watching, so never ask the user. Make every judgement call yourself from the vision and record the ones that matter with `factory_record_decision` (the user reviews them in the inbox and the daily digest). Flag `needsHuman` only for a protected area, a missing or self-contradicting vision, or something irreversible outside the code, and triage everything else meanwhile."

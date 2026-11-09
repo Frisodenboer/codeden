@@ -95,6 +95,7 @@ export function mockFactoryApi(world: MockWorld): FactoryApi {
       revertOf: null,
       triageRequestedAt: null,
       nudges: {},
+      largeChange: null,
       createdAt: w.updatedAt,
       mergedAt: w.stage === "merged" ? w.updatedAt : null,
       finishedAt: null,

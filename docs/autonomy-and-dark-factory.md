@@ -119,7 +119,7 @@ Every check must pass before an automatic merge. Results are recorded per item a
 | Check | Passes when |
 |---|---|
 | **Protected areas** | No changed path matches a protected glob, the vision file or a deploy file, and no protected topic is mentioned. A failure escalates to a PR review in your inbox |
-| **Size** | The change is within `maxChangedLines` (default 800 added + deleted) and `maxChangedFiles` (default 40) |
+| **Size** | The change is within **Largest change** (`maxChangedLines`, default 5,000 added + deleted lines) and **Most files changed** (`maxChangedFiles`, no limit by default). Lockfiles and generated or vendored files (`dist/`, `build/`, `vendor/`, minified files, snapshots, `*.gen.*`, shadcn's `components/ui/`) don't count. Leave either empty for no limit. The PM can allow a bigger change that can't be split (see below) |
 | **CI** | The PR's checks are green. Missing CI fails after a grace period unless `requireCi` is off |
 | **Review** | An **independent reviewer session**, on a different provider from the builder when one is available, approves against the acceptance criteria and the vision |
 | **Tests** | Test files changed (or the change is only docs or config), and the reviewer agrees the tests the change needs exist |
@@ -127,6 +127,8 @@ Every check must pass before an automatic merge. Results are recorded per item a
 | **UI evidence** | If UI files changed, screenshots were attached with `attach_evidence` |
 
 When a check fails, the builder gets up to `maxFixAttempts` fix rounds (default 1); after that the item fails and counts towards the pause limit.
+
+**Too large is different.** A fix round can't make work smaller without cutting scope, so a size failure skips it and doesn't count towards the pause limit. Instead the PM is woken to decide, without asking you: split the work into smaller issues, or, when it can't be split (an initial scaffold, a stack migration), allow it with `factory_allow_large_change`. The PR is checked again and merges once everything else passes. The PM sees the limit at triage too, so it can split big work, or accept it with `largeChange`, before anything is built. Every allowance shows up as a **Factory decided** message and in the digest.
 
 ## Limits
 
@@ -141,12 +143,12 @@ Limits are **required** and **enforced by the server**, never left to agent judg
 | Protected paths | none | Added to the vision's protected areas |
 | Allow deploy and release changes (`allowDeploys`) | off | While off, deploy files (`.github/workflows/*deploy*`, `*release*`, `*publish*`, `Dockerfile`, `fly.toml`, `vercel.json`, `netlify.toml`) are protected |
 
-**Tuning** (the **Limits** dialog covers `requireCi`, `maxChangedLines` and `auditCommand`; the rest is set through the API's `tuning` field, see [API](#api)):
+**Tuning** (the **Merge checks** section of the **Limits** dialog covers `maxChangedLines`, `maxChangedFiles`, `requireCi` and `auditCommand`; the rest is set through the API's `tuning` field, see [API](#api)):
 
 | Setting | Default |
 |---|---|
 | `requireCi` | `true` |
-| `maxChangedLines` / `maxChangedFiles` | `800` / `40` |
+| `maxChangedLines` / `maxChangedFiles` | `5000` / no limit (`null` turns either off). Projects still on the old `800` / `40` defaults move to these |
 | `auditCommand` | none |
 | `maxFixAttempts` | `1` |
 | `minBacklog` (Dark factory: discover when fewer items wait) | `2` |

@@ -367,7 +367,7 @@ Each project has an **autonomy mode**, a ladder you can climb one step at a time
    - a **review by a separate agent session**, ideally on a different provider from the one that wrote the code, against the acceptance criteria and the vision
    - security and dependency scans clean
    - UI changes: browser screenshots as evidence, plus an end-to-end check
-   - the change is under a size limit and touches no protected area
+   - the change is under the size limit (reviewable code only: lockfiles and generated files do not count; configurable, or off) and touches no protected area. Work that cannot be split (an initial scaffold, a stack migration) is allowed by the PM as a recorded decision; a size failure never waits on the user
 5. **Merge.** Squash-merge, then link the result back to the issue.
 6. **Watch.** After merging, CI on main is watched. A regression triggers an **automatic revert PR**, which goes through the same merge checks, plus a pause of the factory loop and an inbox item.
 7. **Report.** A daily digest lists what shipped, what was rejected and why, the decisions the factory made on its own, spend, and anything waiting on you.

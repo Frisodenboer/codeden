@@ -49,12 +49,17 @@ describe("factory loop with the Fake provider (§10.1)", () => {
     );
     return (res.created as Array<{ itemId: string }>)[0]?.itemId as string;
   };
-  const build = async (itemId: string, files: string[], checks: "success" | "failure") => {
+  const build = async (
+    itemId: string,
+    files: string[],
+    checks: "success" | "failure",
+    fileLines?: Array<{ path: string; lines: number }>,
+  ) => {
     await tick();
     const builder = item(itemId).builderSessionId as string;
     expect(builder).toBeTruthy();
     await idle(builder);
-    gh.openPr({ sessionId: builder, title: item(itemId).title, files, checks });
+    gh.openPr({ sessionId: builder, title: item(itemId).title, files, checks, fileLines });
     return tick();
   };
 
@@ -166,6 +171,67 @@ describe("factory loop with the Fake provider (§10.1)", () => {
     expect(status.recent[0]).toMatchObject({ id: itemId, stage: "failed" });
   }, 60_000);
 
+  it("hands an oversized PR to the PM, who can allow it without a fix round", async () => {
+    const itemId = await report(finder, "Scaffold the app");
+    await call("pm", "factory_triage", { itemId, decision: "accept", score: 0.95 }, "pm-session");
+    const failuresBefore = (await tick()).consecutiveFailures;
+    const files = ["src/app.ts", "test/app.test.ts", "package-lock.json"];
+    // 6,000 lines of code over the 5,000 default; the 9,000 lockfile lines don't count.
+    await build(itemId, files, "success", [
+      { path: "src/app.ts", lines: 5_500 },
+      { path: "test/app.test.ts", lines: 500 },
+      { path: "package-lock.json", lines: 9_000 },
+    ]);
+    expect(item(itemId).stage).toBe("failed");
+    expect(item(itemId).attempts).toBe(0);
+    expect(item(itemId).reason).toMatch(/size: 6,000 lines in 2 files \(1 lockfiles/);
+    const status = await tick();
+    expect(status.consecutiveFailures).toBe(failuresBefore);
+    expect(
+      h.server.services.orchestration.notices
+        .list({ projectId: h.projectId, target: "pm" })
+        .some((n) => n.title.startsWith("Too large to merge automatically: Scaffold the app")),
+    ).toBe(true);
+
+    const allowed = await call(
+      "pm",
+      "factory_allow_large_change",
+      { itemId, reason: "Initial scaffold; it can't be split" },
+      "pm-session",
+    );
+    expect(allowed.stage).toBe("verifying");
+    await tick();
+    const reviewer = item(itemId).reviewerSessionId as string;
+    expect(reviewer).toBeTruthy();
+    await idle(reviewer);
+    await call(
+      "agent",
+      "factory_submit_review",
+      {
+        verdict: "approve",
+        summary: "Scaffold matches the vision",
+        criteria: [{ criterion: "Scaffold the app works", met: true }],
+        vision: { aligned: true },
+        tests: { adequate: true },
+        security: { concerns: [] },
+      },
+      reviewer,
+    );
+    await tick();
+    const size = item(itemId).checks.find((c) => c.name === "size");
+    expect(size).toMatchObject({ state: "pass" });
+    expect(size?.detail).toMatch(/allowed by the PM: Initial scaffold/);
+    await tick();
+    expect(item(itemId).stage).not.toBe("failed");
+    expect(gh.merges.some((m) => m.title.startsWith("Scaffold the app"))).toBe(true);
+    // The allowance is a factory decision the user can see.
+    expect(
+      h.server.services.inbox
+        .list({ projectId: h.projectId })
+        .some((i) => i.title.startsWith('Factory decided: "Scaffold the app" is bigger')),
+    ).toBe(true);
+  }, 60_000);
+
   it("never waits on the user: factory agents decide and record it", async () => {
     const started = Date.now();
     const asked = await h.server.services.tools.call(
@@ -202,13 +268,15 @@ describe("factory loop with the Fake provider (§10.1)", () => {
 
     const digest = (await h.api("POST", `/projects/${h.projectId}/factory/digest`))
       .body as FactoryDigest;
-    expect(digest.decisions).toEqual([
-      expect.objectContaining({
-        decision: "Migrate to the vision stack first",
-        needsHuman: false,
-        inboxItemId: recorded.inboxItemId,
-      }),
-    ]);
+    expect(digest.decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: "Migrate to the vision stack first",
+          needsHuman: false,
+          inboxItemId: recorded.inboxItemId,
+        }),
+      ]),
+    );
     expect(digest.waiting.some((w) => w.inboxItemId === recorded.inboxItemId)).toBe(false);
 
     // A session the user started still asks as usual.

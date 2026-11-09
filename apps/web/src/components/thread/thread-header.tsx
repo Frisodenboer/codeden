@@ -15,7 +15,6 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { ProviderMark } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import { ReadOnlyBadge, RoleBadge } from "@/components/orchestration/role-badge";
 import { MobileNavButton } from "@/components/shell/mobile-nav";
@@ -32,12 +31,11 @@ import { SessionCostChip } from "@/components/usage/session-cost";
 import { useClient } from "@/lib/api";
 import { statusLabel } from "@/lib/format";
 import { platform } from "@/lib/platform";
-import { useProject, useSnapshotData } from "@/lib/queries";
+import { useProject } from "@/lib/queries";
 import { useSessionActions } from "@/lib/session-actions";
 import { cn } from "@/lib/utils";
 import { useViewport } from "@/lib/viewport";
 import { useLayoutStore } from "@/stores/layout";
-import { AutonomyBadge } from "./autonomy";
 import { SessionGithubBadges } from "./session-github-badges";
 
 function Chip({
@@ -65,18 +63,17 @@ function Chip({
   );
 }
 
-/** Top bar of a thread: title, provider/model, branch, worktree, autonomy and actions. */
+/**
+ * Top bar of a thread: title, status, branch, worktree, cost and actions. The model and the
+ * permission level live under the message box (the composer), not here, so they aren't shown
+ * twice.
+ */
 export function ThreadHeader({ session, running }: { session: Session; running: boolean }) {
   const client = useClient();
   const project = useProject(session.projectId);
   const layout = useLayoutStore();
   const { sheetPanels, phone } = useViewport();
   const panelOpen = sheetPanels ? layout.rightSheetOpen : layout.rightOpen;
-  const provider = useSnapshotData(
-    (s) => s.runner.providers.find((p) => p.id === session.provider),
-    undefined,
-  );
-  const model = provider?.models.find((m) => m.id === session.model)?.label ?? session.model;
   const stop = useMutation({
     mutationFn: () => client.interrupt(session.id),
     onSuccess: () => toast("Turn stopped"),
@@ -122,11 +119,6 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
       </div>
 
       <div className="ml-1 hidden min-w-0 shrink items-center gap-1.5 overflow-hidden @[36rem]:flex">
-        <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border/80 px-2 text-2xs whitespace-nowrap text-muted-foreground">
-          <ProviderMark provider={session.provider} className="size-3.5 text-[8px]" />
-          {provider?.displayName ?? session.provider}
-          {model && <span className="text-foreground/80">· {model}</span>}
-        </span>
         {session.branch && (
           <Chip
             className="hidden @[54rem]:inline-flex"
@@ -153,7 +145,9 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
           </Chip>
         )}
         <SessionCostChip sessionId={session.id} className="hidden @[40rem]:inline-flex" />
-        {session.role === "agent" ? <AutonomyBadge level={session.autonomy} /> : <ReadOnlyBadge />}
+        {/* Agents show their model and permissions under the message box; the PM and the
+            orchestrator have no permission picker there, so their read-only badge stays. */}
+        {session.role !== "agent" && <ReadOnlyBadge />}
         <SessionGithubBadges session={session} className="hidden @[44rem]:inline-flex" />
       </div>
 

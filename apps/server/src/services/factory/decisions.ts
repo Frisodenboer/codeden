@@ -9,6 +9,7 @@ import type {
 import { DiscoveryArea as DiscoveryAreaSchema } from "@codeden/contracts";
 import { badRequest, conflict, errorMessage, notFound } from "../errors";
 import type { FactoryContext } from "./context";
+import { recordLargeChange } from "./large-change";
 import { candidateWorkKey, FACTORY_LABEL } from "./loop";
 import { slugify } from "./policy";
 
@@ -124,6 +125,7 @@ export async function triage(
     });
   }
   const accepted = issue;
+  if (req.largeChange) recordLargeChange(ctx, item, req.largeChange);
   return ctx.store.updateItem(item.id, (i) => ({
     ...i,
     stage: "backlog",
@@ -131,6 +133,7 @@ export async function triage(
     acceptanceCriteria: criteria,
     issue: accepted,
     workKey: `issue:${accepted.number}`,
+    largeChange: req.largeChange ?? i.largeChange ?? null,
     note: null,
   }));
 }

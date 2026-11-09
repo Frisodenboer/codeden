@@ -6,7 +6,20 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
 /** The tuning knobs the editor exposes (the rest keep their defaults). */
-export type TuningDraft = Pick<FactoryTuning, "requireCi" | "maxChangedLines" | "auditCommand">;
+export type TuningDraft = Pick<
+  FactoryTuning,
+  "requireCi" | "maxChangedLines" | "maxChangedFiles" | "auditCommand"
+>;
+
+/** The editable tuning knobs of a saved tuning. */
+export function tuningDraft(t: FactoryTuning): TuningDraft {
+  return {
+    requireCi: t.requireCi,
+    maxChangedLines: t.maxChangedLines,
+    maxChangedFiles: t.maxChangedFiles,
+    auditCommand: t.auditCommand,
+  };
+}
 
 const int = (s: string, min = 0): number | undefined => {
   const n = Number.parseInt(s, 10);
@@ -164,28 +177,71 @@ export function LimitsEditor({
         </span>
       </div>
       {tuning && onTuningChange && (
-        <div className="grid gap-3 border-t border-border pt-4 sm:grid-cols-[auto_140px_minmax(0,1fr)]">
-          <div className="flex items-center gap-2 text-xs">
+        <div className="space-y-3 border-t border-border pt-4" data-testid="merge-check-tuning">
+          <div>
+            <p className="text-[13px] font-medium">Merge checks</p>
+            <p className="text-3xs text-muted-foreground">
+              What a pull request must meet before CodeDen merges it on its own.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="Largest change (lines)"
+              htmlFor={`${id}-lines`}
+              help="Lockfiles and generated files don't count. Leave empty for no limit."
+            >
+              <Input
+                id={`${id}-lines`}
+                type="number"
+                min={1}
+                value={tuning.maxChangedLines ?? ""}
+                placeholder="No limit"
+                onChange={(e) =>
+                  onTuningChange({ ...tuning, maxChangedLines: int(e.target.value, 1) ?? null })
+                }
+                className="text-[13px]"
+              />
+            </Field>
+            <Field
+              label="Most files changed"
+              htmlFor={`${id}-files`}
+              help="Leave empty for no limit."
+            >
+              <Input
+                id={`${id}-files`}
+                type="number"
+                min={1}
+                value={tuning.maxChangedFiles ?? ""}
+                placeholder="No limit"
+                onChange={(e) =>
+                  onTuningChange({ ...tuning, maxChangedFiles: int(e.target.value, 1) ?? null })
+                }
+                className="text-[13px]"
+              />
+            </Field>
+          </div>
+          <p className="text-3xs text-muted-foreground">
+            Over the limit, the project manager splits the work or allows it as one change (an
+            initial scaffold, say). Nothing waits on you.
+          </p>
+          <div className="flex items-start gap-2.5 text-xs">
             <Switch
               checked={tuning.requireCi}
               aria-label="Require CI"
               onCheckedChange={(requireCi) => onTuningChange({ ...tuning, requireCi })}
             />
-            Require CI
+            <span>
+              Require CI
+              <span className="block text-3xs text-muted-foreground">
+                Off: a repository without CI can still merge automatically.
+              </span>
+            </span>
           </div>
-          <Field label="Largest change (lines)" htmlFor={`${id}-lines`}>
-            <Input
-              id={`${id}-lines`}
-              type="number"
-              min={1}
-              value={tuning.maxChangedLines}
-              onChange={(e) =>
-                onTuningChange({ ...tuning, maxChangedLines: int(e.target.value, 1) ?? 1 })
-              }
-              className="text-[13px]"
-            />
-          </Field>
-          <Field label="Audit command" htmlFor={`${id}-audit`}>
+          <Field
+            label="Audit command"
+            htmlFor={`${id}-audit`}
+            help="Optional security or dependency scan, run in the builder's worktree."
+          >
             <Input
               id={`${id}-audit`}
               value={tuning.auditCommand ?? ""}

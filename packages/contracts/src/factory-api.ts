@@ -137,6 +137,11 @@ export const FactoryItem = z.object({
   triageRequestedAt: Timestamp.nullable(),
   /** Timestamps of nudges sent to the builder or reviewer (keyed by purpose). */
   nudges: z.record(z.string(), Timestamp).default({}),
+  /**
+   * Why the PM let this item go over the size limit (an initial scaffold, a stack migration:
+   * work that can't be split). The size check then passes; every other check still applies.
+   */
+  largeChange: z.string().nullable().default(null),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   mergedAt: Timestamp.nullable(),
@@ -144,11 +149,18 @@ export const FactoryItem = z.object({
 });
 export type FactoryItem = z.infer<typeof FactoryItem>;
 
+/** Size limit defaults before 0.4.4, upgraded to the current defaults when a loop is read. */
+export const LEGACY_SIZE_LIMITS = { maxChangedLines: 800, maxChangedFiles: 40 } as const;
+
 /** Knobs of the loop beyond the required limits; all have safe defaults. */
 export const FactoryTuning = z.object({
-  /** Largest change (added + deleted lines) merged automatically. */
-  maxChangedLines: z.int().positive().default(800),
-  maxChangedFiles: z.int().positive().default(40),
+  /**
+   * Largest change merged automatically: added + deleted lines, not counting lockfiles and
+   * generated or vendored files. `null`: no limit.
+   */
+  maxChangedLines: z.int().positive().nullable().default(5_000),
+  /** Most files changed (same files not counted). `null` (the default): no limit. */
+  maxChangedFiles: z.int().positive().nullable().default(null),
   /** CI must report and pass; a repository without CI cannot auto-merge. */
   requireCi: z.boolean().default(true),
   /** Security/dependency scan run in the builder's worktree (e.g. `pnpm audit --prod`). */
@@ -168,6 +180,24 @@ export const FactoryTuning = z.object({
   watchTimeoutMin: z.int().positive().default(120),
 });
 export type FactoryTuning = z.infer<typeof FactoryTuning>;
+
+/**
+ * A change to some tuning knobs. Unlike `FactoryTuning.partial()`, absent fields stay absent
+ * (no defaults filled in), so saving one knob never resets the others.
+ */
+export const FactoryTuningPatch = z.object(
+  Object.fromEntries(
+    Object.entries(FactoryTuning.shape).map(([key, schema]) => {
+      const kind = (schema as z.ZodType)._zod.def.type;
+      const inner =
+        kind === "default" || kind === "prefault"
+          ? (schema as unknown as { unwrap(): z.ZodType }).unwrap()
+          : (schema as z.ZodType);
+      return [key, inner.optional()];
+    }),
+  ) as unknown as { [K in keyof FactoryTuning]: z.ZodOptional<z.ZodType<FactoryTuning[K]>> },
+);
+export type FactoryTuningPatch = z.infer<typeof FactoryTuningPatch>;
 
 /** A running improvement-finder session. */
 export const DiscoveryRun = z.object({ sessionId: Id, area: DiscoveryArea, startedAt: Timestamp });
@@ -301,7 +331,7 @@ export type PutVisionRequest = z.infer<typeof PutVisionRequest>;
 export const SetAutonomyModeRequest = z.object({
   mode: AutonomyMode,
   limits: FactoryLimits.optional(),
-  tuning: FactoryTuning.partial().optional(),
+  tuning: FactoryTuningPatch.optional(),
 });
 export type SetAutonomyModeRequest = z.infer<typeof SetAutonomyModeRequest>;
 export type SetAutonomyModeRequestInit = z.input<typeof SetAutonomyModeRequest>;
@@ -406,8 +436,23 @@ export const FactoryTriageRequest = z.object({
   acceptanceCriteria: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
   /** Why (required for rejects). */
   reason: z.string().trim().min(1).max(1_000).optional(),
+  /**
+   * Accept work that can't be split under the size limit (an initial scaffold, a stack
+   * migration), with the reason. Recorded as a factory decision.
+   */
+  largeChange: z.string().trim().min(1).max(500).optional(),
 });
 export type FactoryTriageRequest = z.infer<typeof FactoryTriageRequest>;
+
+/**
+ * `factory_allow_large_change`: the PM lets an item that failed only the size check merge
+ * after all, because the work can't be split. The item goes back to verifying.
+ */
+export const FactoryAllowLargeChangeRequest = z.object({
+  itemId: Id,
+  reason: z.string().trim().min(1).max(500),
+});
+export type FactoryAllowLargeChangeRequest = z.infer<typeof FactoryAllowLargeChangeRequest>;
 
 // ---------------------------------------------------------------- events
 

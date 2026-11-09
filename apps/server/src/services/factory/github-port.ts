@@ -21,6 +21,8 @@ export interface FactoryPr {
   additions: number;
   deletions: number;
   files: string[];
+  /** Added + deleted lines per file, when GitHub reports them. */
+  fileLines?: Array<{ path: string; lines: number }>;
 }
 
 /** Commit-level CI state, for watching main after a merge. */
@@ -129,6 +131,7 @@ export class GithubFactoryPort implements FactoryGithub {
       additions: pr.additions,
       deletions: pr.deletions,
       files: pr.files.map((f) => f.path),
+      fileLines: pr.files.map((f) => ({ path: f.path, lines: f.additions + f.deletions })),
     };
   }
 
