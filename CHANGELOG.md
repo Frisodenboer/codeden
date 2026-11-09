@@ -4,6 +4,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-09
+
 ### Changed
 
 - The npm page and the desktop app's package metadata now link to the website, [codeden.app](https://www.codeden.app).
