@@ -1,4 +1,5 @@
 import {
+  FactoryAllowLargeChangeRequest,
   FactoryCandidate,
   FactoryDecisionRequest,
   FactoryTriageRequest,
@@ -119,7 +120,7 @@ export const factoryStatus = defineTool({
 export const factoryTriage = defineTool({
   name: "factory_triage",
   description:
-    "Decide on a factory candidate after scoring it against the vision. `accept` with a score (0..1) and, if needed, sharper acceptance criteria: CodeDen creates the GitHub issue and builds it within the limits. `reject` with the reason (outside the vision, too big, touches protected areas, duplicate).",
+    "Decide on a factory candidate after scoring it against the vision. `accept` with a score (0..1) and, if needed, sharper acceptance criteria: CodeDen creates the GitHub issue and builds it within the limits. `reject` with the reason (outside the vision, too big, touches protected areas, duplicate). Work over the size limit that can't be split (an initial scaffold, a stack migration): accept with `largeChange` and the reason.",
   roles: ["pm"],
   scope: "project",
   alwaysLoad: true,
@@ -129,6 +130,23 @@ export const factoryTriage = defineTool({
     asTool(async () => {
       const item = await services.factory.triage(projectId, input);
       return { itemId: item.id, stage: item.stage, issue: item.issue, workKey: item.workKey };
+    }),
+});
+
+/** `factory_allow_large_change`: the PM lets an item that failed on size go ahead after all. */
+export const factoryAllowLargeChange = defineTool({
+  name: "factory_allow_large_change",
+  description:
+    "Let a factory item whose pull request failed the size check go ahead after all, because the work can't be split (an initial scaffold, a stack migration). Give the item id and the reason. The merge checks run again; CI, the review, tests and protected areas still apply. Prefer splitting the work into smaller issues when it can be split.",
+  roles: ["pm"],
+  scope: "project",
+  alwaysLoad: true,
+  isAvailable: inFactoryProject,
+  input: FactoryAllowLargeChangeRequest,
+  handler: async (input, { services, projectId }) =>
+    asTool(() => {
+      const item = services.factory.allowLargeChange(projectId, input);
+      return { itemId: item.id, stage: item.stage, pr: item.pr };
     }),
 });
 
@@ -154,5 +172,6 @@ export const factoryTools: AnyServerTool[] = [
   factorySubmitReview,
   factoryStatus,
   factoryTriage,
+  factoryAllowLargeChange,
   factoryRecordDecision,
 ];

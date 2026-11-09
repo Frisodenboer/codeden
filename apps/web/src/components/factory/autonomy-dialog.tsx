@@ -20,9 +20,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useClient } from "@/lib/api";
-import { factoryKeys, modeErrorText, useVision } from "@/lib/factory";
+import { factoryKeys, modeErrorText, useFactoryStatus, useVision } from "@/lib/factory";
 import { cn } from "@/lib/utils";
-import { hasBudget, LimitsEditor } from "./limits-editor";
+import { hasBudget, LimitsEditor, type TuningDraft, tuningDraft } from "./limits-editor";
 import { MODE_LABEL, MODES } from "./meta";
 
 export function ExperimentalBadge({ className }: { className?: string }) {
@@ -75,11 +75,19 @@ export function AutonomyDialog({
   const vision = useVision(project.id);
   const [mode, setMode] = useState<AutonomyMode>(initialMode ?? project.autonomyMode);
   const [limits, setLimits] = useState<FactoryLimits>(project.factoryLimits);
+  // The loop's merge-check tuning (saved with the limits).
+  const status = useFactoryStatus(project.id, open);
+  const savedTuning = status.data?.tuning;
+  const [tuning, setTuning] = useState<TuningDraft | null>(null);
   useEffect(() => {
     if (!open) return;
     setMode(initialMode ?? project.autonomyMode);
     setLimits(project.factoryLimits);
   }, [open, initialMode, project.autonomyMode, project.factoryLimits]);
+  useEffect(() => {
+    if (open && savedTuning) setTuning(tuningDraft(savedTuning));
+    if (!open) setTuning(null);
+  }, [open, savedTuning]);
 
   const factory = isFactoryMode(mode);
   const github = project.kind === "github";
@@ -89,7 +97,11 @@ export function AutonomyDialog({
   const same = mode === project.autonomyMode;
 
   const save = useMutation({
-    mutationFn: () => client.factory.setMode(project.id, { mode, ...(factory ? { limits } : {}) }),
+    mutationFn: () =>
+      client.factory.setMode(project.id, {
+        mode,
+        ...(factory ? { limits, ...(tuning ? { tuning } : {}) } : {}),
+      }),
     onSuccess: (res) => {
       toast.success(
         same ? "Limits saved" : `${project.name} is now on ${MODE_LABEL[res.mode].toLowerCase()}`,
@@ -177,7 +189,12 @@ export function AutonomyDialog({
                 </Requirement>
               </ul>
             </div>
-            <LimitsEditor limits={limits} onChange={setLimits} />
+            <LimitsEditor
+              limits={limits}
+              onChange={setLimits}
+              tuning={tuning ?? undefined}
+              onTuningChange={setTuning}
+            />
           </div>
         )}
         {!factory && isFactoryMode(project.autonomyMode) && (

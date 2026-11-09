@@ -78,6 +78,8 @@ export class FakeFactoryGithub implements FactoryGithub {
     files: string[];
     additions?: number;
     deletions?: number;
+    /** Lines per file; the size check counts these (minus lockfiles) when given. */
+    fileLines?: Array<{ path: string; lines: number }>;
     checks?: ChecksState;
     evidence?: boolean;
   }): FakePr {
@@ -99,6 +101,7 @@ export class FakeFactoryGithub implements FactoryGithub {
       additions: opts.additions ?? 20,
       deletions: opts.deletions ?? 2,
       files: opts.files,
+      ...(opts.fileLines ? { fileLines: opts.fileLines } : {}),
       sessionId: opts.sessionId,
       evidence: opts.evidence ?? false,
     };

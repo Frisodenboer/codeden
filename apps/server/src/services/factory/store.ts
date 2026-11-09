@@ -5,6 +5,7 @@ import {
   type FactoryItemStage,
   type FactoryLoop,
   FactoryTuning,
+  LEGACY_SIZE_LIMITS,
 } from "@codeden/contracts";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/client";
@@ -43,8 +44,12 @@ export class FactoryStore {
   ) {}
 
   loop(projectId: string): FactoryLoop | undefined {
-    return this.db.select().from(factoryLoops).where(eq(factoryLoops.projectId, projectId)).get()
-      ?.loop;
+    const loop = this.db
+      .select()
+      .from(factoryLoops)
+      .where(eq(factoryLoops.projectId, projectId))
+      .get()?.loop;
+    return loop ? upgradeSizeLimits(loop) : undefined;
   }
 
   /** The project's loop, or a fresh idle one (not saved). */
@@ -126,6 +131,7 @@ export class FactoryStore {
       revertOf: null,
       triageRequestedAt: null,
       nudges: {},
+      largeChange: null,
       mergedAt: null,
       finishedAt: null,
       ...draft,
@@ -164,4 +170,28 @@ export class FactoryStore {
   saveDigest(digest: FactoryDigest): void {
     this.events.append([{ type: "factory.digest.created", sessionId: null, payload: { digest } }]);
   }
+}
+
+/**
+ * Loops saved before 0.4.4 carry the old default size limits (800 lines, 40 files, counting
+ * lockfiles and generated files), which blocked ordinary scaffolds. Untouched old defaults
+ * become the current defaults; limits someone chose are kept.
+ */
+export function upgradeSizeLimits(loop: FactoryLoop): FactoryLoop {
+  const t = loop.tuning;
+  if (
+    t.maxChangedLines !== LEGACY_SIZE_LIMITS.maxChangedLines ||
+    t.maxChangedFiles !== LEGACY_SIZE_LIMITS.maxChangedFiles
+  ) {
+    return loop;
+  }
+  const defaults = FactoryTuning.parse({});
+  return {
+    ...loop,
+    tuning: {
+      ...t,
+      maxChangedLines: defaults.maxChangedLines,
+      maxChangedFiles: defaults.maxChangedFiles,
+    },
+  };
 }

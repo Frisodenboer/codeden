@@ -10,7 +10,7 @@ import { type FactoryContext, factoryNotice, visionOf } from "./context";
 import type { FactoryPr } from "./github-port";
 import { escalate, failItem, runAudit } from "./outcomes";
 import { isUiFile, mayMerge, pickReviewer } from "./policy";
-import { fixPrompt, REVIEWER_NUDGE, reReviewPrompt } from "./prompts";
+import { fixPrompt, REVIEWER_NUDGE, reReviewPrompt, tooLargePrompt } from "./prompts";
 
 const ENDED = new Set(["idle", "interrupted", "completed", "failed", "stopped"]);
 
@@ -78,6 +78,7 @@ export async function advanceVerifying(
     ciGraceOver: now.getTime() - since > ctx.ciGraceMs,
     limits: project.factoryLimits,
     tuning: loop.tuning,
+    largeChange: item.largeChange ?? null,
     areas: vision.parsed.protectedAreas,
     now: now.toISOString(),
   });
@@ -265,6 +266,8 @@ async function handleFailure(
   item: FactoryItem,
 ): Promise<FactoryLoop> {
   const failed = failedChecks(item.checks);
+  // A fix round can't make work smaller without cutting scope: the PM splits it or allows it.
+  if (failed.some((c) => c.name === "size")) return tooLarge(ctx, project, loop, item);
   const builder = item.builderSessionId ? ctx.repo.find(item.builderSessionId)?.session : undefined;
   const fixable =
     item.attempts < loop.tuning.maxFixAttempts &&
@@ -298,6 +301,42 @@ async function handleFailure(
         project.id,
         item.pr.number,
         `The CodeDen factory's merge checks failed, so this PR is left for a human:\n\n${failed.map((c) => `- **${c.name}**: ${c.detail ?? "failed"}`).join("\n")}`,
+      )
+      .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
+  }
+  return next;
+}
+
+/**
+ * The size check failed. That isn't a quality failure, so it doesn't count towards pausing
+ * the loop, and no fix round runs. The PM is woken to split the work into smaller issues or,
+ * when it can't be split, to allow it with `factory_allow_large_change`. The PR stays open.
+ */
+async function tooLarge(
+  ctx: FactoryContext,
+  project: Project,
+  loop: FactoryLoop,
+  item: FactoryItem,
+): Promise<FactoryLoop> {
+  const failed = failedChecks(item.checks);
+  const size = failed.find((c) => c.name === "size");
+  const reason = failed.map((c) => `${c.name}: ${c.detail ?? "failed"}`).join("; ");
+  const next = failItem(ctx, loop, item, reason, { countsAsFailure: false, notify: false });
+  factoryNotice(ctx, {
+    id: `factory.too-large:${item.id}:${item.pr?.number ?? ""}`,
+    projectId: item.projectId,
+    target: "pm",
+    event: "failed",
+    title: `Too large to merge automatically: ${item.title}`,
+    text: tooLargePrompt(item, size?.detail ?? "over the size limit", failed),
+    itemIds: [item.id],
+  });
+  if (item.pr) {
+    await ctx.github
+      .comment(
+        project.id,
+        item.pr.number,
+        `This PR is larger than the CodeDen factory's size limit (${size?.detail ?? "over the limit"}), so it isn't merged automatically yet. The project manager will split the work into smaller issues or allow it as one change.`,
       )
       .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
   }

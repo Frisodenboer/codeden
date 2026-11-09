@@ -1,4 +1,5 @@
 import {
+  type FactoryAllowLargeChangeRequest,
   type FactoryCandidate,
   type FactoryDecisionRequest,
   type FactoryDigest,
@@ -31,6 +32,7 @@ import { budgetSpend, type FactoryContext, factoryNotice, raiseInbox } from "./c
 import * as decisions from "./decisions";
 import { buildDigest } from "./digest";
 import type { FactoryGithub } from "./github-port";
+import { allowLargeChange } from "./large-change";
 import { runTick } from "./loop";
 import { hasBudget, localDay } from "./policy";
 import { FactorySessions, isFactorySession } from "./sessions";
@@ -330,9 +332,16 @@ export class FactoryService {
     return res;
   }
 
+  /** `factory_allow_large_change`: the PM lets an item over the size limit merge. */
+  allowLargeChange(projectId: string, req: FactoryAllowLargeChangeRequest): FactoryItem {
+    const item = allowLargeChange(this.ctx, projectId, req);
+    this.soon(projectId);
+    return item;
+  }
+
   /** `factory_record_decision`: a decision an unattended agent made instead of asking. */
   recordDecision(session: Session, req: FactoryDecisionRequest) {
-    return recordDecision(this.ctx, session, req);
+    return recordDecision(this.ctx, { projectId: session.projectId, sessionId: session.id }, req);
   }
 
   /** True when nobody answers this session's questions (dark factory PM or factory agent). */

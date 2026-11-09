@@ -264,8 +264,10 @@ export function FactoryPanel({ project }: { project: Project }) {
           {compact(f.spendToday.tokens)} tokens today · protected:{" "}
           {f.limits.protectedPaths.join(", ") || "from the vision"} · deploys{" "}
           {f.limits.allowDeploys ? "allowed" : "off"} · CI{" "}
-          {f.tuning.requireCi ? "required" : "optional"} · up to {f.tuning.maxChangedLines} changed
-          lines
+          {f.tuning.requireCi ? "required" : "optional"} ·{" "}
+          {f.tuning.maxChangedLines !== null
+            ? `up to ${f.tuning.maxChangedLines.toLocaleString()} changed lines`
+            : "no size limit"}
           {f.lastTickAt && ` · last step ${ago(f.lastTickAt)}`}
         </p>
       </div>

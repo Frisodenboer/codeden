@@ -11,6 +11,8 @@ export function failItem(
   loop: FactoryLoop,
   item: FactoryItem,
   reason: string,
+  /** `countsAsFailure: false` keeps it out of the failure streak that pauses the loop. */
+  opts: { countsAsFailure?: boolean; notify?: boolean } = {},
 ): FactoryLoop {
   const at = ctx.now().toISOString();
   ctx.store.updateItem(item.id, (i) => ({
@@ -20,16 +22,19 @@ export function failItem(
     note: null,
     finishedAt: at,
   }));
-  factoryNotice(ctx, {
-    id: `factory.failed:${item.id}`,
-    projectId: item.projectId,
-    target: "pm",
-    event: "failed",
-    title: `Factory item failed: ${item.title}`,
-    text: reason,
-    itemIds: [item.id],
-    wake: false,
-  });
+  if (opts.notify !== false) {
+    factoryNotice(ctx, {
+      id: `factory.failed:${item.id}`,
+      projectId: item.projectId,
+      target: "pm",
+      event: "failed",
+      title: `Factory item failed: ${item.title}`,
+      text: reason,
+      itemIds: [item.id],
+      wake: false,
+    });
+  }
+  if (opts.countsAsFailure === false) return loop;
   const next = { ...loop, consecutiveFailures: loop.consecutiveFailures + 1 };
   const project = ctx.projects.get(item.projectId);
   if (shouldPause(next.consecutiveFailures, project.factoryLimits)) {
