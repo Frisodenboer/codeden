@@ -5,7 +5,7 @@
   "description": "CodeDen desktop app: an Electron shell that starts (or attaches to) the CodeDen server and loads the same UI.",
   "license": "MIT",
   "author": "Leon van Zyl",
-  "homepage": "https://github.com/leonvanzyl/codeden#readme",
+  "homepage": "https://www.codeden.app",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {

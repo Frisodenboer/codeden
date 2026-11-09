@@ -9,7 +9,7 @@
     "url": "git+https://github.com/leonvanzyl/codeden.git",
     "directory": "apps/cli"
   },
-  "homepage": "https://github.com/leonvanzyl/codeden#readme",
+  "homepage": "https://www.codeden.app",
   "bugs": {
     "url": "https://github.com/leonvanzyl/codeden/issues"
   },

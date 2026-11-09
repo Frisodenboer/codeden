@@ -55,7 +55,7 @@ writeFileSync(
       description: "A local-first harness for coding agents.",
       author: "Leon van Zyl",
       license: "MIT",
-      homepage: "https://github.com/leonvanzyl/codeden",
+      homepage: "https://www.codeden.app",
       type: "module",
       main: "dist/main.js",
       dependencies: pkg.dependencies,
