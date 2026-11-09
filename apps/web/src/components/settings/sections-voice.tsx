@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { useClient } from "@/lib/api";
 import { formatCombo, shortcut } from "@/lib/shortcuts";
 import { browserSttAvailability, resetBrowserSttAvailability, tts } from "@/lib/voice/engines";
-import { speak } from "@/lib/voice/speak";
+import { speak, speechQueue } from "@/lib/voice/speak";
 import { SecretField, useSecrets } from "./secret-field";
 import { LocalWhisperRows } from "./sections-voice-local";
 import { Segmented, SettingRow, SettingsSection, useSettings } from "./settings-ui";
@@ -54,9 +54,19 @@ export function VoiceSettings() {
     ? (voices.data?.voices ?? []).map((vo) => ({ id: vo.id, label: vo.name }))
     : browserVoices.map((vo) => ({ id: vo.id, label: `${vo.label} (${vo.lang})` }));
   const testVoice = useMutation({
-    mutationFn: () =>
-      speak(client, settings, "The checkout flake is fixed and verified with fifty green runs."),
-    onError: (e) => toast.error("Couldn't play the voice", { description: e.message }),
+    // Plays straight away, ahead of (and stopping) any queued read-aloud.
+    mutationFn: async () =>
+      speechQueue.playNow({
+        key: `test-${Date.now()}`,
+        play: () =>
+          speak(
+            client,
+            settings,
+            "The checkout flake is fixed and verified with fifty green runs.",
+          ).catch((e: Error) => {
+            toast.error("Couldn't play the voice", { description: e.message });
+          }),
+      }),
   });
   const dictationKey = v.dictation.engine === "openai" ? "openai.apiKey" : "elevenlabs.apiKey";
   const browserAvailable = browserSttAvailability() === "available";
@@ -170,12 +180,16 @@ export function VoiceSettings() {
       >
         <SettingRow
           label="Read final messages aloud"
-          help="Mute single sessions from their Details tab."
+          help="Messages play one after another; switching this off stops the current one. Mute single sessions from their Details tab."
         >
           <Switch
             aria-label="Read final messages aloud"
             checked={v.readAloud.enabled}
-            onCheckedChange={(enabled) => update({ voice: { readAloud: { enabled } } })}
+            onCheckedChange={(enabled) => {
+              // Switching it off also stops what's playing and drops the queue.
+              if (!enabled) speechQueue.clear();
+              update({ voice: { readAloud: { enabled } } });
+            }}
           />
         </SettingRow>
         <SettingRow

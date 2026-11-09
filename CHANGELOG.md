@@ -7,6 +7,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 ### Added
 
 - **Read-aloud speaks a TL;DR.** **Settings › Voice › What to read** chooses between **TL;DR** (the default: one or two sentences saying what was done and whether anything needs you, about 15 seconds at most) and **Full message** (the whole final message without code or Markdown, up to 5,000 characters). This replaces the **Read-aloud summaries** switch under Utility model.
+- **Read-aloud queues messages.** When another session finishes while a message is being read, its message now waits and plays next instead of cutting the first one off. Up to three messages wait; messages from sessions you mute, or that arrive in quiet hours, are skipped when their turn comes. Switching read-aloud off stops it and clears the queue.
 
 ### Fixed
 

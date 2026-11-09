@@ -14,7 +14,8 @@ import { onLiveEvent } from "@/lib/realtime";
 import { type TranscriptState, transcriptFromSnapshot } from "@/lib/transcript/reducer";
 import { finalAssistantText } from "@/lib/transcript/timeline";
 import { useVoiceStore } from "@/stores/voice";
-import { speak } from "./speak";
+import { speak, speechQueue } from "./speak";
+import type { SpeechQueue } from "./speech-queue";
 import { shouldReadAloud, stripForSpeech } from "./speech-text";
 
 /** A session went from working to idle: its root turn just finished. */
@@ -58,13 +59,17 @@ export async function readAloudText(
 
 /**
  * Read-aloud for every session (§11.3), not only the one on screen: watches the domain event
- * stream for sessions whose turn just finished, loads that session's snapshot, and speaks its
- * final message (a TL;DR or the whole stripped message, per settings) with the configured
- * engine. Honours the global toggle, per-session mutes, quiet hours and "only when unfocused".
+ * stream for sessions whose turn just finished, loads that session's snapshot, and queues its
+ * final message (a TL;DR or the whole stripped message, per settings) on the global speech
+ * queue, so messages play one after another. Honours the global toggle, per-session mutes,
+ * quiet hours and "only when unfocused", both when queueing and when an item's turn comes.
  */
-export function startReadAloud(client: CodeDenClient, queryClient: QueryClient): () => void {
+export function startReadAloud(
+  client: CodeDenClient,
+  queryClient: QueryClient,
+  queue: SpeechQueue = speechQueue,
+): () => void {
   const statuses = new Map<string, SessionStatus>();
-  const spoken = new Set<string>();
   const seed = queryClient.getQueryData<Snapshot>(snapshotKey);
   for (const s of seed?.sessions ?? []) statuses.set(s.id, s.status);
 
@@ -84,16 +89,25 @@ export function startReadAloud(client: CodeDenClient, queryClient: QueryClient):
     if (!allowed(sessionId)) return;
     const state = transcriptFromSnapshot(await client.getSessionSnapshot(sessionId));
     const turnId = latestCompletedRootTurn(state);
-    if (!turnId || spoken.has(turnId)) return;
-    spoken.add(turnId);
-    const text = finalAssistantText(state, turnId);
+    const text = turnId ? finalAssistantText(state, turnId) : null;
     const s = settings();
-    if (!text || !s) return;
-    const spokenText = await readAloudText(client, s, text);
-    if (spokenText && allowed(sessionId)) await speak(client, s, spokenText);
+    if (!turnId || !text || !s || queue.has(turnId)) return;
+    // The TL;DR is prepared straight away, while earlier messages are still playing.
+    const spokenText = readAloudText(client, s, text).catch(() => "");
+    queue.enqueue({
+      key: turnId,
+      allowed: () => allowed(sessionId),
+      play: async (signal) => {
+        const words = await spokenText;
+        const now = settings();
+        if (!words || !now || signal.aborted) return;
+        await speak(client, now, words);
+      },
+    });
   };
 
-  return onLiveEvent((env) => {
+  const stopMuted = useVoiceStore.subscribe(() => queue.recheck());
+  const stopEvents = onLiveEvent((env) => {
     if (env.type !== "session.created" && env.type !== "session.updated") return;
     const session = env.payload.session;
     const prev = statuses.get(session.id);
@@ -102,4 +116,9 @@ export function startReadAloud(client: CodeDenClient, queryClient: QueryClient):
       void readFinished(session.id).catch(() => undefined);
     }
   });
+  return () => {
+    stopEvents();
+    stopMuted();
+    queue.clear();
+  };
 }
