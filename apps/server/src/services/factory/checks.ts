@@ -9,6 +9,7 @@ import type {
 } from "@codeden/contracts";
 import type { FactoryPr } from "./github-port";
 import { isNonCodeFile, isTestFile, isUiFile, protectedHits } from "./policy";
+import { changeSize, overSizeLimit, sizeLimitText } from "./size";
 
 /** Everything the merge checks look at for one pull request. */
 export interface CheckInputs {
@@ -26,6 +27,8 @@ export interface CheckInputs {
   ciGraceOver: boolean;
   limits: FactoryLimits;
   tuning: FactoryTuning;
+  /** Why the PM let this item go over the size limit; null when it didn't. */
+  largeChange: string | null;
   areas: ProtectedAreas;
   now: string;
 }
@@ -77,14 +80,11 @@ export function evaluateChecks(i: CheckInputs): { checks: MergeCheck[]; outcome:
     set("protected_paths", "fail", `Touches protected areas (${parts.join("; ")})`, true);
   } else set("protected_paths", "pass", null);
 
-  const lines = i.pr.additions + i.pr.deletions;
-  if (lines > i.tuning.maxChangedLines || files.length > i.tuning.maxChangedFiles) {
-    set(
-      "size",
-      "fail",
-      `${lines} lines in ${files.length} files (limit ${i.tuning.maxChangedLines} lines, ${i.tuning.maxChangedFiles} files)`,
-    );
-  } else set("size", "pass", `${lines} lines in ${files.length} files`);
+  const size = changeSize(i.pr);
+  const measured = `${size.lines.toLocaleString("en")} lines in ${size.files} files${size.uncounted ? ` (${size.uncounted} lockfiles or generated files not counted)` : ""}`;
+  if (!overSizeLimit(size, i.tuning)) set("size", "pass", measured);
+  else if (i.largeChange) set("size", "pass", `${measured}; allowed by the PM: ${i.largeChange}`);
+  else set("size", "fail", `${measured}, over the limit of ${sizeLimitText(i.tuning)}`);
 
   switch (i.pr.checks) {
     case "success":

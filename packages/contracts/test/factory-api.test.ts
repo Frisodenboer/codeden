@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EventEnvelope,
+  FactoryAllowLargeChangeRequest,
   FactoryDecisionRequest,
   FactoryDigest,
   FactoryItem,
@@ -42,6 +43,7 @@ const item: FactoryItem = {
   revertOf: null,
   triageRequestedAt: ts,
   nudges: { verifying: ts },
+  largeChange: null,
   createdAt: ts,
   updatedAt: ts,
   mergedAt: null,
@@ -66,9 +68,32 @@ describe("factory API contracts (§10.1)", () => {
       lastTickAt: null,
       updatedAt: ts,
     });
-    expect(loop.tuning.maxChangedLines).toBe(800);
+    expect(loop.tuning.maxChangedLines).toBe(5_000);
+    expect(loop.tuning.maxChangedFiles).toBeNull();
     expect(loop.tuning.areas).toContain("security");
     expect(loop.seenFailedShas).toEqual([]);
+    // Items stored before `largeChange` existed still parse.
+    const { largeChange: _l, ...old } = item;
+    expect(FactoryItem.parse(old).largeChange).toBeNull();
+    // A tuning change carries only what it sets: the rest of the saved tuning is kept.
+    expect(
+      SetAutonomyModeRequest.parse({ mode: "dark_factory", tuning: { maxChangedLines: null } })
+        .tuning,
+    ).toEqual({ maxChangedLines: null });
+    expect(
+      SetAutonomyModeRequest.safeParse({ mode: "dark_factory", tuning: { maxChangedLines: 0 } })
+        .success,
+    ).toBe(false);
+    expect(
+      FactoryAllowLargeChangeRequest.parse({ itemId: "i1", reason: "Initial scaffold" }),
+    ).toEqual({ itemId: "i1", reason: "Initial scaffold" });
+    expect(
+      FactoryTriageRequest.parse({
+        itemId: "i1",
+        decision: "accept",
+        largeChange: "Stack migration",
+      }).largeChange,
+    ).toBe("Stack migration");
     const event = EventEnvelope.parse({
       seq: 1,
       sessionId: null,

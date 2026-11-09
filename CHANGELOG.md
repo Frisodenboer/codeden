@@ -10,10 +10,21 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Read-aloud says who's speaking.** Each message starts with who it's from, such as "Orchestrator", "codeden project manager" or "codeden-website, Improve FAQ", so you can tell sessions apart across projects. Turn it off with **Settings › Voice › Say who's speaking**.
 - **Read-aloud queues messages.** When another session finishes while a message is being read, its message now waits and plays next instead of cutting the first one off. Up to three messages wait; messages from sessions you mute, or that arrive in quiet hours, are skipped when their turn comes. Switching read-aloud off stops it and clears the queue.
 
+### Changed
+
+- **A tidier session header.** The model and permission level are shown only under the message box, no longer repeated at the top of a session.
+
 ### Fixed
 
 - **Read-aloud no longer reads long reports when a summary can't be made.** If the utility model fails or is unavailable, CodeDen now reads the message's first sentence or two instead of up to 600 characters (or the whole report, when the request itself failed). Summaries that run long are cut to two sentences.
 - **Utility model failures are logged.** Failed session titles, follow-ups and read-aloud summaries are written to the server log (`~/.codeden/logs/desktop-server.log` in the desktop app, the terminal for `codeden`) instead of being dropped unless debugging was on.
+- **The factory's size limit no longer stops large work.** It used to count every line, including lockfiles and copied-in UI components. A new project's scaffold failed at 800 lines and 40 files, went through a fix round that couldn't succeed, and ended up waiting on you. Now:
+  - only code someone has to review counts, so lockfiles and generated or vendored files (shadcn's `components/ui` included) are left out;
+  - the default is 5,000 lines with no file limit, and projects on the old defaults move over automatically;
+  - the **Merge checks** section of the factory panel's **Limits** dialog sets **Largest change** and **Most files changed**; leave either empty for no limit;
+  - the PM sees the limit at triage and splits big work, or accepts work that can't be split (an initial scaffold, a stack migration) as one change;
+  - a PR that's still too large goes to the PM to split or allow, with no fix round, without counting towards pausing the loop, and without waiting on you.
+- **Saving one factory setting no longer resets the others** to their defaults.
 
 ## [0.4.3] - 2026-11-09
 

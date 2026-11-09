@@ -91,13 +91,16 @@ export async function answerProviderQuestion(
   }
 }
 
-/** `factory_record_decision`: put a factory agent's own decision in front of the user. */
+/**
+ * `factory_record_decision`: put a factory decision in front of the user (the inbox and the
+ * daily digest). Also used for the PM's size allowances.
+ */
 export function recordDecision(
   ctx: FactoryContext,
-  session: Session,
-  req: FactoryDecisionRequest,
+  by: { projectId: string | null; sessionId: string | null },
+  req: Omit<FactoryDecisionRequest, "needsHuman"> & { needsHuman?: boolean },
 ): { inboxItemId: string; message: string } {
-  if (!session.projectId) {
+  if (!by.projectId) {
     throw badRequest("Only a project's sessions record factory decisions", "no_project");
   }
   const id = `${DECISION_INBOX_PREFIX}${randomUUID()}`;
@@ -105,8 +108,8 @@ export function recordDecision(
     id,
     kind: "message",
     priority: req.needsHuman ? "high" : "low",
-    projectId: session.projectId,
-    sessionId: session.id,
+    projectId: by.projectId,
+    sessionId: by.sessionId,
     title: `${req.needsHuman ? "Factory needs you" : "Factory decided"}: ${oneLine(req.question, 120)}`,
     body: [
       `**Question:** ${req.question}`,

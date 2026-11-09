@@ -18,6 +18,7 @@ import {
 } from "./policy";
 import { advanceBuilding, advanceWatching } from "./progress";
 import { triageInstructions } from "./prompts";
+import { sizeLimitText } from "./size";
 import { WAITING_STAGES } from "./store";
 import { advanceVerifying } from "./verify";
 
@@ -233,7 +234,11 @@ function requestTriage(ctx: FactoryContext, project: Project): void {
     target: "pm",
     event: "triage_needed",
     title: `Factory: ${fresh.length} candidate${fresh.length === 1 ? "" : "s"} to triage`,
-    text: triageInstructions(fresh, project.autonomyMode === "dark_factory"),
+    text: triageInstructions(
+      fresh,
+      project.autonomyMode === "dark_factory",
+      sizeLimitText(ctx.store.loopOrNew(project.id).tuning),
+    ),
     itemIds: fresh.map((i) => i.id),
   });
   for (const item of fresh) ctx.store.updateItem(item.id, (i) => ({ ...i, triageRequestedAt: at }));

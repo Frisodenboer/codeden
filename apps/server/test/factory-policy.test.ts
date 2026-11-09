@@ -65,6 +65,7 @@ function checks(patch: Partial<Parameters<typeof evaluateChecks>[0]> = {}) {
     ciGraceOver: true,
     limits,
     tuning: FactoryTuning.parse({}),
+    largeChange: null,
     areas: { globs: ["**/auth/**"], topics: ["payments"] },
     now: new Date().toISOString(),
     ...patch,
