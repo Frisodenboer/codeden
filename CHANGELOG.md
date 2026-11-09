@@ -4,6 +4,12 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-09
+
+### Changed
+
+- **The sidebar reads as a tree.** The rows under a project (Project manager, sessions, Automations, archived) are indented under it with a guide line, and expanded automations nest one level further, so it's clear which project each row belongs to.
+
 ## [0.4.0] - 2026-11-08
 
 ### Added
