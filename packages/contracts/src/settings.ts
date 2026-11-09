@@ -189,6 +189,11 @@ export const Settings = z.object({
           voice: z.string().nullable().default(null),
           /** What gets read when a turn finishes (§11.3); see `ReadAloudContent`. */
           content: ReadAloudContent.default("summary"),
+          /**
+           * Start each message with who it's from ("Orchestrator", "<project> project manager",
+           * "<project>, <session title>"), built from the session, never by a model.
+           */
+          announceSpeaker: z.boolean().default(true),
           onlyWhenUnfocused: z.boolean().default(false),
           quietHours: QuietHours.nullable().default(null),
         })

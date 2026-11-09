@@ -6,6 +6,7 @@ import {
 } from "@codeden/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { readAloudText } from "@/lib/voice/read-aloud";
+import { SPEAKER_TITLE_MAX_CHARS, speakerName, withSpeaker } from "@/lib/voice/speaker";
 
 const REPORT = [
   "## Summary",
@@ -68,5 +69,48 @@ describe("readAloudText", () => {
     expect(c.speechSummary).not.toHaveBeenCalled();
     const huge = await readAloudText(c, settings("full"), "A sentence here. ".repeat(1_000));
     expect(huge.length).toBeLessThanOrEqual(READ_ALOUD_FULL_MAX_CHARS);
+  });
+});
+
+describe("speakerName", () => {
+  it("names each role from the session, deterministically", () => {
+    expect(speakerName({ role: "orchestrator", title: "Daily standup" }, null)).toBe(
+      "Orchestrator",
+    );
+    expect(speakerName({ role: "pm", title: "Project manager" }, "codeden")).toBe(
+      "codeden project manager",
+    );
+    expect(speakerName({ role: "agent", title: "Improve FAQ" }, "codeden-website")).toBe(
+      "codeden-website, Improve FAQ",
+    );
+  });
+
+  it("copes with missing projects and titles", () => {
+    expect(speakerName({ role: "pm", title: null }, null)).toBe("Project manager");
+    expect(speakerName({ role: "agent", title: null }, "codeden")).toBe("codeden agent");
+    expect(speakerName({ role: "agent", title: "  " }, null)).toBe("Agent");
+    expect(speakerName({ role: "agent", title: "Fix login." }, null)).toBe("Fix login");
+  });
+
+  it("cuts long titles at a word", () => {
+    const name = speakerName(
+      {
+        role: "agent",
+        title: "Rewrite the read-aloud pipeline so that it queues messages, and much more",
+      },
+      "codeden",
+    );
+    expect(name).toBe("codeden, Rewrite the read-aloud pipeline so that");
+    expect(name.length - "codeden, ".length).toBeLessThanOrEqual(SPEAKER_TITLE_MAX_CHARS);
+  });
+
+  it("prefixes the spoken text in both modes", async () => {
+    const c = client({ text: "Fixed it; nothing needs you.", source: "utility" });
+    const tldr = await readAloudText(c, settings("summary"), REPORT);
+    expect(withSpeaker("codeden project manager", tldr)).toBe(
+      "codeden project manager: Fixed it; nothing needs you.",
+    );
+    const full = await readAloudText(c, settings("full"), "**Done.** All green.");
+    expect(withSpeaker("Orchestrator", full)).toBe("Orchestrator: Done. All green.");
   });
 });

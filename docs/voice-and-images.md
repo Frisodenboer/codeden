@@ -51,6 +51,7 @@ When an agent's turn completes, CodeDen can read its final message aloud.
 - **What to read** chooses between:
   - **TL;DR** (default): a one or two sentence summary from the [utility model](workbench.md#the-utility-model) saying what was done and whether anything needs you, about 15 seconds at most. Short messages are read as they are. If the summary can't be made, the message's first sentence or two are read instead, never the whole report; the reason is written to the server log.
   - **Full message**: the whole final message, up to 5,000 characters (about five minutes).
+- **Say who's speaking** (on by default) starts each message with who it's from, such as "Orchestrator", "codeden project manager" or "codeden-website, Improve FAQ" (the project and the session's title).
 - Messages from different sessions **queue** instead of cutting each other off: each plays to the end, then the next. If several finish at once, only the latest three wait. Turning read-aloud off stops the current message and clears the queue; muting a session stops its message.
 - **Only when the tab isn't focused** keeps it quiet while you're looking.
 - **Mute one session** from its **Details** tab.

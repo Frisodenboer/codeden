@@ -73,6 +73,7 @@ describe("Settings.voice.readAloud.content", () => {
     expect(old.voice.readAloud.engine).toBe("elevenlabs");
     expect(old.utilityModel.jobs.readAloudSummary).toBe(false);
     expect(defaultSettings().voice.readAloud.content).toBe("summary");
+    expect(old.voice.readAloud.announceSpeaker).toBe(true);
   });
 
   it("round-trips both modes and rejects others", () => {
@@ -82,6 +83,10 @@ describe("Settings.voice.readAloud.content", () => {
       expect(parsed.voice.readAloud.content).toBe(content);
     }
     expect(() => Settings.parse({ voice: { readAloud: { content: "everything" } } })).toThrow();
+    const quiet = Settings.parse({ voice: { readAloud: { announceSpeaker: false } } });
+    expect(Settings.parse(JSON.parse(JSON.stringify(quiet))).voice.readAloud.announceSpeaker).toBe(
+      false,
+    );
   });
 });
 

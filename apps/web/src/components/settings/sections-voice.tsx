@@ -209,6 +209,18 @@ export function VoiceSettings() {
             ]}
           />
         </SettingRow>
+        <SettingRow
+          label="Say who's speaking"
+          help="Starts each message with who it's from, such as the project manager or a session's title."
+        >
+          <Switch
+            aria-label="Say who's speaking"
+            checked={v.readAloud.announceSpeaker}
+            onCheckedChange={(announceSpeaker) =>
+              update({ voice: { readAloud: { announceSpeaker } } })
+            }
+          />
+        </SettingRow>
         <SettingRow label="Engine">
           <Segmented
             value={v.readAloud.engine}
