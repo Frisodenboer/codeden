@@ -114,4 +114,4 @@ The runner launches one Chromium (your installed **Edge** or **Chrome**; Edge fi
 
 ## The utility model
 
-Small side jobs use one cheap model so they never need a separate API key: follow-up suggestions, read-aloud summaries, session titles and short summaries in notices. It runs as a one-shot, tool-less call through an installed provider (a small Claude model by default, or a small Codex model when only Codex is set up). Pick the model and switch each job off in **Settings → Utility model**.
+Small side jobs use one cheap model so they never need a separate API key: follow-up suggestions, read-aloud summaries, session titles and short summaries in notices. It runs as a one-shot, tool-less call through an installed provider (a small Claude model by default, or a small Codex model when only Codex is set up). Pick the model and switch each job off in **Settings → Utility model**; whether read-aloud uses a TL;DR is chosen in **Settings → Voice → What to read**. When a job fails, the reason is written to the server log.

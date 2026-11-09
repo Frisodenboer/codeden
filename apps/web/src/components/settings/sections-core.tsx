@@ -238,7 +238,6 @@ export function UtilitySettings() {
   const providers = useSnapshotData((s) => s.runner.providers, []);
   const jobs = [
     ["followups", "Follow-up suggestions", "When the agent didn't suggest any itself."],
-    ["readAloudSummary", "Read-aloud summaries", "Compress long final messages before speaking."],
     ["sessionTitles", "Session titles", "Short titles from the first message."],
     ["noticeSummaries", "Notice summaries", "One-line summaries in PM wake-ups."],
   ] as const;
@@ -246,7 +245,7 @@ export function UtilitySettings() {
   return (
     <SettingsSection
       title="Utility model"
-      description="One small, cheap model for side jobs. Runs through an installed provider, no extra API key."
+      description="One small, cheap model for side jobs. Runs through an installed provider, no extra API key. It also writes read-aloud TL;DRs, chosen in Voice."
     >
       <SettingRow label="Model">
         <div className="rounded-lg border border-border px-1 py-0.5">

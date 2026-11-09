@@ -1,8 +1,11 @@
-import type {
-  FollowupSuggestion,
-  Session,
-  Settings,
-  SpeechSummaryResponse,
+import {
+  type FollowupSuggestion,
+  READ_ALOUD_FULL_MAX_CHARS,
+  READ_ALOUD_SUMMARY_MAX_CHARS,
+  type Session,
+  type Settings,
+  type SpeechSummaryResponse,
+  speechExcerpt,
 } from "@codeden/contracts";
 import type { RunnerPort } from "./runner-port";
 
@@ -25,7 +28,11 @@ export interface TurnContext {
 export interface UtilityService {
   sessionTitle(ctx: TurnContext): Promise<string | null>;
   suggestFollowups(ctx: TurnContext): Promise<FollowupSuggestion[] | null>;
-  /** One or two sentences for text-to-speech; falls back to the cleaned text itself. */
+  /**
+   * What read-aloud speaks for a final message (§11.3), following `voice.readAloud.content`:
+   * a TL;DR of at most two short sentences, or the whole cleaned message. Never long in
+   * summary mode: without a model answer it is the message's first sentence or two.
+   */
   speechSummary(text: string): Promise<SpeechSummaryResponse>;
 }
 
@@ -38,13 +45,18 @@ export class NoopUtilityService implements UtilityService {
     return null;
   }
   async speechSummary(text: string): Promise<SpeechSummaryResponse> {
-    return { text: plainSpeech(text), source: "plain" };
+    return { text: shortSpeech(plainSpeech(text)), source: "plain" };
   }
 }
 
+/** The summary-mode fallback: the first sentence or two, within the TL;DR cap. */
+export function shortSpeech(plain: string): string {
+  return speechExcerpt(plain, READ_ALOUD_SUMMARY_MAX_CHARS, 2);
+}
+
 /** Strip code blocks and markdown so text reads naturally aloud (§11.3). */
-export function plainSpeech(text: string, maxChars = 600): string {
-  const plain = text
+export function plainSpeech(text: string): string {
+  return text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
@@ -54,10 +66,6 @@ export function plainSpeech(text: string, maxChars = 600): string {
     .replace(/[*_~>|]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (plain.length <= maxChars) return plain;
-  const cut = plain.slice(0, maxChars);
-  const end = cut.lastIndexOf(". ");
-  return end > maxChars / 2 ? cut.slice(0, end + 1) : `${cut.trimEnd()}...`;
 }
 
 /** Utility-model calls through the runner (`provider.oneShot`), so the server spawns nothing. */
@@ -85,6 +93,20 @@ export function runnerOneShot(runner: RunnerPort): OneShotPort {
 
 const PREFERENCE = ["claude", "codex"];
 const TIMEOUT_MS = 60_000;
+/** Read-aloud waits on the summary, so it gets less time than the other jobs. */
+const SPEECH_TIMEOUT_MS = 30_000;
+
+const TLDR_SYSTEM = [
+  "You write the spoken TL;DR of a coding agent's final message. It is read aloud by a text-to-speech voice, so the listener cannot skim.",
+  "Reply with at most two short sentences, under 200 characters in total.",
+  "Say what was done and whether anything needs the user (a decision, a review, a failure). If nothing needs them, don't mention it.",
+  "Plain spoken English only: no markdown, code, file paths, lists, numbers of lines or preamble such as 'Summary:'.",
+].join(" ");
+
+/** Server-side warnings for utility jobs, shown whatever the debug setting (stderr). */
+function defaultWarn(message: string): void {
+  console.warn(`[codeden] ${new Date().toISOString()} ${message}`);
+}
 
 /**
  * The real `UtilityService`: a one-shot, tool-less call on a small model (§7.4). The provider
@@ -96,15 +118,24 @@ export class ProviderUtilityService implements UtilityService {
     private readonly deps: {
       settings: () => Settings;
       oneShot: OneShotPort;
-      log?: (message: string) => void;
+      /** Utility failures: always visible (the server log), since they change what users get. */
+      warn?: (message: string) => void;
     },
   ) {}
+
+  /** Set while no provider can run one-shots, so that is reported once, not on every job. */
+  private reportedNoProvider = false;
+
+  private warn(message: string): void {
+    (this.deps.warn ?? defaultWarn)(message);
+  }
 
   async sessionTitle(ctx: TurnContext): Promise<string | null> {
     if (!this.deps.settings().utilityModel.jobs.sessionTitles) return null;
     const source = ctx.firstMessage ?? ctx.finalMessage;
     if (!source) return null;
     const out = await this.run(
+      "session title",
       "Write a title of 3 to 6 words for a coding session that starts with the request below. Reply with the title only: no quotes, no trailing punctuation.",
       `Request:\n${clip(source, 4_000)}`,
     );
@@ -119,6 +150,7 @@ export class ProviderUtilityService implements UtilityService {
     if (!this.deps.settings().utilityModel.jobs.followups || !ctx.finalMessage) return null;
     const files = ctx.changedFiles?.length ? `\nFiles changed: ${ctx.changedFiles.join(", ")}` : "";
     const out = await this.run(
+      "follow-ups",
       "You suggest what a developer might ask a coding agent next. Reply with 2 to 4 short prompts, one per line, written as the developer would type them. No numbering, no quotes, nothing else.",
       `The agent's final message:\n${clip(ctx.finalMessage, 6_000)}${files}`,
     );
@@ -136,27 +168,43 @@ export class ProviderUtilityService implements UtilityService {
   }
 
   async speechSummary(text: string): Promise<SpeechSummaryResponse> {
-    const plain = plainSpeech(text, 4_000);
-    if (!this.deps.settings().utilityModel.jobs.readAloudSummary || plain.length <= 240) {
-      return { text: plainSpeech(text), source: "plain" };
+    const plain = plainSpeech(text);
+    if (this.deps.settings().voice.readAloud.content === "full") {
+      return { text: speechExcerpt(plain, READ_ALOUD_FULL_MAX_CHARS), source: "plain" };
     }
-    const out = await this.run(
-      "Compress the message below into one or two plain sentences that will be read aloud. No markdown, no code, no lists.",
-      plain,
-    );
-    return out
-      ? { text: out.trim(), source: "utility" }
-      : { text: plainSpeech(text), source: "plain" };
+    if (plain.length <= READ_ALOUD_SUMMARY_MAX_CHARS) return { text: plain, source: "plain" };
+    const out = await this.run("read-aloud TL;DR", TLDR_SYSTEM, clip(plain, 12_000), {
+      timeoutMs: SPEECH_TIMEOUT_MS,
+    });
+    const tldr = out ? plainSpeech(out) : "";
+    if (tldr) return { text: shortSpeech(tldr), source: "utility" };
+    this.warn("utility: read-aloud TL;DR unavailable, speaking the message's first sentences");
+    return { text: shortSpeech(plain), source: "plain" };
   }
 
   /** One-shot on the configured provider, falling back to the next; null on failure. */
-  private async run(system: string, prompt: string): Promise<string | null> {
+  private async run(
+    job: string,
+    system: string,
+    prompt: string,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<string | null> {
     const { utilityModel } = this.deps.settings();
     const available = this.deps.oneShot.available();
     const chosen = utilityModel.provider === "auto" ? null : utilityModel.provider;
     const order = [chosen, ...PREFERENCE].filter(
       (id, i, all): id is string => !!id && available.includes(id) && all.indexOf(id) === i,
     );
+    if (order.length === 0) {
+      if (!this.reportedNoProvider) {
+        this.warn(
+          `utility: no provider can run the utility model (runner lists: ${available.join(", ") || "none"})`,
+        );
+      }
+      this.reportedNoProvider = true;
+      return null;
+    }
+    this.reportedNoProvider = false;
     for (const providerId of order) {
       try {
         const model = providerId === chosen ? (utilityModel.model ?? undefined) : undefined;
@@ -164,12 +212,13 @@ export class ProviderUtilityService implements UtilityService {
           prompt,
           system,
           model,
-          timeoutMs: TIMEOUT_MS,
+          timeoutMs: opts.timeoutMs ?? TIMEOUT_MS,
         });
         if (text.trim()) return text.trim();
+        this.warn(`utility: ${job} on ${providerId} returned nothing`);
       } catch (error) {
-        this.deps.log?.(
-          `utility: ${providerId} failed: ${error instanceof Error ? error.message : String(error)}`,
+        this.warn(
+          `utility: ${job} on ${providerId} failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }

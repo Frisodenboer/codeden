@@ -1,4 +1,12 @@
-import type { SessionStatus, Snapshot } from "@codeden/contracts";
+import {
+  READ_ALOUD_FULL_MAX_CHARS,
+  READ_ALOUD_SUMMARY_MAX_CHARS,
+  type Session,
+  type SessionStatus,
+  type Settings,
+  type Snapshot,
+  speechExcerpt,
+} from "@codeden/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import type { CodeDenClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
@@ -7,7 +15,9 @@ import { onLiveEvent } from "@/lib/realtime";
 import { type TranscriptState, transcriptFromSnapshot } from "@/lib/transcript/reducer";
 import { finalAssistantText } from "@/lib/transcript/timeline";
 import { useVoiceStore } from "@/stores/voice";
-import { speak } from "./speak";
+import { speak, speechQueue } from "./speak";
+import { speakerName, withSpeaker } from "./speaker";
+import type { SpeechQueue } from "./speech-queue";
 import { shouldReadAloud, stripForSpeech } from "./speech-text";
 
 /** A session went from working to idle: its root turn just finished. */
@@ -25,18 +35,52 @@ export function latestCompletedRootTurn(state: TranscriptState): string | null {
 }
 
 /**
- * Read-aloud for every session (§11.3), not only the one on screen: watches the domain event
- * stream for sessions whose turn just finished, loads that session's snapshot, and speaks its
- * final message (stripped, compressed by the utility model when long) with the configured
- * engine. Honours the global toggle, per-session mutes, quiet hours and "only when unfocused".
+ * What to speak for a final message (§11.3), following `voice.readAloud.content`. `full`: the
+ * whole stripped message (capped). `summary`: short messages as they are, long ones as the
+ * utility model's TL;DR, or their first sentence or two when that fails. Never the whole report.
  */
-export function startReadAloud(client: CodeDenClient, queryClient: QueryClient): () => void {
+export async function readAloudText(
+  client: Pick<CodeDenClient, "speechSummary">,
+  settings: Settings,
+  markdown: string,
+): Promise<string> {
+  const plain = stripForSpeech(markdown);
+  if (settings.voice.readAloud.content === "full") {
+    return speechExcerpt(plain, READ_ALOUD_FULL_MAX_CHARS);
+  }
+  if (plain.length <= READ_ALOUD_SUMMARY_MAX_CHARS) return plain;
+  const short = (text: string) => speechExcerpt(text, READ_ALOUD_SUMMARY_MAX_CHARS, 2);
+  try {
+    const summary = (await client.speechSummary(markdown)).text.trim();
+    return short(summary || plain);
+  } catch (error) {
+    console.warn("read-aloud: no TL;DR, speaking the first sentences", error);
+    return short(plain);
+  }
+}
+
+/**
+ * Read-aloud for every session (§11.3), not only the one on screen: watches the domain event
+ * stream for sessions whose turn just finished, loads that session's snapshot, and queues its
+ * final message (a TL;DR or the whole stripped message, per settings, introduced by who it is
+ * from) on the global speech queue, so messages play one after another. Honours the global toggle, per-session mutes,
+ * quiet hours and "only when unfocused", both when queueing and when an item's turn comes.
+ */
+export function startReadAloud(
+  client: CodeDenClient,
+  queryClient: QueryClient,
+  queue: SpeechQueue = speechQueue,
+): () => void {
   const statuses = new Map<string, SessionStatus>();
-  const spoken = new Set<string>();
   const seed = queryClient.getQueryData<Snapshot>(snapshotKey);
   for (const s of seed?.sessions ?? []) statuses.set(s.id, s.status);
 
   const settings = () => queryClient.getQueryData<Snapshot>(snapshotKey)?.settings;
+  const projectName = (projectId: string | null) =>
+    projectId
+      ? (queryClient.getQueryData<Snapshot>(snapshotKey)?.projects.find((p) => p.id === projectId)
+          ?.name ?? null)
+      : null;
   const allowed = (sessionId: string) => {
     const s = settings();
     return s
@@ -48,33 +92,46 @@ export function startReadAloud(client: CodeDenClient, queryClient: QueryClient):
       : false;
   };
 
-  const readFinished = async (sessionId: string) => {
+  const readFinished = async (session: Session) => {
+    const sessionId = session.id;
     if (!allowed(sessionId)) return;
     const state = transcriptFromSnapshot(await client.getSessionSnapshot(sessionId));
     const turnId = latestCompletedRootTurn(state);
-    if (!turnId || spoken.has(turnId)) return;
-    spoken.add(turnId);
-    const text = finalAssistantText(state, turnId);
+    const text = turnId ? finalAssistantText(state, turnId) : null;
     const s = settings();
-    if (!text || !s) return;
-    const plain = stripForSpeech(text);
-    let spokenText = plain;
-    if (plain.length > 280 && s.utilityModel.jobs.readAloudSummary) {
-      spokenText = await client
-        .speechSummary(text)
-        .then((r) => r.text)
-        .catch(() => plain);
-    }
-    if (spokenText && allowed(sessionId)) await speak(client, s, spokenText);
+    if (!turnId || !text || !s || queue.has(turnId)) return;
+    // The TL;DR is prepared straight away, while earlier messages are still playing.
+    const speaker = s.voice.readAloud.announceSpeaker
+      ? speakerName(session, projectName(session.projectId))
+      : null;
+    const spokenText = readAloudText(client, s, text)
+      .then((words) => (words && speaker ? withSpeaker(speaker, words) : words))
+      .catch(() => "");
+    queue.enqueue({
+      key: turnId,
+      allowed: () => allowed(sessionId),
+      play: async (signal) => {
+        const words = await spokenText;
+        const now = settings();
+        if (!words || !now || signal.aborted) return;
+        await speak(client, now, words);
+      },
+    });
   };
 
-  return onLiveEvent((env) => {
+  const stopMuted = useVoiceStore.subscribe(() => queue.recheck());
+  const stopEvents = onLiveEvent((env) => {
     if (env.type !== "session.created" && env.type !== "session.updated") return;
     const session = env.payload.session;
     const prev = statuses.get(session.id);
     statuses.set(session.id, session.status);
     if (env.type === "session.updated" && turnJustFinished(prev, session.status)) {
-      void readFinished(session.id).catch(() => undefined);
+      void readFinished(session).catch(() => undefined);
     }
   });
+  return () => {
+    stopEvents();
+    stopMuted();
+    queue.clear();
+  };
 }

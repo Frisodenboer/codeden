@@ -17,7 +17,8 @@ export interface SpeechToText {
 
 export interface TextToSpeech {
   readonly supported: boolean;
-  speak(text: string, opts?: { voice?: string | null; rate?: number }): void;
+  /** `onEnd` runs once when the utterance finishes, fails or is cancelled. */
+  speak(text: string, opts?: { voice?: string | null; rate?: number; onEnd?: () => void }): void;
   cancel(): void;
   voices(): { id: string; label: string; lang: string }[];
 }
@@ -141,9 +142,19 @@ export function createBrowserTts(): TextToSpeech {
   return {
     supported: Boolean(synth),
     speak(text, opts) {
-      if (!synth || !text) return;
+      if (!synth || !text) {
+        opts?.onEnd?.();
+        return;
+      }
       synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
+      let ended = false;
+      // Cancelling fires `error` ("interrupted") in some browsers and `end` in others.
+      u.onend = u.onerror = () => {
+        if (ended) return;
+        ended = true;
+        opts?.onEnd?.();
+      };
       const voice = synth.getVoices().find((v) => v.voiceURI === opts?.voice);
       if (voice) u.voice = voice;
       u.rate = opts?.rate ?? 1.05;

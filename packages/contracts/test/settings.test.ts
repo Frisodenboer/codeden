@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CustomModel, defaultSettings, ModelRef, Settings } from "../src";
+import { CustomModel, defaultSettings, ModelRef, Settings, speechExcerpt } from "../src";
 
 describe("Settings.models", () => {
   it("defaults to no favourites or hidden models, so older settings files still parse", () => {
@@ -60,5 +60,45 @@ describe("Settings.models", () => {
     expect(() => Settings.parse({ models: { favorites: [{ model: "opus" }] } })).toThrow();
     expect(() => Settings.parse({ models: { hidden: { codex: [""] } } })).toThrow();
     expect(() => Settings.parse({ models: { hidden: { "Not A Provider": ["x"] } } })).toThrow();
+  });
+});
+
+describe("Settings.voice.readAloud.content", () => {
+  it("defaults to a TL;DR, so settings files from before it existed still load", () => {
+    const old = Settings.parse({
+      voice: { readAloud: { enabled: true, engine: "elevenlabs" } },
+      utilityModel: { jobs: { readAloudSummary: false } },
+    });
+    expect(old.voice.readAloud.content).toBe("summary");
+    expect(old.voice.readAloud.engine).toBe("elevenlabs");
+    expect(old.utilityModel.jobs.readAloudSummary).toBe(false);
+    expect(defaultSettings().voice.readAloud.content).toBe("summary");
+    expect(old.voice.readAloud.announceSpeaker).toBe(true);
+  });
+
+  it("round-trips both modes and rejects others", () => {
+    for (const content of ["summary", "full"] as const) {
+      const parsed = Settings.parse({ voice: { readAloud: { content } } });
+      expect(Settings.parse(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
+      expect(parsed.voice.readAloud.content).toBe(content);
+    }
+    expect(() => Settings.parse({ voice: { readAloud: { content: "everything" } } })).toThrow();
+    const quiet = Settings.parse({ voice: { readAloud: { announceSpeaker: false } } });
+    expect(Settings.parse(JSON.parse(JSON.stringify(quiet))).voice.readAloud.announceSpeaker).toBe(
+      false,
+    );
+  });
+});
+
+describe("speechExcerpt", () => {
+  it("keeps whole leading sentences that fit", () => {
+    expect(speechExcerpt("One. Two is here! Three?", 20)).toBe("One. Two is here!");
+    expect(speechExcerpt("One. Two. Three.", 100, 2)).toBe("One. Two.");
+  });
+
+  it("cuts a single over-long sentence at a word with an ellipsis", () => {
+    const out = speechExcerpt(`${"word ".repeat(100)}end.`, 50);
+    expect(out.length).toBeLessThanOrEqual(50);
+    expect(out.endsWith("word...")).toBe(true);
   });
 });
