@@ -125,7 +125,7 @@ One `generate_image` tool, available to every agent whatever its provider. It ro
 
 ### Voice
 
-Dictate into the composer (browser speech, or ElevenLabs / OpenAI), with push-to-talk. Have an agent's final message read aloud when its turn completes, with code stripped and long messages summarised first. [Voice and images](docs/voice-and-images.md).
+Dictate into the composer (browser speech, or ElevenLabs / OpenAI), with push-to-talk. Have an agent's final message read aloud when its turn completes, with code stripped, as a short TL;DR or the full message. [Voice and images](docs/voice-and-images.md).
 
 ### Usage and cost reports
 

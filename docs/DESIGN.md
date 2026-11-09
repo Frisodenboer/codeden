@@ -214,7 +214,8 @@ Small side jobs use one configurable **utility model**, so they never need a sep
 
 - **The jobs:** follow-up prompt suggestions (§13), compressing a final message for read-aloud (§11.3), session titles, and short summaries in notices.
 - **How it runs:** a one-shot call through an installed provider with no tools. The default is a small Claude model through the Agent SDK, or a small Codex model when only Codex is set up.
-- **Controls:** the model is chosen in Settings, and each job can be switched off.
+- **Controls:** the model is chosen in Settings, and each job can be switched off. The read-aloud TL;DR is controlled by `voice.readAloud.content` (§11.3), not by a job toggle.
+- **Failures are visible:** a failed or empty one-shot, and having no provider that can run one, are written to the server log (stderr) whatever the debug setting, and the job falls back as described for it.
 
 ### 7.5 Follow-up prompts
 
@@ -450,7 +451,10 @@ Both sides sit behind provider interfaces, so engines can be swapped:
 - **Text to speech** (reads an agent's final message when its turn completes):
   - **Default:** the browser's `speechSynthesis` (free).
   - **Optional:** ElevenLabs.
-  - **What gets read:** code blocks and markdown are stripped, and long messages are compressed to one or two sentences by the utility model (§7.4) first.
+  - **What gets read** (`voice.readAloud.content`, Settings → Voice → What to read). Code blocks and markdown are always stripped.
+    - **`summary` (default, "TL;DR"):** messages up to 220 characters are read as they are. Longer ones go to the utility model (§7.4) for a spoken TL;DR of at most two short sentences saying what was done and whether anything needs the user; the answer is hard-capped at two sentences and 220 characters (about 15 seconds). If no summary comes back (no provider, failure, 30 s timeout), the first sentence or two of the message is read, within the same cap. Summary mode never reads a whole report.
+    - **`full` ("Full message"):** the whole stripped message, no model call, capped at 5,000 characters (about five minutes).
+    - The older `utilityModel.jobs.readAloudSummary` toggle is superseded by this setting; it still parses so older settings files load, but nothing reads it.
   - **Controls:** global and per-session toggles, quiet hours, and "only when the tab isn't focused".
 
 ## 12. Workbench

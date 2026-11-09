@@ -1,4 +1,11 @@
-import type { SessionStatus, Snapshot } from "@codeden/contracts";
+import {
+  READ_ALOUD_FULL_MAX_CHARS,
+  READ_ALOUD_SUMMARY_MAX_CHARS,
+  type SessionStatus,
+  type Settings,
+  type Snapshot,
+  speechExcerpt,
+} from "@codeden/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import type { CodeDenClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
@@ -25,9 +32,34 @@ export function latestCompletedRootTurn(state: TranscriptState): string | null {
 }
 
 /**
+ * What to speak for a final message (§11.3), following `voice.readAloud.content`. `full`: the
+ * whole stripped message (capped). `summary`: short messages as they are, long ones as the
+ * utility model's TL;DR, or their first sentence or two when that fails. Never the whole report.
+ */
+export async function readAloudText(
+  client: Pick<CodeDenClient, "speechSummary">,
+  settings: Settings,
+  markdown: string,
+): Promise<string> {
+  const plain = stripForSpeech(markdown);
+  if (settings.voice.readAloud.content === "full") {
+    return speechExcerpt(plain, READ_ALOUD_FULL_MAX_CHARS);
+  }
+  if (plain.length <= READ_ALOUD_SUMMARY_MAX_CHARS) return plain;
+  const short = (text: string) => speechExcerpt(text, READ_ALOUD_SUMMARY_MAX_CHARS, 2);
+  try {
+    const summary = (await client.speechSummary(markdown)).text.trim();
+    return short(summary || plain);
+  } catch (error) {
+    console.warn("read-aloud: no TL;DR, speaking the first sentences", error);
+    return short(plain);
+  }
+}
+
+/**
  * Read-aloud for every session (§11.3), not only the one on screen: watches the domain event
  * stream for sessions whose turn just finished, loads that session's snapshot, and speaks its
- * final message (stripped, compressed by the utility model when long) with the configured
+ * final message (a TL;DR or the whole stripped message, per settings) with the configured
  * engine. Honours the global toggle, per-session mutes, quiet hours and "only when unfocused".
  */
 export function startReadAloud(client: CodeDenClient, queryClient: QueryClient): () => void {
@@ -57,14 +89,7 @@ export function startReadAloud(client: CodeDenClient, queryClient: QueryClient):
     const text = finalAssistantText(state, turnId);
     const s = settings();
     if (!text || !s) return;
-    const plain = stripForSpeech(text);
-    let spokenText = plain;
-    if (plain.length > 280 && s.utilityModel.jobs.readAloudSummary) {
-      spokenText = await client
-        .speechSummary(text)
-        .then((r) => r.text)
-        .catch(() => plain);
-    }
+    const spokenText = await readAloudText(client, s, text);
     if (spokenText && allowed(sessionId)) await speak(client, s, spokenText);
   };
 

@@ -4,6 +4,15 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Read-aloud speaks a TL;DR.** **Settings › Voice › What to read** chooses between **TL;DR** (the default: one or two sentences saying what was done and whether anything needs you, about 15 seconds at most) and **Full message** (the whole final message without code or Markdown, up to 5,000 characters). This replaces the **Read-aloud summaries** switch under Utility model.
+
+### Fixed
+
+- **Read-aloud no longer reads long reports when a summary can't be made.** If the utility model fails or is unavailable, CodeDen now reads the message's first sentence or two instead of up to 600 characters (or the whole report, when the request itself failed). Summaries that run long are cut to two sentences.
+- **Utility model failures are logged.** Failed session titles, follow-ups and read-aloud summaries are written to the server log (`~/.codeden/logs/desktop-server.log` in the desktop app, the terminal for `codeden`) instead of being dropped unless debugging was on.
+
 ## [0.4.3] - 2026-11-09
 
 ### Changed

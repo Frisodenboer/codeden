@@ -2,10 +2,10 @@ import type { QuietHours, Settings } from "@codeden/contracts";
 
 /**
  * Turn an assistant's markdown into something pleasant to hear (§11.3): code blocks and
- * markdown syntax are removed, links keep their text, and long text is cut to a couple of
- * sentences (the utility model compresses it server-side when that job is on).
+ * markdown syntax are removed and links keep their text. `maxSentences` optionally keeps only
+ * the leading sentences; read-aloud shortens with the utility model's TL;DR instead.
  */
-export function stripForSpeech(markdown: string, maxSentences = 3): string {
+export function stripForSpeech(markdown: string, maxSentences = Infinity): string {
   let text = markdown
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")

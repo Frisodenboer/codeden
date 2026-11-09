@@ -1,3 +1,4 @@
+import { READ_ALOUD_FULL_MAX_CHARS } from "@codeden/contracts";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -165,7 +166,7 @@ export function VoiceSettings() {
 
       <SettingsSection
         title="Read aloud"
-        description="Speaks an agent's final message when any session finishes a turn. Code and markdown are stripped; long messages are summarised first."
+        description="Speaks an agent's final message when any session finishes a turn, with code and markdown stripped."
       >
         <SettingRow
           label="Read final messages aloud"
@@ -175,6 +176,23 @@ export function VoiceSettings() {
             aria-label="Read final messages aloud"
             checked={v.readAloud.enabled}
             onCheckedChange={(enabled) => update({ voice: { readAloud: { enabled } } })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="What to read"
+          help={
+            v.readAloud.content === "summary"
+              ? "A one or two sentence TL;DR from the utility model: what was done and whether it needs you."
+              : `The whole final message, up to ${READ_ALOUD_FULL_MAX_CHARS.toLocaleString("en-US")} characters (about five minutes).`
+          }
+        >
+          <Segmented
+            value={v.readAloud.content}
+            onChange={(content) => update({ voice: { readAloud: { content } } })}
+            options={[
+              { value: "summary", label: "TL;DR" },
+              { value: "full", label: "Full message" },
+            ]}
           />
         </SettingRow>
         <SettingRow label="Engine">

@@ -47,7 +47,10 @@ Whisper runs on your own machine through the CodeDen server; your audio never le
 When an agent's turn completes, CodeDen can read its final message aloud.
 
 - Turn it on in **Settings → Voice → Read final messages aloud**. It's off by default.
-- Code blocks and Markdown are stripped, and long messages are compressed to a sentence or two by the [utility model](workbench.md#the-utility-model) first.
+- Code blocks and Markdown are stripped.
+- **What to read** chooses between:
+  - **TL;DR** (default): a one or two sentence summary from the [utility model](workbench.md#the-utility-model) saying what was done and whether anything needs you, about 15 seconds at most. Short messages are read as they are. If the summary can't be made, the message's first sentence or two are read instead, never the whole report; the reason is written to the server log.
+  - **Full message**: the whole final message, up to 5,000 characters (about five minutes).
 - **Only when the tab isn't focused** keeps it quiet while you're looking.
 - **Mute one session** from its **Details** tab.
 - **Engines:** the browser's built-in voices (default, free) or ElevenLabs (pick a voice from your account).

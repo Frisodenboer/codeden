@@ -2,7 +2,9 @@ import {
   type ClaudeSdkStatus,
   CODEDEN_VERSION,
   type DiffResult,
+  READ_ALOUD_SUMMARY_MAX_CHARS,
   type SetupStatus,
+  speechExcerpt,
 } from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { mockAuthApi, mockNetworkApi } from "../network-api";
@@ -171,7 +173,11 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
       }),
     gitCommit: () => delay({ commit: "4f2a91c" }, 400),
     gitPush: () => delay({ remote: "origin", branch: "codeden/fix-checkout-flake" }, 600),
-    speechSummary: (text) => delay({ text: text.slice(0, 200), source: "plain" as const }),
+    speechSummary: (text) =>
+      delay({
+        text: speechExcerpt(text, READ_ALOUD_SUMMARY_MAX_CHARS, 2),
+        source: "plain" as const,
+      }),
     listFiles: () =>
       delay({
         root: "~/.codeden/wt/storefront/fix-checkout-flake",

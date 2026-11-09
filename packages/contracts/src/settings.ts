@@ -11,6 +11,41 @@ export type ProviderChoice = z.infer<typeof ProviderChoice>;
 export const ImageEngineSetting = z.enum(["auto", "codex", "gemini", "openai", "none"]);
 export type ImageEngineSetting = z.infer<typeof ImageEngineSetting>;
 
+/**
+ * What read-aloud speaks when a turn finishes (§11.3):
+ * - `summary`: a spoken TL;DR of at most two short sentences from the utility model (§7.4),
+ *   or the message's first sentence or two when the model can't produce one.
+ * - `full`: the whole final message with code and markdown removed, no model call, capped at
+ *   `READ_ALOUD_FULL_MAX_CHARS`.
+ */
+export const ReadAloudContent = z.enum(["summary", "full"]);
+export type ReadAloudContent = z.infer<typeof ReadAloudContent>;
+
+/** Hard cap on a spoken TL;DR, the model's output included (about 15 seconds of speech). */
+export const READ_ALOUD_SUMMARY_MAX_CHARS = 220;
+/** Safety cap on `full` read-aloud (roughly five minutes of speech). */
+export const READ_ALOUD_FULL_MAX_CHARS = 5_000;
+
+/**
+ * Cut already-plain text to whole sentences within `maxChars`: as many leading sentences as fit,
+ * or the first one cut at a word boundary with an ellipsis when even that is too long.
+ */
+export function speechExcerpt(plain: string, maxChars: number, maxSentences = Infinity): string {
+  const text = plain.replace(/\s+/g, " ").trim();
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  let out = "";
+  for (const [i, sentence] of sentences.entries()) {
+    if (i >= maxSentences) break;
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.length > maxChars) break;
+    out = next;
+  }
+  if (out) return out;
+  const cut = text.slice(0, Math.max(0, maxChars - 3));
+  const space = cut.lastIndexOf(" ");
+  return `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:-]+$/, "")}...`;
+}
+
 /** Per-project image generation override; unset fields fall back to the global settings. */
 export const ImageGenerationOverride = z.object({
   engine: ImageEngineSetting.optional(),
@@ -87,6 +122,10 @@ export const Settings = z.object({
       jobs: z
         .object({
           followups: z.boolean().default(true),
+          /**
+           * @deprecated Superseded by `voice.readAloud.content` (§11.3) and no longer read. Kept
+           * so settings files written before it was replaced still load.
+           */
           readAloudSummary: z.boolean().default(true),
           sessionTitles: z.boolean().default(true),
           noticeSummaries: z.boolean().default(true),
@@ -148,6 +187,8 @@ export const Settings = z.object({
           enabled: z.boolean().default(false),
           engine: z.enum(["browser", "elevenlabs"]).default("browser"),
           voice: z.string().nullable().default(null),
+          /** What gets read when a turn finishes (§11.3); see `ReadAloudContent`. */
+          content: ReadAloudContent.default("summary"),
           onlyWhenUnfocused: z.boolean().default(false),
           quietHours: QuietHours.nullable().default(null),
         })

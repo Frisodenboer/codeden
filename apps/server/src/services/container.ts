@@ -155,7 +155,6 @@ export function createServices(opts: ServicesOptions): AppServices {
     new ProviderUtilityService({
       settings: () => opts.settings.get(),
       oneShot: runnerOneShot(opts.runner),
-      log: opts.log,
     });
   const projects = new ProjectService({
     db: opts.db,
