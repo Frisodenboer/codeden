@@ -4,6 +4,7 @@
 
 **A local-first harness for coding agents.** Run Claude Code and Codex side by side in a calm, focused workspace, and when you're ready, let a small software factory work through your backlog while every step stays visible in GitHub.
 
+[![Website](https://img.shields.io/badge/website-codeden.app-e8a33d)](https://www.codeden.app)
 [![npm](https://img.shields.io/npm/v/codeden?color=e8a33d&label=npm)](https://www.npmjs.com/package/codeden)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node 24+](https://img.shields.io/badge/node-%3E%3D24-339933)
