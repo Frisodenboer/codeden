@@ -4,6 +4,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-09
+
 ### Added
 
 - **Read-aloud speaks a TL;DR.** **Settings › Voice › What to read** chooses between **TL;DR** (the default: one or two sentences saying what was done and whether anything needs you, about 15 seconds at most) and **Full message** (the whole final message without code or Markdown, up to 5,000 characters). This replaces the **Read-aloud summaries** switch under Utility model.
