@@ -5,7 +5,7 @@ import { StatusDot } from "@/components/common/status-dot";
 import { Switch } from "@/components/ui/switch";
 import { stateIn, switchValue, useAutomations } from "@/lib/automations";
 import { cn } from "@/lib/utils";
-import { NavRow } from "./nav-row";
+import { childRow, grandchildGroup, NavRow } from "./nav-row";
 
 /**
  * A project's automations in the sidebar (§13): the Automations page link with how many are
@@ -23,7 +23,7 @@ export function ProjectAutomations({ projectId }: { projectId: string }) {
         <NavRow
           href={`/projects/${projectId}/automations`}
           link={{ to: "/projects/$projectId/automations", params: { projectId } }}
-          className="h-7 pr-8 pl-7 text-xs text-muted-foreground"
+          className={cn(childRow, "h-7 pr-8 text-xs text-muted-foreground")}
           exact={false}
         >
           <Workflow className="size-3.5 shrink-0" />
@@ -42,33 +42,36 @@ export function ProjectAutomations({ projectId }: { projectId: string }) {
           <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
         </button>
       </div>
-      {open &&
-        items.map((item) => {
-          const state = stateIn(item, projectId);
-          return (
-            <div key={item.automation.id} className="flex h-7 items-center gap-1 pr-2 pl-8">
-              <NavRow
-                href={`/projects/${projectId}/automations/${item.automation.id}`}
-                link={{
-                  to: "/projects/$projectId/automations/$automationId",
-                  params: { projectId, automationId: item.automation.id },
-                }}
-                className="h-6 min-w-0 flex-1 px-1 text-xs"
-              >
-                <StatusDot tone={state?.paused ? "waiting" : state?.enabled ? "done" : "idle"} />
-                <span className={cn("truncate", !state?.enabled && "text-sidebar-foreground/55")}>
-                  {item.automation.name}
-                </span>
-              </NavRow>
-              <Switch
-                size="sm"
-                checked={switchValue(item, projectId)}
-                onCheckedChange={(enabled) => actions.toggle.mutate({ item, enabled })}
-                aria-label={`Enable ${item.automation.name}`}
-              />
-            </div>
-          );
-        })}
+      {open && items.length > 0 && (
+        <div className={grandchildGroup}>
+          {items.map((item) => {
+            const state = stateIn(item, projectId);
+            return (
+              <div key={item.automation.id} className="flex h-7 items-center gap-1 pr-2">
+                <NavRow
+                  href={`/projects/${projectId}/automations/${item.automation.id}`}
+                  link={{
+                    to: "/projects/$projectId/automations/$automationId",
+                    params: { projectId, automationId: item.automation.id },
+                  }}
+                  className="h-6 min-w-0 flex-1 pr-1 pl-2 text-xs before:-left-[6px]"
+                >
+                  <StatusDot tone={state?.paused ? "waiting" : state?.enabled ? "done" : "idle"} />
+                  <span className={cn("truncate", !state?.enabled && "text-sidebar-foreground/55")}>
+                    {item.automation.name}
+                  </span>
+                </NavRow>
+                <Switch
+                  size="sm"
+                  checked={switchValue(item, projectId)}
+                  onCheckedChange={(enabled) => actions.toggle.mutate({ item, enabled })}
+                  aria-label={`Enable ${item.automation.name}`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
