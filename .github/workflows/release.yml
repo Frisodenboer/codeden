@@ -3,12 +3,16 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  # Actions > Release > Run workflow (on main): pick patch, minor or major and the workflow
+  # bumps the version, runs the checks, commits and tags it, and publishes. "dry-run" builds
+  # and packs only, with no version change, npm publish or GitHub Release.
   workflow_dispatch:
     inputs:
-      dry-run:
-        description: Build and pack only (no npm publish, no GitHub Release)
-        type: boolean
-        default: true
+      release:
+        description: Version bump (dry-run builds and packs only)
+        type: choice
+        options: [patch, minor, major, dry-run]
+        default: patch
 
 permissions:
   contents: write
@@ -17,8 +21,12 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     env:
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.release == 'dry-run' }}
+      # patch, minor or major on a manual run; empty for a pushed tag and for a dry run.
+      BUMP: ${{ github.event_name == 'workflow_dispatch' && inputs.release != 'dry-run' && inputs.release || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -28,6 +36,23 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+
+      # Bumped before the checks and the build, so they run against the version being
+      # released. Nothing is pushed until they pass (see "Commit and tag the version").
+      - name: Bump the version
+        id: bump
+        if: env.BUMP != ''
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run the release from main (got $GITHUB_REF_NAME)"; exit 1
+          fi
+          version=$(node scripts/release/bump-version.mjs "$BUMP")
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "::error::Tag v$version already exists"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Bumping to $version ($BUMP)"
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
@@ -39,16 +64,35 @@ jobs:
         run: |
           version=$(node -p "require('./apps/cli/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+          if [ -n "$BUMP" ]; then
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
             if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
               echo "::error::Tag $GITHUB_REF_NAME does not match apps/cli/package.json version $version"
               exit 1
             fi
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
           elif [ "$DRY_RUN" != "true" ]; then
             echo "::error::A real release must run on a v*.*.* tag (got $GITHUB_REF_TYPE $GITHUB_REF_NAME)"
             exit 1
           fi
           echo "Releasing codeden $version (dry run: $DRY_RUN)"
+
+      # One atomic push of the bump commit and its tag, only after the checks passed. Pushes
+      # made with the workflow token don't start other workflows, so this run carries on with
+      # the release itself instead of a second run starting from the tag.
+      - name: Commit and tag the version
+        if: env.BUMP != ''
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/cli/package.json apps/desktop/package.json packages/contracts/src/version.ts CHANGELOG.md
+          git commit -m "chore(release): $VERSION"
+          git tag "v$VERSION"
+          git push --atomic origin HEAD:refs/heads/main "refs/tags/v$VERSION"
 
       - name: Pack
         id: pack
@@ -78,7 +122,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "${{ steps.pack.outputs.tarball }}" \
+          gh release create "${{ steps.version.outputs.tag }}" "${{ steps.pack.outputs.tarball }}" \
             --title "codeden ${{ steps.version.outputs.version }}" \
             --generate-notes --verify-tag --draft
 
@@ -101,9 +145,13 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.release == 'dry-run' }}
+      TAG: ${{ needs.release.outputs.tag }}
     steps:
+      # The release's tag (the bump commit on a manual run); the run's own ref on a dry run.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.tag || github.ref }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -181,7 +229,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.files.outputs.dir }}"/* --clobber
+        run: gh release upload "$TAG" "${{ steps.files.outputs.dir }}"/* --clobber
 
       - name: Upload the installers (dry run)
         if: env.DRY_RUN == 'true'
@@ -195,13 +243,14 @@ jobs:
   # publishes it once everything has succeeded.
   publish:
     name: Publish the GitHub Release
-    needs: desktop
-    if: github.event_name != 'workflow_dispatch' || !inputs.dry-run
+    needs: [release, desktop]
+    if: github.event_name != 'workflow_dispatch' || inputs.release != 'dry-run'
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release and mark it latest
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
         run: |
-          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft,assets --jq '"draft=\(.isDraft) assets=\(.assets | length)"'
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets --jq '"draft=\(.isDraft) assets=\(.assets | length)"'

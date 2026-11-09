@@ -1,8 +1,12 @@
 name: CI
 
-# Pull requests run unit checks and the browser e2e suite on Linux and Windows. Pushes to main,
-# the nightly run and manual runs add macOS unit checks and always run the desktop smoke test.
-# The `CI result` job at the end is the single check branch protection requires.
+# Pull requests run unit checks and the browser e2e suite on Linux only: Linux runners start
+# at once, while Windows and macOS runners can queue for half an hour or more, which held up
+# every merge. Pushes to main, the nightly run and manual runs check Windows and macOS too and
+# always run the desktop smoke test, so platform problems still surface within minutes of a
+# merge without blocking it. A pull request that changes the desktop app (or this workflow)
+# also runs Windows. The `CI result` job at the end is the single check branch protection
+# requires.
 on:
   push:
     branches: [main]
@@ -28,6 +32,7 @@ jobs:
       code: ${{ steps.detect.outputs.code }}
       desktop: ${{ steps.detect.outputs.desktop }}
       check-os: ${{ steps.detect.outputs.check-os }}
+      e2e-os: ${{ steps.detect.outputs.e2e-os }}
     steps:
       # A pull request is checked out as its merge commit, whose first parent is the base
       # branch: `HEAD^1..HEAD` is exactly what the pull request changes.
@@ -43,9 +48,9 @@ jobs:
             echo "code=true" >> "$GITHUB_OUTPUT"
             echo "desktop=true" >> "$GITHUB_OUTPUT"
             echo 'check-os=["windows-latest","macos-latest","ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            echo 'e2e-os=["ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo 'check-os=["windows-latest","ubuntu-latest"]' >> "$GITHUB_OUTPUT"
           git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt"
           echo "Changed files:"; cat "$RUNNER_TEMP/changed.txt"
           # Documentation: docs/, Markdown files (except the automation templates the server
@@ -58,10 +63,15 @@ jobs:
             echo "::notice::Documentation-only change: skipping tests and e2e."
           fi
           # The desktop app, or this workflow (so a change to the desktop steps is tested).
+          # It also brings in Windows, where most CodeDen desktop users are.
           if grep -qE '^apps/desktop/|^\.github/workflows/ci\.yml$' "$RUNNER_TEMP/changed.txt"; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
+            echo 'check-os=["windows-latest","ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            echo 'e2e-os=["ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
           else
             echo "desktop=false" >> "$GITHUB_OUTPUT"
+            echo 'check-os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            echo 'e2e-os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
           fi
 
   check:
@@ -153,7 +163,7 @@ jobs:
       fail-fast: false
       matrix:
         # The browser e2e suite runs a real server, runner and PTY; macOS is covered by `check`.
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ fromJSON(needs.changes.outputs.e2e-os) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
