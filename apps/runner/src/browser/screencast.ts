@@ -5,18 +5,27 @@ import { jpegSize } from "./images";
 export interface ScreencastSettings {
   /** JPEG quality, 10-100. */
   quality: number;
-  maxWidth: number;
-  maxHeight: number;
+  /**
+   * Optional caps on the frame size (pixels). Without them frames match the viewport's device
+   * pixels (`setFrameSize`), so the panel draws them 1:1.
+   */
+  maxWidth?: number;
+  maxHeight?: number;
   /** Upper bound on frames per second (acks are delayed to enforce it). */
   maxFps: number;
 }
 
+/**
+ * 75 keeps small text crisp at device pixels (60 smeared it on HiDPI) while a full 2x frame
+ * stays around 60-150 KB; 20 fps is smooth enough for scrolling and frames only come on change.
+ */
 export const DEFAULT_SCREENCAST: ScreencastSettings = {
-  quality: 60,
-  maxWidth: 1280,
-  maxHeight: 800,
-  maxFps: 15,
+  quality: 75,
+  maxFps: 20,
 };
+
+/** Frame size before the first viewport is applied (the default 1280x800 at 1x). */
+const DEFAULT_FRAME = { width: 1280, height: 800 };
 
 export type FrameStream = Extract<RunnerStream, { kind: "browser.frame" }>;
 
@@ -39,6 +48,7 @@ interface Target {
 export class Screencast {
   private readonly viewers = new Set<string>();
   private settings: ScreencastSettings = { ...DEFAULT_SCREENCAST };
+  private frameSize = { ...DEFAULT_FRAME };
   private target: Target | undefined;
   private tab: { tabId: string; cdp: CDPSession } | undefined;
   private lastFrame: FrameStream | undefined;
@@ -88,6 +98,33 @@ export class Screencast {
       }
       return this.viewers.size;
     });
+  }
+
+  /**
+   * Frame size in pixels (the viewport's device pixels). A running screencast restarts with
+   * the new size; the last frame stays valid for the panel to stretch until new ones arrive.
+   */
+  setFrameSize(size: { width: number; height: number }): Promise<void> {
+    return this.serial(async () => {
+      if (size.width === this.frameSize.width && size.height === this.frameSize.height) return;
+      this.frameSize = { width: size.width, height: size.height };
+      if (!this.target) return;
+      await this.stopTarget();
+      await this.startTarget();
+    });
+  }
+
+  /** `Page.startScreencast` parameters for the current settings and frame size. */
+  get startParams(): Record<string, unknown> {
+    const cap = (value: number, max: number | undefined) =>
+      Math.max(1, Math.round(max === undefined ? value : Math.min(value, max)));
+    return {
+      format: "jpeg",
+      quality: this.settings.quality,
+      maxWidth: cap(this.frameSize.width, this.settings.maxWidth),
+      maxHeight: cap(this.frameSize.height, this.settings.maxHeight),
+      everyNthFrame: 1,
+    };
   }
 
   /** Follow a (new) active tab; `undefined` when the session has no tabs. */
@@ -154,19 +191,11 @@ export class Screencast {
     };
     cdp.on("Page.screencastFrame", onFrame);
     this.target = { tabId, cdp, onFrame };
-    await cdp
-      .send("Page.startScreencast", {
-        format: "jpeg",
-        quality: this.settings.quality,
-        maxWidth: this.settings.maxWidth,
-        maxHeight: this.settings.maxHeight,
-        everyNthFrame: 1,
-      })
-      .catch(() => {
-        // The tab closed under us; the session will retarget.
-        cdp.off("Page.screencastFrame", onFrame);
-        if (this.target?.cdp === cdp) this.target = undefined;
-      });
+    await cdp.send("Page.startScreencast", this.startParams as never).catch(() => {
+      // The tab closed under us; the session will retarget.
+      cdp.off("Page.screencastFrame", onFrame);
+      if (this.target?.cdp === cdp) this.target = undefined;
+    });
   }
 
   private async stopTarget(): Promise<void> {
