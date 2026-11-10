@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AutonomyLevel, Id, ProviderId, ReasoningEffort } from "../common";
 import { UserInput } from "../input";
 import { ProjectConfigFile } from "../project-config";
-import { ProviderStatus, RuntimeResponse, SessionOptions } from "../provider";
+import { ProviderInfo, ProviderStatus, RuntimeResponse, SessionOptions } from "../provider";
 import { BrowserCommandResults, BrowserCommands } from "./browser";
 
 /** Terminal (node-pty) id, unique per runner. */
@@ -47,8 +47,16 @@ export const RunnerCommand = z.discriminatedUnion("name", [
   }),
   /** Exit the runner process after closing sessions and terminals. */
   z.object({ name: z.literal("runner.shutdown") }),
-  /** Detect installed providers (all when `providerId` is omitted). */
-  z.object({ name: z.literal("provider.detect"), providerId: ProviderId.optional() }),
+  /**
+   * Detect installed providers (all when `providerId` is omitted). Also refreshes their model
+   * lists: in the background, or before answering when `waitForModels` is set.
+   */
+  z.object({
+    name: z.literal("provider.detect"),
+    providerId: ProviderId.optional(),
+    /** Answer only once the model lists are refreshed, and include them as `providers`. */
+    waitForModels: z.boolean().optional(),
+  }),
   /** One tool-less utility-model call (§7.4) through a provider's `utilityModel()`. */
   z.object({
     name: z.literal("provider.oneShot"),
@@ -243,7 +251,11 @@ export const RunnerCommandResults = {
   "runner.drain": Empty,
   "runner.configure": z.object({ mcpProxyUrl: z.string().nullable() }),
   "runner.shutdown": Empty,
-  "provider.detect": z.object({ statuses: z.array(ProviderStatus) }),
+  "provider.detect": z.object({
+    statuses: z.array(ProviderStatus),
+    /** Every provider after the refresh; set when the command asked for `waitForModels`. */
+    providers: z.array(ProviderInfo).optional(),
+  }),
   "provider.oneShot": z.object({ text: z.string(), model: z.string() }),
   "workspace.prepare": z.object({
     cwd: z.string(),
