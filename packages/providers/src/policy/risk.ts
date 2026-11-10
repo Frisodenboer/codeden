@@ -1,5 +1,7 @@
-import type { ApprovalAction } from "@codeden/contracts";
+import { type RiskAssessment, risky, SAFE } from "./assessment";
 import { binName, unwrap } from "./command-words";
+import { classifyGit } from "./git";
+import { classifyInstall } from "./installs";
 import { isInWorkspace, isSecretPath, isWritable, type PathContext, resolveAgainst } from "./paths";
 import { pipesDownloadIntoInterpreter } from "./remote-scripts";
 import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
@@ -11,9 +13,7 @@ import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
  * everything else runs freely. Writes inside the worktree, the extra roots and the OS temp
  * directory are not risky; secrets files are, wherever they are.
  */
-export type RiskAssessment =
-  | { risky: false }
-  | { risky: true; action: ApprovalAction; reason: string };
+export type { RiskAssessment };
 
 export interface RiskContext extends PathContext {
   /** Hosts the agent may fetch freely. When omitted, web fetches are not flagged. */
@@ -21,13 +21,6 @@ export interface RiskContext extends PathContext {
   /** The shell a command runs in, for its quoting rules. Default `auto`. */
   shell?: ShellDialect;
 }
-
-const SAFE: RiskAssessment = { risky: false };
-const risky = (action: ApprovalAction, reason: string): RiskAssessment => ({
-  risky: true,
-  action,
-  reason,
-});
 
 /** How deep `bash -c "…"` style inline scripts are followed. */
 const MAX_DEPTH = 4;
@@ -197,116 +190,6 @@ function copyDestination(bin: string, args: string[]): string | undefined {
   if (named) return named;
   const positional = args.filter((a) => !a.startsWith("-") && !/^\/[a-z]+$/i.test(a));
   return WRITERS.includes(bin) ? positional[0] : positional.at(-1);
-}
-
-function classifyGit(args: string[]): RiskAssessment {
-  // Skip global options like `-C dir` / `-c k=v`.
-  let i = 0;
-  while (i < args.length && args[i]?.startsWith("-"))
-    i += args[i] === "-c" || args[i] === "-C" ? 2 : 1;
-  const sub = args[i];
-  const rest = args.slice(i + 1);
-  if (sub === "push") {
-    if (
-      rest.some(
-        (a) =>
-          a === "--force" ||
-          a === "-f" ||
-          a.startsWith("--force-with-lease") ||
-          a === "--mirror" ||
-          /^-[a-z]*f[a-z]*$/.test(a),
-      )
-    ) {
-      return risky("git_destructive", "Force-pushes, which can overwrite remote history");
-    }
-    if (rest.some((a) => a.startsWith("+") && a.length > 1)) {
-      return risky("git_destructive", "Force-pushes a refspec");
-    }
-    if (
-      rest.includes("--delete") ||
-      rest.includes("-d") ||
-      rest.some((a) => a.startsWith(":") && a.length > 1)
-    ) {
-      return risky("git_destructive", "Deletes a remote branch");
-    }
-  }
-  if (
-    sub === "branch" &&
-    rest.some((a) => a === "-d" || a === "-D" || a === "--delete" || /^-[a-z]*d/i.test(a))
-  ) {
-    return risky("git_destructive", "Deletes a branch");
-  }
-  if (sub === "tag" && rest.some((a) => a === "-d" || a === "--delete")) {
-    return risky("git_destructive", "Deletes a tag");
-  }
-  if (sub === "update-ref" && rest.includes("-d")) return risky("git_destructive", "Deletes a ref");
-  if (sub === "config" && rest.includes("--global")) {
-    return risky("outside_worktree", "Changes global git configuration");
-  }
-  return SAFE;
-}
-
-const GLOBAL_FLAGS = new Set(["-g", "--global", "--location=global"]);
-
-function classifyInstall(bin: string, args: string[]): RiskAssessment {
-  const sub = args[0];
-  const isInstall = (verbs: string[]) => sub !== undefined && verbs.includes(sub);
-  if (
-    ["npm", "pnpm", "bun", "cnpm"].includes(bin) &&
-    isInstall(["i", "install", "add", "link", "update", "up", "remove", "rm", "uninstall"])
-  ) {
-    if (args.some((a) => GLOBAL_FLAGS.has(a)))
-      return risky("other", `Installs packages globally (${bin} ${sub} -g)`);
-  }
-  if (bin === "yarn" && sub === "global")
-    return risky("other", "Installs packages globally (yarn global)");
-  if (bin === "volta" && sub === "install")
-    return risky("other", "Installs a global tool (volta install)");
-  if (
-    (bin === "pip" || bin === "pip3" || bin === "uv" || bin === "pipx") &&
-    args.includes("install")
-  ) {
-    if (
-      bin === "pipx" ||
-      args.includes("--user") ||
-      args.includes("--system") ||
-      args.includes("--break-system-packages")
-    ) {
-      return risky("other", `Installs Python packages outside the project (${bin})`);
-    }
-  }
-  if (bin === "uv" && sub === "tool" && args[1] === "install")
-    return risky("other", "Installs a global tool (uv tool install)");
-  if (
-    (bin === "cargo" || bin === "go" || bin === "gem" || bin === "dotnet") &&
-    (sub === "install" || (bin === "dotnet" && sub === "tool" && args.includes("-g")))
-  ) {
-    return risky("other", `Installs a global tool (${bin} ${sub})`);
-  }
-  if (
-    [
-      "brew",
-      "apt",
-      "apt-get",
-      "yum",
-      "dnf",
-      "pacman",
-      "zypper",
-      "apk",
-      "choco",
-      "winget",
-      "scoop",
-      "port",
-      "snap",
-    ].includes(bin)
-  ) {
-    if (args.some((a) => ["install", "upgrade", "remove", "uninstall", "-s", "add"].includes(a))) {
-      return risky("other", `Changes system packages (${bin})`);
-    }
-  }
-  if (bin === "install-module" || bin === "install-package")
-    return risky("other", `Installs a system-wide module (${bin})`);
-  return SAFE;
 }
 
 /**
