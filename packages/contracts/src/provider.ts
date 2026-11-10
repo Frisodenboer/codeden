@@ -63,10 +63,26 @@ export const ProviderInfo = z.object({
 });
 export type ProviderInfo = z.infer<typeof ProviderInfo>;
 
+/**
+ * A copy of a tool that exists on disk but does not run, e.g. an npm shim whose package was
+ * removed. Reported so the user can reinstall it or delete the leftover file (§14).
+ */
+export const BrokenExecutable = z.object({
+  /** The file that was found, e.g. `C:\Users\x\AppData\Roaming\npm\claude.cmd`. */
+  path: z.string(),
+  /** What is wrong, as a phrase that follows the path: "points at a missing package". */
+  reason: z.string(),
+  /** The file a shim or link points at, when that is what is missing. */
+  target: z.string().optional(),
+});
+export type BrokenExecutable = z.infer<typeof BrokenExecutable>;
+
 /** A problem found while detecting a provider, with the one action that fixes it (§14). */
 export const ProviderIssue = z.object({
   code: z.enum([
     "not_installed",
+    /** Found on disk, but no copy runs (see `ProviderStatus.broken`). */
+    "broken_install",
     "not_logged_in",
     "login_expiring",
     "version_unsupported",
@@ -97,6 +113,8 @@ export const ProviderStatus = z.object({
   /** False when the installed version is outside the adapter's tested range. */
   supported: z.boolean(),
   issues: z.array(ProviderIssue).default([]),
+  /** Copies that were found but do not run, skipped in favour of a working one (if any). */
+  broken: z.array(BrokenExecutable).optional(),
   checkedAt: Timestamp,
 });
 export type ProviderStatus = z.infer<typeof ProviderStatus>;
