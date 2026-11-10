@@ -132,7 +132,7 @@ describe("CDP relay: a browser endpoint that knows one session's views", () => {
       waitingForDebugger: false,
       targetInfo: { targetId: "T1", type: "page", url: "http://localhost:3000/" },
     });
-    expect((attached?.params?.targetInfo as Json).browserContextId).toBeTruthy();
+    expect((attached?.params?.targetInfo as Json | undefined)?.browserContextId).toBeTruthy();
     expect((await c.send("Target.getTargetInfo")).result).toMatchObject({
       targetInfo: { type: "browser" },
     });
