@@ -10,10 +10,16 @@ import {
   RunnerToServerMessage as RunnerToServerSchema,
   type ServerToRunnerMessage,
 } from "@codeden/contracts";
-import { FakeProvider, ModelCatalog, type ProviderAdapter } from "@codeden/providers";
+import {
+  FakeProvider,
+  ModelCatalog,
+  type ProviderAdapter,
+  type RefreshModelsOptions,
+} from "@codeden/providers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { Journal, type RunningRunner, startRunner } from "../src";
+import { MODEL_LIST_MAX_AGE_MS } from "../src/runner";
 
 let home: string;
 
@@ -186,6 +192,7 @@ describe("runner", () => {
       releaseStart = resolve;
     });
     let refreshes = 0;
+    const skipped: (RefreshModelsOptions | undefined)[] = [];
     const status = { providerId: "listed", installed: true } as ProviderStatus;
     const listed: ProviderAdapter = {
       id: "listed",
@@ -194,7 +201,12 @@ describe("runner", () => {
       capabilities: () => new FakeProvider().capabilities(),
       models: () => catalog.list(),
       onModelsChanged: (listener) => catalog.subscribe(listener),
-      refreshModels: async () => {
+      refreshModels: async (opts) => {
+        // Throttled refreshes (a server attaching) find the list recent here.
+        if (opts?.maxAgeMs !== undefined) {
+          skipped.push(opts);
+          return;
+        }
         const list = lists[refreshes++] ?? [];
         if (refreshes === 1) await startGate;
         catalog.set(list);
@@ -213,6 +225,8 @@ describe("runner", () => {
     expect(modelIds(await server.waitFor((m) => m.type === "welcome"))).toEqual(["default"]);
     server.send({ type: "resume", lastAckedSeq: 0 });
     await server.waitFor((m) => m.type === "providers");
+    // Attaching asks for a refresh, unless the list is recent.
+    expect(skipped).toEqual([{ maxAgeMs: MODEL_LIST_MAX_AGE_MS }]);
 
     // Discovery that finishes after the handshake reaches the server.
     releaseStart();
@@ -227,6 +241,21 @@ describe("runner", () => {
       ["default"],
       ["found-at-start"],
       ["found-on-detect"],
+    ]);
+
+    // "Refresh models": the answer waits for the refresh and carries the new lists.
+    lists.push([model("found-on-refresh")]);
+    server.send({
+      type: "command",
+      id: "refresh",
+      command: { name: "provider.detect", providerId: "listed", waitForModels: true },
+    });
+    const result = await server.waitFor((m) => m.type === "result" && m.id === "refresh");
+    const answer = result.type === "result" && result.ok ? result.result : undefined;
+    expect(answer).toMatchObject({ statuses: [status] });
+    const providers = (answer as { providers?: { id: string; models: ModelInfo[] }[] }).providers;
+    expect(providers?.find((p) => p.id === "listed")?.models.map((m) => m.id)).toEqual([
+      "found-on-refresh",
     ]);
 
     await server.close();

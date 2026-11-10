@@ -61,6 +61,8 @@ function createMockBrowser() {
     pushFrame,
     tick() {
       step += 1;
+      // The fake agent works in bursts: two ticks acting, two idle.
+      emit({ type: "agent", acting: step % 4 < 2 });
       void pushFrame();
     },
     navigate(url: string) {
@@ -114,6 +116,8 @@ export function mockBrowserApi(): BrowserApi {
         watch: () => {},
         unwatch: () => {},
         open: () => {},
+        // The mock storefront has a fixed size; the panel fits it inside.
+        viewport: () => {},
         close() {
           clearInterval(interval);
           b.listeners.delete(relay);

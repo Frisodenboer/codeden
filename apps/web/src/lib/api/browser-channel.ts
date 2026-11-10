@@ -28,6 +28,8 @@ export function openBrowserSocket(
   const messages = new Set<(m: BrowserServerMessage) => void>();
   const states = new Set<(s: BrowserConnection) => void>();
   let pending: BrowserClientMessage[] = [];
+  /** Latest panel size: the server forgets it with the socket, so it is sent on every open. */
+  let viewport: Extract<BrowserClientMessage, { type: "viewport" }> | null = null;
   let ws: WebSocket | null = null;
   let closed = false;
   let attempt = 0;
@@ -44,6 +46,8 @@ export function openBrowserSocket(
     socket.onopen = () => {
       attempt = 0;
       setState("open");
+      // Without the claim: a reconnect is not the user picking this viewer.
+      if (viewport) socket.send(JSON.stringify({ ...viewport, claim: undefined }));
       for (const msg of pending) socket.send(JSON.stringify(msg));
       pending = [];
     };
@@ -91,6 +95,11 @@ export function openBrowserSocket(
     watch: (settings) => send({ type: "watch", settings }, true),
     unwatch: () => send({ type: "unwatch" }, true),
     open: (target) => send({ type: "open", url: target }, true),
+    viewport(size, claim) {
+      viewport = { type: "viewport", ...size, ...(claim ? { claim: true } : {}) };
+      // Not queued: the open handler sends the latest one.
+      send(viewport, false);
+    },
     close() {
       closed = true;
       const socket = ws;

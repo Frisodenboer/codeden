@@ -15,7 +15,7 @@ import { GitHubRepo, Project } from "./entities/project";
 import { ItemRecord, Session, SessionStatus, Thread, Turn } from "./entities/session";
 import { UserInput } from "./input";
 import { FollowupsItem } from "./items";
-import { BrokenExecutable, RuntimeResponse } from "./provider";
+import { BrokenExecutable, ProviderInfo, RuntimeResponse } from "./provider";
 import { ConflictDecision, StartedBy, StartWorkResult, WorkKey } from "./work";
 import { SetupStep } from "./workbench";
 import { ClientSubscribe, ClientToServerMessage, ServerToClientMessage } from "./ws";
@@ -374,6 +374,15 @@ export const ClaudeSdkStatus = z.object({
   error: z.string().nullable(),
 });
 export type ClaudeSdkStatus = z.infer<typeof ClaudeSdkStatus>;
+
+/**
+ * `POST /api/providers/:id/refresh-models` response: the runner re-detected the provider and
+ * asked it for its models again; `providers` is every provider's list after that refresh.
+ */
+export const RefreshModelsResponse = z.object({
+  providers: z.array(ProviderInfo),
+});
+export type RefreshModelsResponse = z.infer<typeof RefreshModelsResponse>;
 
 /** `POST /api/setup/login/:tool` response: what to run in a terminal. */
 export const LoginCommandResponse = z.object({

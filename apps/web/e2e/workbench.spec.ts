@@ -42,7 +42,7 @@ test.beforeAll(async () => {
   site = createServer((_req, res) => {
     res.writeHead(200, { "content-type": "text/html" });
     res.end(
-      "<!doctype html><title>E2E Fixture Page</title><body style='margin:0;background:#1d4ed8'><h1 style='color:white;font:48px sans-serif;padding:40px'>Hello from the e2e page</h1></body>",
+      "<!doctype html><title>E2E Fixture Page</title><body style='margin:0;height:100vh;background:#1d4ed8' onclick=\"this.style.background='#16a34a'\"><h1 style='color:white;font:48px sans-serif;padding:40px'>Hello from the e2e page</h1></body>",
     );
   });
   await new Promise<void>((resolve) => site.listen(0, "127.0.0.1", resolve));
@@ -88,6 +88,62 @@ test("the browser panel streams a page the session's browser opened", async ({ p
       return (b ?? 0) > 150 && (r ?? 255) < 100 && (g ?? 255) < 150;
     });
     expect(blue).toBe(true);
+  });
+
+  /** The page's viewport as applied by the runner, and the panel's content box. */
+  const sizes = () =>
+    page.getByTestId("browser-viewport").evaluate((el) => ({
+      applied: (el as HTMLElement).dataset.viewport ?? "",
+      panel: `${el.clientWidth}x${el.clientHeight}@${Math.round(devicePixelRatio * 100) / 100}`,
+    }));
+
+  await test.step("the page is laid out at the panel's size and fills it edge to edge", async () => {
+    await expect.poll(async () => (await sizes()).applied, { timeout: 15_000 }).not.toBe("");
+    const { applied, panel } = await sizes();
+    expect(applied).toBe(panel);
+    const canvas = page.getByTestId("browser-canvas");
+    await expect(canvas).toHaveAttribute("data-fit", "fill");
+    const [canvasBox, panelBox] = await Promise.all([
+      canvas.boundingBox(),
+      page.getByTestId("browser-viewport").boundingBox(),
+    ]);
+    expect(canvasBox).toEqual(panelBox);
+  });
+
+  await test.step("clicks go straight to the page, with no take-over step", async () => {
+    await expect(page.getByRole("button", { name: "Take over" })).toHaveCount(0);
+    const canvas = page.getByTestId("browser-canvas");
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("no canvas");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 20);
+    await expect
+      .poll(
+        () =>
+          canvas.evaluate((el) => {
+            const c = el as HTMLCanvasElement;
+            const [r, g, b] = c.getContext("2d")?.getImageData(5, c.height - 5, 1, 1).data ?? [];
+            return (g ?? 0) > 120 && (r ?? 255) < 100 && (b ?? 255) < 120;
+          }),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
+  await test.step("resizing the panel resizes the page", async () => {
+    const before = (await sizes()).applied;
+    const handle = page.getByRole("separator", { name: "Resize panel" });
+    const hb = await handle.boundingBox();
+    if (!hb) throw new Error("no resize handle");
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(hb.x - 150, hb.y + hb.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect
+      .poll(async () => {
+        const s = await sizes();
+        return s.applied !== before && s.applied === s.panel;
+      })
+      .toBe(true);
   });
 
   await test.step("closing the browser returns to the open screen", async () => {

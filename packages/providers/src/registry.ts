@@ -1,5 +1,5 @@
 import type { ProviderInfo } from "@codeden/contracts";
-import { type ProviderAdapter, providerInfo } from "./adapter";
+import { type ProviderAdapter, providerInfo, type RefreshModelsOptions } from "./adapter";
 import { ClaudeAdapter } from "./claude/adapter";
 import { CodexAdapter } from "./codex/adapter";
 
@@ -34,11 +34,11 @@ export class ProviderRegistry {
 
   /**
    * Refresh the model lists of all adapters (or those in `ids`) that support it. Never throws;
-   * changes reach `onChange` listeners.
+   * changes reach `onChange` listeners. `opts.maxAgeMs` skips adapters whose list is recent.
    */
-  async refreshModels(ids?: readonly string[]): Promise<void> {
+  async refreshModels(ids?: readonly string[], opts?: RefreshModelsOptions): Promise<void> {
     const adapters = ids ? this.list().filter((a) => ids.includes(a.id)) : this.list();
-    await Promise.all(adapters.map((a) => a.refreshModels?.().catch(() => undefined)));
+    await Promise.all(adapters.map((a) => a.refreshModels?.(opts).catch(() => undefined)));
   }
 
   /** Call `listener` whenever `info()` changes (a provider's models). Returns unsubscribe. */

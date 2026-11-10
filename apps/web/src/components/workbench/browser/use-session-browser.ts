@@ -1,10 +1,11 @@
 import type { BrowserServerMessage, BrowserTab } from "@codeden/contracts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApiRequestError, useClient } from "@/lib/api";
 import type { BrowserChannel, BrowserConnection } from "@/lib/api/feature-apis";
 
 export type FrameMessage = Extract<BrowserServerMessage, { type: "frame" }>;
+export type AppliedViewport = Omit<Extract<BrowserServerMessage, { type: "viewport" }>, "type">;
 
 export interface SessionBrowser {
   connection: BrowserConnection;
@@ -12,6 +13,10 @@ export interface SessionBrowser {
   open: boolean | null;
   tabs: BrowserTab[];
   activeTab: BrowserTab | undefined;
+  /** The page's viewport, and whether it follows this panel (`mine`). Null until known. */
+  viewport: AppliedViewport | null;
+  /** An agent is driving the browser right now (or was a moment ago). */
+  agentActing: boolean;
   /** Subscribe to screencast frames (kept out of React state). */
   onFrame(listener: (frame: FrameMessage) => void): () => void;
   channel: BrowserChannel | null;
@@ -36,23 +41,40 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
   const [connection, setConnection] = useState<BrowserConnection>("connecting");
   const [open, setOpen] = useState<boolean | null>(null);
   const [tabs, setTabs] = useState<BrowserTab[]>([]);
+  const [viewport, setViewport] = useState<AppliedViewport | null>(null);
+  const [agentActing, setAgentActing] = useState(false);
   const frameListeners = useRef(new Set<(f: FrameMessage) => void>());
+  /** The newest frame, replayed to new listeners (it can arrive before the canvas mounts). */
+  const lastFrame = useRef<FrameMessage | null>(null);
   const [generation, setGeneration] = useState(0);
+  const onFrame = useCallback((listener: (f: FrameMessage) => void) => {
+    frameListeners.current.add(listener);
+    if (lastFrame.current) listener(lastFrame.current);
+    return () => {
+      frameListeners.current.delete(listener);
+    };
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `generation` reconnects after close.
   useEffect(() => {
-    const ch = client.browser.openChannel(sessionId, {
-      maxWidth: 1920,
-      maxHeight: 1200,
-      quality: 70,
-    });
+    // Frame size and quality follow the panel's viewport (runner defaults).
+    const ch = client.browser.openChannel(sessionId);
     setChannel(ch);
     setOpen(null);
+    setViewport(null);
+    setAgentActing(false);
+    lastFrame.current = null;
     const offConn = ch.onConnection(setConnection);
     const offMsg = ch.onMessage((msg) => {
       if (msg.type === "state") {
         setOpen(msg.open);
         setTabs(msg.tabs);
+        if (!msg.open) setAgentActing(false);
+      } else if (msg.type === "viewport") {
+        const { type: _t, ...applied } = msg;
+        setViewport(applied);
+      } else if (msg.type === "agent") {
+        setAgentActing(msg.acting);
       } else if (msg.type === "tabs") {
         if (msg.tabs.length === 0) {
           // The browser closed (agent, session stop or another viewer): start a fresh viewer
@@ -65,6 +87,7 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
         setOpen(true);
         setTabs(msg.tabs);
       } else if (msg.type === "frame") {
+        lastFrame.current = msg;
         for (const l of frameListeners.current) l(msg);
       } else if (msg.code === "browser_not_open") {
         setOpen(false);
@@ -98,11 +121,10 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
       open,
       tabs,
       activeTab: tabs.find((t) => t.active) ?? tabs[0],
+      viewport,
+      agentActing,
       channel,
-      onFrame(listener) {
-        frameListeners.current.add(listener);
-        return () => frameListeners.current.delete(listener);
-      },
+      onFrame,
       run,
       async openBrowser(url) {
         // Over the viewer socket, so opening and watching happen together server-side.
@@ -120,5 +142,5 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
         setGeneration((g) => g + 1);
       },
     } satisfies SessionBrowser;
-  }, [client, sessionId, channel, connection, open, tabs]);
+  }, [client, sessionId, channel, connection, open, tabs, viewport, agentActing, onFrame]);
 }

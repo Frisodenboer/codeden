@@ -45,6 +45,12 @@ export type ProviderCapabilities = z.infer<typeof ProviderCapabilities>;
 /** A model a provider offers. */
 export const ModelInfo = z.object({
   id: z.string(),
+  /**
+   * The concrete model id this entry runs today, when the provider reports it and it differs
+   * from `id` (an alias such as `opus` → `claude-opus-5-5`). Lets a stored full id match the
+   * alias entry that covers it.
+   */
+  resolvedId: z.string().optional(),
   label: z.string(),
   description: z.string().optional(),
   efforts: z.array(ReasoningEffort).default([]),

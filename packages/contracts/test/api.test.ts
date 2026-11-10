@@ -3,6 +3,7 @@ import {
   CreateProjectRequest,
   defaultSettings,
   ListSessionsQuery,
+  RefreshModelsResponse,
   ReorderProjectsRequest,
   SendMessageRequest,
   StartSessionRequest,
@@ -27,6 +28,35 @@ describe("api schemas", () => {
     expect(req.workspace.mode).toBe("worktree");
     expect(req.startedBy).toEqual({ kind: "user" });
     expect(req.input?.attachments).toEqual([]);
+  });
+
+  it("round-trips a model refresh response", () => {
+    const res = roundTrip(RefreshModelsResponse, {
+      providers: [
+        {
+          id: "claude",
+          displayName: "Claude Code",
+          capabilities: {
+            resume: true,
+            steer: true,
+            interrupt: true,
+            approvals: true,
+            userQuestions: true,
+            subagents: true,
+            rollback: false,
+            fork: false,
+            images: true,
+            planMode: true,
+            reasoningEffort: true,
+            mcp: true,
+            skills: true,
+          },
+          models: [{ id: "fable", resolvedId: "claude-fable-5-2", label: "Fable 5.2" }],
+        },
+      ],
+    });
+    expect(res.providers[0]?.models[0]).toMatchObject({ resolvedId: "claude-fable-5-2" });
+    expect(RefreshModelsResponse.safeParse({}).success).toBe(false);
   });
 
   it("accepts every start outcome", () => {

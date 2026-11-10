@@ -94,14 +94,22 @@ describe.skipIf(!hasBrowser)("session browser (panel routes, /ws/browser, agent 
 
     const viewer = await Viewer.connect(h.server.url, `sessionId=${sessionId}&maxFps=10`);
     await viewer.waitFor((m) => m.type === "state" && !m.open);
+    // The panel reports its size before the browser exists; it applies once it opens.
+    viewer.send({ type: "viewport", width: 460, height: 712, deviceScaleFactor: 3 });
 
     const nav = await mcp.callTool({ name: "browser_navigate", arguments: { url: siteUrl } });
     expect(nav.isError).toBeFalsy();
     expect(text(nav)).toContain("Panel test");
+    // Agent tool calls light the panel's "Agent is acting" chip.
+    await viewer.waitFor((m) => m.type === "agent" && m.acting);
 
     await viewer.waitFor((m) => m.type === "state" && m.open && m.watching);
-    const frame = await viewer.waitFor((m) => m.type === "frame");
-    expect(frame).toMatchObject({ type: "frame", mediaType: "image/jpeg" });
+    // The page follows this viewer's panel, scale clamped to 2x; frames are its device pixels.
+    expect(await viewer.waitFor((m) => m.type === "viewport" && m.mine && m.width === 460)).toEqual(
+      { type: "viewport", width: 460, height: 712, deviceScaleFactor: 2, mine: true },
+    );
+    const frame = await viewer.waitFor((m) => m.type === "frame" && m.width === 920);
+    expect(frame).toMatchObject({ type: "frame", mediaType: "image/jpeg", height: 1424 });
 
     const snap = text(await mcp.callTool({ name: "browser_snapshot", arguments: {} }));
     const ref = /button "Press me" \[ref=(e\d+)\]/.exec(snap)?.[1];

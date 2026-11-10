@@ -69,6 +69,12 @@ export interface RunningRunner {
 
 const LOOPBACK = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
 const DEFAULT_DRAIN_TIMEOUT = 5 * 60_000;
+/**
+ * A server attaching refreshes provider model lists confirmed longer ago than this (or by an
+ * executable that has changed since). Each refresh starts a provider CLI, so not on every
+ * reconnect; runner start-up, sessions and `provider.detect` refresh too.
+ */
+export const MODEL_LIST_MAX_AGE_MS = 10 * 60_000;
 
 /**
  * Start the runner (§4.2): WebSocket server on 127.0.0.1, lock file with port/token/pid,
@@ -200,6 +206,9 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
           if (attached && attached !== conn) attached.close("replaced by a new connection");
           attached = conn;
           log("server attached");
+          // The runner outlives app restarts, and a model release changes a provider's list
+          // without any local change: a (re)starting app gets a fresh list unless it is recent.
+          void registry.refreshModels(undefined, { maxAgeMs: MODEL_LIST_MAX_AGE_MS });
         },
       ),
     ),

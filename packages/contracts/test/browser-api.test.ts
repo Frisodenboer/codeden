@@ -4,6 +4,7 @@ import {
   BrowserNavigateRequest,
   BrowserServerMessage,
   BrowserTabsResponse,
+  BrowserViewportRequest,
   BrowserWsQuery,
   DevServersResponse,
 } from "../src";
@@ -40,6 +41,43 @@ describe("browser panel contracts", () => {
       height: 600,
       tabId: "t1",
     });
+  });
+
+  it("round-trips viewport sizing and agent activity", () => {
+    roundTrip(BrowserClientMessage, {
+      type: "viewport",
+      width: 460,
+      height: 712,
+      deviceScaleFactor: 1.25,
+      claim: true,
+    });
+    roundTrip(BrowserClientMessage, {
+      type: "viewport",
+      width: 1,
+      height: 1,
+      deviceScaleFactor: 3,
+    });
+    expect(
+      BrowserClientMessage.safeParse({
+        type: "viewport",
+        width: 0,
+        height: 10,
+        deviceScaleFactor: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      BrowserClientMessage.safeParse({ type: "viewport", width: 10, height: 10 }).success,
+    ).toBe(false);
+    roundTrip(BrowserServerMessage, {
+      type: "viewport",
+      width: 460,
+      height: 712,
+      deviceScaleFactor: 2,
+      mine: true,
+    });
+    roundTrip(BrowserServerMessage, { type: "agent", acting: true });
+    roundTrip(BrowserViewportRequest, { width: 1280, height: 800, deviceScaleFactor: 2 });
+    roundTrip(BrowserViewportRequest, { width: 390, height: 844 });
   });
 
   it("coerces numeric query parameters", () => {

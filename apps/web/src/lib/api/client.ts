@@ -17,6 +17,7 @@ import type {
   InboxItem,
   LoginCommandResponse,
   Project,
+  RefreshModelsResponse,
   RefreshProjectResponse,
   ResolveConflictResponse,
   RestoreFilesRequest,
@@ -157,6 +158,8 @@ export interface CodeDenClient {
   /** One-click self-update: install, restart, roll back, release notes (§16). */
   readonly updates: UpdatesApi;
   loginCommand(tool: "claude" | "codex" | "gh"): Promise<LoginCommandResponse>;
+  /** Ask a provider for its models again (a model was released, the CLI was updated). */
+  refreshModels(providerId: string): Promise<RefreshModelsResponse>;
   /** Claude Code support: the Claude Agent SDK, installed on demand into `<home>/deps`. */
   getClaudeSdkStatus(): Promise<ClaudeSdkStatus>;
   /** Start (or join) the Claude Code support install; poll `getClaudeSdkStatus` for progress. */

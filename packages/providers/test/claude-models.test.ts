@@ -1,8 +1,8 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Options, Query, ModelInfo as SdkModelInfo } from "@anthropic-ai/claude-agent-sdk";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClaudeAdapter } from "../src/claude/adapter";
 import { listClaudeModels, toModelInfos } from "../src/claude/models";
 import { type ClaudeSdkModule, claudeSdkReady } from "../src/claude/sdk";
@@ -13,15 +13,35 @@ const exe: ResolvedCommand = { kind: "native", path: "/opt/claude/claude" };
 const SDK_MODELS: SdkModelInfo[] = [
   {
     value: "default",
+    resolvedModel: "claude-opus-5",
     displayName: "Default (recommended)",
     description: "Opus 5 for complex work",
     supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
   },
-  { value: "sonnet", displayName: "Sonnet", description: "", supportedEffortLevels: ["low"] },
-  { value: "haiku", displayName: "", description: "Fastest" },
+  {
+    value: "sonnet",
+    resolvedModel: "claude-sonnet-5",
+    displayName: "Sonnet",
+    description: "",
+    supportedEffortLevels: ["low"],
+  },
+  // A full id resolves to itself: no `resolvedId`.
+  { value: "haiku", resolvedModel: "haiku", displayName: "", description: "Fastest" },
 ];
 
-type Behaviour = "list" | "hang" | "fail" | "empty";
+type Behaviour = "list" | "hang" | "fail" | "empty" | "newer";
+
+/** The list after a model release: the `sonnet` alias moved on to a newer model. */
+const NEWER_MODELS: SdkModelInfo[] = [
+  ...SDK_MODELS.slice(0, 1),
+  {
+    value: "sonnet",
+    resolvedModel: "claude-sonnet-5-5",
+    displayName: "Sonnet 5.5",
+    description: "",
+    supportedEffortLevels: ["low"],
+  },
+];
 
 /**
  * A stand-in for the SDK's `query()`. It records the options and whether the prompt stream
@@ -55,6 +75,7 @@ function stubSdk(initial: Behaviour = "list") {
       supportedModels: async () => {
         if (state.behaviour === "fail") throw new Error("CLI exited");
         if (state.behaviour === "hang") return new Promise<SdkModelInfo[]>(() => {});
+        if (state.behaviour === "newer") return NEWER_MODELS;
         return state.behaviour === "empty" ? [] : SDK_MODELS;
       },
       close: () => {
@@ -70,12 +91,13 @@ function stubSdk(initial: Behaviour = "list") {
 const EXPECTED = [
   {
     id: "default",
+    resolvedId: "claude-opus-5",
     label: "Default (recommended)",
     description: "Opus 5 for complex work",
     efforts: ["low", "medium", "high", "xhigh", "max"],
     isDefault: true,
   },
-  { id: "sonnet", label: "Sonnet", efforts: ["low"] },
+  { id: "sonnet", resolvedId: "claude-sonnet-5", label: "Sonnet", efforts: ["low"] },
   { id: "haiku", label: "haiku", description: "Fastest", efforts: [] },
 ];
 
@@ -159,6 +181,90 @@ describe("ClaudeAdapter model discovery", () => {
       },
     });
     await expect(broken.refreshModels()).resolves.toBeUndefined();
+  });
+
+  it("skips a refresh with maxAgeMs while the list is recent, then asks again", async () => {
+    const sdk = stubSdk();
+    const adapter = new ClaudeAdapter({ executable: exe, loadSdk: sdk.load });
+    // Never confirmed yet: even a long max age asks the CLI.
+    await adapter.refreshModels({ maxAgeMs: 60_000 });
+    expect(sdk.state.launches).toHaveLength(1);
+    await adapter.refreshModels({ maxAgeMs: 60_000 });
+    expect(sdk.state.launches).toHaveLength(1);
+    // A model release later: an expired max age (or none) asks again and sees the new list.
+    sdk.state.behaviour = "newer";
+    await adapter.refreshModels({ maxAgeMs: 0 });
+    expect(sdk.state.launches).toHaveLength(2);
+    expect(adapter.models().find((m) => m.id === "sonnet")).toMatchObject({
+      label: "Sonnet 5.5",
+      resolvedId: "claude-sonnet-5-5",
+    });
+  });
+
+  it("finds claude again after an update, and refreshes a recent list from the new one", async () => {
+    const sdk = stubSdk();
+    const name = process.platform === "win32" ? "claude.exe" : "claude";
+    const oldDir = mkdtempSync(join(tmpdir(), "codeden-claude-old-"));
+    const newDir = mkdtempSync(join(tmpdir(), "codeden-claude-new-"));
+    writeFileSync(join(oldDir, name), "old build");
+    writeFileSync(join(newDir, name), "new build");
+    const saved = { PATH: process.env.PATH, Path: process.env.Path };
+    const setPath = (dir: string) => {
+      process.env.PATH = dir;
+      if (process.platform === "win32") process.env.Path = dir;
+    };
+    try {
+      setPath(oldDir);
+      const adapter = new ClaudeAdapter({ loadSdk: sdk.load });
+      await adapter.refreshModels();
+      expect(sdk.state.launches.at(-1)?.pathToClaudeCodeExecutable).toBe(join(oldDir, name));
+
+      // Rewritten in place (the Windows native installer): the same path, a new file.
+      writeFileSync(join(oldDir, name), "old build, updated");
+      sdk.state.behaviour = "newer";
+      await adapter.refreshModels({ maxAgeMs: 60 * 60_000 });
+      expect(sdk.state.launches).toHaveLength(2);
+      expect(adapter.models().find((m) => m.id === "sonnet")?.label).toBe("Sonnet 5.5");
+
+      // Unchanged since: the recent list is kept without starting the CLI.
+      await adapter.refreshModels({ maxAgeMs: 60 * 60_000 });
+      expect(sdk.state.launches).toHaveLength(2);
+
+      // Installed somewhere else (PATH now finds another claude): looked up again, not cached.
+      setPath(newDir);
+      await adapter.refreshModels({ maxAgeMs: 60 * 60_000 });
+      expect(sdk.state.launches).toHaveLength(3);
+      expect(sdk.state.launches.at(-1)?.pathToClaudeCodeExecutable).toBe(join(newDir, name));
+      await expect(adapter.detect()).resolves.toBeDefined();
+    } finally {
+      process.env.PATH = saved.PATH;
+      if (process.platform === "win32") process.env.Path = saved.Path;
+    }
+  });
+
+  it("takes a session's list as the newest, and counts it as a refresh", async () => {
+    const sdk = stubSdk();
+    const adapter = new ClaudeAdapter({ executable: exe, loadSdk: sdk.load });
+    await adapter.refreshModels();
+    let changes = 0;
+    adapter.onModelsChanged(() => changes++);
+    // A session started after a model release reports the new list as it starts.
+    sdk.state.behaviour = "newer";
+    const session = await adapter.openSession({
+      sessionId: "s1",
+      role: "agent",
+      cwd: tmpdir(),
+      autonomy: "auto",
+      additionalDirectories: [],
+      mcpServers: [],
+    } as unknown as Parameters<ClaudeAdapter["openSession"]>[0]);
+    await vi.waitFor(() => expect(changes).toBe(1));
+    expect(adapter.models().find((m) => m.id === "sonnet")?.label).toBe("Sonnet 5.5");
+    expect(sdk.state.launches).toHaveLength(2);
+    // That was a refresh: a reconnect right after starts no extra CLI.
+    await adapter.refreshModels({ maxAgeMs: 60_000 });
+    expect(sdk.state.launches).toHaveLength(2);
+    await session.close();
   });
 
   it("skips discovery when Claude Code is not installed", async () => {

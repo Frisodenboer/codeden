@@ -4,10 +4,11 @@ import type {
   ProviderStatus,
   SessionOptions,
 } from "@codeden/contracts";
-import type { ProviderAdapter, ProviderSession } from "../adapter";
+import type { ProviderAdapter, ProviderSession, RefreshModelsOptions } from "../adapter";
+import { executableFingerprint, ModelFreshness } from "../freshness";
 import { ModelCatalog } from "../models";
 import type { ResolvedCommand } from "../util/exec";
-import { findExecutable, quickLocate } from "../util/locate";
+import { quickLocate } from "../util/locate";
 import { DEFAULT_MODEL_ID } from "../util/model";
 import type { UtilityModel } from "../utility";
 import { detectCodex } from "./detect";
@@ -71,23 +72,24 @@ export class CodexAdapter implements ProviderAdapter {
   private readonly catalog = new ModelCatalog(fallbackModels());
   /** True once Codex reported a real model list (discovery or a session). */
   private listed = false;
+  private readonly freshness = new ModelFreshness();
   private refreshing: Promise<void> | undefined;
-  private cachedExe: ResolvedCommand | undefined;
 
   constructor(private readonly options: CodexAdapterOptions = {}) {}
 
-  /** The copy sessions run: the one `detect()` validated, else the first plausible one. */
+  /**
+   * The `codex` to launch, looked up every time (a few `stat` calls): the runner outlives
+   * updates and reinstalls, so a path found earlier may be gone or point at another install
+   * by now. PATH first, then the installer's own folders; copies the last `--version` check
+   * found broken are skipped until they change.
+   */
   private executable(): ResolvedCommand | undefined {
-    this.cachedExe ??= this.options.executable ?? quickLocate("codex");
-    return this.cachedExe;
+    return this.options.executable ?? quickLocate("codex");
   }
 
-  /** Re-detect: the working copy found here (a native install off PATH counts) is kept. */
-  async detect(): Promise<ProviderStatus> {
-    if (this.options.executable) return detectCodex({ executable: this.options.executable });
-    const lookup = await findExecutable("codex");
-    this.cachedExe = lookup.command;
-    return detectCodex({ lookup });
+  /** Finds a working copy (validating each one), so a broken shim never wins. */
+  detect(): Promise<ProviderStatus> {
+    return detectCodex(this.options.executable ? { executable: this.options.executable } : {});
   }
 
   capabilities(): ProviderCapabilities {
@@ -104,9 +106,16 @@ export class CodexAdapter implements ProviderAdapter {
 
   /**
    * Load Codex's model list through a short-lived `codex app-server` (`model/list`; no thread,
-   * no turn). Concurrent calls share one discovery. Never throws.
+   * no turn). Concurrent calls share one discovery. With `maxAgeMs`, skipped while the list is
+   * recent and `codex` has not changed. Never throws.
    */
-  refreshModels(): Promise<void> {
+  refreshModels(opts: RefreshModelsOptions = {}): Promise<void> {
+    if (
+      opts.maxAgeMs !== undefined &&
+      this.freshness.isFresh(executableFingerprint(this.executable()), opts.maxAgeMs)
+    ) {
+      return this.refreshing ?? Promise.resolve();
+    }
     this.refreshing ??= this.discoverModels().finally(() => {
       this.refreshing = undefined;
     });
@@ -120,7 +129,7 @@ export class CodexAdapter implements ProviderAdapter {
       executable,
       onModels: (models) => {
         const visible = visibleCodexModels(models);
-        if (visible.length) this.setModels(visible);
+        if (visible.length) this.setModels(visible, executable);
       },
       modelEfforts: (model) => this.catalog.list().find((m) => m.id === model)?.efforts,
     });
@@ -143,7 +152,7 @@ export class CodexAdapter implements ProviderAdapter {
     if (!exe) return;
     try {
       const models = await listCodexModels(exe, { timeoutMs: this.options.modelListTimeoutMs });
-      if (models.length) this.setModels(models);
+      if (models.length) this.setModels(models, exe);
       else this.discoveryFailed("Codex listed no models.");
     } catch (error) {
       const reason = (error instanceof Error ? error.message : String(error)).slice(0, 200);
@@ -151,8 +160,9 @@ export class CodexAdapter implements ProviderAdapter {
     }
   }
 
-  private setModels(models: ModelInfo[]): void {
+  private setModels(models: ModelInfo[], from: ResolvedCommand): void {
     this.listed = true;
+    this.freshness.confirm(executableFingerprint(from));
     this.catalog.set(models);
   }
 

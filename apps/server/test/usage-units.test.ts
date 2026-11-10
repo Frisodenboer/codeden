@@ -50,6 +50,19 @@ describe("price table", () => {
     expect(findPrice("claude", "claude-opus-5-20260101")?.label).toBe("Opus 5");
     expect(findPrice("claude", "claude-opus-5-5[1m]")?.label).toBe("Opus 5.5");
     expect(findPrice("claude", "sonnet")?.label).toBe("Sonnet (latest)");
+    expect(findPrice("claude", "claude-fable-5-2")).toMatchObject({
+      label: "Fable 5.2",
+      inputPerMTok: 8,
+      outputPerMTok: 40,
+      cacheReadPerMTok: 0.2,
+      cacheWritePerMTok: 10,
+    });
+    // `claude-fable-5` must not swallow `claude-fable-5-2`, nor 5.1 its own id.
+    expect(findPrice("claude", "claude-fable-5-1")?.label).toBe("Fable 5.1");
+    expect(findPrice("claude", "fable")).toMatchObject({
+      label: "Fable (latest)",
+      inputPerMTok: 8,
+    });
     expect(findPrice("codex", "gpt-5.1-codex-mini")?.inputPerMTok).toBe(0.25);
     // `gpt-5` must not swallow `gpt-5.5`.
     expect(findPrice("codex", "gpt-5.5")?.inputPerMTok).toBe(5);

@@ -46,7 +46,6 @@ Installed with `npx codeden`, or as the desktop app (§17). Open source under th
 | Agent ↔ app | One internal **MCP server** (Streamable HTTP) with **role-scoped tokens** (orchestrator, PM, agent) |
 | Process model | **Server and runner are separate processes** from day one (§4) |
 | Terminal | node-pty in the runner, xterm.js in the UI |
-| Browser | Chromium driven through CDP (playwright-core) in the runner, streamed into the UI. Uses the installed Edge or Chrome when present |
 | Default autonomy | **Auto, risky actions ask** (§11.2). Overridable per project and per session |
 | Image generation | A pluggable `generate_image` tool available to every agent. Engines: Codex (the default when Codex is logged in), Gemini image models, OpenAI Images. Chosen in Settings (§12.5) |
 | Utility model | One small, cheap model setting for side jobs: follow-up suggestions, read-aloud summaries, session titles (§7.4) |
@@ -467,18 +466,21 @@ node-pty sessions owned by the runner, so they survive server restarts, with bou
 
 ### 12.2 Browser
 
-- **Engine.** The runner launches Chromium through playwright-core: the installed Edge or Chrome first, with a download on first use only with consent. You see it in a browser panel through a CDP screencast and can take over at any time.
-- **Agent tools.** Agents drive the **same browser** you see:
+- **Engine.** The runner launches Chromium through playwright-core: the installed Edge or Chrome first, with a download on first use only with consent. It is the engine in a plain browser tab, on phones and tablets, and the fallback everywhere. The desktop app adds a native engine (below).
+- **Display, phase 1: full-panel screencast** (every surface). The page's viewport follows the panel's size and device pixel ratio, so the CDP screencast fills the panel edge to edge and stays sharp on HiDPI screens. Input coordinates map to the page correctly after every resize.
+- **Display, phase 2: native views in the desktop app** (§17). Each tab is an Electron `WebContentsView` laid over the panel and kept in sync with its bounds. The screencast stays the display everywhere else.
+- **Human input.** There is no take-over step: clicks, typing and scrolling in the panel go straight to the page, in the screencast and in a native view alike. A small "Agent is acting" chip shows while an agent drives the page.
+- **Agent tools.** Agents drive the **same browser** you see, on either engine:
   - navigate
   - accessibility snapshot
   - click and type
   - screenshot
   - console and network logs
 - **Screenshots.** They can be posted to the chat with `share_to_chat` or attached as PR evidence.
-- **Isolation.** One browser context per session.
+- **Isolation.** One browser context per session in the runner's Chromium; one session partition per session for native views. Cookies and storage never cross sessions.
 - **Dev servers.** CodeDen discovers running dev servers so agents and you can open them in one click.
 - **Spike first:** attach Microsoft's Playwright MCP over CDP rather than writing the tools ourselves. If several sessions can't share it cleanly, fall back to about ten tools of our own on playwright-core.
-- **The key seam:** agents talk to the browser only through CDP. Electron's native browser view also speaks CDP, so only the panel's display changes later.
+- **The key seam:** agents talk to the browser only through CDP. Native views are reached through a per-session CDP relay in the desktop app (§17), so the runner's agent primitives (aria snapshot, click by ref, screenshots, logs) work unchanged on either engine.
 
 ### 12.3 Files and diffs
 
@@ -640,13 +642,13 @@ The owner can open CodeDen from a phone or tablet on the same network or over th
 1. The server is started through `startServer(...)` and never imports Electron.
 2. The UI talks to the server only over HTTP and WebSocket, with a configurable base URL and token.
 3. Platform features go through `PlatformBridge` (§13).
-4. Agents use the browser only through CDP.
+4. Agents use the browser only through CDP. This is what lets native browser views be driven through a per-session relay instead of a debugging port.
 5. Secrets are already in the OS keychain.
 6. Native dependencies are kept minimal and Node-API (they load in Electron without a rebuild).
 
 **Processes.** The main process (TypeScript, bundled with tsdown) owns the window, tray and updater. It uses the same home as `npx codeden` (`~/.codeden`): if a live server for that home exists (lock file, live pid, `/api/health`) it attaches to it; otherwise it forks `dist/server.js`, the same server the CLI ships, on its own binary as Node.js (`ELECTRON_RUN_AS_NODE`, the helper binary on macOS), on port 4317 or any free port. No system Node.js or npm is needed. Every place that starts CodeDen's own scripts with `process.execPath` (the runner, npm, Playwright's CLI) adds `ELECTRON_RUN_AS_NODE` explicitly; the server and runner remove it from their own environment so shells and agents never inherit it, and npm-style shims of the user's tools run on the user's `node` when there is one. The runner stays detached. Server and main talk over Node IPC with `DesktopServerMessage` / `DesktopHostMessage` (contracts). Quitting closes the server and leaves the runner running; a server stopped from outside (`codeden stop`) quits the app.
 
-**Window and bridge.** One window on the server's UI, loaded through the token launch URL (the cookie bootstrap as in the browser). `contextIsolation`, `sandbox`, no `nodeIntegration`, navigation locked to the server origin (other links open in the system browser), permissions limited to notifications, the microphone (audio only), the clipboard and fullscreen for the server's pages, no debugging port. The preload exposes only `window.codedenDesktop` (`CodedenDesktopApi`: info, folder picker, notifications with click-through, open external, badge, navigation), validated in the main process. The Chromium profile and window state live in `<home>/desktop`, so a separate `--home` is a fully separate app; one instance runs per home.
+**Window and bridge.** One window on the server's UI, loaded through the token launch URL (the cookie bootstrap as in the browser). `contextIsolation`, `sandbox`, no `nodeIntegration`, navigation locked to the server origin (other links open in the system browser), permissions limited to notifications, the microphone (audio only), the clipboard and fullscreen for the server's pages. The app has no debugging port: browser views are reachable only through a separate local connection for each session (Phase 2), which never exposes the CodeDen window. The preload exposes only `window.codedenDesktop` (`CodedenDesktopApi`: info, folder picker, notifications with click-through, open external, badge, navigation), validated in the main process. The Chromium profile and window state live in `<home>/desktop`, so a separate `--home` is a fully separate app; one instance runs per home.
 
 **App integration.** A tray (menu bar on macOS) with running and waiting counts from `GET /api/activity` (counts by session status, never by provider), the app icon badge, native notifications, the system folder picker, `codeden://` links (`session/<id>`, `project/<id>`, `inbox`, `settings/<section>`), keep-awake (`powerSaveBlocker`) while an agent runs, open at login, close to tray, and an application menu with the standard roles, except zoom: CodeDen's own items (50% to 200% in 10% steps, Ctrl/Cmd with `=`, `+`, `-` and the numpad keys) keep the level with the window state and apply it again after every navigation. Its settings are a `desktop` section in `Settings` (launch at login, close to tray, keep awake), read by the app by polling the server.
 
@@ -656,7 +658,16 @@ The owner can open CodeDen from a phone or tablet on the same network or over th
 
 **Packaging and release.** electron-builder from a staged app (`dist/` plus the runtime dependencies installed with npm, no asar): NSIS per-user (no admin, Start menu and desktop shortcuts, uninstaller), dmg + zip for arm64 and x64 (the zip feeds the updater), AppImage + deb. Signing is optional through `CSC_LINK`/`CSC_KEY_PASSWORD` and notarization through `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`; without them builds are unsigned (SmartScreen and Gatekeeper warn). The release workflow builds all three on a version tag after the npm publish and attaches the installers and `latest*.yml` metadata to the same GitHub Release. The desktop version always equals the CLI version.
 
-**Phase 2.** The browser panel stays the CDP screencast (§12.2); an embedded Electron browser view behind the same panel is a later step. Browser speech recognition doesn't work inside Electron, so dictation there uses local Whisper (§11.3) or a cloud engine; the UI finds this out by feature detection.
+**Phase 2: native browser.** The browser panel shows real browser views instead of the screencast (§12.2):
+
+- **Views.** One `WebContentsView` per tab, laid over the panel and kept in sync with its bounds. Each CodeDen session gets its own session partition, so cookies and storage stay isolated.
+- **Agent access.** A per-session CDP relay in the main process (built on `webContents.debugger`) gives the runner a local CDP connection that sees only that session's views. The runner's agent primitives (aria snapshot, click by ref, screenshots, logs) work unchanged.
+- **No app-wide debugging port.** One would expose the CodeDen window and merge every partition into one context.
+- **Tabs** are created by the app, not over CDP (Electron can't create targets over CDP); the relay asks the app for a new view.
+- **Removed views** must not leave agent calls hanging: the relay fails pending screenshots and commands when a view goes away.
+- **Quitting the app.** Each open tab of a running session moves to the runner's own Chromium, at the same URL and with its cookies; unsaved form input in the page is lost. When the app opens again, those sessions stay on the runner's Chromium, and browsers opened from then on use native views.
+
+Browser speech recognition doesn't work inside Electron, so dictation there uses local Whisper (§11.3) or a cloud engine; the UI finds this out by feature detection.
 
 ## 18. Testing
 
@@ -676,7 +687,8 @@ The owner can open CodeDen from a phone or tablet on the same network or over th
 | M3b | Autonomy modes (experimental) | Project autonomy modes, the vision editor, the factory loop, merge checks with cross-provider review, automatic merge and revert, limits and kill switch, factory panel and daily digest (§10.1) |
 | v1.0 | Public launch | Polish, docs, `npx codeden` release |
 | Desktop | Desktop app | The Electron app (§17): installers, tray, notifications, deep links, automatic updates |
-| Later | | OpenCode, ACP adapter, embedded browser view in the desktop app, remote runners (Upstash Box, SSH/VPS, Docker), webhooks, GitLab and other forges, remote/mobile access |
+| Browser | Browser panel | Phase 1: the full-panel screencast on every surface. Phase 2: native browser views in the desktop app with a per-session CDP relay (§12.2, §17) |
+| Later | | OpenCode, ACP adapter, remote runners (Upstash Box, SSH/VPS, Docker), webhooks, GitLab and other forges, remote/mobile access |
 
 ## 20. Spikes before M1 (de-risk first)
 
