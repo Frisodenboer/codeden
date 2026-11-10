@@ -182,6 +182,46 @@ describe("classifyCommand", () => {
     expect(action("Get-ChildItem env:", win)).toBe("secrets");
   });
 
+  it("lets agents read global git config and single variables", () => {
+    for (const cmd of [
+      "git config --global user.email",
+      "git config --global --get user.name",
+      "git config --global --list",
+      "git config --global -l --show-origin",
+      "git config get --global user.name",
+      "git config --global --type bool --get core.autocrlf",
+      "git config user.name x",
+      "printenv PATH",
+      "printenv NODE_ENV HOME",
+    ]) {
+      expect(action(cmd), cmd).toBeNull();
+    }
+    for (const cmd of ["Get-ChildItem env:PATH", "gci Env:NODE_ENV", "$env:PATH -split ';'"]) {
+      expect(action(cmd, win), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "git config --global user.name x",
+      "git config --global user.name list",
+      "git config --global --unset user.name",
+      "git config --global --add safe.directory /x",
+      "git config set --global user.name x",
+      "git config --global -e",
+      "git config --system core.autocrlf true",
+    ]) {
+      expect(action(cmd), cmd).toBe("outside_worktree");
+    }
+    for (const cmd of ["printenv", "printenv GITHUB_TOKEN", "printenv PATH OPENAI_API_KEY"]) {
+      expect(action(cmd), cmd).toBe("secrets");
+    }
+    for (const cmd of [
+      "Get-ChildItem env:",
+      "ls env:*",
+      "Get-ChildItem Env:AWS_SECRET_ACCESS_KEY",
+    ]) {
+      expect(action(cmd, win), cmd).toBe("secrets");
+    }
+  });
+
   it("flags writes outside the worktree via redirects and copies", () => {
     expect(action("echo x > /etc/profile")).toBe("outside_worktree");
     expect(action("echo x >> ~/.bashrc")).toBe("outside_worktree");

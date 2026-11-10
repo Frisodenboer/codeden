@@ -42,8 +42,56 @@ export function classifyGit(args: string[]): RiskAssessment {
     return risky("git_destructive", "Deletes a tag");
   }
   if (sub === "update-ref" && rest.includes("-d")) return risky("git_destructive", "Deletes a ref");
-  if (sub === "config" && rest.includes("--global")) {
-    return risky("outside_worktree", "Changes global git configuration");
+  if (sub === "config" && (rest.includes("--global") || rest.includes("--system"))) {
+    if (writesConfig(rest)) return risky("outside_worktree", "Changes global git configuration");
   }
   return SAFE;
+}
+
+/** `git config` options and subcommands that change the configuration. */
+const CONFIG_WRITES = new Set([
+  "--unset",
+  "--unset-all",
+  "--add",
+  "--replace-all",
+  "--edit",
+  "-e",
+  "--rename-section",
+  "--remove-section",
+  "set",
+  "unset",
+  "edit",
+  "rename-section",
+  "remove-section",
+]);
+/** `git config` options and subcommands that only read. */
+const CONFIG_READS = new Set([
+  "--get",
+  "--get-all",
+  "--get-regexp",
+  "--get-urlmatch",
+  "--get-color",
+  "--get-colorbool",
+  "--list",
+  "-l",
+  "get",
+  "list",
+]);
+/** `git config` options that take the next word as their value. */
+const CONFIG_VALUED = new Set(["--type", "--default", "--file", "-f", "--blob", "--comment"]);
+
+/**
+ * True when `git config <rest>` changes something: a writing option or subcommand, or a name
+ * and a value (`git config --global user.name x`). A bare name reads it.
+ */
+function writesConfig(rest: string[]): boolean {
+  const positional = rest.filter(
+    (a, i) => !a.startsWith("-") && !CONFIG_VALUED.has(rest[i - 1] ?? ""),
+  );
+  // Subcommands (`git config get x`) come first; a later `list` is a value.
+  const named = (set: Set<string>) =>
+    rest.some((a) => a.startsWith("-") && set.has(a)) || set.has(positional[0] ?? "");
+  if (named(CONFIG_WRITES)) return true;
+  if (named(CONFIG_READS)) return false;
+  return positional.length !== 1;
 }

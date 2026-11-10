@@ -66,11 +66,11 @@ Automations run unattended, so they use the same permission levels with safer de
 
 Under **Auto**, edits and ordinary commands inside the worktree run freely, and these go to an approval card (and your inbox):
 
-- writes or deletes **outside the worktree** (and outside the OS temp directory), and changes to global git config;
+- writes or deletes **outside the worktree** (and outside the OS temp directory), and changes to global git config (reading it, such as `git config --global user.email`, doesn't ask);
 - **force pushes**, deleting branches, tags or refs;
 - **global installs** (`npm -g`, `pip` outside a project, system package managers) and elevated commands (`sudo`);
 - **piping a downloaded script into a shell** or executing a download (`curl … | sh`, `irm … | iex`, `curl … | python3`). Piping a download into a program that only reads it as data, such as `node -e '…'`, `python -c '…'`, `jq` or a script file in the project, runs freely;
-- **secrets access**: reading or writing secrets files, dumping the environment;
+- **secrets access**: reading or writing secrets files, dumping the environment (printing a named variable such as `printenv PATH` doesn't ask, unless its name looks like a credential);
 - network fetches to hosts not on the allowed list, where a list applies.
 
 When you approve, you can approve once or for the rest of the session.

@@ -180,12 +180,24 @@ function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): Ri
   });
   if (secret) return risky("secrets", `Accesses the secrets file ${secret}`);
 
-  const listsEnvDrive =
-    /^(get-childitem|gci|ls|dir)$/.test(bin) && lower.some((a) => a.startsWith("env:"));
-  if (bin === "printenv" || listsEnvDrive) {
-    return risky("secrets", "Dumps environment variables");
-  }
+  if (dumpsEnvironment(bin, args)) return risky("secrets", "Dumps environment variables");
   return SAFE;
+}
+
+/** Variable names that may hold a credential. */
+const SECRET_VAR = /key|token|secret|passw|pwd|credential|auth|private|session|cookie/i;
+
+/**
+ * True for `printenv` and `Get-ChildItem env:` listings. Printing named variables that don't
+ * look like credentials (`printenv PATH`, `Get-ChildItem env:NODE_ENV`) is not a dump.
+ */
+function dumpsEnvironment(bin: string, args: string[]): boolean {
+  const named = (names: string[]) =>
+    names.length > 0 && names.every((n) => /^\w+$/.test(n) && !SECRET_VAR.test(n));
+  if (bin === "printenv") return !named(args.filter((a) => !a.startsWith("-")));
+  if (!/^(get-childitem|gci|ls|dir)$/.test(bin)) return false;
+  const drives = args.filter((a) => /^env:/i.test(a));
+  return drives.length > 0 && !named(drives.map((a) => a.slice(4)));
 }
 
 const COPIES = ["cp", "mv", "copy", "move", "copy-item", "move-item", "xcopy", "robocopy"];
