@@ -87,7 +87,7 @@ Open the project and click **New session**. Describe the task ("Add a README sec
 
 What happens next:
 
-1. CodeDen creates a worktree under `~/.codeden/wt/` on a new `codeden/...` branch and runs your setup commands. Your own checkout is never touched.
+1. CodeDen creates a worktree under `~/.codeden/wt/` on a new `codeden/...` branch and runs your setup commands. Your own checkout is never touched. In a GitHub project it fetches first, so the branch starts from the latest default branch on GitHub even if your local copy is behind (a local default branch with commits of your own is used as it is).
 2. The agent works. Tool calls are grouped into collapsible blocks with live output; plans, todos and subagents get their own cards.
 3. **Risky actions ask.** With the default autonomy level the agent edits files and runs normal commands freely, but writes outside the worktree, force pushes, global installs and the like arrive as approval cards (in the chat and in the inbox).
 4. When the turn ends you'll see the summary, the cost, and **follow-up chips** with suggested next prompts.

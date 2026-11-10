@@ -258,6 +258,10 @@ export class SessionLauncher {
         ? `codeden/${slugWords(session.title ?? session.purpose, 5, 40)}-${session.id.slice(0, 4)}`
         : undefined);
     const baseRef = req.baseRef ?? project.defaultBranch ?? undefined;
+    // A new worktree of a GitHub project starts from the freshly fetched default branch when the
+    // local one is merely behind (§9); the pull request still targets the default branch.
+    const fetch =
+      req.fetch ?? (project.kind === "github" && req.mode === "worktree" && !req.baseRef);
     try {
       const result = await this.deps.runner.request(
         {
@@ -269,7 +273,7 @@ export class SessionLauncher {
           branch,
           baseRef,
           setupCommands: req.setupCommands ?? [],
-          ...(req.fetch ? { fetch: true } : {}),
+          ...(fetch ? { fetch: true } : {}),
         },
         PREPARE_TIMEOUT_MS,
       );

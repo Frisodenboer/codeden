@@ -49,6 +49,11 @@ async function uniqueBranch(cwd: string, wanted: string): Promise<string> {
   throw new CommandError("branch_exists", `No free branch name for ${wanted}`);
 }
 
+/**
+ * The ref a new worktree branches from: `cmd.baseRef`, else the repository's default branch.
+ * After a successful `fetch`, a local branch with nothing of its own is swapped for its freshly
+ * fetched `origin/` copy (see `freshestBase`). A failed fetch (offline) keeps the local ref.
+ */
 async function resolveBase(
   repo: string,
   cmd: RunnerCommandOf<"workspace.prepare">,
@@ -61,16 +66,23 @@ async function resolveBase(
       () => false,
     );
   }
-  if (cmd.baseRef) return cmd.baseRef;
-  const def = await defaultBranch(repo);
-  if (
-    def &&
-    fetched &&
-    (await gitOk(repo, ["rev-parse", "--verify", "--quiet", `origin/${def}`]))
-  ) {
-    return `origin/${def}`;
-  }
-  return def ?? "HEAD";
+  const base = cmd.baseRef ?? (await defaultBranch(repo)) ?? "HEAD";
+  return fetched ? freshestBase(repo, base) : base;
+}
+
+/**
+ * `origin/<base>` when the local branch `<base>` is behind it or equal (an ancestor), or
+ * missing; otherwise `base`. A local branch that is ahead or has diverged is kept: its own
+ * commits are the user's. Refs that aren't plain branch names (`origin/x`, a commit, `HEAD`)
+ * are returned as they are.
+ */
+export async function freshestBase(repo: string, base: string): Promise<string> {
+  if (base === "HEAD" || base.startsWith("origin/")) return base;
+  const remote = `refs/remotes/origin/${base}`;
+  if (!(await gitOk(repo, ["rev-parse", "--verify", "--quiet", remote]))) return base;
+  if (!(await branchExists(repo, base))) return `origin/${base}`;
+  const behind = await gitOk(repo, ["merge-base", "--is-ancestor", `refs/heads/${base}`, remote]);
+  return behind ? `origin/${base}` : base;
 }
 
 function isEmptyDir(path: string): boolean {
