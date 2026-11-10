@@ -5,7 +5,8 @@ import type { ProviderStatus } from "@codeden/contracts";
 import { detectCodex } from "../codex/detect";
 import { startAppServer } from "../codex/process";
 import type { ModelProviderCapabilitiesReadResponse } from "../codex/protocol/v2";
-import { type ResolvedCommand, resolveExecutable } from "../util/exec";
+import type { ResolvedCommand } from "../util/exec";
+import { quickLocate } from "../util/locate";
 import { type ConnectCodex, runCodexImageTurn } from "./codex-turn";
 import { ImageGenerationError, toImageError } from "./errors";
 import { writeImages } from "./image-file";
@@ -113,7 +114,7 @@ export class CodexImageEngine implements ImageEngine {
     this.connect =
       opts.connect ??
       ((handlers, cwd) => {
-        const resolved = exe ?? resolveExecutable("codex");
+        const resolved = exe ?? quickLocate("codex");
         if (!resolved) return Promise.reject(new Error("Codex is not installed"));
         return startAppServer(resolved, handlers, { cwd }).then(({ rpc }) => ({
           request: <T>(method: string, params: unknown) =>
@@ -156,7 +157,7 @@ export class CodexImageEngine implements ImageEngine {
       request.signal,
     );
     try {
-      if (!this.opts.connect && !(this.opts.executable ?? resolveExecutable("codex"))) {
+      if (!this.opts.connect && !(this.opts.executable ?? quickLocate("codex"))) {
         throw new ImageGenerationError("unavailable", this.id, "Codex is not installed");
       }
       // Validate up front; Codex reads the files itself from the paths.

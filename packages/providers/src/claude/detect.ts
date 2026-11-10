@@ -1,17 +1,19 @@
 import type { ProviderIssue, ProviderStatus } from "@codeden/contracts";
-import { type ResolvedCommand, resolveExecutable, runCommand } from "../util/exec";
-import { compareVersions, parseVersion } from "../util/version";
+import { brokenInstallMessage, type DetectExeOptions, lookupForDetect } from "../util/detect-exe";
+import { runCommand } from "../util/exec";
+import { compareVersions } from "../util/version";
 
 /** Oldest Claude Code version the adapter is tested against (pinned SDK 0.3.318). */
 export const CLAUDE_MIN_VERSION = "2.1.250";
 const LOGIN_EXPIRY_WARNING_MS = 3 * 24 * 60 * 60 * 1000;
+const INSTALL = { kind: "install", command: "npm install -g @anthropic-ai/claude-code" } as const;
 
-export interface ClaudeDetectOptions {
-  executable?: ResolvedCommand;
-  timeoutMs?: number;
-}
+export type ClaudeDetectOptions = DetectExeOptions;
 
-/** `claude --version` + `claude auth status` (§14). Never throws. */
+/**
+ * Find a working `claude` (PATH, then the native installer's folders), then
+ * `claude auth status` (§14). Never throws.
+ */
 export async function detectClaude(opts: ClaudeDetectOptions = {}): Promise<ProviderStatus> {
   const checkedAt = new Date().toISOString();
   const status: ProviderStatus = {
@@ -28,36 +30,37 @@ export async function detectClaude(opts: ClaudeDetectOptions = {}): Promise<Prov
     checkedAt,
   };
   const issues: ProviderIssue[] = [];
-  const exe = opts.executable ?? resolveExecutable("claude");
-  if (!exe) {
-    issues.push({
-      code: "not_installed",
-      message: "Claude Code is not installed (no `claude` on PATH).",
-      fix: { kind: "install", command: "npm install -g @anthropic-ai/claude-code" },
-    });
-    return { ...status, issues };
-  }
   const timeoutMs = opts.timeoutMs ?? 15_000;
-  const versionRun = await runCommand(exe, ["--version"], { timeoutMs });
-  const version = parseVersion(versionRun.stdout);
-  if (versionRun.error || !version) {
-    issues.push({
-      code: "detect_failed",
-      message: `Could not run \`claude --version\`: ${versionRun.error?.message ?? (versionRun.timedOut ? "timed out" : versionRun.stderr.trim() || "no version in output")}`,
-    });
-    return { ...status, executablePath: exe.path, issues };
+  const lookup = await lookupForDetect("claude", { ...opts, timeoutMs });
+  const broken = lookup.broken.length > 0 ? { broken: lookup.broken } : {};
+  const exe = lookup.command;
+  if (!exe) {
+    issues.push(
+      lookup.broken.length > 0
+        ? {
+            code: "broken_install",
+            message: brokenInstallMessage("Claude Code", lookup.broken),
+            fix: INSTALL,
+          }
+        : {
+            code: "not_installed",
+            message: "Claude Code is not installed (no `claude` on PATH or in ~/.local/bin).",
+            fix: INSTALL,
+          },
+    );
+    return { ...status, ...broken, issues };
   }
-  const supported = compareVersions(version, CLAUDE_MIN_VERSION) >= 0;
+  const version = lookup.version;
+  const supported = version !== null && compareVersions(version, CLAUDE_MIN_VERSION) >= 0;
   if (!supported) {
     issues.push({
       code: "version_unsupported",
-      message: `Claude Code ${version} is older than the tested minimum ${CLAUDE_MIN_VERSION}.`,
+      message: `Claude Code ${version ?? "(unknown version)"} is older than the tested minimum ${CLAUDE_MIN_VERSION}.`,
       fix: { kind: "upgrade", command: "claude update" },
     });
   }
-  const auth = parseClaudeAuthStatus(
-    (await runCommand(exe, ["auth", "status"], { timeoutMs })).stdout,
-  );
+  const authRun = await runCommand(exe, ["auth", "status"], { timeoutMs });
+  const auth = parseClaudeAuthStatus(authRun.stdout);
   if (auth.loggedIn === false) {
     issues.push({
       code: "not_logged_in",
@@ -65,7 +68,11 @@ export async function detectClaude(opts: ClaudeDetectOptions = {}): Promise<Prov
       fix: { kind: "login", command: "claude auth login" },
     });
   } else if (auth.loggedIn === null) {
-    issues.push({ code: "detect_failed", message: "Could not read `claude auth status`." });
+    const why = authRun.error?.message ?? (authRun.timedOut ? "timed out" : `exit ${authRun.code}`);
+    issues.push({
+      code: "detect_failed",
+      message: `Could not read \`claude auth status\` (${why}).`,
+    });
   } else if (
     auth.loginExpiresAt &&
     Date.parse(auth.loginExpiresAt) - Date.now() < LOGIN_EXPIRY_WARNING_MS
@@ -83,6 +90,7 @@ export async function detectClaude(opts: ClaudeDetectOptions = {}): Promise<Prov
     executablePath: exe.kind === "node-script" ? exe.script : exe.path,
     supported,
     ...auth,
+    ...broken,
     issues,
   };
 }

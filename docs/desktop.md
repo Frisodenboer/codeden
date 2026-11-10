@@ -57,6 +57,8 @@ The app uses the same data folder as `npx codeden`: `~/.codeden` (or `CODEDEN_HO
 
 Then the window opens on the UI, already signed in. A first launch shows the same setup checklist as the browser; it reports Node.js as "built into the app".
 
+The app's server and runner keep running between windows, so they may have started before you installed or fixed a CLI. You don't need to restart anything. **Re-check** on the setup checklist looks again: on Windows it first adds new folders from your user and system `Path`, and it always looks in the installers' own folders, such as `%USERPROFILE%\.local\bin` for the native Claude Code installer. A copy that is found but doesn't run shows as **installed but broken**, with its path. See [Troubleshooting](troubleshooting.md#claude-code-or-codex-is-installed-but-broken).
+
 ## The window and the tray
 
 - **Closing the window** keeps CodeDen running in the tray (Windows, Linux) or menu bar (macOS), so agents, automations and notifications carry on. Click the tray icon (or choose **Open CodeDen**) to bring it back. Turn this off under **Settings > App > Keep running in the tray**.

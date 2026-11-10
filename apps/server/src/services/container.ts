@@ -40,6 +40,7 @@ import { SessionService } from "./sessions/session-service";
 import { WorktreeCleanup, type WorktreeCleanupDeps } from "./sessions/worktree-cleanup";
 import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
+import { execLocate, type Locate } from "./setup/tool-lookup";
 import { DesktopUpdateService } from "./updates/desktop";
 import { notesSources, updateRegistry } from "./updates/registry";
 import { type SelfUpdateHost, UpdateService, type Updates } from "./updates/service";
@@ -58,6 +59,10 @@ export interface ServicesOptions {
   runner: RunnerPort;
   secrets: SecretStore;
   exec?: Exec;
+  /** Finds claude, codex and gh for the setup checks (tests fake it with `exec`). */
+  locate?: Locate;
+  /** Picks up PATH changes before a setup re-check (tests that pin PATH pass a no-op). */
+  refreshPath?: () => Promise<unknown>;
   utility?: UtilityService;
   /** Default clone location (`~/codeden-projects`). */
   projectsDir?: string;
@@ -240,6 +245,10 @@ export function createServices(opts: ServicesOptions): AppServices {
   const setup = new SetupService({
     exec,
     settings: opts.settings,
+    // Tests that bring their own `exec` fake every CLI; the look-up goes through it too.
+    locate: opts.locate ?? (opts.exec ? execLocate(opts.exec) : undefined),
+    refreshPath: opts.refreshPath,
+    userHome,
     // After an install or a login is re-checked, the runner's model lists follow.
     onChecked: () => redetectProviders(opts.runner, opts.log),
   });

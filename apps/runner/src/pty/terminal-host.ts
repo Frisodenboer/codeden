@@ -7,6 +7,7 @@ import type {
   RunnerEvent,
   RunnerStream,
 } from "@codeden/contracts";
+import { defaultShell } from "@codeden/providers";
 import type * as NodePty from "node-pty";
 import { CommandError } from "../errors";
 import { childEnv } from "../process/env";
@@ -61,12 +62,8 @@ function ensureSpawnHelperExecutable(require: NodeJS.Require): void {
   }
 }
 
-/** Default interactive shell for this platform. */
-export function defaultShell(): string {
-  if (process.env.CODEDEN_SHELL) return process.env.CODEDEN_SHELL;
-  if (process.platform === "win32") return "powershell.exe";
-  return process.env.SHELL || "/bin/bash";
-}
+/** Default interactive shell for this platform (shared with the server's setup commands). */
+export { defaultShell };
 
 interface Terminal {
   pty: NodePty.IPty;

@@ -21,6 +21,7 @@ import {
   Session,
   SessionOptions,
   Settings,
+  SetupCheck,
   Snapshot,
   SOURCE_VERSION,
   sortProjects,
@@ -288,6 +289,27 @@ describe("provider contracts", () => {
       ],
       checkedAt: ts,
     });
+    const broken = roundTrip(ProviderStatus, {
+      providerId: "claude",
+      installed: false,
+      version: null,
+      executablePath: null,
+      loggedIn: null,
+      authMethod: null,
+      account: null,
+      loginExpiresAt: null,
+      supported: false,
+      issues: [{ code: "broken_install", message: "Claude Code is installed but broken" }],
+      broken: [
+        {
+          path: "C:\npmclaude.cmd",
+          reason: "points at a missing package",
+          target: "C:\npm\node_modules@anthropic-aiclaude-codecli.js",
+        },
+      ],
+      checkedAt: ts,
+    });
+    expect(broken.broken?.[0]?.reason).toBe("points at a missing package");
     roundTrip(RuntimeResponse, { kind: "approval", decision: "deny", message: "no" });
     roundTrip(RuntimeResponse, { kind: "answer", answers: { q1: ["SQLite"] } });
   });
@@ -336,6 +358,40 @@ describe("version", () => {
     const desktopUrl = new URL("../../../apps/desktop/package.json", import.meta.url);
     const desktop = JSON.parse(readFileSync(desktopUrl, "utf8")) as { version: string };
     expect(desktop.version).toBe(SOURCE_VERSION);
+  });
+});
+
+describe("setup checks", () => {
+  const check = {
+    id: "claude",
+    label: "Claude Code",
+    state: "missing",
+    installed: false,
+    version: null,
+    executablePath: null,
+    loggedIn: null,
+    authMethod: null,
+    account: null,
+    loginExpiresAt: null,
+    message: "Claude Code is installed but broken",
+    fix: { kind: "install", command: "npm install -g @anthropic-ai/claude-code" },
+    durationMs: 12,
+  } as const;
+
+  it("round-trips broken copies and the underlying error", () => {
+    const parsed = roundTrip(SetupCheck, {
+      ...check,
+      detail: "exit code 1: boom",
+      broken: [{ path: "/usr/local/bin/claude", reason: "points at a missing file", target: "x" }],
+    });
+    expect(parsed.broken).toHaveLength(1);
+    expect(parsed.detail).toBe("exit code 1: boom");
+  });
+
+  it("accepts checks from servers without the new fields", () => {
+    const parsed = roundTrip(SetupCheck, check);
+    expect(parsed.broken).toBeUndefined();
+    expect(parsed.detail).toBeUndefined();
   });
 });
 

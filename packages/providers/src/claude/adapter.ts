@@ -8,7 +8,8 @@ import type {
 import type { ProviderAdapter, ProviderSession, RefreshModelsOptions } from "../adapter";
 import { executableFingerprint, ModelFreshness } from "../freshness";
 import { ModelCatalog } from "../models";
-import { type ResolvedCommand, resolveExecutable } from "../util/exec";
+import type { ResolvedCommand } from "../util/exec";
+import { quickLocate } from "../util/locate";
 import type { UtilityModel } from "../utility";
 import { detectClaude } from "./detect";
 import { listClaudeModels, toModelInfos } from "./models";
@@ -76,16 +77,18 @@ export class ClaudeAdapter implements ProviderAdapter {
   constructor(private readonly options: ClaudeAdapterOptions = {}) {}
 
   /**
-   * The `claude` to launch, looked up on PATH every time (a few `stat` calls): the runner
-   * outlives Claude Code updates and reinstalls, so a path found earlier may be gone or point
-   * at another install by now.
+   * The `claude` to launch, looked up every time (a few `stat` calls): the runner outlives
+   * updates and reinstalls, so a path found earlier may be gone or point at another install
+   * by now. PATH first, then the installer's own folders; copies the last `--version` check
+   * found broken are skipped until they change.
    */
   private executable(): ResolvedCommand | undefined {
-    return this.options.executable ?? resolveExecutable("claude");
+    return this.options.executable ?? quickLocate("claude");
   }
 
+  /** Finds a working copy (validating each one), so a broken shim never wins. */
   detect(): Promise<ProviderStatus> {
-    return detectClaude({ executable: this.executable() });
+    return detectClaude(this.options.executable ? { executable: this.options.executable } : {});
   }
 
   capabilities(): ProviderCapabilities {

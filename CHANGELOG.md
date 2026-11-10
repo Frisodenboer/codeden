@@ -28,6 +28,11 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Sessions on a full model id get their effort control back.** A session on, say, `claude-opus-5-5` (what Opus runs today) was shown as "isn't in the provider's list any more" with no effort levels. The picker now shows it as **Opus 5.5** with Opus's effort levels, and an id no entry covers still gets the default model's levels.
 - **A second viewer of a still page now sees it straight away.** It used to wait for the page to change before its first frame arrived.
 - **Scrolling in the browser panel is natural.** It now moves the page at the speed of your gesture, also for mice that scroll by lines.
+- **Setup finds Claude Code and Codex where their installers put them.** After checking PATH, CodeDen also looks in the native installers' folders (`~/.local/bin` for Claude Code and Codex, `~/.claude/local`, Codex's standalone folder, and the GitHub CLI's default location), so a native install whose folder isn't on your PATH is found and used.
+- **Broken installs are named, not hidden.** A leftover npm shim whose package is gone used to show as "Could not read the Claude login state". Now every copy CodeDen finds is checked before it's used: broken copies are skipped in favour of a working one, and when none works, the row says **installed but broken** and lists the paths, with how to fix it.
+- **Re-check picks up PATH changes without a restart.** On Windows, **Re-check** (and the runner's provider re-detect) adds folders that were added to your user or system `Path` since CodeDen started, so the desktop app's long-running server and runner see newly installed tools. Agents and terminals started afterwards get the new PATH too.
+- **Sign in runs the copy CodeDen found.** The setup **Sign in** buttons for Claude Code, Codex and GitHub run that copy by its full path, quoted for the terminal's shell (`& 'C:\Users\you\.local\bin\claude.exe' auth login` in PowerShell), instead of whatever `claude` means in the terminal.
+- **"Could not read the login state" shows why.** The row's new **Details** show the underlying error (exit code and output).
 
 ## [0.4.4] - 2026-11-09
 

@@ -10,13 +10,9 @@ import {
   parseGhAuthText,
   parseVersion,
 } from "./parse";
+import { LOGIN_COMMANDS, type Locate, loginFix, lookupTool, runDetail } from "./tool-lookup";
 
-/** Commands that sign a tool in, run in the UI's terminal (§14 step 3). */
-export const LOGIN_COMMANDS = {
-  claude: ["claude", "auth", "login"],
-  codex: ["codex", "login"],
-  gh: ["gh", "auth", "login", "--web", "--git-protocol", "https"],
-} as const satisfies Record<string, readonly string[]>;
+export { LOGIN_COMMANDS };
 
 /** Days before `loginExpiresAt` at which a Claude login is flagged. */
 export const LOGIN_EXPIRY_WARNING_DAYS = 3;
@@ -75,11 +71,6 @@ function installFix(id: SetupToolId, platform: NodeJS.Platform): SetupCommand {
   }
 }
 
-const loginFix = (tool: keyof typeof LOGIN_COMMANDS): SetupCommand => ({
-  kind: "login",
-  command: LOGIN_COMMANDS[tool].join(" "),
-});
-
 function base(id: SetupToolId): Omit<SetupCheck, "state" | "message" | "durationMs"> {
   return {
     id,
@@ -99,85 +90,96 @@ type CheckResult = Omit<SetupCheck, "durationMs">;
 
 export interface CheckEnv {
   exec: Exec;
+  /** Finds a working copy of claude, codex and gh (PATH, then known install locations). */
+  locate: Locate;
+  /** The shell of the setup terminal, for quoting sign-in commands. */
+  shell: string;
   platform: NodeJS.Platform;
   nodeVersion: string;
   now: number;
   browserProbe?: Partial<BrowserProbe>;
 }
 
-export async function checkClaude({ exec, platform, now }: CheckEnv): Promise<CheckResult> {
-  const check = base("claude");
-  const version = await exec("claude", ["--version"], { timeoutMs: 10_000 });
-  if (version.notFound || version.code !== 0) {
-    return {
-      ...check,
-      state: "missing",
-      message: "Claude Code is not installed",
-      fix: installFix("claude", platform),
-    };
-  }
+export async function checkClaude({
+  exec,
+  locate,
+  shell,
+  platform,
+  now,
+}: CheckEnv): Promise<CheckResult> {
+  const tool = await lookupTool(locate, "claude", base("claude"), {
+    message: "Claude Code is not installed",
+    fix: installFix("claude", platform),
+  });
+  if (!tool.found) return tool.result;
   const installed = {
-    ...check,
+    ...base("claude"),
+    ...tool.extra,
     installed: true,
-    version: parseVersion(version.stdout),
-    executablePath: version.path,
+    version: tool.version,
+    executablePath: tool.path,
   };
-  const status = await exec("claude", ["auth", "status"], { timeoutMs: 10_000 });
+  const login = loginFix("claude", shell, tool.path);
+  const status = await exec(tool.path, ["auth", "status"], { timeoutMs: 10_000 });
   const auth = parseClaudeAuth(status.stdout);
   if (!auth) {
     return {
       ...installed,
       state: "warning",
       message: "Could not read the Claude login state",
-      fix: loginFix("claude"),
+      detail: runDetail("claude auth status", status),
+      fix: login,
     };
   }
   const withAuth = { ...installed, ...auth };
   if (!auth.loggedIn) {
-    return {
-      ...withAuth,
-      state: "missing",
-      message: "Not signed in to Claude",
-      fix: loginFix("claude"),
-    };
+    return { ...withAuth, state: "missing", message: "Not signed in to Claude", fix: login };
   }
   if (expiresWithin(auth.loginExpiresAt, LOGIN_EXPIRY_WARNING_DAYS, now)) {
     return {
       ...withAuth,
       state: "warning",
       message: "Your Claude login expires soon; sign in again",
-      fix: loginFix("claude"),
+      fix: login,
     };
   }
   return { ...withAuth, state: "ok", message: "Signed in" };
 }
 
-export async function checkCodex({ exec, platform }: CheckEnv): Promise<CheckResult> {
-  const check = base("codex");
-  const version = await exec("codex", ["--version"], { timeoutMs: 10_000 });
-  if (version.notFound || version.code !== 0) {
-    return {
-      ...check,
-      state: "missing",
-      message: "Codex is not installed",
-      fix: installFix("codex", platform),
-    };
-  }
+export async function checkCodex({
+  exec,
+  locate,
+  shell,
+  platform,
+}: CheckEnv): Promise<CheckResult> {
+  const tool = await lookupTool(locate, "codex", base("codex"), {
+    message: "Codex is not installed",
+    fix: installFix("codex", platform),
+  });
+  if (!tool.found) return tool.result;
   const installed = {
-    ...check,
+    ...base("codex"),
+    ...tool.extra,
     installed: true,
-    version: parseVersion(version.stdout),
-    executablePath: version.path,
+    version: tool.version,
+    executablePath: tool.path,
   };
-  const status = await exec("codex", ["login", "status"], { timeoutMs: 10_000 });
-  const login = parseCodexLogin(status.code, `${status.stdout}\n${status.stderr}`);
+  const status = await exec(tool.path, ["login", "status"], { timeoutMs: 10_000 });
+  const login = parseCodexLogin(
+    status.code,
+    `${status.stdout}
+${status.stderr}`,
+  );
   if (!login.loggedIn) {
     return {
       ...installed,
       loggedIn: false,
       state: "missing",
       message: "Not signed in to Codex",
-      fix: loginFix("codex"),
+      ...(status.code !== 0 && !/not logged in/i.test(`${status.stdout}${status.stderr}`)
+        ? { detail: runDetail("codex login status", status) }
+        : {}),
+      fix: loginFix("codex", shell, tool.path),
     };
   }
   return {
@@ -189,29 +191,29 @@ export async function checkCodex({ exec, platform }: CheckEnv): Promise<CheckRes
   };
 }
 
-export async function checkGh({ exec, platform }: CheckEnv): Promise<CheckResult> {
-  const check = base("gh");
-  const version = await exec("gh", ["--version"], { timeoutMs: 10_000 });
-  if (version.notFound || version.code !== 0) {
-    return {
-      ...check,
-      state: "missing",
-      message: "GitHub CLI is not installed (optional)",
-      fix: installFix("gh", platform),
-    };
-  }
+export async function checkGh({ exec, locate, shell, platform }: CheckEnv): Promise<CheckResult> {
+  const tool = await lookupTool(locate, "gh", base("gh"), {
+    message: "GitHub CLI is not installed (optional)",
+    fix: installFix("gh", platform),
+  });
+  if (!tool.found) return tool.result;
   const installed = {
-    ...check,
+    ...base("gh"),
+    ...tool.extra,
     installed: true,
-    version: parseVersion(version.stdout),
-    executablePath: version.path,
+    version: tool.version,
+    executablePath: tool.path,
   };
   // `--json hosts` never includes the token; the text fallback is parsed for the login only.
-  const json = await exec("gh", ["auth", "status", "--json", "hosts"], { timeoutMs: 10_000 });
+  const json = await exec(tool.path, ["auth", "status", "--json", "hosts"], { timeoutMs: 10_000 });
   let auth = parseGhAuthJson(json.stdout);
   if (!auth) {
-    const text = await exec("gh", ["auth", "status"], { timeoutMs: 10_000 });
-    auth = parseGhAuthText(text.code, `${text.stdout}\n${text.stderr}`);
+    const text = await exec(tool.path, ["auth", "status"], { timeoutMs: 10_000 });
+    auth = parseGhAuthText(
+      text.code,
+      `${text.stdout}
+${text.stderr}`,
+    );
   }
   if (!auth.loggedIn) {
     return {
@@ -219,7 +221,7 @@ export async function checkGh({ exec, platform }: CheckEnv): Promise<CheckResult
       loggedIn: false,
       state: "missing",
       message: "Not signed in to GitHub",
-      fix: loginFix("gh"),
+      fix: loginFix("gh", shell, tool.path),
     };
   }
   return { ...installed, loggedIn: true, account: auth.account, state: "ok", message: "Signed in" };

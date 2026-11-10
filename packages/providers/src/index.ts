@@ -19,6 +19,7 @@ export {
 } from "./policy/risk";
 export * from "./registry";
 export * from "./replay";
+export { brokenInstallMessage } from "./util/detect-exe";
 export {
   isElectronRuntime,
   ownNodeEnv,
@@ -27,6 +28,31 @@ export {
   scriptRuntime,
 } from "./util/exec";
 export { acquireInstallLock, type InstallLockOptions } from "./util/install-lock";
+export { type KnownLocationOptions, knownLocations } from "./util/known-locations";
+export {
+  clearExecutableCache,
+  type ExecutableLookup,
+  findExecutable,
+  type LocateOptions,
+  quickLocate,
+  runsVersion,
+  type Validation,
+} from "./util/locate";
 export { resolveNpm } from "./util/npm";
 export { npmFailure, type RunNpmOptions, runNpm } from "./util/npm-run";
+export {
+  defaultShell,
+  quoteForShell,
+  type ShellSyntax,
+  shellCommandLine,
+  shellSyntax,
+} from "./util/shell-command";
+export { inspectFile, shimTarget } from "./util/shim";
+export {
+  expandWindowsVars,
+  parseRegQuery,
+  type RefreshPathOptions,
+  type RegistryPathReader,
+  refreshProcessPath,
+} from "./util/system-path";
 export type { OneShotRequest, UtilityModel } from "./utility";

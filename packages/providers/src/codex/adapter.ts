@@ -7,7 +7,8 @@ import type {
 import type { ProviderAdapter, ProviderSession, RefreshModelsOptions } from "../adapter";
 import { executableFingerprint, ModelFreshness } from "../freshness";
 import { ModelCatalog } from "../models";
-import { type ResolvedCommand, resolveExecutable } from "../util/exec";
+import type { ResolvedCommand } from "../util/exec";
+import { quickLocate } from "../util/locate";
 import { DEFAULT_MODEL_ID } from "../util/model";
 import type { UtilityModel } from "../utility";
 import { detectCodex } from "./detect";
@@ -76,13 +77,19 @@ export class CodexAdapter implements ProviderAdapter {
 
   constructor(private readonly options: CodexAdapterOptions = {}) {}
 
-  /** `codex` on PATH, looked up every time: the runner outlives Codex updates and reinstalls. */
+  /**
+   * The `codex` to launch, looked up every time (a few `stat` calls): the runner outlives
+   * updates and reinstalls, so a path found earlier may be gone or point at another install
+   * by now. PATH first, then the installer's own folders; copies the last `--version` check
+   * found broken are skipped until they change.
+   */
   private executable(): ResolvedCommand | undefined {
-    return this.options.executable ?? resolveExecutable("codex");
+    return this.options.executable ?? quickLocate("codex");
   }
 
+  /** Finds a working copy (validating each one), so a broken shim never wins. */
   detect(): Promise<ProviderStatus> {
-    return detectCodex({ executable: this.executable() });
+    return detectCodex(this.options.executable ? { executable: this.options.executable } : {});
   }
 
   capabilities(): ProviderCapabilities {

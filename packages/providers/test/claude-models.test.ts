@@ -206,8 +206,9 @@ describe("ClaudeAdapter model discovery", () => {
     const name = process.platform === "win32" ? "claude.exe" : "claude";
     const oldDir = mkdtempSync(join(tmpdir(), "codeden-claude-old-"));
     const newDir = mkdtempSync(join(tmpdir(), "codeden-claude-new-"));
-    writeFileSync(join(oldDir, name), "old build");
-    writeFileSync(join(newDir, name), "new build");
+    // Executable, as installs are: a file without the bit is not a command on macOS and Linux.
+    writeFileSync(join(oldDir, name), "old build", { mode: 0o755 });
+    writeFileSync(join(newDir, name), "new build", { mode: 0o755 });
     const saved = { PATH: process.env.PATH, Path: process.env.Path };
     const setPath = (dir: string) => {
       process.env.PATH = dir;
@@ -269,18 +270,24 @@ describe("ClaudeAdapter model discovery", () => {
 
   it("skips discovery when Claude Code is not installed", async () => {
     const sdk = stubSdk();
-    const saved = { PATH: process.env.PATH, Path: process.env.Path };
+    const keys = ["PATH", "Path", "HOME", "USERPROFILE"] as const;
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
     const empty = mkdtempSync(join(tmpdir(), "codeden-empty-path-"));
     process.env.PATH = empty;
     if (process.platform === "win32") process.env.Path = empty;
+    // Known install locations (`~/.local/bin`) are looked at too: an empty home has none.
+    process.env.HOME = empty;
+    process.env.USERPROFILE = empty;
     try {
       const adapter = new ClaudeAdapter({ loadSdk: sdk.load });
       await adapter.refreshModels();
       expect(sdk.state.launches).toHaveLength(0);
       expect(adapter.models().map((m) => m.id)).toEqual(["default", "opus", "sonnet", "haiku"]);
     } finally {
-      process.env.PATH = saved.PATH;
-      if (process.platform === "win32") process.env.Path = saved.Path;
+      for (const key of keys) {
+        if (saved[key] === undefined) delete process.env[key];
+        else process.env[key] = saved[key];
+      }
     }
   });
 });

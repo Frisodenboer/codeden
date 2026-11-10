@@ -179,7 +179,9 @@ export function providerAvailability(
   const check = checks?.find((c) => c.id === providerId);
   if (!check || check.state === "ok" || check.state === "warning") return READY;
   const reason = !check.installed
-    ? "Not installed"
+    ? check.broken?.length
+      ? "Installed but broken"
+      : "Not installed"
     : check.loggedIn === false
       ? "Not signed in"
       : "Not ready";

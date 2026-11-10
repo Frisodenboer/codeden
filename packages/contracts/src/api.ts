@@ -15,7 +15,7 @@ import { GitHubRepo, Project } from "./entities/project";
 import { ItemRecord, Session, SessionStatus, Thread, Turn } from "./entities/session";
 import { UserInput } from "./input";
 import { FollowupsItem } from "./items";
-import { ProviderInfo, RuntimeResponse } from "./provider";
+import { BrokenExecutable, ProviderInfo, RuntimeResponse } from "./provider";
 import { ConflictDecision, StartedBy, StartWorkResult, WorkKey } from "./work";
 import { SetupStep } from "./workbench";
 import { ClientSubscribe, ClientToServerMessage, ServerToClientMessage } from "./ws";
@@ -325,6 +325,16 @@ export const SetupCheck = z.object({
   loginExpiresAt: Timestamp.nullable(),
   /** Human-readable summary of the state. */
   message: z.string(),
+  /**
+   * The underlying error behind the message (exit code, stderr, timeout), shown in a details
+   * area. Never contains tokens.
+   */
+  detail: z.string().optional(),
+  /**
+   * Copies of the tool that were found but do not run. With `installed: false` the tool is
+   * "installed but broken"; with a working copy they are informational.
+   */
+  broken: z.array(BrokenExecutable).optional(),
   fix: SetupCommand.nullable(),
   durationMs: z.int().nonnegative(),
 });

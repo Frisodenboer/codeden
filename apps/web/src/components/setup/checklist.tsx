@@ -76,6 +76,39 @@ function StateIcon({ state }: { state: RowState }) {
   );
 }
 
+/**
+ * What lies behind a check's message: copies of the tool that were found but do not run, and
+ * the underlying error. Collapsed by default; nothing when the check has neither.
+ */
+function CheckDetails({ check }: { check: SetupCheck }) {
+  const broken = check.broken ?? [];
+  if (broken.length === 0 && !check.detail) return null;
+  return (
+    <details className="mt-1 text-2xs text-muted-foreground" data-testid="check-details">
+      <summary className="cursor-pointer select-none">Details</summary>
+      {broken.length > 0 && (
+        <ul className="mt-1 space-y-1">
+          {broken.map((b) => (
+            <li key={b.path} className="break-all">
+              <code className="font-mono">{b.path}</code> {b.reason}
+              {b.target ? (
+                <>
+                  : <code className="font-mono">{b.target}</code>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {check.detail && (
+        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono">
+          {check.detail}
+        </pre>
+      )}
+    </details>
+  );
+}
+
 /** Live setup status, shared by the checklist, the setup page and the model picker. */
 export { useSetupStatus };
 
@@ -131,14 +164,17 @@ export function SetupChecklist() {
                   </div>
                   <div
                     className={cn(
-                      "truncate text-2xs",
+                      "text-2xs",
+                      c?.broken?.length && state !== "checking" ? "break-words" : "truncate",
                       state === "missing" || state === "error"
                         ? "text-status-failed/90"
                         : "text-muted-foreground",
                     )}
+                    title={c?.message}
                   >
                     {state === "checking" ? "Checking…" : c?.message}
                   </div>
+                  {c && state !== "checking" && state !== "ok" && <CheckDetails check={c} />}
                 </div>
                 {c?.fix && state !== "ok" && state !== "checking" && (
                   <div className="flex items-center gap-1.5">

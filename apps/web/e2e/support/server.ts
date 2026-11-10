@@ -40,11 +40,26 @@ export function makeTempRepo(parent: string): string {
   return repo;
 }
 
+export interface E2eServerOptions {
+  /** Load the real Claude Code and Codex adapters. */
+  builtin?: boolean;
+  /**
+   * Adjust the server's environment, e.g. a PATH with fake CLIs. Gets the run's temp folder
+   * (removed on stop) and the environment so far.
+   */
+  env?: (base: string, env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv;
+  /**
+   * Keep the server's PATH as given: no refresh from the Windows registry before setup
+   * checks, so tools installed on this machine stay out of a test that pins PATH.
+   */
+  pinPath?: boolean;
+}
+
 /**
  * Start a real server + runner on a free port with an isolated `CODEDEN_HOME`, the Fake
  * provider on and the real adapters off (unless `builtin`). Resolves once it is listening.
  */
-export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<E2eServer> {
+export async function startE2eServer(opts: E2eServerOptions = {}): Promise<E2eServer> {
   // Canonical path: the server stores realpaths, and CI temp dirs are 8.3 short names on
   // Windows and a symlink on macOS, so the specs could not find the project they added.
   const base = realpathSync.native(mkdtempSync(join(tmpdir(), "codeden-e2e-")));
@@ -54,6 +69,7 @@ export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<
   mkdirSync(join(userHome, ".claude"), { recursive: true });
   mkdirSync(join(userHome, ".codex"), { recursive: true });
   writeFileSync(join(userHome, ".claude", "CLAUDE.md"), E2E_CLAUDE_MD);
+  const baseEnv = { ...process.env, CODEDEN_HOME: home, CODEDEN_UPDATE_CHECK: "0" };
   const child: ChildProcess = spawn(
     process.execPath,
     [
@@ -68,11 +84,12 @@ export async function startE2eServer(opts: { builtin?: boolean } = {}): Promise<
       "0",
       "--exit-with-stdin",
       ...(opts.builtin ? ["--builtin"] : []),
+      ...(opts.pinPath ? ["--no-path-refresh"] : []),
     ],
     {
       cwd: repoRoot,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CODEDEN_HOME: home, CODEDEN_UPDATE_CHECK: "0" },
+      env: opts.env ? opts.env(base, baseEnv) : baseEnv,
     },
   );
   let log = "";
