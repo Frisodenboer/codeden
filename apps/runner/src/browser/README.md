@@ -54,7 +54,7 @@ and pixel density, and the frames are drawn 1:1, edge to edge.
 | Min CSS size | 320 x 240 | The narrowest layout sites still design for; a smaller panel shows the page scaled down a little instead |
 | Max CSS size | 3840 x 2400 | 4K-class panels; bigger is scaled in the panel |
 | Device scale | 1 to 2 | Sharp on 1.25x/1.5x/2x screens; 3x phones would cost 2.25x the pixels for little visible gain |
-| Frame pixels | at most 2560 x 1600 | Bounds JPEG encode time and frame size; the scale drops (never below 1) to fit, and above that frames are scaled down |
+| Frame pixels | at most 2560 x 1600, never below the CSS size | Bounds JPEG encode time and frame size; the scale drops (never below 1) to fit. Frames are never scaled below one pixel per CSS pixel, not for the budget and not for a viewer's `maxWidth`/`maxHeight` (see below) |
 
 **Why the browser runs at 2x.** Screencast frames are captured at the browser's *real*
 device scale, not the emulated one (measured: emulating 2x on a 1x browser still yields CSS-
@@ -68,10 +68,13 @@ stops); slow sockets skip frames server-side. Because Chromium only sends frames
 a still page could leave a viewer with nothing to draw: a new viewer gets the last frame, a
 (re)started screencast that sends nothing within 1 s gets a still from
 `Page.captureScreenshot`, and a panel that still has no frame after 3 s re-sends `watch`.
-Frame metadata is normalized to the page viewport (`frame-metadata.ts`): when frames are
-scaled below the viewport's device pixels (a viewer's cap, or the pixel budget), Chromium on
-macOS reports the scaled frame's size (frame pixels / scale) instead of the viewport, which
-would halve clicks mapped from such frames.
+
+**The CSS-size floor (macOS).** Asked for frames smaller than the page's CSS size, Chromium on
+macOS misbehaves. Measured on CI: a 1280x800 page capped to 640x400 sent no frames for 750 ms
+of page changes, and the frames it did send reported 640x400 as the viewport, which would put
+clicks at half the distance. Frames at or above the CSS size are fine there: a 460x712 page at
+2x capped to 460x712 sends 460x712 frames with correct metadata. So `startParams` never asks
+for less than the CSS viewport, on every platform.
 
 **Input:** the panel maps pointer positions from where the frame is drawn (the whole box, or
 the letterboxed rectangle when fitted) into frame pixels and sends the frame's own viewport

@@ -52,14 +52,16 @@ export function fitViewport(request: {
 }
 
 /**
- * Screencast frame size for a viewport: its device pixels, scaled down (keeping the aspect)
- * only when even 1x exceeds the pixel budget.
+ * Screencast frame size for a viewport: its device pixels. The pixel budget is applied through
+ * the scale factor (`fitViewport`), never below one pixel per CSS pixel: Chromium on macOS
+ * stalls and misreports frames scaled below that (see `Screencast.startParams`), so a panel
+ * bigger than the budget at 1x gets frames at its CSS size.
  */
 export function framePixels(viewport: ViewportMetrics): { width: number; height: number } {
-  const width = viewport.width * viewport.deviceScaleFactor;
-  const height = viewport.height * viewport.deviceScaleFactor;
-  const shrink = Math.min(1, Math.sqrt(VIEWPORT_LIMITS.maxFramePixels / (width * height)));
-  return { width: Math.round(width * shrink), height: Math.round(height * shrink) };
+  return {
+    width: Math.round(viewport.width * viewport.deviceScaleFactor),
+    height: Math.round(viewport.height * viewport.deviceScaleFactor),
+  };
 }
 
 /** CDP `Emulation.setDeviceMetricsOverride` parameters for a viewport. */

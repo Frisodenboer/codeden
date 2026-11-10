@@ -1,6 +1,5 @@
 import type { BrowserFrameMetadata, RunnerStream } from "@codeden/contracts";
 import type { CDPSession } from "playwright-core";
-import { normalizeFrameMetadata } from "./frame-metadata";
 import { jpegSize } from "./images";
 
 export interface ScreencastSettings {
@@ -141,7 +140,7 @@ export class Screencast {
         before.deviceScaleFactor === this.viewport.deviceScaleFactor;
       const sameSize = size.width === this.frameSize.width && size.height === this.frameSize.height;
       // Also restart when only the viewport changed (460 @2x and 920 @1x are both 920 px wide):
-      // a running screencast normalizes metadata against the viewport it started with.
+      // the frame size floor (`startParams`) follows the viewport.
       if (sameSize && sameViewport) return;
       this.frameSize = { width: size.width, height: size.height };
       if (!this.target) return;
@@ -150,15 +149,22 @@ export class Screencast {
     });
   }
 
-  /** `Page.startScreencast` parameters for the current settings and frame size. */
+  /**
+   * `Page.startScreencast` parameters for the current settings and frame size. Frames never go
+   * below one pixel per CSS pixel of the viewport, whatever a viewer's cap or the pixel budget
+   * ask for: below that, Chromium on macOS stops sending frames and reports the scaled frame
+   * as the viewport size (a 1280x800 page capped to 640x400 said 640x400), which breaks the
+   * picture and input mapping. Windows and Linux would cope, but the floor keeps every platform
+   * on the same, measured-good path.
+   */
   get startParams(): Record<string, unknown> {
-    const cap = (value: number, max: number | undefined) =>
-      Math.max(1, Math.round(max === undefined ? value : Math.min(value, max)));
+    const size = (value: number, max: number | undefined, floor: number) =>
+      Math.max(1, Math.round(floor), Math.round(max === undefined ? value : Math.min(value, max)));
     return {
       format: "jpeg",
       quality: this.settings.quality,
-      maxWidth: cap(this.frameSize.width, this.settings.maxWidth),
-      maxHeight: cap(this.frameSize.height, this.settings.maxHeight),
+      maxWidth: size(this.frameSize.width, this.settings.maxWidth, this.viewport.width),
+      maxHeight: size(this.frameSize.height, this.settings.maxHeight, this.viewport.height),
       everyNthFrame: 1,
     };
   }
@@ -198,9 +204,6 @@ export class Screencast {
     const { cdp, tabId } = tab;
     const interval = Math.round(1000 / this.settings.maxFps);
     const params = this.startParams;
-    // What this screencast was started for, to normalize frame metadata (see frame-metadata.ts).
-    const viewport = { ...this.viewport };
-    const cap = { width: params.maxWidth as number, height: params.maxHeight as number };
     const onFrame = (event: ScreencastFrameEvent) => {
       const ack = () => {
         cdp.send("Page.screencastFrameAck", { sessionId: event.sessionId }).catch(() => undefined);
@@ -219,7 +222,7 @@ export class Screencast {
         data: event.data,
         width: size.width,
         height: size.height,
-        metadata: normalizeFrameMetadata(pickMetadata(event.metadata), size, viewport, cap),
+        metadata: pickMetadata(event.metadata),
       };
       this.lastFrame = frame;
       this.frames++;

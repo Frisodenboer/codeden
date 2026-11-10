@@ -71,6 +71,10 @@ describe.skipIf(!hasBrowser)("browser engine (installed Edge/Chrome)", { timeout
   });
 
   it("streams screencast frames while watched and pauses without viewers", async () => {
+    // A 2x page (2560x1600 device pixels) with a viewer cap below its CSS size: frames are
+    // scaled down, but never below one pixel per CSS pixel (macOS stalls and misreports
+    // below that), so they come at 1280x800.
+    await manager.setViewport("s1", { width: 1280, height: 800, deviceScaleFactor: 2 });
     const watch = await browser.handlers["browser.screencast"]({
       name: "browser.screencast",
       sessionId: "s1",
@@ -80,21 +84,18 @@ describe.skipIf(!hasBrowser)("browser engine (installed Edge/Chrome)", { timeout
       maxHeight: 400,
     });
     expect(watch.viewers).toBe(1);
-    const [frame] = await eventually(() => {
-      const frames = recorder.frames("s1");
-      return frames.length > 0 ? frames : undefined;
-    });
-    expect(frame).toMatchObject({ mediaType: "image/jpeg", tabId: "t1" });
-    // The page is laid out at full size on every platform...
+    await manager.get("s1").page().evaluate("document.body.style.background = '#f0f0f0'");
+    // A screencast frame (the still-frame fallback has no timestamp).
+    const frame = await eventually(() =>
+      recorder.frames("s1").find((f) => f.metadata?.timestamp !== undefined),
+    );
+    expect(frame).toMatchObject({ mediaType: "image/jpeg", tabId: "t1", width: 1280, height: 800 });
     expect(await manager.get("s1").page().evaluate("[innerWidth, innerHeight]")).toEqual([
       1280, 800,
     ]);
-    // ...and the metadata says so, also on macOS, where Chromium reports frames capped to
-    // 640x400 as 640x400 and the runner normalizes them (frame-metadata.ts).
-    expect(frame?.metadata).toMatchObject({ deviceWidth: 1280, deviceHeight: 800 });
-    const size = jpegSize(Buffer.from(frame?.data ?? "", "base64"));
-    expect(size).toEqual({ width: frame?.width, height: frame?.height });
-    expect(frame?.width).toBeLessThanOrEqual(640);
+    expect(frame.metadata).toMatchObject({ deviceWidth: 1280, deviceHeight: 800 });
+    const size = jpegSize(Buffer.from(frame.data, "base64"));
+    expect(size).toEqual({ width: frame.width, height: frame.height });
 
     // A change on the page produces more frames (acks keep the stream flowing).
     const before = recorder.frames("s1").length;
