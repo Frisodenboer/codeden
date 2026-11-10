@@ -188,7 +188,8 @@ describe("reading the process table", () => {
   });
 });
 
-describe("removing a worktree an agent's dev server still runs in", () => {
+// Starts processes, reads the process table and removes a worktree: slow on Windows.
+describe("removing a worktree an agent's dev server still runs in", { timeout: 30_000 }, () => {
   const dirs: string[] = [];
   const homes: string[] = [];
   afterEach(async () => {

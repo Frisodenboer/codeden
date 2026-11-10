@@ -109,10 +109,25 @@ describe.skipIf(!hasBrowser)("session browser (panel routes, /ws/browser, agent 
       { type: "viewport", width: 460, height: 712, deviceScaleFactor: 2, mine: true },
     );
     // While the page resizes, Chromium can send one frame at the new width but a partial
-    // height (seen as 920x355): wait for a full-size one.
-    const frame = await viewer.waitFor(
-      (m) => m.type === "frame" && m.width === 920 && m.height === 1424,
-    );
+    // height (seen as 920x355), and a page that doesn't change sends no more frames: repaint it
+    // about once a second until a full-size frame arrives.
+    let polls = 0;
+    const frame = await waitUntil(async () => {
+      const full = viewer.messages.find(
+        (m) => m.type === "frame" && m.width === 920 && m.height === 1424,
+      );
+      if (full) return full;
+      polls += 1;
+      if (polls % 20 === 0) {
+        await mcp.callTool({
+          name: "browser_evaluate",
+          arguments: {
+            expression: `document.documentElement.style.backgroundColor = "${polls % 40 ? "#fefefe" : "#fff"}"`,
+          },
+        });
+      }
+      return undefined;
+    }, 20_000);
     expect(frame).toMatchObject({ type: "frame", mediaType: "image/jpeg" });
 
     const snap = text(await mcp.callTool({ name: "browser_snapshot", arguments: {} }));
