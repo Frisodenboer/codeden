@@ -11,16 +11,7 @@
 // for every target architecture), then run electron-builder on the stage. pnpm's symlinked
 // node_modules never reach the app.
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -36,7 +27,6 @@ const { values } = parseArgs({
   },
 });
 const archs = values.arch?.length ? values.arch : [process.arch];
-const readdirSafe = (dir) => (existsSync(dir) ? readdirSync(dir) : []);
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const require = createRequire(join(root, "package.json"));
 const electronVersion = JSON.parse(
@@ -113,17 +103,18 @@ if (missing.length) {
   ]);
 }
 
-// node-pty forks terminals through a prebuilt `spawn-helper` (macOS, Linux). npm doesn't keep
-// its executable bit when it extracts the package, and every terminal then fails with
-// "posix_spawnp failed". Restore it here, before electron-builder signs the app.
-const ptyRoot = join(stage, "node_modules", "node-pty");
-for (const dir of [
-  "build/Release",
-  ...readdirSafe(join(ptyRoot, "prebuilds")).map((d) => `prebuilds/${d}`),
-]) {
-  const helper = join(ptyRoot, dir, "spawn-helper");
-  if (existsSync(helper)) chmodSync(helper, 0o755);
-}
+// electron-builder bundles only the platform binaries the app declares itself (it skips
+// transitive optional ones), so declare the keychain module's binary for every target
+// architecture; without it the keychain doesn't load and saved API keys live in memory only.
+const stagePkgPath = join(stage, "package.json");
+const stagePkg = JSON.parse(readFileSync(stagePkgPath, "utf8"));
+stagePkg.optionalDependencies = Object.fromEntries(
+  archs
+    .map(keyringBinary)
+    .filter(Boolean)
+    .map((name) => [name, keyring.version]),
+);
+writeFileSync(stagePkgPath, `${JSON.stringify(stagePkg, null, 2)}\n`);
 
 // 3. Build.
 const platform = { win32: Platform.WINDOWS, darwin: Platform.MAC, linux: Platform.LINUX }[

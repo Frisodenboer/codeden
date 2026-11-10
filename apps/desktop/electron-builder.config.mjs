@@ -15,6 +15,31 @@
 // frameworks have no Team ID to match. scripts/check-mac-signature.sh verifies the result.
 // Only a Developer ID app can update itself on macOS.
 
+import { chmod, readdir } from "node:fs/promises";
+import { join } from "node:path";
+
+/**
+ * node-pty starts every terminal through a prebuilt `spawn-helper` (macOS, Linux). npm no
+ * longer runs node-pty's install script, which set its executable bit, so terminals failed
+ * with "posix_spawnp failed". Set it on the packed app, before it is signed.
+ */
+export async function makeSpawnHelperExecutable(context) {
+  const resources =
+    context.electronPlatformName === "darwin" || context.electronPlatformName === "mas"
+      ? join(
+          context.appOutDir,
+          `${context.packager.appInfo.productFilename}.app`,
+          "Contents",
+          "Resources",
+        )
+      : join(context.appOutDir, "resources");
+  const pty = join(resources, "app", "node_modules", "node-pty");
+  const prebuilds = await readdir(join(pty, "prebuilds")).catch(() => []);
+  for (const dir of ["build/Release", ...prebuilds.map((d) => `prebuilds/${d}`)]) {
+    await chmod(join(pty, dir, "spawn-helper"), 0o755).catch(() => undefined);
+  }
+}
+
 const macSigning = Boolean(process.env.CSC_LINK || process.env.CSC_NAME);
 const notarize = Boolean(
   macSigning &&
@@ -35,6 +60,7 @@ export default {
   // Native modules are Node-API (node-pty, @napi-rs/keyring): no rebuild for Electron needed.
   npmRebuild: false,
   files: ["**/*", "!**/*.map", "!**/*.d.ts"],
+  afterPack: makeSpawnHelperExecutable,
   protocols: [{ name: "CodeDen", schemes: ["codeden"] }],
   publish: [{ provider: "github", owner: "leonvanzyl", repo: "codeden", releaseType: "release" }],
   electronFuses: {

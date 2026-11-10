@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type MacConfig = {
@@ -51,6 +54,44 @@ describe("macOS signing (electron-builder config)", () => {
     expect(mac.identity).toBeUndefined();
     expect(mac.notarize).toBe(true);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "makes node-pty's spawn-helper executable in the packed app (afterPack)",
+    async () => {
+      const file = "../electron-builder.config.mjs";
+      const config = (await import(/* @vite-ignore */ file)) as {
+        default: { afterPack: unknown };
+        makeSpawnHelperExecutable: (context: object) => Promise<void>;
+      };
+      expect(config.default.afterPack).toBe(config.makeSpawnHelperExecutable);
+      const out = mkdtempSync(join(tmpdir(), "codeden-afterpack-"));
+      try {
+        const pty = join(
+          out,
+          "CodeDen.app",
+          "Contents",
+          "Resources",
+          "app",
+          "node_modules",
+          "node-pty",
+        );
+        const helpers = ["prebuilds/darwin-arm64", "prebuilds/darwin-x64"].map((d) => {
+          mkdirSync(join(pty, d), { recursive: true });
+          const helper = join(pty, d, "spawn-helper");
+          writeFileSync(helper, "", { mode: 0o644 });
+          return helper;
+        });
+        await config.makeSpawnHelperExecutable({
+          appOutDir: out,
+          electronPlatformName: "darwin",
+          packager: { appInfo: { productFilename: "CodeDen" } },
+        });
+        for (const helper of helpers) expect(statSync(helper).mode & 0o777).toBe(0o755);
+      } finally {
+        rmSync(out, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("signs with the Developer ID but skips notarization without the Apple account", async () => {
     const mac = await macConfig({ CSC_NAME: "Developer ID Application: Example (TEAMID1234)" });
