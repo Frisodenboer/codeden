@@ -212,12 +212,7 @@ export const browserOpenDevServer = defineTool({
       }
       port = servers[0]?.port as number;
     }
-    const { tab } = await services.browser.agentCommand({
-      name: "browser.devServer",
-      sessionId,
-      port,
-      path: input.path,
-    });
+    const { tab } = await services.browser.agentOpenDevServer(sessionId, port, input.path);
     return `Opened ${tab.url} in tab ${tab.tabId}. Use browser_snapshot to read it.`;
   },
 });

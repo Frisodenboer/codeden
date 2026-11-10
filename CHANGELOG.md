@@ -6,6 +6,10 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ### Added
 
+- **A real browser in the desktop app.** The browser panel now shows the session's browser as a native browser view instead of a streamed picture: native scrolling, text selection, typing with your input method, a right-click menu, full frame rate, and **⋯ › Inspect** for DevTools. Agents keep driving the same tabs, and the **Agent is acting** chip still shows when they do. Each session has its own cookies and storage. A phone or a plain browser tab watching the same session sees it streamed, as before. Browsers opened from a plain browser tab or a phone keep using the streamed view.
+- **Quitting the desktop app keeps your session browsers.** Each open tab moves to CodeDen's background browser at the same address, with its cookies, so agents can carry on. Anything you typed into a page and didn't save is lost. When you open the app again, those sessions stay on the streamed view; browsers you open from then on are native again.
+- **Settings › App › Native browser** turns native views on or off (on by default). Off brings back the streamed view for browsers opened from then on.
+- **Downloads from the session browser** in the desktop app go to your Downloads folder (never overwriting a file), with a notification when they finish.
 - **Refresh models.** A refresh button at the bottom of the model picker's provider rail asks the shown provider for its models again (on Favourites, every provider), for when a new model is out and the list hasn't caught up yet.
 - **Claude Fable 5.2 is priced** in usage reports ($8 / $40 per million input / output tokens), and so is the `fable` alias.
 

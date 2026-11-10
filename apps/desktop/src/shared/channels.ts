@@ -7,4 +7,9 @@ export const CHANNELS = {
   openExternal: "codeden:open-external",
   setBadge: "codeden:set-badge",
   navigate: "codeden:navigate",
+  browserShow: "codeden:browser-show",
+  browserHide: "codeden:browser-hide",
+  browserCapture: "codeden:browser-capture",
+  browserInspect: "codeden:browser-inspect",
+  browserShortcut: "codeden:browser-shortcut",
 } as const;

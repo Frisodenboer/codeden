@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
+  Code2,
   Monitor,
   MoreHorizontal,
   Plus,
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useClient } from "@/lib/api";
 import { VIEWPORTS } from "@/lib/browser-input";
+import { platform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import type { ViewportMode } from "./use-panel-viewport";
 import type { SessionBrowser } from "./use-session-browser";
@@ -35,16 +37,19 @@ const iconBtn = "text-muted-foreground";
 
 /**
  * Back / forward / reload, the address bar, the "Agent is acting" chip, and the viewport and
- * dev-server menus.
+ * dev-server menus. With a native view (`native`) the page has the panel's size and the menu
+ * offers DevTools instead of device sizes.
  */
 export function BrowserToolbar({
   sessionId,
   browser,
+  native = false,
   viewportMode,
   onViewportMode,
 }: {
   sessionId: string;
   browser: SessionBrowser;
+  native?: boolean;
   viewportMode: ViewportMode;
   onViewportMode: (mode: ViewportMode) => void;
 }) {
@@ -137,27 +142,20 @@ export function BrowserToolbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuLabel className="flex items-center gap-2 text-2xs">
-            <Monitor className="size-3.5" /> Viewport
-          </DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={viewportMode} onValueChange={setSize}>
-            <DropdownMenuRadioItem value="fit" className="text-xs">
-              Fit to panel
-              {viewportMode === "fit" && applied?.mine && (
-                <span className="ml-auto font-mono text-3xs text-muted-foreground">
-                  {applied.width}×{applied.height}
-                </span>
-              )}
-            </DropdownMenuRadioItem>
-            {VIEWPORTS.map((v) => (
-              <DropdownMenuRadioItem key={v.id} value={v.id} className="text-xs">
-                {v.label}
-                <span className="ml-auto font-mono text-3xs text-muted-foreground">
-                  {v.width}×{v.height}
-                </span>
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
+          {native ? (
+            <DropdownMenuItem
+              className="text-xs"
+              onSelect={() => platform.nativeBrowser?.inspect(sessionId)}
+            >
+              <Code2 /> Inspect
+            </DropdownMenuItem>
+          ) : (
+            <ViewportItems
+              mode={viewportMode}
+              onMode={setSize}
+              applied={applied?.mine ? applied : null}
+            />
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="text-xs"
@@ -177,6 +175,44 @@ export function BrowserToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
     </form>
+  );
+}
+
+/** Fit to panel, or a fixed device size (screencast only: a native view has the panel's size). */
+function ViewportItems({
+  mode,
+  onMode,
+  applied,
+}: {
+  mode: ViewportMode;
+  onMode: (id: string) => void;
+  /** The applied size when the page follows this panel. */
+  applied: { width: number; height: number } | null;
+}) {
+  return (
+    <>
+      <DropdownMenuLabel className="flex items-center gap-2 text-2xs">
+        <Monitor className="size-3.5" /> Viewport
+      </DropdownMenuLabel>
+      <DropdownMenuRadioGroup value={mode} onValueChange={onMode}>
+        <DropdownMenuRadioItem value="fit" className="text-xs">
+          Fit to panel
+          {mode === "fit" && applied && (
+            <span className="ml-auto font-mono text-3xs text-muted-foreground">
+              {applied.width}×{applied.height}
+            </span>
+          )}
+        </DropdownMenuRadioItem>
+        {VIEWPORTS.map((v) => (
+          <DropdownMenuRadioItem key={v.id} value={v.id} className="text-xs">
+            {v.label}
+            <span className="ml-auto font-mono text-3xs text-muted-foreground">
+              {v.width}×{v.height}
+            </span>
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
+    </>
   );
 }
 

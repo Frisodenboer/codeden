@@ -1,6 +1,5 @@
 import { rmSync } from "node:fs";
 import {
-  BrowserWsQuery,
   CODEDEN_VERSION,
   type RunnerConnectionStatus,
   type ServerLock,
@@ -19,7 +18,7 @@ import type { InterfaceMap } from "./network/addresses";
 import { HttpListener } from "./network/listener";
 import { RemoteAccessStore } from "./network/store";
 import { ensureHome, type HomePaths } from "./paths";
-import { BrowserBridge } from "./realtime/browser";
+import { BROWSER_LOOPBACK_ONLY_PATHS, mountBrowserSockets } from "./realtime/browser-routes";
 import { WsHub } from "./realtime/hub";
 import { TerminalBridge } from "./realtime/terminals";
 import { createApi } from "./routes/api";
@@ -239,8 +238,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       allowedOrigins,
       // `/mcp` authenticates agents with per-session tokens instead of the install token.
       publicPaths: new Set(["/api/health", "/mcp"]),
-      // Agents only: never reachable from another device, even with network access on.
-      loopbackOnlyPaths: new Set(["/mcp"]),
+      // Agents and the desktop app only: never reachable from another device.
+      loopbackOnlyPaths: new Set(["/mcp", ...BROWSER_LOOPBACK_ONLY_PATHS]),
       remote: {
         enabled: () => network.enabled,
         ownHosts: () => network.ownHosts(),
@@ -284,15 +283,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       return c.json({ error: { code: "bad_request", message: "Invalid terminal query" } }, 400);
     return upgradeWebSocket(() => terminals.handlers(query.data))(c, next);
   });
-  const browserBridge = new BrowserBridge({ browser: services.browser, log });
-  app.get("/ws/browser", async (c, next) => {
-    const query = BrowserWsQuery.safeParse(c.req.query());
-    if (!query.success)
-      return c.json({ error: { code: "bad_request", message: "Invalid browser query" } }, 400);
-    if (!services.sessionRepo.find(query.data.sessionId))
-      return c.json({ error: { code: "session_not_found", message: "No such session" } }, 404);
-    return upgradeWebSocket(() => browserBridge.handlers(query.data))(c, next);
-  });
+  const browserBridge = mountBrowserSockets(app, services, log);
   mountWeb(app, findWebDir(opts.webDir));
 
   if (network.store.enabled && !network.store.passwordSet) {

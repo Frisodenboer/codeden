@@ -104,6 +104,7 @@ test("the desktop app starts, bridges, tracks, follows links and quits cleanly",
     }));
     expect(shape).toEqual({
       bridge: [
+        "browser",
         "info",
         "notify",
         "onNavigate",
@@ -120,7 +121,7 @@ test("the desktop app starts, bridges, tracks, follows links and quits cleanly",
         window as unknown as { codedenDesktop: { info(): Promise<Record<string, unknown>> } }
       ).codedenDesktop.info(),
     );
-    expect(info).toMatchObject({ packaged: true, ownsServer: true });
+    expect(info).toMatchObject({ packaged: true, ownsServer: true, nativeBrowser: true });
   });
 
   await test.step("the tray reads live counts from the server", async () => {

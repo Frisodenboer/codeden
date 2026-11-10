@@ -45,7 +45,8 @@ export function httpBrowserApi(http: Fetcher, wsBase: string): BrowserApi {
   const base = (id: string) => `/sessions/${enc(id)}/browser`;
   return {
     openChannel: (sessionId, opts) => openBrowserSocket(wsBase, sessionId, opts),
-    open: (id, url) => post(`${base(id)}/open`, { url }, (v) => BrowserOpenResponse.parse(v)),
+    open: (id, url, native) =>
+      post(`${base(id)}/open`, { url, native }, (v) => BrowserOpenResponse.parse(v)),
     async close(id) {
       await post(`${base(id)}/close`);
     },

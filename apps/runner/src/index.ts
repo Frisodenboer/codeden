@@ -1,6 +1,6 @@
 /** @codeden/runner public API (the process entry is `main.ts`). */
 
-export { findInstalledChannels } from "./browser/launcher";
+export { findInstalledChannels, type LaunchedBrowser, launchChromium } from "./browser/launcher";
 export { executeCommand, type RunnerCore } from "./commands";
 export { requestShutdown, stopRunner } from "./control";
 export { CommandError } from "./errors";

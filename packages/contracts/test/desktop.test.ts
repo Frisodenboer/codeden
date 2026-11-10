@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ActivitySummary,
+  BrowserHostClientMessage,
+  BrowserHostServerMessage,
   type DeepLinkTarget,
   DesktopHostMessage,
   DesktopInfo,
@@ -11,6 +13,9 @@ import {
   deepLinkUrl,
   defaultSettings,
   InstallSource,
+  NATIVE_BROWSER_APP_SHORTCUTS,
+  NativeBrowserShortcut,
+  NativeBrowserShow,
   parseDeepLink,
   Settings,
   summarizeActivity,
@@ -142,6 +147,105 @@ describe("desktop bridge payloads", () => {
     const n: DesktopNotification = { title: "Approval needed", body: "rm -rf dist", tag: "i1" };
     expect(DesktopNotification.parse(n)).toEqual(n);
     expect(DesktopNotification.safeParse({ title: "" }).success).toBe(false);
+    // Older apps don't report native browser support.
+    expect(DesktopInfo.parse({ ...info, nativeBrowser: true }).nativeBrowser).toBe(true);
+    expect(DesktopInfo.parse(info).nativeBrowser).toBeUndefined();
+  });
+
+  it("validates native view placement and forwarded shortcuts", () => {
+    const show: NativeBrowserShow = {
+      sessionId: "s1",
+      bounds: { x: 812.5, y: 96, width: 460, height: 700.25 },
+    };
+    expect(NativeBrowserShow.parse(JSON.parse(JSON.stringify(show)))).toEqual(show);
+    for (const bad of [
+      { sessionId: "s1", bounds: { x: 0, y: 0, width: -1, height: 10 } },
+      { sessionId: "s1", bounds: { x: 0, y: 0, width: 10, height: Number.NaN } },
+      { sessionId: "s1", bounds: { x: 1e9, y: 0, width: 10, height: 10 } },
+      { sessionId: "", bounds: { x: 0, y: 0, width: 10, height: 10 } },
+    ]) {
+      expect(NativeBrowserShow.safeParse(bad).success).toBe(false);
+    }
+    const key: NativeBrowserShortcut = {
+      key: "k",
+      code: "KeyK",
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+    };
+    expect(NativeBrowserShortcut.parse(key)).toEqual(key);
+    // Only combos with a modifier: plain typing always stays in the page.
+    for (const combo of NATIVE_BROWSER_APP_SHORTCUTS) expect(combo).toMatch(/^(mod|alt)\+/);
+  });
+});
+
+describe("browser host channel", () => {
+  const relay = {
+    url: "ws://127.0.0.1:51234/cdp/s1",
+    secret: "a".repeat(64),
+  };
+
+  it("round-trips every message in both directions", () => {
+    const fromApp: BrowserHostClientMessage[] = [
+      { type: "hello", version: "0.5.0" },
+      { type: "attached", id: "r1", relay },
+      { type: "failed", id: "r2", message: "The window is closing" },
+      {
+        type: "handoff",
+        id: "h1",
+        sessions: [
+          {
+            sessionId: "s1",
+            tabs: [
+              { url: "http://localhost:5173/", active: true },
+              { url: "https://example.com/a", active: false },
+            ],
+            cookies: [
+              {
+                name: "sid",
+                value: "abc",
+                domain: "localhost",
+                path: "/",
+                httpOnly: true,
+                secure: false,
+                sameSite: "Lax",
+              },
+              {
+                name: "keep",
+                value: "1",
+                domain: ".example.com",
+                path: "/",
+                expires: 1_900_000_000,
+                httpOnly: false,
+                secure: true,
+                sameSite: "None",
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    for (const m of fromApp) {
+      expect(BrowserHostClientMessage.parse(JSON.parse(JSON.stringify(m)))).toEqual(m);
+    }
+    const fromServer: BrowserHostServerMessage[] = [
+      { type: "attach", id: "r1", sessionId: "s1" },
+      { type: "handoff.done", id: "h1", failed: ["s2"] },
+    ];
+    for (const m of fromServer) {
+      expect(BrowserHostServerMessage.parse(JSON.parse(JSON.stringify(m)))).toEqual(m);
+    }
+  });
+
+  it("accepts only loopback relays with a real secret", () => {
+    const attached = (r: object) =>
+      BrowserHostClientMessage.safeParse({ type: "attached", id: "r1", relay: r }).success;
+    expect(attached(relay)).toBe(true);
+    expect(attached({ ...relay, url: "ws://0.0.0.0:51234/cdp/s1" })).toBe(false);
+    expect(attached({ ...relay, url: "ws://192.168.1.4:51234/cdp/s1" })).toBe(false);
+    expect(attached({ ...relay, url: "ws://127.0.0.1:51234/cdp/../x" })).toBe(false);
+    expect(attached({ ...relay, secret: "short" })).toBe(false);
   });
 });
 
@@ -151,12 +255,19 @@ describe("desktop settings", () => {
       launchAtLogin: false,
       closeToTray: true,
       keepAwake: true,
+      nativeBrowser: true,
     });
   });
 
   it("keeps older settings files valid and round-trips changes", () => {
     const parsed = Settings.parse({ desktop: { launchAtLogin: true } });
-    expect(parsed.desktop).toEqual({ launchAtLogin: true, closeToTray: true, keepAwake: true });
+    expect(parsed.desktop).toEqual({
+      launchAtLogin: true,
+      closeToTray: true,
+      keepAwake: true,
+      nativeBrowser: true,
+    });
+    expect(Settings.parse({ desktop: { nativeBrowser: false } }).desktop.nativeBrowser).toBe(false);
     expect(Settings.parse(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
   });
 });

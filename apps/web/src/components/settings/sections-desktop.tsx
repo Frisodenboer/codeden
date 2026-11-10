@@ -50,6 +50,18 @@ export function DesktopSettings() {
           onCheckedChange={(keepAwake) => update({ desktop: { keepAwake } })}
         />
       </SettingRow>
+      {platform.capabilities.nativeBrowser && (
+        <SettingRow
+          label="Native browser"
+          help="Show session browsers as real browser views in the panel: native scrolling, text selection and DevTools. Off uses the streamed view. Applies to browsers opened from now on."
+        >
+          <Switch
+            data-testid="native-browser"
+            checked={desktop.nativeBrowser}
+            onCheckedChange={(nativeBrowser) => update({ desktop: { nativeBrowser } })}
+          />
+        </SettingRow>
+      )}
     </SettingsSection>
   );
 }

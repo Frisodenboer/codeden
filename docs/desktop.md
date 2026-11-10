@@ -36,7 +36,7 @@ Then the window opens on the UI, already signed in. A first launch shows the sam
 
 - **Closing the window** keeps CodeDen running in the tray (Windows, Linux) or menu bar (macOS), so agents, automations and notifications carry on. Click the tray icon (or choose **Open CodeDen**) to bring it back. Turn this off under **Settings > App > Keep running in the tray**.
 - **The tray** shows how many agents are running and how many are waiting on you, plus the inbox count, and has **Open the inbox**, the next update step when there is one, and **Quit CodeDen**.
-- **Quit** really quits: it closes the window and the server. Like stopping `codeden` with Ctrl+C, the **runner keeps running**, so agents in the middle of a turn finish it, and the next launch picks everything up again. To stop the agents too, run `npx codeden stop` (or stop the sessions first).
+- **Quit** really quits: it closes the window and the server. Like stopping `codeden` with Ctrl+C, the **runner keeps running**, so agents in the middle of a turn finish it, and the next launch picks everything up again. Open session browsers move to the runner's own browser first (see [The session browser](#the-session-browser)). To stop the agents too, run `npx codeden stop` (or stop the sessions first).
 - **Badge.** The number of things waiting on you appears on the app icon (the dock on macOS, a dot on the taskbar button on Windows, the launcher on Linux desktops that support it).
 - **Notifications** are the system's own (Settings > Notifications > System notifications). Clicking one brings the window to the front on the right page.
 - **Keep awake.** While an agent is running, CodeDen keeps the computer from going to sleep (the screen can still turn off). Settings > App > Keep the computer awake.
@@ -66,6 +66,19 @@ The app registers `codeden://` links:
 
 Opening a link while CodeDen runs brings the window to the front on that page; otherwise it starts CodeDen there. Only one copy of the app runs per data folder.
 
+## The session browser
+
+In the desktop app the browser panel is a real browser: each tab of a session's browser is a native browser view laid over the panel, not a streamed picture. Scrolling, text selection, typing (including with an input method), the right-click menu, `<select>` pop-ups and drag and drop all work as in any browser, at full frame rate. Agents drive the same tabs with the same tools, and the **Agent is acting** chip shows while they do.
+
+- **The toolbar** works as with the streamed view: address bar, back, forward, reload, tabs, dev servers, **New tab** and **Close browser**. **⋯ › Inspect** opens DevTools for the page (also F12, or Ctrl+Shift+I; Cmd+Option+I on macOS). The page always has the panel's size, so the device-size presets are only offered for the streamed view.
+- **Keys** typed into the page stay in the page, except CodeDen's own shortcuts (the command palette, panel and sidebar toggles, Alt+1 to Alt+6, and the rest with Ctrl/Cmd or Alt), which still reach CodeDen. F5 or Ctrl+R reloads, Alt+Left and Alt+Right go back and forward (Cmd+[ and Cmd+] on macOS).
+- **Menus over the page.** A native view is drawn on top of the window, so while a menu, a dialog, the command palette or a tooltip overlaps it, the view steps aside and a still picture of the page takes its place until the menu closes. Notifications move to the bottom left while a native view is on screen.
+- **Each session is separate.** Every session has its own cookies and storage, kept in memory and dropped when its browser closes, as in the runner's browser. Pop-ups and links that open a new window become tabs of the same session.
+- **What a page may do.** Pages can copy to the clipboard and nothing else: no camera, microphone, location, notifications or devices. They can't open `file://`, `chrome://` or `devtools://` pages. Downloads go to your Downloads folder (a file is never overwritten) and a notification tells you when one finishes.
+- **Who gets a native browser.** A session's browser opens on native views when it is opened from the app's window, or by an agent while the app is running. Opened from a plain browser tab or a phone, it opens in the runner's own browser (the streamed view). An open browser keeps its kind until it closes. A phone or browser tab watching a native session sees it streamed, fitted into its screen; it never resizes the page in the app.
+- **Quitting the app** moves each open tab of a session to the runner's own browser, at the same address and with its cookies, so agents can carry on. Anything typed into a page and not saved is lost. If the app crashes, the tabs reopen at their last address, without cookies. After you open the app again, those sessions stay on the streamed view; browsers opened from then on are native.
+- **Settings › App › Native browser** (on by default) switches native views off for browsers opened from then on; they use the streamed view instead.
+
 ## Updates
 
 The desktop app updates itself from GitHub Releases, following **Settings > General > Updates**:
@@ -86,6 +99,8 @@ Notes:
 |---|---|
 | Your data (database, settings, worktrees, logs) | `~/.codeden` (shared with `npx codeden`; `CODEDEN_HOME` or `--home` to change it) |
 | The app's own profile (window state, cookies, cache) | `~/.codeden/desktop` |
+| Session browser cookies and storage (native views) | In memory only, per session; gone when the session's browser closes or the app quits (after the hand-off) |
+| Downloads from the session browser | Your Downloads folder |
 | App logs | `~/.codeden/logs/desktop.log` and `desktop-server.log` (Help > Show Logs) |
 | Claude Code support (installed on first use) | `~/.codeden/deps` |
 | The app itself | Windows: `%LOCALAPPDATA%\Programs\CodeDen`; macOS: `/Applications/CodeDen.app`; Linux: wherever you keep the AppImage, or `/opt/CodeDen` for the `.deb` |
@@ -107,7 +122,7 @@ CodeDen [--home <dir>] [--port <n>] [--hidden] [codeden://...]
 
 ## Security
 
-The window shows only the local server's UI: it is sandboxed and isolated from Node.js, the page gets a small, typed bridge for notifications, the badge, the folder picker and links, and every call is checked in the app. Navigation away from the local server is blocked; other links open in your browser. The page may use notifications, the microphone (dictation) and the clipboard, and nothing else. The app never opens a debugging port. Everything else is as described in [Security](security.md): loopback only by default, the per-install token, no telemetry.
+The window shows only the local server's UI: it is sandboxed and isolated from Node.js, the page gets a small, typed bridge for notifications, the badge, the folder picker and links, and every call is checked in the app. Navigation away from the local server is blocked; other links open in your browser. The page may use notifications, the microphone (dictation) and the clipboard, and nothing else. The app never opens a debugging port: the runner reaches a session's native browser views through a separate connection for that session (127.0.0.1 only, a random secret per session, refused for web pages), which sees only that session's tabs and never the CodeDen window. The views are sandboxed, have no access to Node.js or the app's bridge, and use a separate in-memory profile per session, never the window's own (which holds CodeDen's sign-in). Everything else is as described in [Security](security.md): loopback only by default, the per-install token, no telemetry.
 
 ## Phones and tablets
 

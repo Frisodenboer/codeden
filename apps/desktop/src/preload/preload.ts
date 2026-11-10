@@ -23,6 +23,13 @@ const api: CodedenDesktopApi = {
   openExternal: (url) => ipcRenderer.send(CHANNELS.openExternal, url),
   setBadge: (count) => ipcRenderer.send(CHANNELS.setBadge, count),
   onNavigate: (listener) => subscribe(CHANNELS.navigate, listener),
+  browser: {
+    show: (sessionId, bounds) => ipcRenderer.send(CHANNELS.browserShow, { sessionId, bounds }),
+    hide: (sessionId) => ipcRenderer.send(CHANNELS.browserHide, sessionId),
+    capture: (sessionId) => ipcRenderer.invoke(CHANNELS.browserCapture, sessionId),
+    inspect: (sessionId) => ipcRenderer.send(CHANNELS.browserInspect, sessionId),
+    onShortcut: (listener) => subscribe(CHANNELS.browserShortcut, listener),
+  },
 };
 
 contextBridge.exposeInMainWorld("codedenDesktop", api);

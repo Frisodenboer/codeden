@@ -1,4 +1,4 @@
-import type { BrowserServerMessage, BrowserTab } from "@codeden/contracts";
+import type { BrowserEngine, BrowserServerMessage, BrowserTab } from "@codeden/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApiRequestError, useClient } from "@/lib/api";
@@ -13,6 +13,8 @@ export interface SessionBrowser {
   open: boolean | null;
   tabs: BrowserTab[];
   activeTab: BrowserTab | undefined;
+  /** What backs the open browser: native views in the desktop app, or the runner's Chromium. */
+  engine: BrowserEngine | null;
   /** The page's viewport, and whether it follows this panel (`mine`). Null until known. */
   viewport: AppliedViewport | null;
   /** An agent is driving the browser right now (or was a moment ago). */
@@ -34,13 +36,16 @@ export function isBrowserNotOpen(error: unknown): boolean {
 /**
  * Live state of a session's browser (§12.2): one `/ws/browser` viewer socket for frames,
  * tabs and open/close state, plus the REST commands, with `409 browser_not_open` handled.
+ * `native`: this panel can show native views (the desktop app, §17 Phase 2), so opens prefer
+ * them and frames only come for a browser on the runner's Chromium.
  */
-export function useSessionBrowser(sessionId: string): SessionBrowser {
+export function useSessionBrowser(sessionId: string, native = false): SessionBrowser {
   const client = useClient();
   const [channel, setChannel] = useState<BrowserChannel | null>(null);
   const [connection, setConnection] = useState<BrowserConnection>("connecting");
   const [open, setOpen] = useState<boolean | null>(null);
   const [tabs, setTabs] = useState<BrowserTab[]>([]);
+  const [engine, setEngine] = useState<BrowserEngine | null>(null);
   const [viewport, setViewport] = useState<AppliedViewport | null>(null);
   const [agentActing, setAgentActing] = useState(false);
   const frameListeners = useRef(new Set<(f: FrameMessage) => void>());
@@ -58,9 +63,10 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
   // biome-ignore lint/correctness/useExhaustiveDependencies: `generation` reconnects after close.
   useEffect(() => {
     // Frame size and quality follow the panel's viewport (runner defaults).
-    const ch = client.browser.openChannel(sessionId);
+    const ch = client.browser.openChannel(sessionId, native ? { native } : undefined);
     setChannel(ch);
     setOpen(null);
+    setEngine(null);
     setViewport(null);
     setAgentActing(false);
     lastFrame.current = null;
@@ -69,6 +75,7 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
       if (msg.type === "state") {
         setOpen(msg.open);
         setTabs(msg.tabs);
+        setEngine(msg.open ? (msg.engine ?? "runner") : null);
         if (!msg.open) setAgentActing(false);
       } else if (msg.type === "viewport") {
         const { type: _t, ...applied } = msg;
@@ -86,6 +93,7 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
         }
         setOpen(true);
         setTabs(msg.tabs);
+        if (msg.engine) setEngine(msg.engine);
       } else if (msg.type === "frame") {
         lastFrame.current = msg;
         for (const l of frameListeners.current) l(msg);
@@ -101,7 +109,7 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
       ch.close();
       setChannel(null);
     };
-  }, [client, sessionId, generation]);
+  }, [client, sessionId, generation, native]);
 
   return useMemo(() => {
     const run = async <T>(label: string, action: () => Promise<T>): Promise<T | undefined> => {
@@ -121,6 +129,7 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
       open,
       tabs,
       activeTab: tabs.find((t) => t.active) ?? tabs[0],
+      engine,
       viewport,
       agentActing,
       channel,
@@ -130,7 +139,7 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
         // Over the viewer socket, so opening and watching happen together server-side.
         if (channel) return channel.open(url);
         const res = await run("Couldn't open the browser", () =>
-          client.browser.open(sessionId, url),
+          client.browser.open(sessionId, url, native || undefined),
         );
         if (res) setTabs(res.tabs);
       },
@@ -142,5 +151,17 @@ export function useSessionBrowser(sessionId: string): SessionBrowser {
         setGeneration((g) => g + 1);
       },
     } satisfies SessionBrowser;
-  }, [client, sessionId, channel, connection, open, tabs, viewport, agentActing, onFrame]);
+  }, [
+    client,
+    sessionId,
+    native,
+    channel,
+    connection,
+    open,
+    tabs,
+    engine,
+    viewport,
+    agentActing,
+    onFrame,
+  ]);
 }

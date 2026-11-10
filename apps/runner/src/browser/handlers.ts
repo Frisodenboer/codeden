@@ -39,8 +39,17 @@ export function createBrowserCommandHandlers(deps: BrowserCommandDeps): BrowserC
   const { manager } = deps;
   const handlers: Handlers = {
     "browser.open": async (c) => {
-      const session = await manager.open(c.sessionId, c.url);
-      return { cdpUrl: manager.cdpUrl, tabs: session.listTabs() };
+      const session = await manager.open(c.sessionId, c.url, c.relay);
+      const native = session.engine === "native";
+      return {
+        cdpUrl: native ? null : manager.cdpUrl,
+        tabs: session.listTabs(),
+        engine: session.engine,
+      };
+    },
+    "browser.handoff": async (c) => {
+      const session = await manager.handoff(c.sessionId, c.tabs, c.cookies);
+      return { tabs: session.listTabs() };
     },
     "browser.navigate": (c) => manager.get(c.sessionId).navigate(c.url, c.tabId),
     "browser.close": async (c) => {
@@ -50,7 +59,10 @@ export function createBrowserCommandHandlers(deps: BrowserCommandDeps): BrowserC
     "browser.history": async (c) => ({
       url: await manager.get(c.sessionId).history(c.action, c.tabId),
     }),
-    "browser.tabs.list": async (c) => ({ tabs: manager.get(c.sessionId).listTabs() }),
+    "browser.tabs.list": async (c) => {
+      const session = manager.get(c.sessionId);
+      return { tabs: session.listTabs(), engine: session.engine };
+    },
     "browser.tabs.open": async (c) => ({ tab: await manager.get(c.sessionId).openTab(c.url) }),
     "browser.tabs.close": async (c) => {
       await manager.get(c.sessionId).closeTab(c.tabId);
@@ -60,12 +72,15 @@ export function createBrowserCommandHandlers(deps: BrowserCommandDeps): BrowserC
       await manager.get(c.sessionId).activate(c.tabId);
       return {};
     },
-    "browser.viewport": (c) =>
-      manager.setViewport(c.sessionId, {
+    "browser.viewport": async (c) => {
+      const applied = await manager.setViewport(c.sessionId, {
         width: c.width,
         height: c.height,
         deviceScaleFactor: c.deviceScaleFactor,
-      }),
+      });
+      // Native views follow the desktop panel: viewers fit the frames instead.
+      return manager.get(c.sessionId).engine === "native" ? { ...applied, fixed: true } : applied;
+    },
     "browser.screencast": async (c) => {
       const { quality, maxWidth, maxHeight, maxFps } = c;
       const session = manager.get(c.sessionId);

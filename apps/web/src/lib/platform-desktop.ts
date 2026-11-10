@@ -19,6 +19,11 @@ export function createDesktopPlatform(api: CodedenDesktopApi, web: PlatformBridg
     handler?.();
   });
   let loginSupport: Promise<boolean> | undefined;
+  // A native view swallows keys; CodeDen's own shortcuts come back here and are replayed on
+  // the window, where the shortcut handlers listen.
+  api.browser?.onShortcut((s) => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { ...s, bubbles: true, cancelable: true }));
+  });
 
   return {
     capabilities: {
@@ -27,7 +32,9 @@ export function createDesktopPlatform(api: CodedenDesktopApi, web: PlatformBridg
       clipboardImages: web.capabilities.clipboardImages,
       folderPicker: true,
       osIntegration: true,
+      nativeBrowser: Boolean(api.browser),
     },
+    nativeBrowser: api.browser ?? null,
     notificationPermission: () => "granted",
     requestNotificationPermission: async () => "granted",
     notify(title, opts) {

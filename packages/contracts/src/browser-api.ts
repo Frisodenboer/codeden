@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Id } from "./common";
 import {
   BrowserCommandResults,
+  BrowserEngine,
   BrowserFrameMetadata,
   BrowserInput,
   BrowserTab,
@@ -14,19 +15,33 @@ import {
  * the session's own browser context in the runner.
  */
 
-/** `POST /api/sessions/:id/browser/open`: open (or reuse) the context, optionally at `url`. */
-export const BrowserOpenRequest = z.object({ url: z.string().min(1).max(8_000).optional() });
+/**
+ * `POST /api/sessions/:id/browser/open`: open (or reuse) the context, optionally at `url`.
+ * `native`: the desktop app's window asks; a session with no browser yet opens on native views
+ * when the desktop app offers them (§17), else on the runner's Chromium.
+ */
+export const BrowserOpenRequest = z.object({
+  url: z.string().min(1).max(8_000).optional(),
+  native: z.boolean().optional(),
+});
 export type BrowserOpenRequest = z.infer<typeof BrowserOpenRequest>;
 
 export const BrowserOpenResponse = z.object({
   /** CDP endpoint on 127.0.0.1 (for diagnostics; the panel never connects to it). */
   cdpUrl: z.string().nullable(),
   tabs: z.array(BrowserTab),
+  /** What backs the browser; absent from older servers (`runner`). */
+  engine: BrowserEngine.optional(),
 });
 export type BrowserOpenResponse = z.infer<typeof BrowserOpenResponse>;
 
 /** `GET /api/sessions/:id/browser/tabs`. `open` is false when the session has no browser. */
-export const BrowserTabsResponse = z.object({ open: z.boolean(), tabs: z.array(BrowserTab) });
+export const BrowserTabsResponse = z.object({
+  open: z.boolean(),
+  tabs: z.array(BrowserTab),
+  /** What backs the browser while it is open. */
+  engine: BrowserEngine.optional(),
+});
 export type BrowserTabsResponse = z.infer<typeof BrowserTabsResponse>;
 
 /** `POST /api/sessions/:id/browser/tabs`: open a new tab. Response: `{ tab }`. */
@@ -89,10 +104,16 @@ export type DevServersResponse = z.infer<typeof DevServersResponse>;
  * Query of `/ws/browser`. One socket is one viewer of one session's browser. With
  * `open=1` the server opens the session's browser when it is not open yet; otherwise the
  * viewer waits and starts watching as soon as the agent (or another viewer) opens it.
+ *
+ * `native=1` comes from the desktop app's window, which can show native views itself (§17):
+ * opens prefer native views, and the viewer starts without frames. It still gets state, tabs
+ * and agent activity, and sends `watch` (and viewport reports) when the session's browser is on
+ * the runner's Chromium instead.
  */
 export const BrowserWsQuery = z.object({
   sessionId: Id,
   open: z.enum(["0", "1"]).optional(),
+  native: z.enum(["0", "1"]).optional(),
   quality: z.coerce.number().int().min(10).max(100).optional(),
   maxWidth: z.coerce.number().int().min(100).max(7680).optional(),
   maxHeight: z.coerce.number().int().min(100).max(4320).optional(),
@@ -150,6 +171,8 @@ export const BrowserServerMessage = z.discriminatedUnion("type", [
     open: z.boolean(),
     watching: z.boolean(),
     tabs: z.array(BrowserTab),
+    /** What backs the browser while it is open (absent from older servers: `runner`). */
+    engine: BrowserEngine.optional(),
   }),
   /** A screencast frame of the active tab. */
   z.object({
@@ -163,7 +186,11 @@ export const BrowserServerMessage = z.discriminatedUnion("type", [
     metadata: BrowserFrameMetadata.optional(),
   }),
   /** The session's tabs changed (opened, closed, activated, navigated, retitled). */
-  z.object({ type: z.literal("tabs"), tabs: z.array(BrowserTab) }),
+  z.object({
+    type: z.literal("tabs"),
+    tabs: z.array(BrowserTab),
+    engine: BrowserEngine.optional(),
+  }),
   /**
    * The viewport the runner applied (CSS pixels and device scale factor). `mine` is true when
    * it follows this viewer's panel, so the panel can fill edge to edge; other viewers fit the

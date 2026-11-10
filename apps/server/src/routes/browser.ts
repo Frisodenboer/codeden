@@ -19,9 +19,10 @@ import { jsonBody, queryOf } from "./validate";
 export function sessionBrowserRoutes(s: AppServices) {
   const b = s.browser;
   return new Hono()
-    .post("/:id/browser/open", jsonBody(BrowserOpenRequest), async (c) =>
-      c.json(await b.open(c.req.param("id"), c.req.valid("json").url)),
-    )
+    .post("/:id/browser/open", jsonBody(BrowserOpenRequest), async (c) => {
+      const { url, native } = c.req.valid("json");
+      return c.json(await b.open(c.req.param("id"), url, { native }));
+    })
     .post("/:id/browser/close", async (c) => {
       await b.command({ name: "browser.close", sessionId: c.req.param("id") });
       return c.json({ ok: true as const });
