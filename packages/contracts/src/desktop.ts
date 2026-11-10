@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Id, Timestamp } from "./common";
 import type { InboxItem } from "./entities/inbox";
 import type { Session } from "./entities/session";
+import { BrowserCookie, BrowserHandoffTab, BrowserRelayEndpoint } from "./runner/browser";
 
 /**
  * The desktop app (§17): an Electron shell around the same server and UI. Everything that
@@ -213,6 +214,11 @@ export const DesktopInfo = z.object({
   ownsServer: z.boolean(),
   /** The OS lets the app start at login (not on Linux AppImage, for example). */
   launchAtLoginSupported: z.boolean(),
+  /**
+   * The app can show session browsers as native views (§17 Phase 2), through
+   * `CodedenDesktopApi.browser`. Absent from older apps.
+   */
+  nativeBrowser: z.boolean().optional(),
 });
 export type DesktopInfo = z.infer<typeof DesktopInfo>;
 
@@ -244,4 +250,132 @@ export interface CodedenDesktopApi {
   setBadge(count: number): void;
   /** Called with a UI route (e.g. `/sessions/<id>`) when a `codeden://` link is opened. */
   onNavigate(listener: (path: string) => void): () => void;
+  /** Native browser views (§17 Phase 2); absent from older apps. */
+  browser?: CodedenDesktopBrowserApi;
 }
+
+// ---------------------------------------------------------------- native browser views
+
+/**
+ * Where a session's native view goes: the panel's content box in the UI page's CSS pixels
+ * (`getBoundingClientRect`). The main process scales it by the window's zoom and snaps it to
+ * device pixels.
+ */
+export const NativeBrowserBounds = z.object({
+  x: z.number().min(-16_384).max(16_384),
+  y: z.number().min(-16_384).max(16_384),
+  width: z.number().min(0).max(16_384),
+  height: z.number().min(0).max(16_384),
+});
+export type NativeBrowserBounds = z.infer<typeof NativeBrowserBounds>;
+
+/** `browser.show` over the bridge, validated in the main process. */
+export const NativeBrowserShow = z.object({ sessionId: Id, bounds: NativeBrowserBounds });
+export type NativeBrowserShow = z.infer<typeof NativeBrowserShow>;
+
+/**
+ * A CodeDen shortcut pressed while a native view had keyboard focus (the view would otherwise
+ * swallow it). The UI replays it as a `keydown` on its window.
+ */
+export const NativeBrowserShortcut = z.object({
+  key: z.string().min(1).max(40),
+  code: z.string().max(40),
+  ctrlKey: z.boolean(),
+  metaKey: z.boolean(),
+  altKey: z.boolean(),
+  shiftKey: z.boolean(),
+});
+export type NativeBrowserShortcut = z.infer<typeof NativeBrowserShortcut>;
+
+/**
+ * App shortcuts a focused native view hands to the UI instead of the page, as combos in the
+ * UI's shortcut registry format (`mod` is Ctrl, or Cmd on macOS). Only combos with Ctrl/Cmd or
+ * Alt: typing in the page is never taken away.
+ */
+export const NATIVE_BROWSER_APP_SHORTCUTS = [
+  "mod+k",
+  "mod+shift+l",
+  "mod+,",
+  "alt+o",
+  "alt+i",
+  "mod+b",
+  "mod+\\",
+  "mod+j",
+  "alt+1",
+  "alt+2",
+  "alt+3",
+  "alt+4",
+  "alt+5",
+  "alt+6",
+  "mod+.",
+  "mod+shift+m",
+  "alt+m",
+] as const;
+
+/**
+ * `window.codedenDesktop.browser`: shows a session's native browser view (one per tab, the
+ * active tab on top) over the panel. Tabs, navigation and agent tools go through the server and
+ * the runner, as for the screencast; this API only places the view, which the UI can't do.
+ */
+export interface CodedenDesktopBrowserApi {
+  /** Show the session's active view over `bounds` (and hide every other session's views). */
+  show(sessionId: string, bounds: NativeBrowserBounds): void;
+  /** Hide the session's views: the panel is hidden, or a menu or dialog covers it. */
+  hide(sessionId: string): void;
+  /** A PNG data URL of the session's active view, for a placeholder while it is hidden. */
+  capture(sessionId: string): Promise<string | null>;
+  /** Open DevTools for the session's active view. */
+  inspect(sessionId: string): void;
+  /** App shortcuts pressed while a native view had keyboard focus. */
+  onShortcut(listener: (shortcut: NativeBrowserShortcut) => void): () => void;
+}
+
+// ---------------------------------------------------------------- the browser host channel
+
+/**
+ * `/ws/browser-host`: the desktop app's main process offers native browser views to the server
+ * (§17 Phase 2). Loopback only, with the install token, in both directions of the app's two
+ * modes (it started the server, or attached to one `codeden` started). One app per home.
+ */
+
+/** Desktop app -> server. */
+export const BrowserHostClientMessage = z.discriminatedUnion("type", [
+  /** Sent once on connect: this app can host native views. */
+  z.object({ type: z.literal("hello"), version: z.string().max(100) }),
+  /** Answer to `attach`: the session's relay. */
+  z.object({ type: z.literal("attached"), id: z.string().max(100), relay: BrowserRelayEndpoint }),
+  /** Answer to `attach` when the app can't host the session (the server falls back). */
+  z.object({ type: z.literal("failed"), id: z.string().max(100), message: z.string().max(2_000) }),
+  /**
+   * The app is quitting: move these sessions to the runner's Chromium (tabs at their URLs, with
+   * their cookies). Answered with `handoff.done` once the runner has them, or not at all if the
+   * server is gone (the app quits after a timeout).
+   */
+  z.object({
+    type: z.literal("handoff"),
+    id: z.string().max(100),
+    sessions: z
+      .array(
+        z.object({
+          sessionId: Id,
+          tabs: z.array(BrowserHandoffTab).max(50),
+          cookies: z.array(BrowserCookie).max(5_000),
+        }),
+      )
+      .max(500),
+  }),
+]);
+export type BrowserHostClientMessage = z.infer<typeof BrowserHostClientMessage>;
+
+/** Server -> desktop app. */
+export const BrowserHostServerMessage = z.discriminatedUnion("type", [
+  /** Create (or reuse) the session's native browser and answer with its relay. */
+  z.object({ type: z.literal("attach"), id: z.string().max(100), sessionId: Id }),
+  /** The hand-off finished; `failed` lists sessions the runner could not take over. */
+  z.object({
+    type: z.literal("handoff.done"),
+    id: z.string().max(100),
+    failed: z.array(Id),
+  }),
+]);
+export type BrowserHostServerMessage = z.infer<typeof BrowserHostServerMessage>;

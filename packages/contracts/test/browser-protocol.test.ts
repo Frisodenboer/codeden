@@ -143,5 +143,47 @@ describe("browser protocol", () => {
       height: 1,
     });
     roundTrip(RunnerStream, { kind: "browser.tabs", sessionId: "s1", tabs: [tab] });
+    roundTrip(RunnerStream, { kind: "browser.tabs", sessionId: "s1", tabs: [], engine: "native" });
+  });
+
+  it("round-trips the native engine: relay opens, hand-off and fixed viewports", () => {
+    const relay = { url: "ws://127.0.0.1:50123/cdp/s1", secret: "f".repeat(64) };
+    roundTrip(RunnerCommand, { name: "browser.open", sessionId: "s1", relay });
+    roundTrip(RunnerCommand, {
+      name: "browser.handoff",
+      sessionId: "s1",
+      tabs: [{ url: "http://localhost:5173/", active: true }],
+      cookies: [
+        {
+          name: "sid",
+          value: "1",
+          domain: "localhost",
+          path: "/",
+          httpOnly: true,
+          secure: false,
+        },
+      ],
+    });
+    expect(() =>
+      RunnerCommand.parse({
+        name: "browser.open",
+        sessionId: "s1",
+        relay: { ...relay, url: "ws://10.0.0.2:50123/cdp/s1" },
+      }),
+    ).toThrow();
+    const tab = { tabId: "t1", url: "http://localhost:5173/", title: "App", active: true };
+    roundTrip(RunnerCommandResults["browser.open"], {
+      cdpUrl: null,
+      tabs: [tab],
+      engine: "native",
+    });
+    roundTrip(RunnerCommandResults["browser.handoff"], { tabs: [tab] });
+    roundTrip(RunnerCommandResults["browser.tabs.list"], { tabs: [tab], engine: "runner" });
+    roundTrip(RunnerCommandResults["browser.viewport"], {
+      width: 900,
+      height: 700,
+      deviceScaleFactor: 1.5,
+      fixed: true,
+    });
   });
 });

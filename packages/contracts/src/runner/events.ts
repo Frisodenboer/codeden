@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AgentEvent } from "../agent-events";
 import { ErrorInfo, Id } from "../common";
-import { BrowserFrameMetadata, BrowserTab, BrowserTabId } from "./browser";
+import { BrowserEngine, BrowserFrameMetadata, BrowserTab, BrowserTabId } from "./browser";
 import { CheckpointIndex, PtyId } from "./commands";
 
 /**
@@ -70,7 +70,15 @@ export const RunnerStream = z.discriminatedUnion("kind", [
     /** Viewport geometry at capture time, for mapping panel input onto the page. */
     metadata: BrowserFrameMetadata.optional(),
   }),
-  /** The session's tabs changed (opened, closed, activated, navigated, retitled). */
-  z.object({ kind: z.literal("browser.tabs"), sessionId: Id, tabs: z.array(BrowserTab) }),
+  /**
+   * The session's tabs changed (opened, closed, activated, navigated, retitled), or its engine
+   * did (hand-off to the runner's Chromium). An empty list means the browser closed.
+   */
+  z.object({
+    kind: z.literal("browser.tabs"),
+    sessionId: Id,
+    tabs: z.array(BrowserTab),
+    engine: BrowserEngine.optional(),
+  }),
 ]);
 export type RunnerStream = z.infer<typeof RunnerStream>;

@@ -272,6 +272,11 @@ export const Settings = z.object({
       closeToTray: z.boolean().default(true),
       /** Keep the computer from sleeping while an agent is running. */
       keepAwake: z.boolean().default(true),
+      /**
+       * Show session browsers as native browser views in the app (§17 Phase 2) instead of the
+       * screencast. Applies to browsers opened from then on; off falls back to the screencast.
+       */
+      nativeBrowser: z.boolean().default(true),
     })
     .prefault({}),
   /** First-run setup (§14): set once the user finishes the detection checklist. */

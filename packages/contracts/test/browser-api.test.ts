@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   BrowserClientMessage,
   BrowserNavigateRequest,
+  BrowserOpenRequest,
+  BrowserOpenResponse,
   BrowserServerMessage,
   BrowserTabsResponse,
   BrowserViewportRequest,
@@ -15,6 +17,23 @@ const roundTrip = <T>(schema: { parse: (v: unknown) => T }, value: T) =>
 const tab = { tabId: "t1", url: "http://localhost:5173/", title: "App", active: true };
 
 describe("browser panel contracts", () => {
+  it("carries the engine and the desktop window's native preference", () => {
+    roundTrip(BrowserOpenRequest, { native: true });
+    roundTrip(BrowserOpenResponse, { cdpUrl: null, tabs: [tab], engine: "native" });
+    roundTrip(BrowserTabsResponse, { open: true, tabs: [tab], engine: "native" });
+    roundTrip(BrowserServerMessage, {
+      type: "state",
+      viewerId: "ui-1",
+      open: true,
+      watching: false,
+      tabs: [tab],
+      engine: "native",
+    });
+    roundTrip(BrowserServerMessage, { type: "tabs", tabs: [tab], engine: "runner" });
+    expect(BrowserWsQuery.parse({ sessionId: "s1", native: "1" }).native).toBe("1");
+    expect(BrowserWsQuery.safeParse({ sessionId: "s1", native: "yes" }).success).toBe(false);
+  });
+
   it("round-trips routes and channel messages", () => {
     roundTrip(BrowserNavigateRequest, { url: "localhost:3000", tabId: "t1" });
     roundTrip(BrowserTabsResponse, { open: true, tabs: [tab] });

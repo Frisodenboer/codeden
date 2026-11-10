@@ -4,6 +4,7 @@ import type {
   RunnerCommandOf,
   RunnerCommandResult,
 } from "@codeden/contracts";
+import { CommandError } from "../errors";
 import * as agent from "./agent";
 import type { BrowserManager } from "./manager";
 
@@ -41,6 +42,9 @@ export function createBrowserCommandHandlers(deps: BrowserCommandDeps): BrowserC
     "browser.open": async (c) => {
       const session = await manager.open(c.sessionId, c.url);
       return { cdpUrl: manager.cdpUrl, tabs: session.listTabs() };
+    },
+    "browser.handoff": async () => {
+      throw new CommandError("unsupported", "This runner can't take over native browser views");
     },
     "browser.navigate": (c) => manager.get(c.sessionId).navigate(c.url, c.tabId),
     "browser.close": async (c) => {

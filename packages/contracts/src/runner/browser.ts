@@ -116,12 +116,83 @@ export const BrowserFrameMetadata = z.object({
 });
 export type BrowserFrameMetadata = z.infer<typeof BrowserFrameMetadata>;
 
+/**
+ * What backs a session's browser (§12.2): the runner's own Chromium (`runner`, shown as a
+ * screencast), or native views in the desktop app (`native`, §17 Phase 2), which the runner
+ * drives through the app's per-session CDP relay. Agents use the same primitives on both.
+ */
+export const BrowserEngine = z.enum(["runner", "native"]);
+export type BrowserEngine = z.infer<typeof BrowserEngine>;
+
+/** The header that carries a relay secret (never part of the URL, so it is never logged). */
+export const BROWSER_RELAY_SECRET_HEADER = "x-codeden-relay-secret";
+
+/**
+ * The desktop app's CDP relay for one session's native views (§17): a loopback WebSocket that
+ * sees only that session's views, never the CodeDen window. The runner connects with the
+ * secret in `BROWSER_RELAY_SECRET_HEADER`.
+ */
+export const BrowserRelayEndpoint = z.object({
+  /** `ws://127.0.0.1:<port>/cdp/<sessionId>`. */
+  url: z.string().regex(/^ws:\/\/127\.0\.0\.1:\d{1,5}\/cdp\/[A-Za-z0-9_-]{1,200}$/),
+  /** Random per-session secret. */
+  secret: z.string().min(32).max(200),
+});
+export type BrowserRelayEndpoint = z.infer<typeof BrowserRelayEndpoint>;
+
+/**
+ * A cookie carried from native views to the runner's Chromium when the desktop app quits
+ * (the subset of CDP `Network.CookieParam` both sides understand). `expires` is seconds since
+ * the epoch; absent for session cookies.
+ */
+export const BrowserCookie = z.object({
+  name: z.string().max(4_096),
+  value: z.string().max(16_384),
+  domain: z.string().min(1).max(1_000),
+  path: z.string().max(4_096),
+  expires: z.number().optional(),
+  httpOnly: z.boolean(),
+  secure: z.boolean(),
+  sameSite: z.enum(["Strict", "Lax", "None"]).optional(),
+});
+export type BrowserCookie = z.infer<typeof BrowserCookie>;
+
+/** A tab moved to the runner's Chromium on hand-off: reopened at its URL. */
+export const BrowserHandoffTab = z.object({
+  url: z.string().max(8_000),
+  /** The tab the panel showed. */
+  active: z.boolean(),
+});
+export type BrowserHandoffTab = z.infer<typeof BrowserHandoffTab>;
+
 const TabTarget = { sessionId: Id, tabId: BrowserTabId.optional() };
 
 /** `browser.*` commands (§12.2), spread into `RunnerCommand`. */
 export const BrowserCommands = [
-  /** Open (or reuse) the session's browser context; opens a first tab (at `url`) if none. */
-  z.object({ name: z.literal("browser.open"), sessionId: Id, url: z.string().optional() }),
+  /**
+   * Open (or reuse) the session's browser context; opens a first tab (at `url`) if none. With
+   * `relay`, a session that has no browser yet is backed by the desktop app's native views
+   * through that relay (`native` engine); without it, by the runner's Chromium. A session that
+   * is already open keeps its engine.
+   */
+  z.object({
+    name: z.literal("browser.open"),
+    sessionId: Id,
+    url: z.string().optional(),
+    relay: BrowserRelayEndpoint.optional(),
+  }),
+  /**
+   * Move the session's browser to the runner's own Chromium (the desktop app is quitting): its
+   * relay connection is dropped without closing the native views, `cookies` are added to a new
+   * context and each tab reopens at its URL. Unsaved page state is lost. Replaces whatever the
+   * session had open.
+   */
+  z.object({
+    name: z.literal("browser.handoff"),
+    sessionId: Id,
+    tabs: z.array(BrowserHandoffTab).max(50),
+    cookies: z.array(BrowserCookie).max(5_000),
+  }),
   /** Navigate a tab (default: the active one). Bare `host:port` gets `http://`. */
   z.object({ name: z.literal("browser.navigate"), ...TabTarget, url: z.string() }),
   /** Close the session's context and all its tabs. */
@@ -229,23 +300,36 @@ const TabResult = z.object({ tab: BrowserTab });
 
 /** Result schemas for `browser.*` commands, spread into `RunnerCommandResults`. */
 export const BrowserCommandResults = {
-  /** `cdpUrl` is the browser's CDP endpoint on 127.0.0.1. */
-  "browser.open": z.object({ cdpUrl: z.string().nullable(), tabs: z.array(BrowserTab).optional() }),
+  /**
+   * `cdpUrl` is the runner Chromium's CDP endpoint on 127.0.0.1 (null for native views).
+   * `engine` is absent from older runners (`runner`).
+   */
+  "browser.open": z.object({
+    cdpUrl: z.string().nullable(),
+    tabs: z.array(BrowserTab).optional(),
+    engine: BrowserEngine.optional(),
+  }),
+  "browser.handoff": z.object({ tabs: z.array(BrowserTab) }),
   "browser.navigate": z.object({
     url: z.string().optional(),
     status: z.int().nullable().optional(),
   }),
   "browser.close": Empty,
   "browser.history": z.object({ url: z.string() }),
-  "browser.tabs.list": z.object({ tabs: z.array(BrowserTab) }),
+  "browser.tabs.list": z.object({ tabs: z.array(BrowserTab), engine: BrowserEngine.optional() }),
   "browser.tabs.open": TabResult,
   "browser.tabs.close": Empty,
   "browser.tabs.activate": Empty,
-  /** The viewport the runner applied after clamping (absent from older runners). */
+  /**
+   * The viewport the runner applied after clamping (absent from older runners). `fixed`: the
+   * size is not emulated and can't follow a viewer (native views follow the desktop panel), so
+   * every viewer fits the frames inside its panel.
+   */
   "browser.viewport": z.object({
     width: z.int().positive().optional(),
     height: z.int().positive().optional(),
     deviceScaleFactor: z.number().positive().optional(),
+    fixed: z.boolean().optional(),
   }),
   "browser.screencast": z.object({ viewers: z.int().nonnegative() }),
   "browser.input": Empty,
