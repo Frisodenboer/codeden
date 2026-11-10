@@ -60,12 +60,34 @@ export const messagePm = defineTool({
     projectId: z.string().min(1),
     text: z.string().min(1).max(20_000),
   }),
-  handler: async ({ projectId, text }, { services }) => {
+  handler: async ({ projectId, text }, { services, caller, sessionId }) => {
     const project = projectFor(services, projectId);
-    const res = await services.orchestration.messagePm(projectId, text);
+    const res = await services.orchestration.messagePm(projectId, text, { caller, sessionId });
+    if (res.status === "held") {
+      return `${heldNote(project.name, res.until)} Its reply arrives as a later message.`;
+    }
     return `Message ${res.status} to the PM of ${project.name} (session ${res.sessionId}). Its reply arrives as a later message.`;
   },
 });
+
+/**
+ * What the orchestrator is told about a message the loop guard held back (§8.2): it is
+ * queued and delivered automatically, so there is nothing to wait for or retry.
+ */
+export function heldNote(projectName: string, until: number, now = Date.now()): string {
+  const when = until - now <= 60_000 ? "within a minute" : `at about ${clock(until)} (local time)`;
+  return [
+    `Queued: CodeDen delivers this to the PM of ${projectName} automatically ${when}, or sooner if the PM wakes up for something else.`,
+    "Nothing else to do: do not send it again or plan a retry.",
+    "(CodeDen paces automatic back-and-forth between you and a PM while the user has not stepped in.)",
+  ].join(" ");
+}
+
+/** `HH:MM` in the server's (the user's) local time. */
+const clock = (at: number) => {
+  const d = new Date(at);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 
 /** `ask_pm` (§8.3): ask a PM and wait for its answer. */
 export const askPm = defineTool({
@@ -80,13 +102,16 @@ export const askPm = defineTool({
     question: z.string().min(1).max(20_000),
     timeoutSec: z.int().min(10).max(540).optional(),
   }),
-  handler: async ({ projectId, question, timeoutSec }, { services, sessionId, signal }) => {
+  handler: async ({ projectId, question, timeoutSec }, { services, caller, sessionId, signal }) => {
     const project = projectFor(services, projectId);
     const outcome = await services.orchestration.askPm(projectId, question, {
-      fromSessionId: sessionId,
+      origin: { caller, sessionId },
       timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined,
       signal,
     });
+    if (outcome.status === "held") {
+      return `pending: ${heldNote(project.name, outcome.until)} Do not ask again; the PM's answer arrives as a message.`;
+    }
     if (outcome.status === "answered") {
       return `The PM of ${project.name} answered:\n${outcome.text}`;
     }

@@ -53,6 +53,11 @@ const look: Record<NoticeType, { icon: LucideIcon; tone: string; label: string }
   "factory.update": { icon: Factory, tone: "text-primary", label: "Factory" },
   conflict: { icon: Swords, tone: "text-chart-5", label: "Conflict" },
   "pm.message": { icon: MessageSquare, tone: "text-primary", label: "From the PM" },
+  "orchestrator.message": {
+    icon: MessageSquare,
+    tone: "text-primary",
+    label: "From the orchestrator",
+  },
 };
 
 /** One line of detail under the title, specific to the notice type. */
@@ -79,6 +84,7 @@ function detail(n: Notice): string | null {
     case "conflict":
       return `${n.data.existing.length} matching ${n.data.existing.length === 1 ? "run" : "runs"} already going`;
     case "pm.message":
+    case "orchestrator.message":
       return n.data.text;
     default:
       return null;
@@ -91,7 +97,8 @@ function links(n: Notice): { sessionId: string | null; url: string | null; ref: 
   if ("pr" in n.data) return { sessionId, url: n.data.pr.url, ref: `#${n.data.pr.number}` };
   if (n.type === "issue.opened")
     return { sessionId: null, url: n.data.issue.url, ref: `#${n.data.issue.number}` };
-  if (n.type === "pm.message") return { sessionId: n.data.fromSessionId, url: null, ref: null };
+  if (n.type === "pm.message" || n.type === "orchestrator.message")
+    return { sessionId: n.data.fromSessionId, url: null, ref: null };
   return { sessionId, url: null, ref: null };
 }
 

@@ -27,6 +27,7 @@ export const NoticeType = z.enum([
   "automation.skipped",
   "conflict",
   "pm.message",
+  "orchestrator.message",
   "factory.update",
 ]);
 export type NoticeType = z.infer<typeof NoticeType>;
@@ -154,6 +155,21 @@ export const Notice = z.discriminatedUnion("type", [
       text: z.string(),
       /** Informational messages never wake the orchestrator; they show in its next digest. */
       informational: z.boolean(),
+    }),
+  }),
+  /**
+   * A message from the orchestrator to a PM that the loop guard held back (§8.2): the two had
+   * already exchanged several automatic messages without the user stepping in. It reaches the
+   * PM with its next wake, at the latest once the guard's window allows another message.
+   */
+  z.object({
+    ...noticeBase,
+    type: z.literal("orchestrator.message"),
+    data: z.object({
+      /** The orchestrator session that sent it, when known. */
+      fromSessionId: Id.nullable(),
+      /** The message as the orchestrator wrote it (an `ask_pm` question carries its marker). */
+      text: z.string(),
     }),
   }),
   z.object({

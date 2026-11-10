@@ -182,6 +182,26 @@ describe("notice cards", () => {
     expect(screen.getByText("README added with a test")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Session/ }).getAttribute("href")).toBe("/sessions/s1");
   });
+
+  it("shows an orchestrator message the loop guard held back, linked to the orchestrator", async () => {
+    const held: Notice = {
+      id: "orchestrator.message:1",
+      type: "orchestrator.message",
+      projectId: null,
+      target: "pm",
+      sessionId: "orch1",
+      title: "Message from the orchestrator",
+      createdAt: ts,
+      deliveredAt: ts,
+      data: { fromSessionId: "orch1", text: "Please add a changelog entry" },
+    };
+    renderWithClient(<NoticeBatchCard notices={[held]} />, undefined, { withRouter: true });
+    expect(await screen.findByText("From the orchestrator")).toBeTruthy();
+    expect(screen.getByText("Please add a changelog entry")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Session/ }).getAttribute("href")).toBe(
+      "/sessions/orch1",
+    );
+  });
 });
 
 describe("http orchestration api", () => {

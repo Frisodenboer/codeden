@@ -41,6 +41,12 @@ export interface SessionServiceDeps {
   questions: QuestionBroker;
 }
 
+/**
+ * Rewrites a turn's input at send time. `from` is who sent the input that starts the turn, so
+ * orchestration can tell the turns the user started from automatic ones (the loop guard).
+ */
+export type InputDecorator = (session: Session, input: UserInput, from: QueueSender) => UserInput;
+
 /** Preferred providers when the choice is `auto` (first ready one wins). */
 const AUTO_ORDER = ["claude", "codex"];
 
@@ -56,11 +62,11 @@ export class SessionService {
   /** Background launches, so tests and shutdown can await them. */
   readonly launching = new Map<string, Promise<void>>();
   /** Rewrites a turn's input at send time (the orchestration status digest, §8.4). */
-  private inputDecorator: ((session: Session, input: UserInput) => UserInput) | undefined;
+  private inputDecorator: InputDecorator | undefined;
 
   constructor(private readonly deps: SessionServiceDeps) {}
 
-  setInputDecorator(fn: (session: Session, input: UserInput) => UserInput): void {
+  setInputDecorator(fn: InputDecorator): void {
     this.inputDecorator = fn;
   }
 
@@ -185,7 +191,7 @@ export class SessionService {
       }
       return this.enqueue(id, req.input, from);
     }
-    await this.sendNow(session, req.input);
+    await this.sendNow(session, req.input, from);
     return { status: "sent" };
   }
 
@@ -258,7 +264,7 @@ export class SessionService {
     if (session.status !== "idle" && session.status !== "interrupted") return;
     this.deps.outbox.remove(next, "sent");
     try {
-      await this.sendNow(session, next.input);
+      await this.sendNow(session, next.input, next.from);
     } catch (error) {
       this.deps.launcher.fail(id, `send-${Date.now()}`, error);
     }
@@ -270,7 +276,7 @@ export class SessionService {
    */
   async continueAfterRestart(id: string, text: string): Promise<void> {
     const session = this.deps.repo.get(id);
-    await this.sendNow(session, { text, attachments: [] });
+    await this.sendNow(session, { text, attachments: [] }, "codeden");
   }
 
   sessionsWithQueuedMessages(): string[] {
@@ -283,8 +289,8 @@ export class SessionService {
 
   // ---------------------------------------------------------------- internals
 
-  private async sendNow(session: Session, raw: UserInput): Promise<void> {
-    const input = this.forRunner(session, this.inputDecorator?.(session, raw) ?? raw);
+  private async sendNow(session: Session, raw: UserInput, from: QueueSender): Promise<void> {
+    const input = this.forRunner(session, this.inputDecorator?.(session, raw, from) ?? raw);
     await applyPendingConfig(this.deps.repo, this.deps.runner, session);
     const previous = session.status;
     // Messaging an archived session brings it back.

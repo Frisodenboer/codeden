@@ -232,6 +232,9 @@ function noticeDetail(n: Notice): string {
       return ` · ${n.data.workKey} requested by ${n.data.requestedBy.kind}, matches ${n.data.existing.map((w) => w.workKey).join(", ")} (conflict ${short(n.data.conflictId)} waits in the user's inbox)`;
     case "pm.message":
       return ` · ${quote(n.data.text, 2000)}`;
+    case "orchestrator.message":
+      // A held-back message is the task itself: deliver all of it, as a direct message would.
+      return ` · ${quote(n.data.text, Number.POSITIVE_INFINITY)}`;
     case "factory.update":
       return ` · ${n.data.event}\n${quote(n.data.text, 4000)}`;
   }

@@ -242,7 +242,7 @@ All three roles are the same kind of agent session, differing only in **role**, 
 1. **Work arrives.** You ask the orchestrator, a PM picks up a GitHub issue, or an automation fires.
 2. **The PM starts an agent session.** It names a provider, model, issue link and brief; CodeDen creates the worktree and branch, then starts the session on the runner.
 3. **The agent works.** It may ask questions (inbox), request approvals (inbox), share screenshots, and finally opens a PR with evidence linked to the issue.
-4. **Notices wake the PM.** Session events become **typed notices** (`session.finished`, `session.needs_input`, `pr.opened`, `pr.checks_failed`, …). They're batched and debounced, and wake the PM with an "updates since your last turn" summary. A loop guard limits wake-ups.
+4. **Notices wake the PM.** Session events become **typed notices** (`session.finished`, `session.needs_input`, `pr.opened`, `pr.checks_failed`, …). They're batched and debounced, and wake the PM with an "updates since your last turn" summary. A loop guard limits wake-ups: it paces agent-to-agent ping-pong (orchestrator ↔ PM, PM ↔ its sessions) per conversation while no person steps in. Anything the user started goes straight through and clears the counts, and a paced message is queued and delivered automatically, never refused.
 5. **The PM decides.** It follows up with the agent, merges nothing on its own unless that project's policy allows it, and escalates to the orchestrator or the inbox when unsure.
 6. **The orchestrator wakes only for what matters.** PM messages can be marked informational so routine updates don't wake it.
 

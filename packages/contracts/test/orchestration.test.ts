@@ -116,6 +116,25 @@ describe("orchestration contracts (§8)", () => {
     expect(() => Notice.parse({ ...list[3], type: "pr.merged" })).toThrow();
   });
 
+  it("round-trips an orchestrator message held back by the loop guard (§8.2)", () => {
+    const held: Notice = {
+      id: "orchestrator.message:1",
+      type: "orchestrator.message",
+      projectId: "p1",
+      target: "pm",
+      sessionId: "orch1",
+      title: "Message from the orchestrator",
+      createdAt: ts,
+      deliveredAt: null,
+      data: { fromSessionId: "orch1", text: "Please take issue #4 next" },
+    };
+    expect(Notice.parse(JSON.parse(JSON.stringify(held)))).toEqual(held);
+    const anonymous = { ...held, data: { fromSessionId: null, text: "Status?" } };
+    expect(Notice.parse(anonymous)).toEqual(anonymous);
+    expect(NoticeBatchData.parse({ notices: [held] })).toEqual({ notices: [held] });
+    expect(() => Notice.parse({ ...held, data: { text: "missing sender" } })).toThrow();
+  });
+
   it("round-trips conflict records and the conflict inbox kind", () => {
     const record: ConflictRecord = {
       id: "conflict:1",

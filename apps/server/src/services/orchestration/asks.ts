@@ -41,9 +41,14 @@ export class PmAsks {
 
   constructor(private readonly deps: PmAsksDeps) {}
 
+  /**
+   * Track an ask. A `detached` ask has no call waiting for it (the loop guard held the
+   * question back): its answer reaches the orchestrator as a message.
+   */
   register(
     askId: string,
     target: { pmSessionId: string; projectId: string; fromSessionId: string | null },
+    opts: { detached?: boolean } = {},
   ): void {
     this.prune();
     this.waiters.set(askId, {
@@ -51,7 +56,7 @@ export class PmAsks {
       ...target,
       turnId: undefined,
       resolve: undefined,
-      late: false,
+      late: opts.detached ?? false,
       createdAt: Date.now(),
     });
   }
