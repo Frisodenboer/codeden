@@ -96,7 +96,7 @@ Agents see only the tools for their role; everything else isn't listed at all. T
 | Role | Tools |
 |---|---|
 | Orchestrator | `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox` |
-| PM: sessions and status | `get_project_status`, `list_sessions`, `start_session`, `message_session`, `stop_session` |
+| PM: sessions and status | `get_project_status`, `list_sessions`, `start_session`, `message_session`, `stop_session`, `answer_question` |
 | PM: automations | `list_automations`, `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run` |
 | PM: issues and PRs | `list_issues`, `get_issue`, `triage_issue`, `create_issue`, `report_triage`, `comment_on_issue`, `get_pr_status` |
 | PM: other | `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `ask_user` |
@@ -112,6 +112,7 @@ Factory projects add a few more (see [Autonomy and the dark factory](autonomy-an
 - **`ask_pm`** (orchestrator → PM) waits up to 3 minutes for the PM's answer; a later answer arrives as a message.
 - **`message_orchestrator`** with `informational: true` never wakes the orchestrator; it shows in its next digest.
 - **`ask_user`** (agent or PM → you) puts a question card in the transcript and the inbox. The tool waits up to 4 minutes; if you haven't answered, the agent is told to finish what it can, and your later answer is sent to the session as a new message. This works the same on every provider.
+- **`answer_question`** (PM → agent): a question from work the PM, the orchestrator or an automation started wakes the PM first. When the brief, its notes or the vision settle it, the PM answers it; the agent carries on and the inbox item closes as answered by the PM. Approvals, and questions from sessions you started, always wait for you.
 
 ## The inbox
 

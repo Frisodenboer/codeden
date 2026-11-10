@@ -11,6 +11,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Settings › App › Native browser** turns native views on or off (on by default). Off brings back the streamed view for browsers opened from then on.
 - **Downloads from the session browser** in the desktop app go to your Downloads folder (never overwriting a file), with a notification when they finish.
 - **Refresh models.** A refresh button at the bottom of the model picker's provider rail asks the shown provider for its models again (on Favourites, every provider), for when a new model is out and the list hasn't caught up yet.
+- **The PM answers its agents' questions.** When a session the PM, the orchestrator or an automation started asks a question, the PM is woken first and can answer it with its new `answer_question` tool when the brief, its notes or the vision settle it. The agent carries on straight away, and the inbox item closes, marked **Answered by the project manager** in the transcript. Approvals, and questions from sessions you started yourself, still wait for you.
 - **Claude Fable 5.2 is priced** in usage reports ($8 / $40 per million input / output tokens), and so is the `fable` alias.
 
 ### Changed

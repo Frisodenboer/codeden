@@ -90,6 +90,20 @@ describe("agent events", () => {
     expect(msg.kind === "user_message" && msg.input.attachments).toEqual([]);
   });
 
+  it("records who answered a question", () => {
+    const answered = {
+      id: "q",
+      kind: "user_question",
+      status: "completed",
+      requestId: "r",
+      questions: [{ id: "q1", question: "Zod or Valibot?" }],
+      answers: { q1: ["Zod"] },
+      decidedBy: "pm",
+    };
+    expect(roundTrip(Item, answered)).toMatchObject({ decidedBy: "pm", answers: { q1: ["Zod"] } });
+    expect(Item.safeParse({ ...answered, decidedBy: "policy" }).success).toBe(false);
+  });
+
   it("limits followups to four suggestions", () => {
     const suggestions = Array.from({ length: 5 }, (_, i) => ({ prompt: `p${i}` }));
     const result = Item.safeParse({

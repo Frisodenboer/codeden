@@ -26,7 +26,7 @@ import type { SessionLauncher } from "./launcher";
 import type { Outbox } from "./outbox";
 import { isTransientRunnerError, OutboxHolds } from "./outbox-holds";
 import { readOnlyUnsupported } from "./permissions";
-import type { QuestionBroker } from "./questions";
+import type { Answerer, QuestionBroker } from "./questions";
 import { applyPendingConfig, updateSession } from "./reconfigure";
 import type { SessionRepo, StoredStartMeta } from "./repo";
 
@@ -237,10 +237,11 @@ export class SessionService {
     });
   }
 
-  async respond(id: string, req: RespondRequest): Promise<void> {
+  /** Answer a question or approval; `by` is who answered a question (the user or the PM). */
+  async respond(id: string, req: RespondRequest, by: Answerer = "user"): Promise<void> {
     this.deps.repo.get(id);
     // Questions asked through CodeDen's ask_user tool are answered here, not by the provider.
-    if (await this.deps.questions.respond(id, req.requestId, req.response)) return;
+    if (await this.deps.questions.respond(id, req.requestId, req.response, by)) return;
     await this.deps.runner
       .request({
         name: "session.respond",
@@ -255,7 +256,7 @@ export class SessionService {
       req.response.kind === "approval"
         ? { decision: req.response.decision, decidedBy: "user" }
         : req.response.kind === "answer"
-          ? { answers: req.response.answers }
+          ? { answers: req.response.answers, decidedBy: by }
           : { status: "cancelled" };
     this.deps.inbox.closeForRequest(id, req.requestId, resolution);
   }

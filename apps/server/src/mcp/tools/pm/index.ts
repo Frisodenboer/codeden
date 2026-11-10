@@ -3,6 +3,7 @@ import { createAutomation, updateAutomation } from "./automation-edit";
 import { listAutomations, reportTriage, runAutomation } from "./automations";
 import { createIssue, getIssue, listIssues, triageIssue } from "./github";
 import { messageOrchestrator, readProjectNotes, updateProjectNotes } from "./notes";
+import { answerQuestion } from "./questions";
 import { listSessions, messageSession, startSession, stopSession } from "./sessions";
 import {
   cancelQueuedRun,
@@ -23,6 +24,7 @@ export const pmTools: AnyServerTool[] = [
   startSession,
   messageSession,
   stopSession,
+  answerQuestion,
   listScheduledRuns,
   skipNextRun,
   pauseAutomation,
