@@ -57,6 +57,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Agents commit in their own worktree without asking.** A session started by a PM or an automation opens its pull request when the work is done; in a session you started, the agent opens one when you ask and otherwise offers it as a suggested follow-up. A question at the end of an agent's last message now reaches its PM instead of being cut off.
 - **Stop always stops.** A turn whose agent never answered the stop request could stay "Working" forever; it now ends within 10 seconds either way. Messages you sent into a Claude turn that the agent hadn't read yet are dropped with it, instead of starting a new turn right after you pressed Stop, and the transcript says they weren't delivered.
 - **No more dead approvals after a crash.** When CodeDen's background runner was killed or crashed, approvals and questions from the agent's cut-off turn stayed open in the inbox and could keep the session "Waiting" or "Working" long after it resumed. They're now cancelled before the session continues; questions an agent asked with `ask_user` stay open, since they can still be answered.
+- **Agents hear about failed setup commands.** When a worktree setup command from `.codeden/project.json` failed, the session started anyway and the agent ran into confusing errors without knowing why. Its first message now begins with the command that failed, its exit code and the end of its output.
 
 ## [0.4.4] - 2026-11-09
 

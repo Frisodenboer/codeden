@@ -77,7 +77,7 @@ Commit this file to tell CodeDen how to prepare a fresh worktree:
 }
 ```
 
-- `setup` runs, in order, in every new worktree; the output streams into the session.
+- `setup` runs, in order, in every new worktree; the output streams into the session. Setup stops at the first command that fails, and the session starts anyway: the agent's first message then begins with the failed command, its exit code and the end of its output, so it can fix the problem instead of tripping over it.
 - `devServer` (a command string or `{ command, port, cwd }`) records how to start your app, so agents (and the UI review automation) know what to run and where to point the browser. Running dev servers are also discovered automatically.
 - `defaultProvider` (`claude` or `codex`) is the provider new sessions in this project use unless you pick one (a provider chosen in the project's settings wins).
 

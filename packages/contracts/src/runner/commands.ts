@@ -8,6 +8,9 @@ import { BrowserCommandResults, BrowserCommands } from "./browser";
 /** Terminal (node-pty) id, unique per runner. */
 export const PtyId = z.string().min(1).max(100);
 
+/** Most characters of a failed setup command's output kept in `workspace.prepare` results. */
+export const SETUP_TAIL_LIMIT = 2000;
+
 /** Index of a turn checkpoint: 0 is the baseline at session start, n the end of turn n. */
 export const CheckpointIndex = z.int().nonnegative();
 
@@ -265,7 +268,20 @@ export const RunnerCommandResults = {
     config: ProjectConfigFile.nullable().optional(),
     /** Setup commands that ran, in order (stops at the first failure). */
     setup: z
-      .array(z.object({ command: z.string(), exitCode: z.int().nullable(), ok: z.boolean() }))
+      .array(
+        z.object({
+          command: z.string(),
+          /** Null when the command was killed (timed out) before it exited. */
+          exitCode: z.int().nullable(),
+          ok: z.boolean(),
+          /**
+           * The end of a failed command's output (at most `SETUP_TAIL_LIMIT` characters), so
+           * the server can tell the agent why setup failed. Absent for commands that succeeded
+           * and from older runners.
+           */
+          outputTail: z.string().max(SETUP_TAIL_LIMIT).optional(),
+        }),
+      )
       .optional(),
   }),
   "workspace.remove": z.object({
