@@ -4,6 +4,8 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-10
+
 ### Added
 
 - **A real browser in the desktop app.** The browser panel now shows the session's browser as a native browser view instead of a streamed picture: native scrolling, text selection, typing with your input method, a right-click menu, full frame rate, and **⋯ › Inspect** for DevTools. Agents keep driving the same tabs, and the **Agent is acting** chip still shows when they do. Each session has its own cookies and storage. A phone or a plain browser tab watching the same session sees it streamed, as before. Browsers opened from a plain browser tab or a phone keep using the streamed view.
