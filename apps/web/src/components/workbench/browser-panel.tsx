@@ -19,6 +19,8 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
   const [mode, setMode] = useState<ViewportMode>("fit");
   const channel = browser.channel;
   const onInput = useCallback((input: BrowserInput) => channel?.input(input), [channel]);
+  // Re-registering as a viewer makes the runner send its current picture.
+  const onStall = useCallback(() => channel?.watch(), [channel]);
   const measure = usePanelViewport(channel, mode, browser.viewport?.mine);
 
   if (browser.open === false) return <ClosedState sessionId={sessionId} browser={browser} />;
@@ -55,6 +57,7 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
         <BrowserCanvas
           onFrame={browser.onFrame}
           onInput={onInput}
+          onStall={onStall}
           // Fill only when the page follows this panel; a preset or another viewer's size is
           // fitted inside instead of stretched.
           fit={mode === "fit" && browser.viewport?.mine ? "fill" : "contain"}

@@ -21,6 +21,9 @@ import {
 import { cn } from "@/lib/utils";
 import type { FrameMessage } from "./use-session-browser";
 
+/** Without a frame for this long, the panel asks the runner for the current picture again. */
+const STALL_MS = 3_000;
+
 interface DrawnFrame {
   width: number;
   height: number;
@@ -40,11 +43,14 @@ interface DrawnFrame {
 export function BrowserCanvas({
   onFrame,
   onInput,
+  onStall,
   fit,
   title,
 }: {
   onFrame: (listener: (f: FrameMessage) => void) => () => void;
   onInput: (input: BrowserInput) => void;
+  /** Called every few seconds while no frame has arrived (ask for the current picture). */
+  onStall?: () => void;
   fit: FrameFit;
   title: string;
 }) {
@@ -103,6 +109,12 @@ export function BrowserCanvas({
   }, [onFrame]);
 
   useEffect(() => () => cancelAnimationFrame(wheelFrame.current), []);
+
+  useEffect(() => {
+    if (hasFrame || !onStall) return;
+    const timer = setInterval(onStall, STALL_MS);
+    return () => clearInterval(timer);
+  }, [hasFrame, onStall]);
 
   const box = (el: HTMLElement): FrameBox => {
     const d = drawn.current;
