@@ -10,9 +10,17 @@ import {
   launchChromium,
 } from "../src/browser";
 import { toPlaywrightCookies } from "../src/browser/relay";
+import { isAlive, killTree } from "../src/process/tree";
 import { StreamRecorder, TestSite } from "./browser-helpers";
 
 const hasBrowser = findInstalledChannels().length > 0;
+
+/** Wait for a teardown step, but never longer than `ms`; failures are ignored. */
+const within = (step: Promise<unknown> | undefined, ms = 10_000) =>
+  Promise.race([
+    (step ?? Promise.resolve()).catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, ms).unref()),
+  ]);
 
 const relay: BrowserRelayEndpoint = {
   url: "ws://127.0.0.1:1/cdp/s1",
@@ -50,11 +58,13 @@ describe.skipIf(!hasBrowser)("native engine (installed Edge/Chrome)", { timeout:
     handlers = createBrowserCommandHandlers({ manager });
   }, 60_000);
   afterAll(async () => {
-    await manager?.shutdown();
-    for (const c of clients) await c.close().catch(() => undefined);
-    await app?.browser.close().catch(() => undefined);
-    await site?.close();
-  });
+    // Every step is bounded: a browser that never finishes closing must not hold the worker.
+    await within(manager?.shutdown());
+    for (const c of clients) await within(c.close());
+    await within(app?.browser.close());
+    if (app?.pid && isAlive(app.pid)) await killTree(app.pid);
+    await within(site?.close());
+  }, 60_000);
 
   it("opens on the app's views, never emulates their size, and drives them", async () => {
     const opened = await handlers.execute({
@@ -122,6 +132,30 @@ describe.skipIf(!hasBrowser)("native engine (installed Edge/Chrome)", { timeout:
     expect(await page.textContent("#big")).toBe("clicked by human");
   });
 
+  it("a viewer's screencast follows the view's real size, without emulating it", async () => {
+    const session = manager.get("s1");
+    const before = await session.page().evaluate("[innerWidth, innerHeight]");
+    await handlers.execute({
+      name: "browser.screencast",
+      sessionId: "s1",
+      viewerId: "phone",
+      watching: true,
+      maxWidth: 400,
+      maxHeight: 400,
+    });
+    await session.page().evaluate("document.body.style.background = '#eef'");
+    await expect.poll(() => recorder.frames("s1").length, { timeout: 10_000 }).toBeGreaterThan(0);
+    const { width, height } = session.viewportSize;
+    expect([width, height]).toEqual(before);
+    expect(await session.page().evaluate("[innerWidth, innerHeight]")).toEqual(before);
+    await handlers.execute({
+      name: "browser.screencast",
+      sessionId: "s1",
+      viewerId: "phone",
+      watching: false,
+    });
+  });
+
   it("adopts the tabs the app already has when it connects again", async () => {
     const other = new BrowserManager({ stream: () => {}, connect });
     try {
@@ -183,6 +217,26 @@ describe.skipIf(!hasBrowser)("native engine (installed Edge/Chrome)", { timeout:
     await expect
       .poll(reopened, { timeout: 15_000 })
       .toEqual({ engine: "runner", urls: [`${site.url}/page2`] });
+  });
+
+  it("a page stuck in a long script can't stall a native viewport answer", async () => {
+    await manager.open("s4", site.url, relay);
+    const page = manager.get("s4").page();
+    // Busy for 4 s: an unbounded measurement would wait it out.
+    await page.evaluate(
+      "setTimeout(() => { const end = Date.now() + 4000; while (Date.now() < end); }, 0)",
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    const started = Date.now();
+    const viewport = await handlers.handlers["browser.viewport"]({
+      name: "browser.viewport",
+      sessionId: "s4",
+      width: 800,
+      height: 600,
+    });
+    expect(viewport.fixed).toBe(true);
+    expect(Date.now() - started).toBeLessThan(3_500);
+    await handlers.execute({ name: "browser.close", sessionId: "s4" });
   });
 
   it("closing a native browser closes its views", async () => {

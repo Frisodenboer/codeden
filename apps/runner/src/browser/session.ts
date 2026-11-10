@@ -40,6 +40,21 @@ export interface BrowserSessionOptions {
 const NATIVE_CLOSE_SETTLE_MS = 100;
 /** How long a measured native view size is trusted for mapping a viewer's pointer input. */
 const NATIVE_MEASURE_MS = 1_000;
+/** Screencast frame cap for native views: their size is the desktop panel's, up to 4K-class. */
+const nativeFrame = () => framePixels(fitViewport({ width: 3840, height: 2400 }));
+
+/** Measuring a native view gives up after this long (the page may be stuck in a script). */
+const NATIVE_MEASURE_TIMEOUT_MS = 2_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 interface TabState {
   tabId: string;
@@ -88,8 +103,8 @@ export class BrowserSession {
     this.context.setDefaultNavigationTimeout(opts.timeoutMs);
     this.screencast = new Screencast(opts.sessionId, (frame: FrameStream) => this.stream(frame));
     // Native views have whatever size the desktop panel gives them: frames are only capped.
-    const frame = this.native ? framePixels(fitViewport({ width: 3840, height: 2400 })) : null;
-    void this.screencast.setFrameSize(frame ?? framePixels(this.viewport), this.viewport);
+    const frame = this.native ? nativeFrame() : framePixels(this.viewport);
+    void this.screencast.setFrameSize(frame, this.viewport);
     // Pages opened by the page itself (popups, target=_blank) become tabs too.
     this.context.on("page", (page) => {
       if (!this.byPage.has(page)) this.register(page, false);
@@ -312,17 +327,33 @@ export class BrowserSession {
   /** A native view's actual size (CSS pixels and scale), as the desktop panel laid it out. */
   private async measure(): Promise<ViewportMetrics> {
     try {
-      // A string: the runner has no DOM types, and the page computes it in its own realm.
-      const metrics = (await this.page().evaluate(
-        "[window.innerWidth, window.innerHeight, window.devicePixelRatio]",
+      // A string: the runner has no DOM types, and the page computes it in its own realm. A page
+      // busy in a long script must not stall input or a viewport answer: keep the last size.
+      const metrics = (await withTimeout(
+        this.page().evaluate("[window.innerWidth, window.innerHeight, window.devicePixelRatio]"),
+        NATIVE_MEASURE_TIMEOUT_MS,
       )) as number[];
       const [width, height, scale] = metrics;
-      if (width && height) this.viewport = { width, height, deviceScaleFactor: scale || 1 };
+      if (width && height) {
+        const next = { width, height, deviceScaleFactor: scale || 1 };
+        const changed = !sameViewport(next, this.viewport);
+        this.viewport = next;
+        // The screencast's metadata for stills, and its frame size floor, follow the real view.
+        if (changed) void this.screencast.setFrameSize(nativeFrame(), next);
+      }
       this.measuredAt = Date.now();
     } catch {
       // No tab yet, or it is navigating: keep the last size.
     }
     return { ...this.viewport };
+  }
+
+  /**
+   * Native: measure the view now (a viewer starts watching), so the screencast knows its real
+   * size. The runner engine owns its size already.
+   */
+  async syncViewport(): Promise<void> {
+    if (this.native) await this.measure();
   }
 
   /** The native view's size for input, measured at most once a second (pointer moves are many). */
