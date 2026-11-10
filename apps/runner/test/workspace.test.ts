@@ -35,7 +35,8 @@ const prepare = (sessionId: string, repoPath: string, extra: Record<string, unkn
   ...extra,
 });
 
-describe("workspace.prepare", () => {
+// Git-heavy (clones, worktrees, fetches): slow on loaded Windows runners.
+describe("workspace.prepare", { timeout: 20_000 }, () => {
   it("creates a worktree under <home>/wt/<slug>/<short> on codeden/<short> from the default branch", async () => {
     const { repo, home, ctx } = setup();
     sh(repo, "checkout", "-q", "-b", "other");
@@ -213,7 +214,7 @@ describe("workspace.prepare", () => {
   });
 });
 
-describe("git operations", () => {
+describe("git operations", { timeout: 20_000 }, () => {
   it("lists branches, commits and pushes to a remote", async () => {
     const { repo, ctx } = setup();
     const remote = tempDir("codeden-remote-");
