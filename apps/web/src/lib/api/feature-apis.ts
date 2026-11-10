@@ -16,6 +16,7 @@ import type {
   BrowserServerMessage,
   BrowserTabResponse,
   BrowserTabsResponse,
+  BrowserViewportSize,
   DevServersResponse,
   GithubConnection,
   GithubIssueDetails,
@@ -80,6 +81,11 @@ export interface BrowserChannel {
   unwatch(): void;
   /** Open the session's browser now (optionally at `url`). */
   open(url?: string): void;
+  /**
+   * Report the size this viewer wants the page at; `claim` takes the viewport over from other
+   * viewers. The latest size is re-sent after a reconnect.
+   */
+  viewport(size: BrowserViewportSize, claim?: boolean): void;
   close(): void;
 }
 
