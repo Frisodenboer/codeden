@@ -188,6 +188,16 @@ describe("availability", () => {
       providerAvailability("codex", [check({ id: "codex", state: "missing", installed: false })])
         .reason,
     ).toBe("Not installed");
+    expect(
+      providerAvailability("codex", [
+        check({
+          id: "codex",
+          state: "missing",
+          installed: false,
+          broken: [{ path: "C:\\npm\\codex.cmd", reason: "points at a missing package" }],
+        }),
+      ]).reason,
+    ).toBe("Installed but broken");
   });
 
   it("treats providers without a check (or before detection) as ready", () => {
