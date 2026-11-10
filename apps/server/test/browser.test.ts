@@ -108,8 +108,12 @@ describe.skipIf(!hasBrowser)("session browser (panel routes, /ws/browser, agent 
     expect(await viewer.waitFor((m) => m.type === "viewport" && m.mine && m.width === 460)).toEqual(
       { type: "viewport", width: 460, height: 712, deviceScaleFactor: 2, mine: true },
     );
-    const frame = await viewer.waitFor((m) => m.type === "frame" && m.width === 920);
-    expect(frame).toMatchObject({ type: "frame", mediaType: "image/jpeg", height: 1424 });
+    // While the page resizes, Chromium can send one frame at the new width but a partial
+    // height (seen as 920x355): wait for a full-size one.
+    const frame = await viewer.waitFor(
+      (m) => m.type === "frame" && m.width === 920 && m.height === 1424,
+    );
+    expect(frame).toMatchObject({ type: "frame", mediaType: "image/jpeg" });
 
     const snap = text(await mcp.callTool({ name: "browser_snapshot", arguments: {} }));
     const ref = /button "Press me" \[ref=(e\d+)\]/.exec(snap)?.[1];

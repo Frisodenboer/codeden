@@ -34,6 +34,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Sign in runs the copy CodeDen found.** The setup **Sign in** buttons for Claude Code, Codex and GitHub run that copy by its full path, quoted for the terminal's shell (`& 'C:\Users\you\.local\bin\claude.exe' auth login` in PowerShell), instead of whatever `claude` means in the terminal.
 - **"Could not read the login state" shows why.** The row's new **Details** show the underlying error (exit code and output).
 - **Fewer false "Pipes a downloaded script straight into a shell" approvals.** Under Auto and Full, commands that pipe a download into a program that only reads it as data, such as `curl … | node -e '…'`, `curl … | python -c '…'` or `curl … | node scripts/x.mjs`, no longer ask. A `|` inside quotes (`sed 's|a|b|'`) no longer counts as a pipe either. Downloads piped into an interpreter that runs them (`curl … | sh`, `curl … | python3`, `irm … | iex`) still ask.
+- **The browser panel keeps working on macOS for very large panels.** Above about 2560×1600, the picture used to be scaled below the page's own size, and on macOS Chrome then stopped sending pictures and reported the wrong page size, which put clicks in the wrong place. The picture now never goes below the page's size.
 
 ## [0.4.4] - 2026-11-09
 
