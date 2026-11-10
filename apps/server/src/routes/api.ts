@@ -28,7 +28,7 @@ import { conflictRoutes, orchestrationRoutes } from "./orchestration";
 import { projectRoutes } from "./projects";
 import { sessionFileRoutes } from "./session-files";
 import { sessionRoutes } from "./sessions";
-import { artifactRoutes, fileRoutes, secretRoutes, setupRoutes } from "./system";
+import { artifactRoutes, fileRoutes, providerRoutes, secretRoutes, setupRoutes } from "./system";
 import { updateRoutes } from "./updates";
 import { usageRoutes } from "./usage";
 import { errorResponse } from "./validate";
@@ -92,6 +92,7 @@ export function createApi(ctx: ApiContext) {
     .route("/projects", projectAutomationRoutes(s))
     .route("/usage", usageRoutes(s))
     .route("/setup", setupRoutes(s))
+    .route("/providers", providerRoutes(s))
     .route("/updates", updateRoutes(s))
     .route("/artifacts", artifactRoutes(s))
     .route("/secrets", secretRoutes(s))

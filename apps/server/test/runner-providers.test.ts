@@ -5,6 +5,7 @@ import {
   type ModelInfo,
   type ProviderInfo,
   type ProviderStatus,
+  RefreshModelsResponse,
   ServerToClientMessage,
   Snapshot,
 } from "@codeden/contracts";
@@ -14,7 +15,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { type RunningServer, startServer } from "../src";
 import type { Exec } from "../src/services/exec";
-import { type RunnerPort, redetectProviders } from "../src/services/runner-port";
+import {
+  type RunnerPort,
+  redetectProviders,
+  refreshProviderModels,
+} from "../src/services/runner-port";
 import { waitUntil } from "./support/harness";
 import { removeTree } from "./support/remove-tree";
 
@@ -58,7 +63,9 @@ function listedProvider() {
     capabilities: () => new FakeProvider().capabilities(),
     models: () => catalog.list(),
     onModelsChanged: (listener) => catalog.subscribe(listener),
-    refreshModels: async () => {
+    refreshModels: async (opts) => {
+      // A server attaching asks with a max age; this list counts as recent.
+      if (opts?.maxAgeMs !== undefined) return;
       state.refreshes += 1;
       if (state.next) catalog.set(state.next);
     },
@@ -133,6 +140,72 @@ describe("provider lists from the runner", () => {
       listedModels(server.runner?.status.providers ?? [])?.[0] === "after-login" ? true : undefined,
     );
     expect(provider.state.refreshes).toBe(before + 1);
+  });
+
+  it("refreshes one provider's models on request and answers with the new lists", async () => {
+    await waitUntil(() => provider.state.refreshes >= 1 || undefined); // at runner start
+    const ws = new WebSocket(`${server.url.replace("http", "ws")}/ws`, { headers: auth });
+    const runnerUpdates: ProviderInfo[][] = [];
+    ws.on("message", (data) => {
+      const msg = ServerToClientMessage.parse(JSON.parse(data.toString()));
+      if (msg.type === "runner") runnerUpdates.push(msg.runner.providers);
+    });
+    await new Promise((resolve, reject) => {
+      ws.once("open", resolve);
+      ws.once("error", reject);
+    });
+
+    // A model release since the list was taken: "Refresh models" finds it.
+    provider.state.next = [model("released-today"), model("default")];
+    const res = await fetch(`${server.url}/api/providers/listed/refresh-models`, {
+      method: "POST",
+      headers: auth,
+    });
+    expect(res.status).toBe(200);
+    const body = RefreshModelsResponse.parse(await res.json());
+    expect(listedModels(body.providers)).toEqual(["released-today", "default"]);
+    expect(listedModels(server.runner?.status.providers ?? [])).toEqual([
+      "released-today",
+      "default",
+    ]);
+    // Open pickers hear about it without asking.
+    await waitUntil(() =>
+      runnerUpdates.some((p) => listedModels(p)?.[0] === "released-today") ? true : undefined,
+    );
+    ws.close();
+
+    const unknown = await fetch(`${server.url}/api/providers/nope/refresh-models`, {
+      method: "POST",
+      headers: auth,
+    });
+    expect(unknown.status).toBe(404);
+  });
+});
+
+describe("refreshProviderModels", () => {
+  it("needs a connected runner", async () => {
+    const port = { isConnected: () => false } as unknown as RunnerPort;
+    await expect(refreshProviderModels(port, "claude")).rejects.toMatchObject({
+      status: 503,
+      code: "runner_unavailable",
+    });
+  });
+
+  it("falls back to the status lists when an older runner answers without them", async () => {
+    const providers = [
+      { id: "claude", displayName: "Claude Code", capabilities: {}, models: [model("opus")] },
+    ] as unknown as ProviderInfo[];
+    const sent: unknown[] = [];
+    const port = {
+      isConnected: () => true,
+      providers: () => providers,
+      request: async (command: unknown) => {
+        sent.push(command);
+        return { statuses: [] };
+      },
+    } as unknown as RunnerPort;
+    await expect(refreshProviderModels(port, "claude")).resolves.toEqual({ providers });
+    expect(sent).toEqual([{ name: "provider.detect", providerId: "claude", waitForModels: true }]);
   });
 });
 

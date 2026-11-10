@@ -2,7 +2,7 @@ import type { CostSource, ModelPrice, TokenCounts } from "@codeden/contracts";
 
 const ANTHROPIC = "https://platform.claude.com/docs/en/about-claude/pricing";
 const OPENAI = "https://developers.openai.com/api/docs/pricing";
-const AS_OF = "2026-11-07";
+const AS_OF = "2026-11-10";
 
 type Row = [
   model: string,
@@ -35,6 +35,7 @@ function table(provider: string, sourceUrl: string, rows: Row[]): ModelPrice[] {
  */
 export const BUNDLED_PRICES: ModelPrice[] = [
   ...table("claude", ANTHROPIC, [
+    ["claude-fable-5-2", "Fable 5.2", 8, 40, 0.2, 10],
     ["claude-fable-5-1", "Fable 5.1", 10, 50, 0.25, 12.5],
     ["claude-fable-5", "Fable 5", 10, 50, 1, 12.5],
     ["claude-opus-5-5", "Opus 5.5", 4, 20, 0.2, 5],
@@ -52,6 +53,7 @@ export const BUNDLED_PRICES: ModelPrice[] = [
     ["claude-haiku-5-5", "Haiku 5.5", 0.1, 0.5, 0.01, 0.125],
     ["claude-haiku-4-5", "Haiku 4.5", 1, 5, 0.1, 1.25],
     // Claude Code aliases, which resolve to the newest model of each family.
+    ["fable", "Fable (latest)", 8, 40, 0.2, 10],
     ["opus", "Opus (latest)", 4, 20, 0.2, 5],
     ["sonnet", "Sonnet (latest)", 2, 10, 0.1, 2.5],
     ["haiku", "Haiku (latest)", 0.1, 0.5, 0.01, 0.125],

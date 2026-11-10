@@ -87,6 +87,58 @@ describe("runner protocol", () => {
     expect(RunnerToServerMessage.safeParse({ type: "providers" }).success).toBe(false);
   });
 
+  it("round-trips an alias model with the id it resolves to", () => {
+    const update = roundTrip(RunnerToServerMessage, {
+      type: "providers",
+      providers: [
+        {
+          id: "claude",
+          displayName: "Claude Code",
+          capabilities: {
+            resume: true,
+            steer: true,
+            interrupt: true,
+            approvals: true,
+            userQuestions: true,
+            subagents: true,
+            rollback: false,
+            fork: false,
+            images: true,
+            planMode: true,
+            reasoningEffort: true,
+            mcp: true,
+            skills: true,
+          },
+          models: [
+            { id: "opus", resolvedId: "claude-opus-5-5", label: "Opus 5.5", efforts: ["high"] },
+          ],
+        },
+      ],
+    });
+    expect(update.type === "providers" && update.providers[0]?.models[0]?.resolvedId).toBe(
+      "claude-opus-5-5",
+    );
+  });
+
+  it("round-trips a provider.detect that waits for the model lists", () => {
+    const detect = roundTrip(RunnerCommand, {
+      name: "provider.detect",
+      providerId: "claude",
+      waitForModels: true,
+    });
+    expect(detect.name === "provider.detect" && detect.waitForModels).toBe(true);
+    // Older servers send neither field.
+    roundTrip(RunnerCommand, { name: "provider.detect" });
+    const result = roundTrip(RunnerCommandResults["provider.detect"], {
+      statuses: [],
+      providers: [],
+    });
+    expect(result.providers).toEqual([]);
+    expect(roundTrip(RunnerCommandResults["provider.detect"], { statuses: [] }).providers).toBe(
+      undefined,
+    );
+  });
+
   it("round-trips commands and results", () => {
     const start = roundTrip(ServerToRunnerMessage, {
       type: "command",

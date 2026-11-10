@@ -4,6 +4,16 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Refresh models.** A refresh button at the bottom of the model picker's provider rail asks the shown provider for its models again (on Favourites, every provider), for when a new model is out and the list hasn't caught up yet.
+- **Claude Fable 5.2 is priced** in usage reports ($8 / $40 per million input / output tokens), and so is the `fable` alias.
+
+### Fixed
+
+- **New Claude models show up without restarting everything.** A model release changes Claude Code's model list even when nothing on your machine changes, and CodeDen kept the list it read when its background runner started; the runner keeps going when you restart CodeDen, so the picker could show an old Fable for days. CodeDen now asks again when the app reconnects (if the list is more than 10 minutes old), whenever a session starts, and when you refresh. It also finds `claude` and `codex` on your PATH each time instead of reusing the location from when the runner started, so moving to another install is picked up too.
+- **Sessions on a full model id get their effort control back.** A session on, say, `claude-opus-5-5` (what Opus runs today) was shown as "isn't in the provider's list any more" with no effort levels. The picker now shows it as **Opus 5.5** with Opus's effort levels, and an id no entry covers still gets the default model's levels.
+
 ## [0.4.4] - 2026-11-09
 
 ### Added

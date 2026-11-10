@@ -32,7 +32,7 @@ export interface ProviderAdapter {
    * `models()`. Optional. Must not throw: on failure `models()` keeps its last good list, or
    * an honest fallback.
    */
-  refreshModels?(): Promise<void>;
+  refreshModels?(opts?: RefreshModelsOptions): Promise<void>;
   /**
    * Call `listener` whenever `models()` changes (discovery, a session reporting its models).
    * Optional. Returns the unsubscribe function.
@@ -41,6 +41,15 @@ export interface ProviderAdapter {
   openSession(opts: SessionOptions): Promise<ProviderSession>;
   /** One-shot, tool-less model calls for side jobs (§7.4), when the provider supports them. */
   utilityModel?(): UtilityModel;
+}
+
+/** Options for `ProviderAdapter.refreshModels`. */
+export interface RefreshModelsOptions {
+  /**
+   * Skip the refresh when the provider confirmed its list less than this long ago and its
+   * executable has not changed since. Without it, the provider is always asked.
+   */
+  maxAgeMs?: number;
 }
 
 /** A live provider session. */

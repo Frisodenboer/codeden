@@ -27,6 +27,7 @@ import {
   type PickerTab,
   providerAvailability,
   providerTabs,
+  resolvedEfforts,
   resolveModel,
   rowKey,
   searchRows,
@@ -36,6 +37,7 @@ import { ModelList, SetupNotice } from "./model-list";
 import { ProviderRail } from "./provider-rail";
 import { PickerTrigger } from "./trigger";
 import { useCustomModels, useFavoriteModels, useHiddenModels } from "./use-model-settings";
+import { useRefreshModels } from "./use-refresh-models";
 
 export interface ModelPickerProps {
   providers: ProviderInfo[];
@@ -104,10 +106,29 @@ export function ModelPicker({
   const provider = providers.find((p) => p.id === shown?.provider);
   const resolved = resolveModel(provider, shown?.model ?? null);
   const model = shown ? resolved.model : undefined;
-  const levels = effortLevels(provider, model);
-  const effort = shown ? effectiveEffort(levels, shown.effort, model?.defaultEffort) : null;
+  const { levels, defaultEffort } = shown
+    ? resolvedEfforts(provider, resolved)
+    : { levels: [], defaultEffort: undefined };
+  const effort = shown ? effectiveEffort(levels, shown.effort, defaultEffort) : null;
   const selectedKey = provider && model ? rowKey(provider.id, model.id) : null;
   const showColumn = offerEffort && openTabs.some((t) => t.provider.capabilities.reasoningEffort);
+  // "Refresh models" asks the shown provider again; on Favourites, every provider offered here.
+  const models = useRefreshModels();
+  const refreshIds =
+    tab?.kind === "provider"
+      ? [tab.id]
+      : openTabs.map((t) => t.id).filter((id) => listed.some((p) => p.id === id));
+  const refresh =
+    refreshIds.length > 0
+      ? {
+          label:
+            tab?.kind === "provider"
+              ? `Refresh ${tab.provider.displayName}'s models`
+              : "Refresh every provider's models",
+          busy: models.refreshing,
+          onRefresh: () => void models.refresh(refreshIds),
+        }
+      : undefined;
 
   const searching = query.trim().length > 0;
   const searchable = openTabs.map((t) => t.provider);
@@ -258,6 +279,7 @@ export function ModelPicker({
                   selectedId={tab?.id ?? ""}
                   onSelect={(id) => showTab(id, false)}
                   onFocusSearch={() => inputRef.current?.focus()}
+                  refresh={refresh}
                 />
               )}
               <div className="flex w-80 min-w-0 flex-col max-sm:w-auto max-sm:flex-1">
@@ -317,7 +339,7 @@ export function ModelPicker({
                 missing={Boolean(resolved.missing)}
                 levels={levels}
                 value={effort}
-                defaultEffort={model?.defaultEffort}
+                defaultEffort={defaultEffort}
                 onPick={pickEffort}
                 onBack={() => inputRef.current?.focus()}
               />
