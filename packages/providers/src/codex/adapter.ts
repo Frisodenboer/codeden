@@ -6,7 +6,8 @@ import type {
 } from "@codeden/contracts";
 import type { ProviderAdapter, ProviderSession } from "../adapter";
 import { ModelCatalog } from "../models";
-import { type ResolvedCommand, resolveExecutable } from "../util/exec";
+import type { ResolvedCommand } from "../util/exec";
+import { findExecutable, quickLocate } from "../util/locate";
 import { DEFAULT_MODEL_ID } from "../util/model";
 import type { UtilityModel } from "../utility";
 import { detectCodex } from "./detect";
@@ -75,14 +76,18 @@ export class CodexAdapter implements ProviderAdapter {
 
   constructor(private readonly options: CodexAdapterOptions = {}) {}
 
+  /** The copy sessions run: the one `detect()` validated, else the first plausible one. */
   private executable(): ResolvedCommand | undefined {
-    this.cachedExe ??= this.options.executable ?? resolveExecutable("codex");
+    this.cachedExe ??= this.options.executable ?? quickLocate("codex");
     return this.cachedExe;
   }
 
-  detect(): Promise<ProviderStatus> {
-    this.cachedExe = undefined;
-    return detectCodex({ executable: this.executable() });
+  /** Re-detect: the working copy found here (a native install off PATH counts) is kept. */
+  async detect(): Promise<ProviderStatus> {
+    if (this.options.executable) return detectCodex({ executable: this.options.executable });
+    const lookup = await findExecutable("codex");
+    this.cachedExe = lookup.command;
+    return detectCodex({ lookup });
   }
 
   capabilities(): ProviderCapabilities {

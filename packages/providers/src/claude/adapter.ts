@@ -7,7 +7,8 @@ import type {
 } from "@codeden/contracts";
 import type { ProviderAdapter, ProviderSession } from "../adapter";
 import { ModelCatalog } from "../models";
-import { type ResolvedCommand, resolveExecutable } from "../util/exec";
+import type { ResolvedCommand } from "../util/exec";
+import { findExecutable, quickLocate } from "../util/locate";
 import type { UtilityModel } from "../utility";
 import { detectClaude } from "./detect";
 import { listClaudeModels, toModelInfos } from "./models";
@@ -74,14 +75,18 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   constructor(private readonly options: ClaudeAdapterOptions = {}) {}
 
+  /** The copy sessions run: the one `detect()` validated, else the first plausible one. */
   private executable(): ResolvedCommand | undefined {
-    this.cachedExe ??= this.options.executable ?? resolveExecutable("claude");
+    this.cachedExe ??= this.options.executable ?? quickLocate("claude");
     return this.cachedExe;
   }
 
-  detect(): Promise<ProviderStatus> {
-    this.cachedExe = undefined;
-    return detectClaude({ executable: this.executable() });
+  /** Re-detect: the working copy found here (a native install off PATH counts) is kept. */
+  async detect(): Promise<ProviderStatus> {
+    if (this.options.executable) return detectClaude({ executable: this.options.executable });
+    const lookup = await findExecutable("claude");
+    this.cachedExe = lookup.command;
+    return detectClaude({ lookup });
   }
 
   capabilities(): ProviderCapabilities {

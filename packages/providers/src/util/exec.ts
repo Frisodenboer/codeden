@@ -37,26 +37,39 @@ export function resolveExecutable(
   name: string,
   opts: ResolveOptions = {},
 ): ResolvedCommand | undefined {
+  const win = (opts.platform ?? process.platform) === "win32";
+  for (const candidate of pathCandidates(name, opts)) {
+    if (isFile(candidate)) return classify(candidate, win);
+  }
+  return undefined;
+}
+
+/**
+ * Every file `name` could be on PATH, in lookup order (PATHEXT on Windows, plus `extraExts`
+ * after them in each folder). The files may not exist.
+ */
+export function pathCandidates(
+  name: string,
+  opts: ResolveOptions = {},
+  extraExts: readonly string[] = [],
+): string[] {
   const platform = opts.platform ?? process.platform;
   const win = platform === "win32";
   const p = win ? path.win32 : path.posix;
   const exts = win
-    ? (opts.pathExt ?? process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-        .split(";")
-        .filter(Boolean)
-        .map((e) => e.toLowerCase())
+    ? [
+        ...(opts.pathExt ?? process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+          .split(";")
+          .filter(Boolean)
+          .map((e) => e.toLowerCase()),
+        ...extraExts,
+      ]
     : [""];
   const hasExt = win && exts.includes(p.extname(name).toLowerCase());
   const candidatesFor = (base: string): string[] =>
     win ? (hasExt ? [base] : exts.map((e) => base + e)) : [base];
-
   const dirs = name.includes("/") || name.includes("\\") ? [""] : splitPath(opts, win);
-  for (const dir of dirs) {
-    for (const candidate of candidatesFor(dir ? p.join(dir, name) : name)) {
-      if (isFile(candidate)) return classify(candidate, win);
-    }
-  }
-  return undefined;
+  return dirs.flatMap((dir) => candidatesFor(dir ? p.join(dir, name) : name));
 }
 
 function splitPath(opts: ResolveOptions, win: boolean): string[] {
@@ -67,7 +80,8 @@ function splitPath(opts: ResolveOptions, win: boolean): string[] {
     .filter(Boolean);
 }
 
-function classify(file: string, win: boolean): ResolvedCommand {
+/** Decide how to launch a file that exists. */
+export function classify(file: string, win: boolean): ResolvedCommand {
   const ext = path.extname(file).toLowerCase();
   if (win && (ext === ".cmd" || ext === ".bat")) {
     const script = scriptFromCmdShim(file);

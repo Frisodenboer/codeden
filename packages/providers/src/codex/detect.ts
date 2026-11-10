@@ -1,16 +1,19 @@
 import type { ProviderIssue, ProviderStatus } from "@codeden/contracts";
-import { type ResolvedCommand, resolveExecutable, runCommand } from "../util/exec";
-import { compareVersions, parseVersion } from "../util/version";
+import { brokenInstallMessage, type DetectExeOptions, lookupForDetect } from "../util/detect-exe";
+import { runCommand } from "../util/exec";
+import { compareVersions } from "../util/version";
 
 /** Oldest Codex version whose app-server protocol matches the generated types. */
 export const CODEX_MIN_VERSION = "0.160.0";
 
-export interface CodexDetectOptions {
-  executable?: ResolvedCommand;
-  timeoutMs?: number;
-}
+const INSTALL = { kind: "install", command: "npm install -g @openai/codex" } as const;
 
-/** `codex --version` + `codex login status` (§14). Never throws. */
+export type CodexDetectOptions = DetectExeOptions;
+
+/**
+ * Find a working `codex` (PATH, then the standalone installer's folders), then
+ * `codex login status` (§14). Never throws.
+ */
 export async function detectCodex(opts: CodexDetectOptions = {}): Promise<ProviderStatus> {
   const status: ProviderStatus = {
     providerId: "codex",
@@ -26,30 +29,32 @@ export async function detectCodex(opts: CodexDetectOptions = {}): Promise<Provid
     checkedAt: new Date().toISOString(),
   };
   const issues: ProviderIssue[] = [];
-  const exe = opts.executable ?? resolveExecutable("codex");
-  if (!exe) {
-    issues.push({
-      code: "not_installed",
-      message: "Codex is not installed (no `codex` on PATH).",
-      fix: { kind: "install", command: "npm install -g @openai/codex" },
-    });
-    return { ...status, issues };
-  }
   const timeoutMs = opts.timeoutMs ?? 15_000;
-  const versionRun = await runCommand(exe, ["--version"], { timeoutMs });
-  const version = parseVersion(versionRun.stdout);
-  if (versionRun.error || !version) {
-    issues.push({
-      code: "detect_failed",
-      message: `Could not run \`codex --version\`: ${versionRun.error?.message ?? (versionRun.timedOut ? "timed out" : versionRun.stderr.trim() || "no version in output")}`,
-    });
-    return { ...status, executablePath: exe.path, issues };
+  const lookup = await lookupForDetect("codex", { ...opts, timeoutMs });
+  const broken = lookup.broken.length > 0 ? { broken: lookup.broken } : {};
+  const exe = lookup.command;
+  if (!exe) {
+    issues.push(
+      lookup.broken.length > 0
+        ? {
+            code: "broken_install",
+            message: brokenInstallMessage("Codex", lookup.broken),
+            fix: INSTALL,
+          }
+        : {
+            code: "not_installed",
+            message: "Codex is not installed (no `codex` on PATH or in its install folder).",
+            fix: INSTALL,
+          },
+    );
+    return { ...status, ...broken, issues };
   }
-  const supported = compareVersions(version, CODEX_MIN_VERSION) >= 0;
+  const version = lookup.version;
+  const supported = version !== null && compareVersions(version, CODEX_MIN_VERSION) >= 0;
   if (!supported) {
     issues.push({
       code: "version_unsupported",
-      message: `Codex ${version} is older than the tested minimum ${CODEX_MIN_VERSION}.`,
+      message: `Codex ${version ?? "(unknown version)"} is older than the tested minimum ${CODEX_MIN_VERSION}.`,
       fix: { kind: "upgrade", command: "npm install -g @openai/codex@latest" },
     });
   }
@@ -72,6 +77,7 @@ export async function detectCodex(opts: CodexDetectOptions = {}): Promise<Provid
     supported,
     loggedIn: auth.loggedIn,
     authMethod: auth.authMethod,
+    ...broken,
     issues,
   };
 }
