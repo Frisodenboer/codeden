@@ -18,10 +18,35 @@ Download the installer for your system from the [latest GitHub Release](https://
 
 ### Unsigned builds
 
-Releases are signed only when the project's signing certificates are configured. An unsigned build works, but the OS warns you the first time:
+Releases carry a publisher signature only when the project's signing certificates are configured. Without one the app works, but your system warns you the first time you open it.
 
-- **Windows:** SmartScreen says "Windows protected your PC". Choose **More info**, then **Run anyway**.
-- **macOS:** Gatekeeper refuses to open an app from an unidentified developer. Right-click CodeDen in Applications, choose **Open**, then **Open** again (or allow it under System Settings > Privacy & Security). **An unsigned macOS app can't update itself**: macOS only installs updates into an app signed with a Developer ID, so download new versions by hand. Settings > About says when this applies.
+#### Windows
+
+SmartScreen says "Windows protected your PC". Choose **More info**, then **Run anyway**.
+
+#### macOS
+
+Without a Developer ID, the macOS app is signed ad hoc and isn't notarized by Apple, so macOS can't verify who made it. You allow it once:
+
+1. Open the `.dmg` and drag **CodeDen** to **Applications**.
+2. Open CodeDen from Applications. macOS says it can't verify that CodeDen is free of malware (or that it's from an unidentified developer). Choose **Done** (or **OK**); don't move it to the Bin.
+3. Open **System Settings › Privacy & Security** and scroll down to **Security**. Next to the message about CodeDen, choose **Open Anyway**.
+4. Open CodeDen again and choose **Open Anyway** in the dialog. Enter your password if asked.
+
+After that CodeDen opens normally. On macOS 14 and earlier you can instead Control-click (or right-click) CodeDen in Applications, choose **Open**, then **Open** again.
+
+**If macOS says "CodeDen is damaged and can't be opened"** (version 0.4.4 and earlier weren't signed at all, which macOS reports this way), don't move it to the Bin. Remove the download flag macOS put on the app instead:
+
+1. Open **Terminal** (in Applications › Utilities).
+2. Run this command:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/CodeDen.app
+   ```
+
+3. Open CodeDen again.
+
+**A macOS app without a Developer ID can't update itself:** macOS only installs updates into an app signed with a Developer ID, so download new versions from the [latest GitHub Release](https://github.com/leonvanzyl/codeden/releases/latest) and drag them over the old one. **Settings › About** says when this applies.
 
 ## First launch
 
@@ -77,7 +102,7 @@ The desktop app updates itself from GitHub Releases, following **Settings > Gene
 Notes:
 
 - The npm self-update (`codeden update`, side-by-side versions in `~/.codeden/app`) is off in the desktop app; the app replaces itself instead. If the app attached to a server you started with `npx codeden`, the banner is about that npm install, and the app updates itself on its own (with a notification and the tray menu).
-- macOS needs a signed app to update (see above). The Debian package updates through the downloaded `.deb` (it asks for your password); the AppImage replaces itself.
+- macOS needs an app signed with a Developer ID to update (see [Unsigned builds](#unsigned-builds)). The Debian package updates through the downloaded `.deb` (it asks for your password); the AppImage replaces itself.
 - If an update fails, the banner shows why, with **Retry**. You can always install a newer release by hand over the old one.
 
 ## Where things live

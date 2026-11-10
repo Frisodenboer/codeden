@@ -4,6 +4,10 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **The macOS desktop app no longer opens as "damaged".** Downloaded builds were reported as "CodeDen is damaged and can't be opened" on Apple silicon Macs, with no way past it, because the app wasn't signed at all. Builds without a Developer ID are now signed ad hoc, so macOS only says it can't verify the developer, which you allow once: open CodeDen, then choose **Open Anyway** under **System Settings › Privacy & Security**. Every release now checks the downloaded `.dmg` and `.zip` on macOS before it ships. If an older version still says "damaged", see [Unsigned builds](docs/desktop.md#unsigned-builds) for the one-line fix. These builds still can't update themselves; download new versions from GitHub Releases.
+
 ## [0.4.4] - 2026-11-09
 
 ### Added
