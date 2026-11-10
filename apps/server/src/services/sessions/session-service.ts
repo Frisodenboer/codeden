@@ -231,7 +231,7 @@ export class SessionService {
       });
     const resolution: JsonValue =
       req.response.kind === "approval"
-        ? { decision: req.response.decision, decidedBy: "user" }
+        ? { decision: req.response.decision, decidedBy: req.response.decidedBy ?? "user" }
         : req.response.kind === "answer"
           ? { answers: req.response.answers }
           : { status: "cancelled" };

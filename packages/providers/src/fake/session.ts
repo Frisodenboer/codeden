@@ -249,7 +249,7 @@ export class FakeSession implements ProviderSession {
         ...base,
         status: allowed ? "completed" : "declined",
         decision,
-        decidedBy: "user",
+        decidedBy: response.kind === "approval" ? (response.decidedBy ?? "user") : "user",
       },
     });
     if (!allowed) {

@@ -216,7 +216,12 @@ export class CodexSession implements ProviderSession {
         onRequest: (req) =>
           handleServerRequest(req, {
             broker: this.broker,
-            risk: { cwd: this.opts.cwd, extraRoots: this.opts.additionalDirectories },
+            risk: {
+              cwd: this.opts.cwd,
+              extraRoots: this.opts.additionalDirectories,
+              ...(this.opts.ownBranch ? { ownBranch: this.opts.ownBranch } : {}),
+            },
+            autonomy: () => (this.opts.readOnly ? "read_only" : this.autonomy),
             ctx: (turnId) => ({ threadId: this.mapper.rootThreadId, turnId }),
             filePaths: (itemId) => this.filePaths.get(itemId),
           }),

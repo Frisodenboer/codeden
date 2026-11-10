@@ -104,7 +104,7 @@ Factory work is ordinary sessions, issues and PRs, so all of it stays traceable.
 
 ### Nobody waits on you in Dark factory
 
-In **Dark factory**, the project's PM and the factory's own sessions (finders, builders, reviewers) never stop to ask you something. If one of them asks, through CodeDen's `ask_user` or the agent's own question tool, it gets an immediate answer instead: decide from the vision and carry on.
+In **Dark factory**, the project's PM and the factory's own sessions (finders, builders, reviewers) never stop to ask you something. If one of them asks, through CodeDen's `ask_user` or the agent's own question tool, it gets an immediate answer instead: decide from the vision and carry on. If one of them needs an **approval** (a risky action under its permission level, such as a force push of another branch), it is **denied** at once, never approved, with the same guidance: find a way that needs no approval (`create_pull_request` pushes the session's own branch, with a lease after a rebase), or record the decision as needing you and carry on.
 
 - **The vision wins over the current code.** If the code doesn't match the vision (say the vision names a different stack), the work that brings it in line comes first. Work it would throw away waits.
 - **Decisions are recorded.** The agent records each judgement call with `factory_record_decision`: the question, what it decided and why. It arrives in your inbox as a low-priority **Factory decided** message and in the daily digest. To change one, tell the project manager or edit the vision.

@@ -15,6 +15,11 @@ export interface PathContext {
   extraRoots?: readonly string[];
   /** The OS temp directories. Defaults to `osTempRoots()` for the running platform. */
   tempRoots?: readonly string[];
+  /**
+   * Folders outside the worktree where the agent keeps its own notes (Claude's plans and
+   * auto-memory). Writable like temp, and like temp a secrets file there still asks.
+   */
+  notesRoots?: readonly string[];
   /** Defaults to `process.platform`; set in tests to exercise both path flavours. */
   platform?: NodeJS.Platform;
   /** Home directory used to expand `~`. Defaults to `process.env.HOME ?? USERPROFILE`. */
@@ -35,9 +40,16 @@ function tempRootsOf(ctx: PathContext): readonly string[] {
   return ctx.tempRoots ?? osTempRoots(ctx.platform);
 }
 
+/** Home variables. Matched in any case: PowerShell's `$home` is the home directory too. */
 const HOME_VARS = /^(\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=$|[\\/])/i;
-const TEMP_VARS =
-  /^(\$TMPDIR|\$\{TMPDIR\}|\$TEMP|\$TMP|\$env:TEMP|\$env:TMP|%TEMP%|%TMP%)(?=$|[\\/])/i;
+/**
+ * Temp variables. Shell names are case-sensitive, so `$tmp` (a common name for what `mktemp`
+ * printed) is not the temp directory; PowerShell's and cmd's names are not.
+ */
+const TEMP_VARS = [
+  /^(\$TMPDIR|\$\{TMPDIR\}|\$TEMP|\$\{TEMP\}|\$TMP|\$\{TMP\})(?=$|[\\/])/,
+  /^(\$env:TEMP|\$env:TMP|%TEMP%|%TMP%)(?=$|[\\/])/i,
+];
 
 /**
  * Git Bash paths on Windows: `/c/Users/x` is `C:\Users\x`, and `/tmp` is the user's temp
@@ -52,7 +64,8 @@ function fromGitBash(value: string, temp: string | undefined): string {
 
 /**
  * Resolve `target` (absolute, relative to `dir`, `~`-prefixed, or starting with a home or
- * temp variable) to an absolute path.
+ * temp variable) to an absolute path. On Windows the directory it resolves from may be in Git
+ * Bash form too: the shell reports `/c/Users/x/repo` once a command has run in it.
  */
 export function resolveAgainst(target: string, ctx: PathContext): string {
   const p = pathApi(ctx);
@@ -63,9 +76,13 @@ export function resolveAgainst(target: string, ctx: PathContext): string {
   }
   value = value.replace(HOME_VARS, home);
   const temp = tempRootsOf(ctx)[0];
-  if (temp) value = value.replace(TEMP_VARS, temp);
-  if (isWin(ctx)) value = fromGitBash(value, temp);
-  return p.resolve(ctx.dir ?? ctx.cwd, value);
+  if (temp) for (const vars of TEMP_VARS) value = value.replace(vars, temp);
+  let base = ctx.dir ?? ctx.cwd;
+  if (isWin(ctx)) {
+    value = fromGitBash(value, temp);
+    base = fromGitBash(base, temp);
+  }
+  return p.resolve(base, value);
 }
 
 /** True when `target` resolves inside `root` (or equals it). Case-insensitive on Windows. */
@@ -95,9 +112,25 @@ export function isInTemp(target: string, ctx: PathContext): boolean {
   });
 }
 
-/** True when agents may write `target` without asking: the worktree, extra roots or temp. */
+/** True when `target` is one of the OS temp directories itself. */
+export function isTempRoot(target: string, ctx: PathContext): boolean {
+  const abs = resolveAgainst(target, ctx);
+  return tempRootsOf(ctx).some((root) => relative(root, abs, ctx) === "");
+}
+
+/** True when `target` is inside one of the agent's notes folders. */
+export function isInNotes(target: string, ctx: PathContext): boolean {
+  if (!ctx.notesRoots?.length) return false;
+  const abs = resolveAgainst(target, ctx);
+  return ctx.notesRoots.some((root) => isInside(abs, root, ctx));
+}
+
+/**
+ * True when agents may write `target` without asking: the worktree, extra roots, temp or their
+ * notes folders.
+ */
 export function isWritable(target: string, ctx: PathContext): boolean {
-  return isInWorkspace(target, ctx) || isInTemp(target, ctx);
+  return isInWorkspace(target, ctx) || isInTemp(target, ctx) || isInNotes(target, ctx);
 }
 
 /**
@@ -181,7 +214,11 @@ export function isSecretPath(target: string): boolean {
   if (base === ".env" || base.startsWith(".env.")) {
     return !SAFE_ENV_SUFFIXES.some((s) => base.endsWith(s));
   }
-  if (base.endsWith(".env") && base !== ".env") return !base.includes("example");
+  if (base.endsWith(".env") && base !== ".env") {
+    // `process.env`, `import.meta.env`, `Deno.env` and `Bun.env` are code, not files.
+    if (/^(process|deno|bun|(.+\.)?meta)\.env$/.test(base)) return false;
+    return !base.includes("example");
+  }
   if (SECRET_BASENAMES.has(base)) return true;
   if (SECRET_EXTENSIONS.some((ext) => base.endsWith(ext))) return true;
   return /(^|\/)\.(ssh|aws|gnupg|docker)\//i.test(normalized) && !base.endsWith(".pub");

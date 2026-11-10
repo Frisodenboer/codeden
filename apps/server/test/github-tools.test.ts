@@ -64,6 +64,37 @@ describe("create pull request", () => {
     expect(again).toMatchObject({ number: 2, created: false });
   });
 
+  it("pushes the session's own branch again with a lease after a rebase", async () => {
+    const rejected =
+      "git push failed (1): ! [rejected] codeden/task-1 -> codeden/task-1 (non-fast-forward)";
+    env.pushRejection = rejected;
+    const session = env.addSession();
+    const result = await env.service.createPullRequest(session.id, { title: "fix: bug" });
+    expect(result).toMatchObject({ created: true, branch: session.branch });
+    const pushes = env.runnerCalls.filter((c) => c.name === "git.push");
+    expect(pushes).toHaveLength(2);
+    expect(pushes[0]).not.toHaveProperty("forceWithLease");
+    expect(pushes[1]).toMatchObject({ branch: session.branch, forceWithLease: true });
+  });
+
+  it("never force-pushes a branch the session doesn't own, or on other failures", async () => {
+    env.pushRejection =
+      "git push failed (1): ! [rejected] feature/shared -> feature/shared (fetch first)";
+    // An existing folder on a branch the session didn't create.
+    const shared = env.addSession({ worktreePath: null, branch: "feature/shared" });
+    await expect(
+      env.service.createPullRequest(shared.id, { title: "fix: bug" }),
+    ).rejects.toMatchObject({ code: "git_failed" });
+    env.pushRejection = "git push failed (128): fatal: could not read from remote repository";
+    const own = env.addSession();
+    await expect(
+      env.service.createPullRequest(own.id, { title: "fix: bug" }),
+    ).rejects.toMatchObject({ code: "git_failed" });
+    const pushes = env.runnerCalls.filter((c) => c.name === "git.push");
+    expect(pushes).toHaveLength(2);
+    expect(pushes.some((c) => "forceWithLease" in c)).toBe(false);
+  });
+
   it("does not repeat an issue link the body already has", () => {
     const body = pullRequestBody("Closes #4", 4, { id: "s1", title: null } as never);
     expect(body.match(/#4/g)).toHaveLength(1);

@@ -131,7 +131,12 @@ describe("Codex config", () => {
       sandbox: "workspace-write",
       networkAccess: false,
     });
-    expect(codexPolicy("full")).toMatchObject({ approvalPolicy: "never", networkAccess: true });
+    // Full asks too, so escalations reach CodeDen's policy, which approves all but writes
+    // outside the worktree (./codex-policy.test.ts).
+    expect(codexPolicy("full")).toMatchObject({
+      approvalPolicy: "on-request",
+      networkAccess: true,
+    });
   });
 
   it("injects MCP servers and writable roots as config overrides", () => {

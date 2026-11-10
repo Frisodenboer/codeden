@@ -37,6 +37,7 @@ import { QueueService } from "./sessions/queue";
 import { SessionRecovery } from "./sessions/recovery";
 import { SessionRepo } from "./sessions/repo";
 import { SessionService } from "./sessions/session-service";
+import { UnwatchedApprovals, type UnwatchedApprovalsDeps } from "./sessions/unwatched-approvals";
 import { WorktreeCleanup, type WorktreeCleanupDeps } from "./sessions/worktree-cleanup";
 import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
@@ -93,6 +94,8 @@ export interface ServicesOptions {
   updates?: { fetch?: typeof fetch; intervalMs?: number };
   /** Worktree cleanup clock and sweep timings (tests). */
   worktreeCleanup?: Pick<WorktreeCleanupDeps, "now" | "intervalMs" | "initialDelayMs">;
+  /** Unwatched approvals: how long they wait for the user (tests shorten it). */
+  unwatchedApprovals?: Pick<UnwatchedApprovalsDeps, "waitMs" | "now">;
   log?: (message: string) => void;
 }
 
@@ -149,6 +152,8 @@ export interface AppServices {
   factory: FactoryService;
   /** Session archive and worktree cleanup (§9). */
   worktreeCleanup: WorktreeCleanup;
+  /** Denies approvals nobody is there to answer, so unattended work never waits forever. */
+  unwatchedApprovals: UnwatchedApprovals;
   userHome: string;
 }
 
@@ -318,6 +323,15 @@ export function createServices(opts: ServicesOptions): AppServices {
     ...opts.worktreeCleanup,
     log: opts.log,
   });
+  const unwatchedApprovals = new UnwatchedApprovals({
+    store: opts.store,
+    repo: sessionRepo,
+    projects,
+    inbox,
+    respond: (id, req) => (sessions as SessionService).respond(id, req),
+    ...opts.unwatchedApprovals,
+    log: opts.log,
+  });
   const services: AppServices = {
     db: opts.db,
     store: opts.store,
@@ -369,6 +383,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     usage,
     factory,
     worktreeCleanup,
+    unwatchedApprovals,
     configFiles: new ConfigFiles({
       projects,
       home: userHome,

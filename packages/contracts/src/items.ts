@@ -165,6 +165,13 @@ export const TodoListItem = z.object({
 export const ApprovalDecision = z.enum(["allow_once", "allow_session", "deny"]);
 export type ApprovalDecision = z.infer<typeof ApprovalDecision>;
 
+/**
+ * Who decided an approval: the user, CodeDen's policy (an action the permission level allows,
+ * or a denial in a session nobody is watching), or a PM.
+ */
+export const ApprovalDecider = z.enum(["user", "policy", "pm"]);
+export type ApprovalDecider = z.infer<typeof ApprovalDecider>;
+
 /** What an approval request is about. */
 export const ApprovalAction = z.enum([
   "command",
@@ -200,7 +207,7 @@ export const ApprovalRequestItem = z.object({
   toolCallItemId: Id.optional(),
   options: z.array(ApprovalDecision).default(["allow_once", "allow_session", "deny"]),
   decision: ApprovalDecision.optional(),
-  decidedBy: z.enum(["user", "policy", "pm"]).optional(),
+  decidedBy: ApprovalDecider.optional(),
 });
 
 /** One question in a `user_question` item. */

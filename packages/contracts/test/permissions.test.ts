@@ -20,6 +20,15 @@ describe("permission levels (§11.2)", () => {
     expect(SessionOptions.parse(JSON.parse(JSON.stringify(opts)))).toEqual(opts);
   });
 
+  it("round-trips the session's own branch, and leaves it out by default", () => {
+    const base = { sessionId: "s1", role: "agent", cwd: "/repo", autonomy: "auto" } as const;
+    expect(SessionOptions.parse(base).ownBranch).toBeUndefined();
+    const opts = SessionOptions.parse({ ...base, ownBranch: "codeden/fix-login-ab12" });
+    expect(SessionOptions.parse(JSON.parse(JSON.stringify(opts)))).toEqual(opts);
+    expect(opts.ownBranch).toBe("codeden/fix-login-ab12");
+    expect(SessionOptions.safeParse({ ...base, ownBranch: "" }).success).toBe(false);
+  });
+
   it("treats the readOnly capability as optional", () => {
     const caps = {
       resume: true,

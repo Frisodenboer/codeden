@@ -62,11 +62,54 @@ describe("classifyCommand", () => {
 
   it("flags branch, tag and remote branch deletion", () => {
     expect(action("git branch -D old")).toBe("git_destructive");
-    expect(action("git branch --delete old")).toBe("git_destructive");
+    expect(action("git branch --delete --force old")).toBe("git_destructive");
+    expect(action("git branch -d -f old")).toBe("git_destructive");
+    expect(action("git branch -df old")).toBe("git_destructive");
     expect(action("git push origin --delete old")).toBe("git_destructive");
     expect(action("git push origin :old")).toBe("git_destructive");
     expect(action("git tag -d v1")).toBe("git_destructive");
     expect(action("git branch -a")).toBeNull();
+    // A plain -d refuses to delete unmerged work.
+    expect(action("git branch -d tmp/spike")).toBeNull();
+    expect(action("git branch --delete tmp/spike")).toBeNull();
+    expect(action("git branch -dr origin/tmp")).toBeNull();
+  });
+
+  it("lets the session force-push its own branch with a lease", () => {
+    const own = "codeden/fix-login-ab12";
+    const mine = { ...posix, ownBranch: own, currentBranch: () => own };
+    for (const cmd of [
+      "git push --force-with-lease",
+      "git push --force-with-lease origin",
+      "git push --force-with-lease origin HEAD",
+      `git push --force-with-lease origin ${own}`,
+      `git push --force-with-lease=${own} -u origin HEAD:refs/heads/${own}`,
+      "git push --force-with-lease --force-if-includes origin HEAD",
+      "git rebase origin/main && git push --force-with-lease",
+      "cd src && git push --force-with-lease",
+    ]) {
+      expect(action(cmd, mine), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "git push -f",
+      `git push --force origin ${own}`,
+      `git push --force-with-lease -f origin ${own}`,
+      "git push --force-with-lease origin main",
+      "git push --force-with-lease origin HEAD:main",
+      `git push --force-with-lease origin ${own} main`,
+      "git push --force-with-lease --all",
+      `git push origin +${own}`,
+      `git push origin --delete ${own}`,
+      "git -C ../other push --force-with-lease",
+      "cd ../other && git push --force-with-lease",
+    ]) {
+      expect(action(cmd, mine), cmd).toBe("git_destructive");
+    }
+    // Checked out elsewhere, or no branch of its own: asks.
+    const onMain = { ...mine, currentBranch: () => "main" };
+    expect(action("git push --force-with-lease", onMain)).toBe("git_destructive");
+    expect(action("git push --force-with-lease origin HEAD", onMain)).toBe("git_destructive");
+    expect(action(`git push --force-with-lease origin ${own}`, posix)).toBe("git_destructive");
   });
 
   it("flags rm outside the worktree", () => {
@@ -182,6 +225,46 @@ describe("classifyCommand", () => {
     expect(action("Get-ChildItem env:", win)).toBe("secrets");
   });
 
+  it("lets agents read global git config and single variables", () => {
+    for (const cmd of [
+      "git config --global user.email",
+      "git config --global --get user.name",
+      "git config --global --list",
+      "git config --global -l --show-origin",
+      "git config get --global user.name",
+      "git config --global --type bool --get core.autocrlf",
+      "git config user.name x",
+      "printenv PATH",
+      "printenv NODE_ENV HOME",
+    ]) {
+      expect(action(cmd), cmd).toBeNull();
+    }
+    for (const cmd of ["Get-ChildItem env:PATH", "gci Env:NODE_ENV", "$env:PATH -split ';'"]) {
+      expect(action(cmd, win), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "git config --global user.name x",
+      "git config --global user.name list",
+      "git config --global --unset user.name",
+      "git config --global --add safe.directory /x",
+      "git config set --global user.name x",
+      "git config --global -e",
+      "git config --system core.autocrlf true",
+    ]) {
+      expect(action(cmd), cmd).toBe("outside_worktree");
+    }
+    for (const cmd of ["printenv", "printenv GITHUB_TOKEN", "printenv PATH OPENAI_API_KEY"]) {
+      expect(action(cmd), cmd).toBe("secrets");
+    }
+    for (const cmd of [
+      "Get-ChildItem env:",
+      "ls env:*",
+      "Get-ChildItem Env:AWS_SECRET_ACCESS_KEY",
+    ]) {
+      expect(action(cmd, win), cmd).toBe("secrets");
+    }
+  });
+
   it("flags writes outside the worktree via redirects and copies", () => {
     expect(action("echo x > /etc/profile")).toBe("outside_worktree");
     expect(action("echo x >> ~/.bashrc")).toBe("outside_worktree");
@@ -261,6 +344,79 @@ describe("quoting, heredocs and here-strings", () => {
   });
 });
 
+describe("secrets: patterns, data and writes are not reads", () => {
+  it("lets agents search for env usage, mention .env and create env files in the worktree", () => {
+    for (const cmd of [
+      'grep -rn "process.env" src/',
+      "grep -rn process.env -A 3 src",
+      "rg 'import.meta.env' apps/web/src",
+      "rg -n -t ts process.env",
+      'grep -e ".env" -r docs',
+      "echo '.env' >> .gitignore",
+      "printf '\\n.env.local\\n' >> .gitignore",
+      "test -f .env && echo has-env",
+      "[ -f .env.local ] || cp .env.example .env.local",
+      "ls -la .env*",
+      "ls certs/*.pem",
+      "find . -name '*.pem'",
+      "cp .env.example .env",
+      "cp .env.example .env.local",
+      "echo PORT=3000 >> .env",
+      "tee .env < .env.example",
+      "openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 1 -nodes",
+    ]) {
+      expect(action(cmd), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "Select-String -Path src\\*.ts -Pattern 'process.env'",
+      'findstr /s /c:"process.env" *.ts',
+      "Copy-Item .env.example .env",
+      "Copy-Item -Path .env.example -Destination .env.local",
+      "Set-Content -Path .env -Value 'PORT=3000'",
+    ]) {
+      expect(action(cmd, win), cmd).toBeNull();
+    }
+  });
+
+  it("still asks for reading secrets, and for writing them outside the worktree", () => {
+    for (const cmd of [
+      "cat .env",
+      "grep KEY .env",
+      "grep -rn API_KEY .env.local",
+      "rg -e TOKEN .env.production",
+      "grep -f patterns.txt .env",
+      "grep -r --include=*.env KEY .",
+      "find . -name .env -exec cat {} ;",
+      "cp .env .env.backup",
+      "cp ~/.ssh/id_rsa ./id_rsa",
+      "dotenv -e .env.test -- vitest run",
+      "docker compose --env-file .env up -d",
+    ]) {
+      expect(action(cmd), cmd).toBe("secrets");
+    }
+    expect(action("Get-Content .env.local | Select-Object -First 3", win)).toBe("secrets");
+    expect(action("Select-String -Pattern KEY -Path .env", win)).toBe("secrets");
+    for (const cmd of [
+      "cp .env.example ../other/.env",
+      "cp .env.example ~/.env",
+      "echo TOKEN=x > /tmp/.env",
+      "cp config/.env.local /tmp/",
+      "openssl genrsa -out ~/keys/key.pem 2048",
+    ]) {
+      expect(action(cmd), cmd).toBe("outside_worktree");
+    }
+  });
+
+  it("reads code expressions as code, not file names", () => {
+    for (const p of ["process.env", "import.meta.env", "Deno.env", "Bun.env"]) {
+      expect(isSecretPath(p), p).toBe(false);
+    }
+    for (const p of ["prod.env", "local.env", "config/app.env"]) {
+      expect(isSecretPath(p), p).toBe(true);
+    }
+  });
+});
+
 describe("relative paths after cd", () => {
   it("resolves relative paths from where a cd moved", () => {
     expect(action("cd apps/web && cp a.ts ../../a.ts.bak")).toBeNull();
@@ -314,7 +470,7 @@ describe("the OS temp directory", () => {
     // A secrets file in temp asks as a write outside the worktree, so Full asks for it too.
     expect(classifyWrite("/tmp/.env", posix)).toMatchObject({ action: "outside_worktree" });
     expect(action("echo x > /tmp/.npmrc")).toBe("outside_worktree");
-    expect(classifyWrite(".env", posix)).toMatchObject({ action: "secrets" });
+    expect(classifyWrite(".env", posix)).toEqual({ risky: false });
     expect(action("cp .env.production /tmp/x.env")).toBe("outside_worktree");
     expect(action("cp .env.production /tmp/notes.txt")).toBe("secrets");
     expect(action("rm -rf /tmp")).toBe("outside_worktree");
@@ -322,6 +478,53 @@ describe("the OS temp directory", () => {
     expect(action("echo x > /tmpfoo/x")).toBe("outside_worktree");
     expect(action("echo x > C:\\Windows\\Temp\\x", win)).toBe("outside_worktree");
     expect(action("echo x > /tmp/x", { ...posix, tempRoots: [] })).toBe("outside_worktree");
+  });
+
+  it("lets agents copy files into a temp directory itself, but not secrets", () => {
+    for (const cmd of [
+      "cp a.png /tmp/",
+      'cp a.png "$TMPDIR"',
+      "mv out.log /tmp",
+      "cp -r dist/ /tmp",
+    ]) {
+      expect(action(cmd), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "cp a.png $TEMP",
+      "Copy-Item a.png $env:TEMP",
+      "Copy-Item -Path a.png -Destination %TMP%",
+      "cp a.png /tmp/",
+    ]) {
+      expect(action(cmd, win), cmd).toBeNull();
+    }
+    expect(action("cp .env.production /tmp/")).toBe("outside_worktree");
+    expect(action("cp build/id_rsa /tmp")).toBe("outside_worktree");
+    expect(action("rm -rf /tmp")).toBe("outside_worktree");
+    expect(action("rm -rf $TMPDIR")).toBe("outside_worktree");
+    // `/etc` is a path for cp and mv, not a cmd switch.
+    expect(action("cp hosts /etc")).toBe("outside_worktree");
+    expect(action("mv app /opt")).toBe("outside_worktree");
+    expect(action("robocopy dist C:\\Users\\me\\out /E /R:1", win)).toBe("outside_worktree");
+    expect(action("xcopy dist build /E /I", win)).toBeNull();
+  });
+
+  it("reads $tmp and $temp as the agent's own variables, not the temp directory", () => {
+    expect(action('tmp=$(mktemp -d) && cp -r src "$tmp" && rm -rf "$tmp"')).toBeNull();
+    expect(action('temp=$(mktemp) && echo x > "$temp" && rm -f "$temp"')).toBeNull();
+    expect(action('cp -r src "$tmp"', win)).toBeNull();
+    expect(action("echo x > $TMP/x.txt", win)).toBeNull();
+    expect(action(`echo x > $\{TMPDIR}/x.txt`)).toBeNull();
+    // PowerShell's $home is the home directory in any case.
+    expect(action("Remove-Item -Recurse $home\\Documents", win)).toBe("outside_worktree");
+  });
+
+  it("empties the current directory only where it may write", () => {
+    expect(action("cd dist && rm -rf *")).toBeNull();
+    expect(action("rm -rf *")).toBeNull();
+    expect(action("cd /tmp/scratch && rm -rf *")).toBeNull();
+    expect(action("cd /tmp && rm -rf *")).toBe("outside_worktree");
+    expect(action("cd ~ && rm -rf *")).toBe("outside_worktree");
+    expect(action("cd .. && rm -rf *")).toBe("outside_worktree");
   });
 
   it("maps Git Bash paths on Windows", () => {
@@ -373,7 +576,8 @@ describe("classifyWrite / classifyRead / classifyFetch", () => {
       action: "outside_worktree",
     });
     expect(classifyWrite("D:\\shared\\x.txt", win).risky).toBe(false);
-    expect(classifyWrite(".env", posix)).toMatchObject({ action: "secrets" });
+    expect(classifyWrite(".env", posix)).toEqual({ risky: false });
+    expect(classifyWrite("/work/other/.env", posix)).toMatchObject({ action: "outside_worktree" });
   });
 
   it("flags only secret reads", () => {

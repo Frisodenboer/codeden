@@ -79,8 +79,8 @@ describe("Codex autonomy changes", () => {
     const turns = requests(log).filter((r) => r.method === "turn/start");
     expect(turns.map((t) => t.params.approvalPolicy)).toEqual([
       undefined,
-      "never",
-      "never",
+      "on-request",
+      "on-request",
       "untrusted",
     ]);
     expect(turns[1]?.params.sandboxPolicy).toEqual({

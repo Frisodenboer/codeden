@@ -15,6 +15,7 @@ import type { InboxService } from "../inbox-service";
 import type { ProjectService } from "../projects/project-service";
 import { type RunnerPort, runnerErrorCode } from "../runner-port";
 import { slugWords } from "./conflicts";
+import { ownBranch } from "./own-branch";
 import type { SessionRepo } from "./repo";
 
 export interface LauncherDeps {
@@ -207,6 +208,7 @@ export class SessionLauncher {
       // `read_only` level carry it in `autonomy`, so it can change live.
       readOnly: session.role !== "agent",
       mcpServers,
+      ...(ownBranch(session) ? { ownBranch: ownBranch(session) } : {}),
     });
   }
 

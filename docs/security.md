@@ -47,12 +47,14 @@ Each agent session and each automation runs at a **permission level**, from Read
 |---|---|---|
 | **Read-only**: can read and run checks, but never edits files, commits or pushes | Default permission mode; a PreToolUse hook denies the edit tools and every shell command that is not on the read-only allowlist | `never` approvals, **read-only sandbox**, network off: writes fail instead of asking |
 | **Supervised**: asks before edits and commands | Default permission mode, and every edit or command is routed to an approval | `untrusted` approvals, workspace-write sandbox |
-| **Auto**: works freely in its worktree and asks only for risky actions (default) | `acceptEdits`, plus CodeDen's risk classifier on every tool call | `on-request` approvals, workspace-write sandbox, network off |
-| **Full**: never asks | `bypassPermissions`; only writes outside the worktree ask | `never`, workspace-write sandbox, network on |
+| **Auto**: works freely in its worktree and asks only for risky actions (default) | `acceptEdits`, plus CodeDen's risk classifier on every tool call | `on-request` approvals, workspace-write sandbox, network off; what Codex asks to run outside its sandbox goes through CodeDen's risk classifier, and only risky actions reach you |
+| **Full**: never asks | `bypassPermissions`; only writes outside the worktree ask | `on-request` approvals, workspace-write sandbox, network on; CodeDen approves Codex's requests unless they write outside the worktree |
+
+**How Codex's requests are decided.** Codex's workspace-write sandbox keeps `.git` read-only, and under Auto it keeps the network off, so Codex asks to step outside it for ordinary work such as `git commit`, `pnpm install` or `git push`. Under Auto and Full, CodeDen judges each request with the same risk classifier as Claude's tool calls: commands by their text, patches and extra folder permissions by their paths. What your level allows is approved at once and shows in the transcript as approved by policy; only the rest becomes an approval card. A command approved this way runs outside Codex's sandbox, just as Claude's commands run outside any sandbox. Under Supervised and Read-only nothing is approved by policy.
 
 Read-only is offered only on providers that report the `readOnly` capability (Claude Code and Codex both do); the server refuses it elsewhere. Under Read-only:
 
-- **Claude** may run commands that only read (`ls`, `cat`, `rg`, `git status`/`log`/`diff`/`show`, `gh ... view`/`list`/`checks`, and their PowerShell equivalents) and the project's **checks**: `npm`/`pnpm`/`yarn`/`bun` `test`, `lint`, `typecheck` or `check`, `tsc`, `vitest`, `jest`, `eslint`, `biome check`, `ruff check`, `pytest`, `mypy`, `cargo test`/`check`/`clippy` and `go test`/`vet`. Fix, write, snapshot-update and watch flags (`--fix`, `--write`, `-u`, `--watch`, ...), output redirection and command substitution are refused, as are installs, builds, commits and pushes. Checks run the project's own scripts, so a test that writes files (coverage, caches) can still write them; the agent itself cannot.
+- **Claude** may run commands that only read (`ls`, `cat`, `rg`, `cd`, `sed` scripts that only print such as `sed -n 1,40p`, `git status`/`log`/`diff`/`show`/`stash list` including `git -C <dir> …`, `gh ... view`/`list`/`checks`, `gh search`, `gh api` GET requests, and their PowerShell equivalents) and the project's **checks**: `npm`/`pnpm`/`yarn`/`bun` `test`, `lint`, `typecheck` or `check`, `tsc`, `vitest`, `jest`, `eslint`, `biome check`, `ruff check`, `pytest`, `mypy`, `cargo test`/`check`/`clippy` and `go test`/`vet`. Fix, write, snapshot-update and watch flags (`--fix`, `--write`, `-u`, `--watch`, ...), output redirection and command substitution are refused, as are installs, builds, commits and pushes. Checks run the project's own scripts, so a test that writes files (coverage, caches) can still write them; the agent itself cannot.
 - **Codex** runs every command in its read-only sandbox, so checks run but any write fails.
 - **CodeDen's `create_pull_request`** is hidden from read-only sessions and refused if called. Commenting on issues and attaching screenshots as evidence still work, so the agent can report what it found.
 
@@ -64,16 +66,20 @@ Automations run unattended, so they use the same permission levels with safer de
 
 **The OS temp directory counts as part of the workspace** under Auto and Full: writing or deleting files in `os.tmpdir()`, `%TEMP%`/`%TMP%`, `$TMPDIR` or `/tmp` (including Git Bash's `/tmp` on Windows) doesn't ask, and Codex's sandbox may write there. Only the temp directories themselves qualify, never a filesystem root or your home directory, even if an environment variable points there. Secrets files written to temp still ask, and Supervised still asks for everything.
 
+**Claude's own notes count the same way.** For Claude sessions under Auto and Full, writing plan files (plan mode, `~/.claude/plans` or your `plansDirectory`) and the project's auto-memory (`~/.claude/projects/<project>/memory` or your `autoMemoryDirectory`) doesn't ask. Only your own Claude settings can move these folders (a repository's settings can't), and a folder that would cover Claude's config folder (its settings and credentials), your home directory or a filesystem root is ignored. Claude's settings and credentials, and secrets files, still ask.
+
 Under **Auto**, edits and ordinary commands inside the worktree run freely, and these go to an approval card (and your inbox):
 
-- writes or deletes **outside the worktree** (and outside the OS temp directory), and changes to global git config;
-- **force pushes**, deleting branches, tags or refs;
+- writes or deletes **outside the worktree** (and outside the OS temp directory), and changes to global git config (reading it, such as `git config --global user.email`, doesn't ask);
+- **force pushes**, deleting branches with unmerged work (`git branch -D`), tags or refs, and deleting remote branches. A force push **with a lease** of the session's own branch (`git push --force-with-lease` after a rebase, to the branch of its own worktree) doesn't ask: the lease refuses if someone else pushed there since, and it never applies to the base branch or `main`/`master`. `git branch -d`, which refuses to delete unmerged work, doesn't ask either. `create_pull_request` pushes the session's own branch with a lease when a plain push is rejected after a rebase;
 - **global installs** (`npm -g`, `pip` outside a project, system package managers) and elevated commands (`sudo`);
 - **piping a downloaded script into a shell** or executing a download (`curl … | sh`, `irm … | iex`, `curl … | python3`). Piping a download into a program that only reads it as data, such as `node -e '…'`, `python -c '…'`, `jq` or a script file in the project, runs freely;
-- **secrets access**: reading or writing secrets files, dumping the environment;
+- **secrets access**: reading secrets files (`.env`, `.npmrc`, SSH keys, `*.pem`, ...) and dumping the environment. Searching for a pattern such as `process.env`, mentioning a file name (`echo .env >> .gitignore`), checking that one exists, listing them, and creating or editing one inside the worktree (`cp .env.example .env`) are not reads and run freely. Printing a named variable such as `printenv PATH` doesn't ask either, unless its name looks like a credential. Writing a secrets file outside the worktree, temp included, asks as a write outside the worktree, under Full too;
 - network fetches to hosts not on the allowed list, where a list applies.
 
 When you approve, you can approve once or for the rest of the session.
+
+**Approvals nobody is there to answer are denied, never approved.** In a Dark factory project, the PM's and the factory's approvals are denied at once, with guidance to find a way that needs no approval or to flag it for you. Sessions started by an automation, a PM or the factory in other modes wait 30 minutes for you, then are denied the same way, so unattended work finishes instead of waiting forever. Sessions you start yourself wait for you. These denials are recorded as decided by CodeDen's policy.
 
 ## Credentials
 

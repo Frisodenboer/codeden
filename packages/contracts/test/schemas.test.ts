@@ -311,6 +311,15 @@ describe("provider contracts", () => {
     });
     expect(broken.broken?.[0]?.reason).toBe("points at a missing package");
     roundTrip(RuntimeResponse, { kind: "approval", decision: "deny", message: "no" });
+    roundTrip(RuntimeResponse, {
+      kind: "approval",
+      decision: "deny",
+      message: "Nobody is watching",
+      decidedBy: "policy",
+    });
+    expect(
+      RuntimeResponse.safeParse({ kind: "approval", decision: "deny", decidedBy: "bot" }).success,
+    ).toBe(false);
     roundTrip(RuntimeResponse, { kind: "answer", answers: { q1: ["SQLite"] } });
   });
 });
