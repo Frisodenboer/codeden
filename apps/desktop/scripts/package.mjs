@@ -16,7 +16,7 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Arch, build, Platform } from "electron-builder";
-import config from "../electron-builder.config.mjs";
+import config, { keyringBinary } from "../electron-builder.config.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const { values } = parseArgs({
@@ -82,14 +82,8 @@ npm(["install", "--omit=dev", "--no-audit", "--no-fund", "--no-package-lock"]);
 const keyring = JSON.parse(
   readFileSync(join(stage, "node_modules", "@napi-rs", "keyring", "package.json"), "utf8"),
 );
-const keyringBinary = (arch) =>
-  ({
-    win32: `@napi-rs/keyring-win32-${arch}-msvc`,
-    darwin: `@napi-rs/keyring-darwin-${arch}`,
-    linux: `@napi-rs/keyring-linux-${arch}-gnu`,
-  })[process.platform];
 const missing = archs
-  .map(keyringBinary)
+  .map((arch) => keyringBinary(process.platform, arch))
   .filter((name) => name && !existsSync(join(stage, "node_modules", ...name.split("/"))));
 if (missing.length) {
   npm([
@@ -102,19 +96,6 @@ if (missing.length) {
     ...missing.map((name) => `${name}@${keyring.version}`),
   ]);
 }
-
-// electron-builder bundles only the platform binaries the app declares itself (it skips
-// transitive optional ones), so declare the keychain module's binary for every target
-// architecture; without it the keychain doesn't load and saved API keys live in memory only.
-const stagePkgPath = join(stage, "package.json");
-const stagePkg = JSON.parse(readFileSync(stagePkgPath, "utf8"));
-stagePkg.optionalDependencies = Object.fromEntries(
-  archs
-    .map(keyringBinary)
-    .filter(Boolean)
-    .map((name) => [name, keyring.version]),
-);
-writeFileSync(stagePkgPath, `${JSON.stringify(stagePkg, null, 2)}\n`);
 
 // 3. Build.
 const platform = { win32: Platform.WINDOWS, darwin: Platform.MAC, linux: Platform.LINUX }[
