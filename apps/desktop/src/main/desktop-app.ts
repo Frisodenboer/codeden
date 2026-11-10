@@ -194,18 +194,23 @@ export class DesktopApp {
     if (this.quitting) return;
     this.quitting = true;
     void (async () => {
-      this.window?.allowClose();
-      clearInterval(this.standaloneTimer);
-      this.monitor?.stop();
-      this.keepAwake.set(false);
-      // Open session browsers move to the runner's Chromium before the views go.
-      await this.browser?.quit();
-      if (this.updates && quitAction(this.updates.state.phase) === "install") {
-        await this.updates.installOnQuit();
-        return;
+      try {
+        this.window?.allowClose();
+        clearInterval(this.standaloneTimer);
+        this.monitor?.stop();
+        this.keepAwake.set(false);
+        // Open session browsers move to the runner's Chromium before the views go.
+        await this.browser?.quit();
+        if (this.updates && quitAction(this.updates.state.phase) === "install") {
+          await this.updates.installOnQuit();
+          return;
+        }
+        await this.conn?.server?.stop({ stopRunner: false });
+        this.tray?.destroy();
+      } catch (error) {
+        // A failed step must not leave the app unable to quit.
+        this.log(`app: while quitting: ${String(error)}`);
       }
-      await this.conn?.server?.stop({ stopRunner: false });
-      this.tray?.destroy();
       this.quitReady = true;
       app.quit();
     })();

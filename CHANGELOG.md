@@ -35,6 +35,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **"Could not read the login state" shows why.** The row's new **Details** show the underlying error (exit code and output).
 - **Fewer false "Pipes a downloaded script straight into a shell" approvals.** Under Auto and Full, commands that pipe a download into a program that only reads it as data, such as `curl … | node -e '…'`, `curl … | python -c '…'` or `curl … | node scripts/x.mjs`, no longer ask. A `|` inside quotes (`sed 's|a|b|'`) no longer counts as a pipe either. Downloads piped into an interpreter that runs them (`curl … | sh`, `curl … | python3`, `irm … | iex`) still ask.
 - **The browser panel keeps working on macOS for very large panels.** Above about 2560×1600, the picture used to be scaled below the page's own size, and on macOS Chrome then stopped sending pictures and reported the wrong page size, which put clicks in the wrong place. The picture now never goes below the page's size.
+- **Quitting the desktop app can no longer hang.** If CodeDen's background server got stuck while closing, the app waited for it forever and never quit. It now stops the server after a short wait (forcing it if needed), a failed step while quitting no longer leaves the app open, and a server left behind by a crashed app exits by itself.
 
 ## [0.4.4] - 2026-11-09
 
