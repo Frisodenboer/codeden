@@ -62,11 +62,16 @@ describe.skipIf(!CHANNEL)(
     }, 60_000);
 
     afterAll(async () => {
-      for (const b of browsers) await b.close().catch(() => {});
+      for (const b of browsers) {
+        await Promise.race([
+          b.close().catch(() => {}),
+          new Promise((r) => setTimeout(r, 10_000).unref()),
+        ]);
+      }
       server?.close();
       await raw?.close();
       site?.close();
-    });
+    }, 60_000);
 
     it("runs the runner's agent primitives through the relay", async () => {
       const browser = await connect("s1");

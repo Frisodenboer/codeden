@@ -101,7 +101,19 @@ export class RawChromium {
   send(method: string, params: Json = {}, sessionId?: string): Promise<unknown> {
     const id = ++this.id;
     return new Promise((resolve, reject) => {
-      this.waiting.set(id, { resolve, reject });
+      // Never wait forever on the stand-in browser: a stuck call fails the test, not the run.
+      const timer = setTimeout(() => {
+        this.waiting.delete(id);
+        reject(new Error(`${method} timed out`));
+      }, 15_000);
+      timer.unref();
+      const settle =
+        <T>(fn: (v: T) => void) =>
+        (v: T) => {
+          clearTimeout(timer);
+          fn(v);
+        };
+      this.waiting.set(id, { resolve: settle(resolve), reject: settle(reject) });
       this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     });
   }
@@ -116,7 +128,10 @@ export class RawChromium {
 
   async close(): Promise<void> {
     this.ws.close();
-    await this.browser.close();
+    await Promise.race([
+      this.browser.close().catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 10_000).unref()),
+    ]);
   }
 }
 
