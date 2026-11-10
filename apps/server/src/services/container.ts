@@ -332,7 +332,12 @@ export function createServices(opts: ServicesOptions): AppServices {
     }),
     inbox,
     artifacts,
-    browser: new BrowserService({ runner: opts.runner, repo: sessionRepo }),
+    browser: new BrowserService({
+      runner: opts.runner,
+      repo: sessionRepo,
+      settings: () => opts.settings.get(),
+      log: opts.log,
+    }),
     updates: createUpdates(opts),
     images: new ImageService({
       registry: opts.imageEngines ?? defaultImageEngines(opts.secrets),

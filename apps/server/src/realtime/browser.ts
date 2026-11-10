@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   BrowserClientMessage,
+  type BrowserEngine,
   type BrowserScreencastSettings,
   type BrowserServerMessage,
   type BrowserTab,
@@ -17,6 +18,8 @@ interface AppliedViewport {
   width: number;
   height: number;
   deviceScaleFactor: number;
+  /** Native views follow the desktop panel: no viewer owns the size. */
+  fixed: boolean;
 }
 
 /** Skip frames for a socket that has this much unsent data (slow client). */
@@ -28,6 +31,8 @@ interface Viewer {
   sessionId: string;
   /** The viewer wants frames (default true); it watches as soon as the browser is open. */
   wantsWatch: boolean;
+  /** The desktop window, which shows native views itself (`native=1`). */
+  native: boolean;
   /** Registered with the runner's screencast. */
   watching: boolean;
   open: boolean;
@@ -53,6 +58,8 @@ export class BrowserBridge {
   /** Per session: the viewport the runner last applied (cleared when the browser closes). */
   private readonly applied = new Map<string, AppliedViewport>();
   private readonly applying = new Map<string, Promise<void>>();
+  /** Per session: what backs its open browser. */
+  private readonly engines = new Map<string, BrowserEngine>();
 
   constructor(private readonly deps: BrowserBridgeDeps) {
     deps.browser.agentActivity?.onChange((sessionId, acting) => {
@@ -64,12 +71,16 @@ export class BrowserBridge {
     let viewer: Viewer | undefined;
     return {
       onOpen: (_event, ws) => {
-        const { sessionId, open: _open, ...settings } = query;
+        const { sessionId, open: _open, native: nativeQuery, ...settings } = query;
+        const native = nativeQuery === "1";
         viewer = {
           id: `ui-${randomUUID()}`,
           ws,
           sessionId,
-          wantsWatch: true,
+          // The desktop window draws native views itself; it asks for frames only when the
+          // session's browser is on the runner's Chromium.
+          wantsWatch: !native,
+          native,
           watching: false,
           open: false,
           settings,
@@ -119,7 +130,10 @@ export class BrowserBridge {
       return;
     }
     if (stream.kind === "browser.tabs") {
-      if (stream.tabs.length === 0) this.applied.delete(stream.sessionId);
+      const engineChanged =
+        stream.engine !== undefined && this.engines.get(stream.sessionId) !== stream.engine;
+      if (stream.engine) this.engines.set(stream.sessionId, stream.engine);
+      if (stream.tabs.length === 0 || engineChanged) this.applied.delete(stream.sessionId);
       for (const v of this.viewers.get(stream.sessionId) ?? []) {
         if (stream.tabs.length === 0) {
           if (v.open) this.detach(v);
@@ -130,7 +144,9 @@ export class BrowserBridge {
           v.open = true;
           void this.watchIfWanted(v, stream.tabs).catch((error: unknown) => this.fail(v, error));
         } else {
-          send(v.ws, { type: "tabs", tabs: stream.tabs });
+          send(v.ws, { type: "tabs", tabs: stream.tabs, engine: this.engines.get(v.sessionId) });
+          // Handed to the runner's Chromium: the page follows the panels' sizes again.
+          if (engineChanged && stream.engine === "runner") this.applyViewport(v.sessionId);
         }
       }
     }
@@ -143,11 +159,13 @@ export class BrowserBridge {
 
   private async start(v: Viewer, openNow: boolean): Promise<void> {
     if (openNow) {
-      const opened = await this.deps.browser.open(v.sessionId);
+      const opened = await this.deps.browser.open(v.sessionId, undefined, { native: v.native });
+      this.noteEngine(v.sessionId, opened.engine);
       v.open = true;
       return this.watchIfWanted(v, opened.tabs);
     }
-    const { open, tabs } = await this.deps.browser.tabs(v.sessionId);
+    const { open, tabs, engine } = await this.deps.browser.tabs(v.sessionId);
+    this.noteEngine(v.sessionId, engine);
     v.open = v.open || open;
     if (!v.open) return this.sendState(v, []);
     return this.watchIfWanted(v, tabs);
@@ -169,7 +187,8 @@ export class BrowserBridge {
         if (v.watching) await this.setWatching(v, false);
         return this.sendState(v, (await browser.tabs(v.sessionId)).tabs);
       case "open": {
-        const opened = await browser.open(v.sessionId, msg.url);
+        const opened = await browser.open(v.sessionId, msg.url, { native: v.native });
+        this.noteEngine(v.sessionId, opened.engine);
         v.open = true;
         return this.watchIfWanted(v, opened.tabs);
       }
@@ -211,7 +230,9 @@ export class BrowserBridge {
       const size = this.arbiters.get(sessionId)?.size;
       if (!size) return;
       const key = `${size.width}x${size.height}@${size.deviceScaleFactor}`;
-      if (this.applied.get(sessionId)?.key === key) return this.announceViewport(sessionId);
+      const known = this.applied.get(sessionId);
+      // A fixed size changes with the desktop panel, not with reports: ask again every time.
+      if (known?.key === key && !known.fixed) return this.announceViewport(sessionId);
       try {
         const result = await this.deps.browser.command({
           name: "browser.viewport",
@@ -225,6 +246,7 @@ export class BrowserBridge {
           width: result.width ?? size.width,
           height: result.height ?? size.height,
           deviceScaleFactor: result.deviceScaleFactor ?? size.deviceScaleFactor,
+          fixed: result.fixed === true,
         });
         this.announceViewport(sessionId);
       } catch (error) {
@@ -244,9 +266,9 @@ export class BrowserBridge {
     const applied = this.applied.get(sessionId);
     if (!applied) return;
     const owner = this.arbiters.get(sessionId)?.ownerId;
-    const { key: _k, ...viewport } = applied;
+    const { key: _k, fixed, ...viewport } = applied;
     for (const v of only ? [only] : (this.viewers.get(sessionId) ?? [])) {
-      if (v.open) send(v.ws, { type: "viewport", ...viewport, mine: v.id === owner });
+      if (v.open) send(v.ws, { type: "viewport", ...viewport, mine: !fixed && v.id === owner });
     }
   }
 
@@ -285,7 +307,12 @@ export class BrowserBridge {
   }
 
   private sendState(v: Viewer, tabs: BrowserTab[]): void {
-    send(v.ws, { type: "state", viewerId: v.id, open: v.open, watching: v.watching, tabs });
+    const engine = v.open ? this.engines.get(v.sessionId) : undefined;
+    send(v.ws, { type: "state", viewerId: v.id, open: v.open, watching: v.watching, tabs, engine });
+  }
+
+  private noteEngine(sessionId: string, engine: BrowserEngine | undefined): void {
+    if (engine) this.engines.set(sessionId, engine);
   }
 
   private fail(v: Viewer, error: unknown): void {

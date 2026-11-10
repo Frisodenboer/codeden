@@ -1,19 +1,27 @@
 import type {
+  BrowserHostClientMessage,
   BrowserOpenResponse,
+  BrowserRelayEndpoint,
+  BrowserTab,
   BrowserTabsResponse,
   DevServer,
   RunnerCommandName,
   RunnerCommandOf,
   RunnerCommandResult,
+  Settings,
 } from "@codeden/contracts";
-import { ServiceError } from "../errors";
+import { errorMessage, ServiceError } from "../errors";
 import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port";
 import type { SessionRepo } from "../sessions/repo";
 import { AgentActivity } from "./agent-activity";
+import { BrowserHostLink } from "./browser-host";
 
 export interface BrowserServiceDeps {
   runner: RunnerPort;
   repo: SessionRepo;
+  /** Current settings (`desktop.nativeBrowser`); native views are off without it. */
+  settings?: () => Settings;
+  log?: (message: string) => void;
 }
 
 /** Navigation and agent actions can wait on slow pages; leave headroom over the runner's 30s. */
@@ -27,16 +35,36 @@ export function isBrowserNotOpen(error: unknown): boolean {
   );
 }
 
+/** Who opens a session's browser, which decides its engine when it has none yet. */
+export interface OpenOptions {
+  /**
+   * Prefer the desktop app's native views (§17 Phase 2): set for the desktop window and for
+   * agents. A plain browser tab or a phone opens on the runner's Chromium.
+   */
+  native?: boolean;
+}
+
+type HandoffSessions = Extract<BrowserHostClientMessage, { type: "handoff" }>["sessions"];
+
 /**
  * The session browser (§12.2) for the panel routes, the `/ws/browser` channel and the agent
  * tools. Every call names the session it acts for, so nobody can reach another session's
  * context; the runner enforces the same isolation.
+ *
+ * Engines: a session's browser opens on native views in the desktop app when the app is
+ * connected, the setting is on and the desktop window or an agent opens it; otherwise on the
+ * runner's Chromium. An open browser keeps its engine until it closes, or until the app quits
+ * and hands it to the runner.
  */
 export class BrowserService {
   /** When agents drive each session's browser, for the panel's "Agent is acting" chip. */
   readonly agentActivity = new AgentActivity();
+  /** The desktop app, when one offers native views. */
+  readonly host: BrowserHostLink;
 
-  constructor(private readonly deps: BrowserServiceDeps) {}
+  constructor(private readonly deps: BrowserServiceDeps) {
+    this.host = new BrowserHostLink({ handoff: (s) => this.handoff(s), log: deps.log });
+  }
 
   /** A `browser.*` command an agent tool sends: like `command`, and marks the agent acting. */
   agentCommand<N extends Extract<RunnerCommandName, `browser.${string}`>>(
@@ -49,7 +77,23 @@ export class BrowserService {
 
   /** `navigate` on behalf of an agent tool (marks the agent acting). */
   agentNavigate(sessionId: string, url: string, tabId?: string) {
-    return this.agentActivity.track(sessionId, () => this.navigate(sessionId, url, tabId));
+    return this.agentActivity.track(sessionId, () =>
+      this.navigate(sessionId, url, tabId, { native: true }),
+    );
+  }
+
+  /** Open a dev server for an agent: a new tab, or the first tab of a browser it opens. */
+  agentOpenDevServer(sessionId: string, port: number, path?: string): Promise<{ tab: BrowserTab }> {
+    return this.agentActivity.track(sessionId, async () => {
+      if ((await this.tabs(sessionId)).open) {
+        return this.command({ name: "browser.devServer", sessionId, port, path });
+      }
+      const url = `http://localhost:${port}${path ?? "/"}`;
+      const { tabs } = await this.open(sessionId, url, { native: true });
+      const tab = tabs.find((t) => t.active) ?? tabs[0];
+      if (!tab) throw new ServiceError(500, "browser_error", "The browser opened without a tab");
+      return { tab };
+    });
   }
 
   /** Send a `browser.*` command for an existing session, mapping runner failures. */
@@ -72,16 +116,21 @@ export class BrowserService {
     }
   }
 
-  async open(sessionId: string, url?: string): Promise<BrowserOpenResponse> {
-    const result = await this.command({ name: "browser.open", sessionId, url });
-    return { cdpUrl: result.cdpUrl, tabs: result.tabs ?? [] };
+  async open(
+    sessionId: string,
+    url?: string,
+    opts: OpenOptions = {},
+  ): Promise<BrowserOpenResponse> {
+    const relay = opts.native ? await this.nativeRelay(sessionId) : undefined;
+    const result = await this.command({ name: "browser.open", sessionId, url, relay });
+    return { cdpUrl: result.cdpUrl, tabs: result.tabs ?? [], engine: result.engine ?? "runner" };
   }
 
   /** The session's tabs; `open: false` when it has no browser yet (never throws for that). */
   async tabs(sessionId: string): Promise<BrowserTabsResponse> {
     try {
-      const { tabs } = await this.command({ name: "browser.tabs.list", sessionId });
-      return { open: true, tabs };
+      const { tabs, engine } = await this.command({ name: "browser.tabs.list", sessionId });
+      return { open: true, tabs, engine: engine ?? "runner" };
     } catch (error) {
       if (isBrowserNotOpen(error)) return { open: false, tabs: [] };
       throw error;
@@ -89,8 +138,8 @@ export class BrowserService {
   }
 
   /** Open the browser if needed, then navigate the active tab. */
-  async navigate(sessionId: string, url: string, tabId?: string) {
-    if (!(await this.tabs(sessionId)).open) await this.open(sessionId);
+  async navigate(sessionId: string, url: string, tabId?: string, opts: OpenOptions = {}) {
+    if (!(await this.tabs(sessionId)).open) await this.open(sessionId, undefined, opts);
     return this.command({ name: "browser.navigate", sessionId, url, tabId });
   }
 
@@ -102,5 +151,43 @@ export class BrowserService {
     } catch (error) {
       throw toServiceError(error);
     }
+  }
+
+  /**
+   * The desktop app's relay for a session that has no browser yet, when native views are on
+   * offer; undefined means the runner's Chromium (an open browser keeps its engine).
+   */
+  private async nativeRelay(sessionId: string): Promise<BrowserRelayEndpoint | undefined> {
+    if (!this.host.available) return undefined;
+    if (this.deps.settings && !this.deps.settings().desktop.nativeBrowser) return undefined;
+    if ((await this.tabs(sessionId)).open) return undefined;
+    try {
+      return await this.host.attach(sessionId);
+    } catch (error) {
+      this.deps.log?.(
+        `browser: native views unavailable, using the runner: ${errorMessage(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  /** The desktop app quits: its open sessions move to the runner's Chromium. */
+  private async handoff(sessions: HandoffSessions): Promise<string[]> {
+    const failed: string[] = [];
+    await Promise.all(
+      sessions.map(async ({ sessionId, tabs, cookies }) => {
+        try {
+          if (!this.deps.repo.find(sessionId)) throw new Error("no such session");
+          await this.deps.runner.request(
+            { name: "browser.handoff", sessionId, tabs, cookies },
+            BROWSER_TIMEOUT_MS,
+          );
+        } catch (error) {
+          this.deps.log?.(`browser: hand-off of ${sessionId}: ${errorMessage(error)}`);
+          failed.push(sessionId);
+        }
+      }),
+    );
+    return failed;
   }
 }
