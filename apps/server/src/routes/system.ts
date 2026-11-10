@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import {
   FileReadQuery,
   FileWriteRequest,
+  type RefreshModelsResponse,
   SecretKey,
   type SecretsStatus,
   SetSecretRequest,
@@ -12,6 +13,7 @@ import { z } from "zod";
 import type { AppServices } from "../services/container";
 import { badRequest } from "../services/errors";
 import { listDirectories } from "../services/files/fs-browser";
+import { refreshProviderModels } from "../services/runner-port";
 import { jsonBody, queryOf } from "./validate";
 
 /** `/api/setup`: first-run detection, login commands, Claude Code support, completion (§14). */
@@ -35,6 +37,14 @@ export function setupRoutes(s: AppServices) {
       ]);
       return c.json({ setupCompleted });
     });
+}
+
+/** `/api/providers`: the runner's providers. Their model lists arrive with the runner status. */
+export function providerRoutes(s: AppServices) {
+  return new Hono().post("/:id/refresh-models", async (c) => {
+    const body: RefreshModelsResponse = await refreshProviderModels(s.runner, c.req.param("id"));
+    return c.json(body);
+  });
 }
 
 /** `/api/fs` (folder picker) and `/api/files` (config editors). */
