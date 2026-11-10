@@ -105,7 +105,7 @@ describe("approvals nobody is watching (§10.1, §11.2)", () => {
     expect(isUnwatched(factory)).toBe(true);
     expect(isUnwatched({ ...user, startedBy: { kind: "pm", id: "pm-1" } })).toBe(true);
     expect(isUnwatched(user)).toBe(false);
-    expect(isUnwatched({ ...user, startedBy: { kind: "orchestrator", id: null } })).toBe(false);
+    expect(isUnwatched({ ...user, startedBy: { kind: "orchestrator" } })).toBe(false);
   });
 
   it("denies a dark factory's approvals at once, with guidance", async () => {

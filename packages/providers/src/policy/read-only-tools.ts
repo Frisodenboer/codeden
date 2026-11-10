@@ -119,11 +119,10 @@ export function sedDenial(args: string[]): string | undefined {
     return "sed may not edit files or read scripts in a read-only session";
   }
   const scripts: string[] = [];
-  for (let i = 0; i < args.length; i += 1) {
-    const a = args[i] as string;
-    if (a === "-e" || a === "--expression") scripts.push(args[(i += 1)] ?? "");
+  args.forEach((a, i) => {
+    if (a === "-e" || a === "--expression") scripts.push(args[i + 1] ?? "");
     else if (a.startsWith("--expression=")) scripts.push(a.slice(13));
-  }
+  });
   if (scripts.length === 0) {
     const script = args.find((a) => !a.startsWith("-"));
     if (script !== undefined) scripts.push(script);
