@@ -10,10 +10,11 @@ import { CHANNELS } from "../shared/channels";
 import { ActivityMonitor, type ServerStatus } from "./activity";
 import type { LaunchArgs } from "./args";
 import { AppBadge } from "./badge";
+import { NativeBrowserFeature } from "./browser/feature";
 import { type Connection, connect, launchUrl } from "./connection";
 import { registerBridge } from "./ipc";
 import { appMenuTemplate } from "./menu";
-import { homeFiles, isProcessAlive } from "./server-plan";
+import { homeFiles } from "./server-plan";
 import {
   applyLaunchAtLogin,
   fileLogger,
@@ -26,6 +27,7 @@ import { AppTray } from "./tray";
 import { trayView } from "./tray-view";
 import { UpdateController } from "./updates/controller";
 import { quitAction, standaloneAction, updateSupport } from "./updates/policy";
+import { loadUpdater, waitForRunnerExit } from "./updates/updater";
 import { MainWindow } from "./window";
 
 const DOCS_URL = "https://github.com/leonvanzyl/codeden/blob/main/docs/desktop.md";
@@ -44,6 +46,7 @@ export class DesktopApp {
   private badge!: AppBadge;
   private readonly keepAwake = new KeepAwake();
   private updates!: UpdateController;
+  private browser!: NativeBrowserFeature;
   private monitor: ActivityMonitor | undefined;
   private conn: Connection | undefined;
   private status: ServerStatus = { connected: false, activity: null, settings: null };
@@ -103,6 +106,7 @@ export class DesktopApp {
       log: this.log,
     });
     this.badge = new AppBadge(() => this.window.window, this.asset("badge.png"));
+    this.browser = new NativeBrowserFeature({ window: () => this.window.window, log: this.log });
     registerBridge({
       info: () => this.info(),
       origin: () => this.window.serverOrigin,
@@ -111,6 +115,7 @@ export class DesktopApp {
       setBadge: (count) => this.badge.set(count),
       icon: this.asset("icon.png"),
       log: this.log,
+      browser: this.browser.browsers,
     });
     this.exposeForTests();
     await this.open();
@@ -138,6 +143,7 @@ export class DesktopApp {
       return;
     }
     this.conn.server?.send({ type: "update.state", state: this.updates.state });
+    this.browser.connect(this.conn);
     await this.window.load(launchUrl(this.conn, this.pendingPath ?? "/"));
     this.pendingPath = null;
     this.loaded = true;
@@ -191,6 +197,8 @@ export class DesktopApp {
       clearInterval(this.standaloneTimer);
       this.monitor?.stop();
       this.keepAwake.set(false);
+      // Open session browsers move to the runner's Chromium before the views go.
+      await this.browser?.quit();
       if (this.updates && quitAction(this.updates.state.phase) === "install") {
         await this.updates.installOnQuit();
         return;
@@ -312,6 +320,7 @@ export class DesktopApp {
       packaged: app.isPackaged,
       ownsServer: Boolean(this.conn?.server),
       launchAtLoginSupported,
+      nativeBrowser: true,
     };
   }
 
@@ -326,7 +335,10 @@ export class DesktopApp {
       openDocs: () => void shell.openExternal(DOCS_URL),
       openLogs: () => void shell.openPath(homeFiles(this.args.home).logs),
       quit: () => app.quit(),
-      zoom: (command) => this.window?.zoom(command),
+      zoom: (command) => {
+        this.window?.zoom(command);
+        this.browser?.browsers.layout();
+      },
     });
   }
 
@@ -341,58 +353,7 @@ export class DesktopApp {
       keepAwake: () => this.keepAwake.active,
       updateState: () => this.updates.state,
       zoomFactor: () => this.window.zoomFactor,
+      nativeViews: () => this.browser.browsers.views(),
     };
-  }
-}
-
-/** electron-updater, loaded on first use (GitHub Releases, from `app-update.yml`). */
-async function loadUpdater(log: (m: string) => void) {
-  const mod = (await import("electron-updater")) as unknown as {
-    autoUpdater?: import("electron-updater").AppUpdater;
-    default?: { autoUpdater: import("electron-updater").AppUpdater };
-  };
-  const updater = mod.autoUpdater ?? mod.default?.autoUpdater;
-  if (!updater) throw new Error("electron-updater did not load");
-  // Tests only: a local feed instead of GitHub Releases (like CODEDEN_UPDATE_REGISTRY for npm),
-  // with its own download cache so a test never touches a real install's.
-  const feed = process.env.CODEDEN_DESKTOP_UPDATE_URL;
-  if (feed) {
-    const config = join(app.getPath("userData"), "test-app-update.yml");
-    const { writeFileSync } = await import("node:fs");
-    writeFileSync(
-      config,
-      `provider: generic\nurl: ${feed}\nupdaterCacheDirName: codeden-updater-test\n`,
-    );
-    updater.updateConfigPath = config;
-    updater.setFeedURL({ provider: "generic", url: feed });
-  }
-  updater.logger = {
-    info: (m: unknown) => log(`updater: ${String(m)}`),
-    warn: (m: unknown) => log(`updater: ${String(m)}`),
-    error: (m: unknown) => log(`updater: ${String(m)}`),
-    debug: () => {},
-  };
-  return updater;
-}
-
-/** Wait for the runner in the lock file to exit; kill it if it outstays the timeout. */
-async function waitForRunnerExit(lockFile: string, timeoutMs: number, log: (m: string) => void) {
-  let pid: number | null = null;
-  try {
-    const { readFileSync } = await import("node:fs");
-    pid = Number(JSON.parse(readFileSync(lockFile, "utf8")).pid) || null;
-  } catch {
-    return;
-  }
-  if (!pid) return;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && isProcessAlive(pid)) await new Promise((r) => setTimeout(r, 200));
-  if (isProcessAlive(pid)) {
-    log(`updates: runner ${pid} still running; stopping it`);
-    try {
-      process.kill(pid);
-    } catch {
-      // gone
-    }
   }
 }

@@ -1,4 +1,10 @@
-import { type DesktopInfo, DesktopNotification } from "@codeden/contracts";
+import {
+  type DesktopInfo,
+  DesktopNotification,
+  Id,
+  type NativeBrowserBounds,
+  NativeBrowserShow,
+} from "@codeden/contracts";
 import {
   BrowserWindow,
   dialog,
@@ -22,6 +28,13 @@ export interface BridgeHost {
   setBadge: (count: number) => void;
   icon: string;
   log: (message: string) => void;
+  /** Native browser views (§17 Phase 2). */
+  browser: {
+    show(sessionId: string, bounds: NativeBrowserBounds): void;
+    hide(sessionId: string): void;
+    capture(sessionId: string): Promise<string | null>;
+    inspect(sessionId: string): void;
+  };
 }
 
 const PickFolder = z
@@ -87,5 +100,27 @@ export function registerBridge(host: BridgeHost): void {
     if (!trusted(event)) return;
     const count = z.int().min(0).max(100_000).safeParse(raw);
     if (count.success) host.setBadge(count.data);
+  });
+
+  // Native browser views: the UI only places them; tabs and navigation go through the server.
+  ipcMain.on(CHANNELS.browserShow, (event, raw) => {
+    if (!trusted(event)) return;
+    const show = NativeBrowserShow.safeParse(raw);
+    if (show.success) host.browser.show(show.data.sessionId, show.data.bounds);
+  });
+  ipcMain.on(CHANNELS.browserHide, (event, raw) => {
+    if (!trusted(event)) return;
+    const sessionId = Id.safeParse(raw);
+    if (sessionId.success) host.browser.hide(sessionId.data);
+  });
+  ipcMain.handle(CHANNELS.browserCapture, (event, raw) => {
+    if (!trusted(event)) return null;
+    const sessionId = Id.safeParse(raw);
+    return sessionId.success ? host.browser.capture(sessionId.data) : null;
+  });
+  ipcMain.on(CHANNELS.browserInspect, (event, raw) => {
+    if (!trusted(event)) return;
+    const sessionId = Id.safeParse(raw);
+    if (sessionId.success) host.browser.inspect(sessionId.data);
   });
 }
