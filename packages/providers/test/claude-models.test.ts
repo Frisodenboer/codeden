@@ -206,8 +206,9 @@ describe("ClaudeAdapter model discovery", () => {
     const name = process.platform === "win32" ? "claude.exe" : "claude";
     const oldDir = mkdtempSync(join(tmpdir(), "codeden-claude-old-"));
     const newDir = mkdtempSync(join(tmpdir(), "codeden-claude-new-"));
-    writeFileSync(join(oldDir, name), "old build");
-    writeFileSync(join(newDir, name), "new build");
+    // Executable, as installs are: a file without the bit is not a command on macOS and Linux.
+    writeFileSync(join(oldDir, name), "old build", { mode: 0o755 });
+    writeFileSync(join(newDir, name), "new build", { mode: 0o755 });
     const saved = { PATH: process.env.PATH, Path: process.env.Path };
     const setPath = (dir: string) => {
       process.env.PATH = dir;
