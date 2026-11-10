@@ -45,6 +45,16 @@ export function wakesPm(session: Session): boolean {
   return session.startedBy.kind !== "user" || session.parentSessionId !== null;
 }
 
+/** Work a PM started for a request the orchestrator passed on (`startedBy.reportTo`). */
+function reportsToOrchestrator(session: Session): boolean {
+  return session.startedBy.reportTo === "orchestrator";
+}
+
+/** A session notice, copied for the orchestrator so the result reaches whoever asked (§8.2). */
+function forOrchestrator(notice: NoticeDraft, id: string): DerivedNotice {
+  return { wake: true, notice: { ...notice, id, target: "orchestrator" } };
+}
+
 /** The id of an opened PR's notice: the same whether it came from the session or GitHub sync. */
 export function prOpenedNoticeId(projectId: string, number: number): string {
   return `pr.opened:${projectId}:${number}`;
@@ -71,22 +81,24 @@ export function deriveNotices(events: RawEventEnvelope[], lookup: NoticeLookup):
       const s = agentSession(e.sessionId);
       if (!s || s.rootThreadId !== event.threadId) continue;
       const final = lookup.finalMessage(s.id, event.turnId);
-      out.push({
-        wake: wakesPm(s),
-        notice: {
-          id: `session.finished:${s.id}:${event.turnId}`,
-          type: "session.finished",
-          projectId: s.projectId,
-          target: "pm",
-          sessionId: s.id,
-          title: `Finished: ${s.title ?? s.purpose}`,
-          data: {
-            ...workRef(s),
-            summary: s.result?.summary ?? (final ? clipKeepingEnd(final) : null),
-            outcome: s.result?.outcome ?? null,
-          },
+      const finished: NoticeDraft = {
+        id: `session.finished:${s.id}:${event.turnId}`,
+        type: "session.finished",
+        projectId: s.projectId,
+        target: "pm",
+        sessionId: s.id,
+        title: `Finished: ${s.title ?? s.purpose}`,
+        data: {
+          ...workRef(s),
+          summary: s.result?.summary ?? (final ? clipKeepingEnd(final) : null),
+          outcome: s.result?.outcome ?? null,
         },
-      });
+      };
+      out.push({ wake: wakesPm(s), notice: finished });
+      // Once per `finish` call: a turn without a result is the PM's business only.
+      if (reportsToOrchestrator(s) && s.result) {
+        out.push(forOrchestrator(finished, `session.finished:orchestrator:${s.id}:${s.result.at}`));
+      }
     } else if (e.type === "inbox.created") {
       const { item } = e.payload as { item: InboxItem };
       const s = agentSession(item.sessionId);
@@ -105,18 +117,19 @@ export function deriveNotices(events: RawEventEnvelope[], lookup: NoticeLookup):
           },
         });
       } else if (item.kind === "run_failed") {
-        out.push({
-          wake: wakesPm(s),
-          notice: {
-            id: `session.failed:${item.id}`,
-            type: "session.failed",
-            projectId: s.projectId,
-            target: "pm",
-            sessionId: s.id,
-            title: `Failed: ${s.title ?? s.purpose}`,
-            data: { ...workRef(s), error: clip(item.body ?? item.title) },
-          },
-        });
+        const failed: NoticeDraft = {
+          id: `session.failed:${item.id}`,
+          type: "session.failed",
+          projectId: s.projectId,
+          target: "pm",
+          sessionId: s.id,
+          title: `Failed: ${s.title ?? s.purpose}`,
+          data: { ...workRef(s), error: clip(item.body ?? item.title) },
+        };
+        out.push({ wake: wakesPm(s), notice: failed });
+        if (reportsToOrchestrator(s)) {
+          out.push(forOrchestrator(failed, `session.failed:orchestrator:${item.id}`));
+        }
       }
     } else if (e.type === "session.updated") {
       const { session } = e.payload as { session: Session };

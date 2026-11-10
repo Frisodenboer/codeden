@@ -66,6 +66,12 @@ export const startSession = defineTool({
     model: z.string().min(1).optional(),
     effort: ReasoningEffort.optional(),
     conflict: ConflictDecision.optional(),
+    reportTo: z
+      .enum(["orchestrator"])
+      .optional()
+      .describe(
+        "'orchestrator' when the orchestrator passed this work on: its finish or failure also reaches the orchestrator, so it can tell the user",
+      ),
   }),
   handler: async (input, { services, projectId, sessionId }) => {
     const project = projectFor(services, projectId);
@@ -87,7 +93,7 @@ export const startSession = defineTool({
       scope: input.scope,
       title: input.title,
       issue,
-      startedBy: { kind: "pm", id: sessionId ?? undefined },
+      startedBy: { kind: "pm", id: sessionId ?? undefined, reportTo: input.reportTo },
       parentSessionId: sessionId ?? undefined,
       input: { text: input.prompt },
       conflict: input.conflict,

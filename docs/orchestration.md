@@ -113,6 +113,7 @@ Factory projects add a few more (see [Autonomy and the dark factory](autonomy-an
 - **`message_orchestrator`** with `informational: true` never wakes the orchestrator; it shows in its next digest.
 - **`ask_user`** (agent or PM → you) puts a question card in the transcript and the inbox. The tool waits up to 4 minutes; if you haven't answered, the agent is told to finish what it can, and your later answer is sent to the session as a new message. This works the same on every provider.
 - **`answer_question`** (PM → agent): a question from work the PM, the orchestrator or an automation started wakes the PM first. When the brief, its notes or the vision settle it, the PM answers it; the agent carries on and the inbox item closes as answered by the PM. Approvals, and questions from sessions you started, always wait for you.
+- **`start_session` with `reportTo: "orchestrator"`** (PM): for work the orchestrator passed on. When the session finishes (calls `finish`) or fails, the orchestrator is woken with the result too, so it can tell you.
 
 ## The inbox
 
