@@ -184,22 +184,33 @@ check_launch() {
   kill "$app_pid" 2> /dev/null || true
   if [ -n "$runner_pid" ]; then kill "$runner_pid" 2> /dev/null || true; fi
   # The app must quit on SIGTERM; one that hangs would hang for users too. Never wait forever.
-  (sleep 60 && kill -KILL "$app_pid") > /dev/null 2>&1 &
+  # The marker tells this check's kill apart from the app's own quit watchdog (both SIGKILL).
+  local killed="$work/killed-by-check-$label"
+  (sleep 60 && touch "$killed" && kill -KILL "$app_pid") > /dev/null 2>&1 &
   local watchdog=$! status=0
   wait "$app_pid" 2> /dev/null || status=$?
   kill "$watchdog" 2> /dev/null || true
-  if [ "$status" -eq 137 ]; then
+  if [ -f "$killed" ]; then
     fail "$label: the app did not quit within 60 s of SIGTERM"
-    echo "--- app output"
-    tail -n 50 "$work/app-$label.log" || true
-    # The app's own logs show which quit step it was stuck in.
-    for log in "$home"/logs/*.log; do
-      if [ -f "$log" ]; then
-        echo "--- $log"
-        tail -n 40 "$log"
-      fi
-    done
+    print_app_logs "$label" "$home"
+  elif [ "$status" -eq 137 ]; then
+    # It quit in time, but only because its watchdog ended a main thread stuck in shutdown.
+    echo "::warning::$label: the app's quit watchdog had to end it (its main thread hung while quitting)"
+    print_app_logs "$label" "$home"
   fi
+}
+
+# The app's output and its own logs, which show which quit step it was stuck in.
+print_app_logs() {
+  local label="$1" home="$2"
+  echo "--- app output"
+  tail -n 50 "$work/app-$label.log" || true
+  for log in "$home"/logs/*.log; do
+    if [ -f "$log" ]; then
+      echo "--- $log"
+      tail -n 40 "$log"
+    fi
+  done
 }
 
 # --- 3. Downloaded: Gatekeeper ---------------------------------------------------------------

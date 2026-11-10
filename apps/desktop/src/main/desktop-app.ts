@@ -12,7 +12,7 @@ import type { LaunchArgs } from "./args";
 import { AppBadge } from "./badge";
 import { NativeBrowserFeature } from "./browser/feature";
 import { type Connection, connect, launchUrl } from "./connection";
-import { forceExit } from "./exit";
+import { armQuitWatchdog, forceExit } from "./exit";
 import { registerBridge } from "./ipc";
 import { appMenuTemplate } from "./menu";
 import { homeFiles } from "./server-plan";
@@ -201,11 +201,13 @@ export class DesktopApp {
     event.preventDefault();
     if (this.quitting) return;
     this.quitting = true;
-    // Every step below is bounded, but quitting must finish even if one isn't.
+    // Every step below is bounded, but quitting must finish even if one isn't: a timer here,
+    // and a separate process for when the main thread itself is stuck in native shutdown.
     const watchdog = setTimeout(() => {
       this.log(`app: still quitting after ${QUIT_LIMIT_MS / 1000} s; exiting now`);
       forceExit(0);
     }, QUIT_LIMIT_MS);
+    const hardStop = armQuitWatchdog(QUIT_LIMIT_MS + 5_000, this.log);
     void (async () => {
       try {
         this.window?.allowClose();
@@ -217,6 +219,7 @@ export class DesktopApp {
         if (this.updates && quitAction(this.updates.state.phase) === "install") {
           // Installing drains the runner first (up to 90 s); the installer ends the app.
           clearTimeout(watchdog);
+          hardStop.cancel();
           await this.updates.installOnQuit();
           return;
         }
