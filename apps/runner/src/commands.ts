@@ -1,5 +1,5 @@
 import type { RunnerCommand, RunnerCommandResult, RunnerEvent } from "@codeden/contracts";
-import type { ProviderRegistry } from "@codeden/providers";
+import { type ProviderRegistry, refreshProcessPath } from "@codeden/providers";
 import type { BrowserCommandHandlers } from "./browser";
 import { CommandError } from "./errors";
 import {
@@ -62,6 +62,10 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
       core.shutdown();
       return {};
     case "provider.detect": {
+      // A long-lived runner would otherwise keep the PATH it started with; tools installed
+      // since then are found, and agents and terminals started afterwards see them too.
+      const added = await refreshProcessPath();
+      if (added.length > 0) core.log?.(`PATH: picked up ${added.join(", ")}`);
       const adapters = command.providerId
         ? registry.list().filter((a) => a.id === command.providerId)
         : registry.list();
