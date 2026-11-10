@@ -59,7 +59,7 @@ describe.skipIf(!CHANNEL)(
         (id) => sessions.get(id) ?? null,
         () => {},
       );
-    });
+    }, 60_000);
 
     afterAll(async () => {
       for (const b of browsers) await b.close().catch(() => {});

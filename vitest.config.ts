@@ -25,6 +25,7 @@ for (const name of process.platform === "win32" ? ["TEMP", "TMP"] : ["TMPDIR"]) 
 const RUNNER_PROCESS_TESTS = [
   "test/browser-engine.test.ts",
   "test/browser-agent.test.ts",
+  "test/browser-native.test.ts",
   "test/sessions.test.ts",
   "test/pty.test.ts",
 ];
@@ -33,7 +34,9 @@ const SERVER_PROCESS_TESTS = [
   "test/runner-e2e.test.ts",
   "test/restart-recovery.test.ts",
   "test/browser.test.ts",
+  "test/browser-native.test.ts",
 ];
+const DESKTOP_PROCESS_TESTS = ["test/relay-chromium.test.ts"];
 
 export default defineConfig({
   test: {
@@ -42,7 +45,23 @@ export default defineConfig({
       "packages/*",
       "apps/web",
       "apps/cli",
-      "apps/desktop",
+      {
+        test: {
+          name: "@codeden/desktop",
+          root: "apps/desktop",
+          include: ["test/**/*.test.ts"],
+          exclude: [...configDefaults.exclude, ...DESKTOP_PROCESS_TESTS],
+        },
+      },
+      {
+        test: {
+          name: "@codeden/desktop (processes)",
+          root: "apps/desktop",
+          include: DESKTOP_PROCESS_TESTS,
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
+        },
+      },
       { test: { name: "scripts", root: "scripts", include: ["**/*.test.mjs"] } },
       {
         test: {

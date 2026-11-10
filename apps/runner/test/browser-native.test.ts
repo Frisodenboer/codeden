@@ -48,7 +48,7 @@ describe.skipIf(!hasBrowser)("native engine (installed Edge/Chrome)", { timeout:
     recorder = new StreamRecorder();
     manager = new BrowserManager({ stream: recorder.push, connect });
     handlers = createBrowserCommandHandlers({ manager });
-  });
+  }, 60_000);
   afterAll(async () => {
     await manager?.shutdown();
     for (const c of clients) await c.close().catch(() => undefined);
