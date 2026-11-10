@@ -34,9 +34,15 @@ export const BrowserMouseInput = z.object({
   y: z.number(),
   frameWidth: z.number().positive(),
   frameHeight: z.number().positive(),
+  /**
+   * Page viewport (CSS pixels) of the frame the user pointed at, from its metadata. The
+   * runner maps against it, so input stays exact while a resize is in flight.
+   */
+  viewportWidth: z.number().positive().optional(),
+  viewportHeight: z.number().positive().optional(),
   button: z.enum(["none", "left", "middle", "right"]).optional(),
   clickCount: z.int().min(0).max(3).optional(),
-  /** Wheel deltas in CSS pixels (`mouse.wheel`). */
+  /** Wheel deltas in page CSS pixels (`mouse.wheel`). */
   deltaX: z.number().optional(),
   deltaY: z.number().optional(),
   modifiers: BrowserModifiers.optional(),
@@ -129,12 +135,18 @@ export const BrowserCommands = [
   z.object({ name: z.literal("browser.tabs.open"), sessionId: Id, url: z.string().optional() }),
   z.object({ name: z.literal("browser.tabs.close"), sessionId: Id, tabId: BrowserTabId }),
   z.object({ name: z.literal("browser.tabs.activate"), sessionId: Id, tabId: BrowserTabId }),
-  /** Resize the viewport of every tab in the session (CSS pixels). */
+  /**
+   * Set the viewport of every tab in the session, now and for tabs opened later: CSS size
+   * plus device scale factor (the viewer's `devicePixelRatio`). The runner clamps both to
+   * its limits and sizes the screencast to match; the result is what it applied.
+   */
   z.object({
     name: z.literal("browser.viewport"),
     sessionId: Id,
-    width: z.int().min(200).max(7680),
-    height: z.int().min(200).max(4320),
+    width: z.int().min(1).max(7680),
+    height: z.int().min(1).max(4320),
+    /** Default 1. */
+    deviceScaleFactor: z.number().min(0.25).max(8).optional(),
   }),
   /**
    * Add (`watching: true`) or remove a panel viewer. Frames stream as `browser.frame` while
@@ -229,7 +241,12 @@ export const BrowserCommandResults = {
   "browser.tabs.open": TabResult,
   "browser.tabs.close": Empty,
   "browser.tabs.activate": Empty,
-  "browser.viewport": Empty,
+  /** The viewport the runner applied after clamping (absent from older runners). */
+  "browser.viewport": z.object({
+    width: z.int().positive().optional(),
+    height: z.int().positive().optional(),
+    deviceScaleFactor: z.number().positive().optional(),
+  }),
   "browser.screencast": z.object({ viewers: z.int().nonnegative() }),
   "browser.input": Empty,
   "browser.devServer": TabResult,
