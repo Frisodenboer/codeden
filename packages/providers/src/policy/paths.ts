@@ -52,7 +52,8 @@ function fromGitBash(value: string, temp: string | undefined): string {
 
 /**
  * Resolve `target` (absolute, relative to `dir`, `~`-prefixed, or starting with a home or
- * temp variable) to an absolute path.
+ * temp variable) to an absolute path. On Windows the directory it resolves from may be in Git
+ * Bash form too: the shell reports `/c/Users/x/repo` once a command has run in it.
  */
 export function resolveAgainst(target: string, ctx: PathContext): string {
   const p = pathApi(ctx);
@@ -64,8 +65,12 @@ export function resolveAgainst(target: string, ctx: PathContext): string {
   value = value.replace(HOME_VARS, home);
   const temp = tempRootsOf(ctx)[0];
   if (temp) value = value.replace(TEMP_VARS, temp);
-  if (isWin(ctx)) value = fromGitBash(value, temp);
-  return p.resolve(ctx.dir ?? ctx.cwd, value);
+  let base = ctx.dir ?? ctx.cwd;
+  if (isWin(ctx)) {
+    value = fromGitBash(value, temp);
+    base = fromGitBash(base, temp);
+  }
+  return p.resolve(base, value);
 }
 
 /** True when `target` resolves inside `root` (or equals it). Case-insensitive on Windows. */

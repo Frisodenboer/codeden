@@ -70,6 +70,39 @@ describe("ClaudePolicy", () => {
     });
   });
 
+  it("resolves relative paths from a shell directory Claude reports in Git Bash form (Windows)", () => {
+    const win = {
+      cwd: "C:\\Users\\me\\.codeden\\wt\\myproj\\abcd1234",
+      platform: "win32" as const,
+      home: "C:\\Users\\me",
+      tempRoots: ["C:\\Users\\me\\AppData\\Local\\Temp"],
+    };
+    const dir = "/c/Users/me/.codeden/wt/myproj/abcd1234";
+    const sub = "/c/Users/me/.codeden/wt/myproj/abcd1234/apps/web";
+    for (const level of ["auto", "full"] as const) {
+      const p = new ClaudePolicy(level, win);
+      for (const command of [
+        "rm -rf dist",
+        "pnpm test > test.log 2>&1",
+        "cp src/a.ts src/b.ts",
+        "Remove-Item -Recurse -Force node_modules",
+        "cd apps && rm -rf build",
+      ]) {
+        expect(p.gate("Bash", { command }, dir).ask, `${level}: ${command}`).toBe(false);
+      }
+      expect(p.gate("Bash", { command: "cp a.ts ../../a.ts.bak" }, sub).ask).toBe(false);
+      expect(p.gate("Bash", { command: "rm -rf /tmp/scratch" }, "/tmp").ask).toBe(false);
+      expect(p.gate("Bash", { command: "rm -rf ../abcd9999" }, dir)).toMatchObject({
+        ask: true,
+        action: "outside_worktree",
+      });
+      expect(p.gate("Bash", { command: "cp a.ts ../../../../b.ts" }, sub)).toMatchObject({
+        ask: true,
+        action: "outside_worktree",
+      });
+    }
+  });
+
   it("auto and supervised treat temp writes by their own rules", () => {
     expect(new ClaudePolicy("auto", ctx).gate("Write", { file_path: "/tmp/a.ts" }).ask).toBe(false);
     expect(
