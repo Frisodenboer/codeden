@@ -9,10 +9,19 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Refresh models.** A refresh button at the bottom of the model picker's provider rail asks the shown provider for its models again (on Favourites, every provider), for when a new model is out and the list hasn't caught up yet.
 - **Claude Fable 5.2 is priced** in usage reports ($8 / $40 per million input / output tokens), and so is the `fable` alias.
 
+### Changed
+
+- **The browser panel is a real browser surface.** The page now fills the panel edge to edge and is laid out at the panel's own size, instead of a fixed 1280×800 page shrunk into a small card. It re-flows as you resize the panel, and it's sharp on HiDPI screens (rendered at your screen's pixel ratio, up to 2×). Pick a fixed device size under **⋯ › Viewport** if you want one; **Fit to panel** is the default.
+- **No more "Take over".** Clicks, typing and scrolling always go straight to the page, even while an agent is using it. An **Agent is acting** chip in the toolbar shows when an agent drives the browser.
+- **Several viewers share one page size.** With the panel open on your desktop and your phone, the one you used or focused last decides the size, and the others fit the page inside their panel. Opening the panel on another device no longer changes the page under you.
+- **Agent screenshots use the current page size,** in CSS pixels, so a HiDPI screen doesn't double the image an agent gets back.
+
 ### Fixed
 
 - **New Claude models show up without restarting everything.** A model release changes Claude Code's model list even when nothing on your machine changes, and CodeDen kept the list it read when its background runner started; the runner keeps going when you restart CodeDen, so the picker could show an old Fable for days. CodeDen now asks again when the app reconnects (if the list is more than 10 minutes old), whenever a session starts, and when you refresh. It also finds `claude` and `codex` on your PATH each time instead of reusing the location from when the runner started, so moving to another install is picked up too.
 - **Sessions on a full model id get their effort control back.** A session on, say, `claude-opus-5-5` (what Opus runs today) was shown as "isn't in the provider's list any more" with no effort levels. The picker now shows it as **Opus 5.5** with Opus's effort levels, and an id no entry covers still gets the default model's levels.
+- **A second viewer of a still page now sees it straight away.** It used to wait for the page to change before its first frame arrived.
+- **Scrolling in the browser panel is natural.** It now moves the page at the speed of your gesture, also for mice that scroll by lines.
 
 ## [0.4.4] - 2026-11-09
 

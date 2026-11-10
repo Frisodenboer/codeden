@@ -108,10 +108,10 @@ Everything an agent touches, next to the chat:
 - **Diffs and checkpoints.** Every turn is snapshotted into a hidden git ref, so you get exact per-turn and whole-session diffs and can restore files to any earlier turn. Commit and push from the git bar.
 - **Files.** A file tree and a syntax-highlighted viewer for the session's worktree.
 - **Terminal.** Real PTY terminals owned by the runner, so they survive server restarts.
-- **Browser.** A Chromium the agents drive (navigate, snapshot, click, type, screenshot, console and network logs), streamed into the panel. You can take over at any time.
+- **Browser.** A Chromium the agents drive (navigate, snapshot, click, type, screenshot, console and network logs), streamed edge to edge into the panel at the panel's own size. Click, type and scroll in it at any time.
 - **Subagents** open as child threads, and the composer queues or steers while a turn runs.
 
-![The browser panel watching the agent's browser](docs/images/browser-panel.png)
+![The browser panel filling the right side, with the page laid out at the panel's size](docs/images/browser-panel.png)
 
 [Workbench guide](docs/workbench.md).
 
