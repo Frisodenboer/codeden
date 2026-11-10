@@ -60,10 +60,12 @@ export function createBrowserCommandHandlers(deps: BrowserCommandDeps): BrowserC
       await manager.get(c.sessionId).activate(c.tabId);
       return {};
     },
-    "browser.viewport": async (c) => {
-      await manager.get(c.sessionId).setViewport({ width: c.width, height: c.height });
-      return {};
-    },
+    "browser.viewport": (c) =>
+      manager.setViewport(c.sessionId, {
+        width: c.width,
+        height: c.height,
+        deviceScaleFactor: c.deviceScaleFactor,
+      }),
     "browser.screencast": async (c) => {
       const { quality, maxWidth, maxHeight, maxFps } = c;
       const session = manager.get(c.sessionId);

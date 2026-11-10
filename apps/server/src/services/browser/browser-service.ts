@@ -9,6 +9,7 @@ import type {
 import { ServiceError } from "../errors";
 import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port";
 import type { SessionRepo } from "../sessions/repo";
+import { AgentActivity } from "./agent-activity";
 
 export interface BrowserServiceDeps {
   runner: RunnerPort;
@@ -32,7 +33,24 @@ export function isBrowserNotOpen(error: unknown): boolean {
  * context; the runner enforces the same isolation.
  */
 export class BrowserService {
+  /** When agents drive each session's browser, for the panel's "Agent is acting" chip. */
+  readonly agentActivity = new AgentActivity();
+
   constructor(private readonly deps: BrowserServiceDeps) {}
+
+  /** A `browser.*` command an agent tool sends: like `command`, and marks the agent acting. */
+  agentCommand<N extends Extract<RunnerCommandName, `browser.${string}`>>(
+    command: RunnerCommandOf<N>,
+    timeoutMs = BROWSER_TIMEOUT_MS,
+  ): Promise<RunnerCommandResult<N>> {
+    const { sessionId } = command as { sessionId: string };
+    return this.agentActivity.track(sessionId, () => this.command(command, timeoutMs));
+  }
+
+  /** `navigate` on behalf of an agent tool (marks the agent acting). */
+  agentNavigate(sessionId: string, url: string, tabId?: string) {
+    return this.agentActivity.track(sessionId, () => this.navigate(sessionId, url, tabId));
+  }
 
   /** Send a `browser.*` command for an existing session, mapping runner failures. */
   async command<N extends Extract<RunnerCommandName, `browser.${string}`>>(

@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { ownNodeEnv } from "@codeden/providers";
 import { type Browser, chromium } from "playwright-core";
 import { CommandError } from "../errors";
+import { VIEWPORT_LIMITS } from "./viewport";
 
 /** Installed Chromium-family browsers playwright-core can drive by `channel`. */
 export type BrowserChannel = "msedge" | "chrome";
@@ -127,6 +128,10 @@ async function launchTarget(target: Target, headless: boolean): Promise<Launched
         "--remote-debugging-address=127.0.0.1",
         "--no-first-run",
         "--no-default-browser-check",
+        // Screencast frames are captured at the browser's real scale, not the emulated one, so
+        // render at the highest scale we emulate; frames are scaled down to each viewport's
+        // device pixels (see viewport.ts).
+        `--force-device-scale-factor=${VIEWPORT_LIMITS.maxDeviceScaleFactor}`,
       ],
     });
     const cdpUrl = await cdpEndpoint(port);

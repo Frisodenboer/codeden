@@ -72,7 +72,8 @@ Nothing is lost unless you choose **Remove anyway**: the branch and the turn che
 
 The runner launches one Chromium (your installed **Edge** or **Chrome**; Edge first on Windows, Chrome first elsewhere) and gives every session its own browser context, so cookies, storage and tabs never cross sessions.
 
-- **You watch** through a live screencast in the Browser tab, and can **Take over** at any time with your mouse and keyboard. Tabs, back, forward, reload and the address bar work as you'd expect.
+- **You see the page** live in the Browser tab, edge to edge. The page is laid out at the panel's own size and pixel density, so it is sharp and re-flows as you resize the panel (pick a fixed device size under **⋯ > Viewport** instead if you want one). Clicks, typing and scrolling always go straight to the page, even while an agent is using it; an **Agent is acting** chip shows when it is. Tabs, back, forward, reload and the address bar work as you'd expect.
+- **Several viewers** (say, your desktop and your phone) share one page size: the one you used or focused last decides it, and the others fit the page inside their panel.
 - **Agents drive the same tabs** with CodeDen's browser tools:
 
 | Tool | Does |
@@ -90,7 +91,7 @@ The runner launches one Chromium (your installed **Edge** or **Chrome**; Edge fi
 - Screenshots can be shared to the chat (`share_to_chat`) or attached to a PR or issue as [evidence](github.md#evidence).
 - `chrome://`, `edge://`, `devtools://` and `javascript:` URLs are refused.
 
-![The browser panel watching the agent's browser](images/browser-panel.png)
+![The browser panel filling the right side, with the page laid out at the panel's size](images/browser-panel.png)
 
 ## Command palette and shortcuts
 

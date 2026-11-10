@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
+  Bot,
   Monitor,
   MoreHorizontal,
   Plus,
@@ -24,6 +25,7 @@ import {
 import { useClient } from "@/lib/api";
 import { VIEWPORTS } from "@/lib/browser-input";
 import { cn } from "@/lib/utils";
+import type { ViewportMode } from "./use-panel-viewport";
 import type { SessionBrowser } from "./use-session-browser";
 
 /** Ports probed for dev servers besides the runner's own child processes. */
@@ -31,19 +33,25 @@ export const PROBE_PORTS = [3000, 3001, 4173, 4321, 5173, 5174, 8000, 8080];
 
 const iconBtn = "text-muted-foreground";
 
-/** Back / forward / reload, the address bar, and the viewport and dev-server menus. */
+/**
+ * Back / forward / reload, the address bar, the "Agent is acting" chip, and the viewport and
+ * dev-server menus.
+ */
 export function BrowserToolbar({
   sessionId,
   browser,
+  viewportMode,
+  onViewportMode,
 }: {
   sessionId: string;
   browser: SessionBrowser;
+  viewportMode: ViewportMode;
+  onViewportMode: (mode: ViewportMode) => void;
 }) {
   const client = useClient();
   const tab = browser.activeTab;
   const [url, setUrl] = useState(tab?.url ?? "");
   const editing = useRef(false);
-  const [viewport, setViewport] = useState<string>("");
 
   useEffect(() => {
     if (!editing.current) setUrl(tab?.url ?? "");
@@ -63,13 +71,9 @@ export function BrowserToolbar({
     );
   };
   const setSize = (id: string) => {
-    const preset = VIEWPORTS.find((v) => v.id === id);
-    if (!preset) return;
-    setViewport(id);
-    void browser.run("Couldn't resize the viewport", () =>
-      client.browser.viewport(sessionId, preset.width, preset.height),
-    );
+    if (id === "fit" || VIEWPORTS.some((v) => v.id === id)) onViewportMode(id as ViewportMode);
   };
+  const applied = browser.viewport;
 
   return (
     <form
@@ -118,6 +122,7 @@ export function BrowserToolbar({
         placeholder="Enter a URL or localhost:5173"
         className="mx-1 h-7 min-w-0 flex-1 rounded-md border border-border bg-background/60 px-2 font-mono text-2xs outline-none focus:border-ring"
       />
+      {browser.agentActing && <AgentActingChip />}
       <DevServerMenu sessionId={sessionId} browser={browser} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -135,7 +140,15 @@ export function BrowserToolbar({
           <DropdownMenuLabel className="flex items-center gap-2 text-2xs">
             <Monitor className="size-3.5" /> Viewport
           </DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={viewport} onValueChange={setSize}>
+          <DropdownMenuRadioGroup value={viewportMode} onValueChange={setSize}>
+            <DropdownMenuRadioItem value="fit" className="text-xs">
+              Fit to panel
+              {viewportMode === "fit" && applied?.mine && (
+                <span className="ml-auto font-mono text-3xs text-muted-foreground">
+                  {applied.width}×{applied.height}
+                </span>
+              )}
+            </DropdownMenuRadioItem>
             {VIEWPORTS.map((v) => (
               <DropdownMenuRadioItem key={v.id} value={v.id} className="text-xs">
                 {v.label}
@@ -164,6 +177,22 @@ export function BrowserToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
     </form>
+  );
+}
+
+/** Shown while an agent drives the browser; your own input still goes straight to the page. */
+function AgentActingChip() {
+  return (
+    <span
+      data-testid="browser-agent-acting"
+      role="status"
+      title="An agent is using this browser. You can still click and type; both go to the page."
+      className="mr-1 flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-status-running/40 bg-status-running/10 px-2 text-3xs font-medium text-status-running"
+    >
+      <span className="size-1.5 animate-pulse rounded-full bg-status-running" />
+      <Bot className="size-3" />
+      <span className="max-[380px]:sr-only">Agent is acting</span>
+    </span>
   );
 }
 
