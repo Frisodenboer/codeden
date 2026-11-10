@@ -295,7 +295,7 @@ The orchestrator must always know what's happening across all projects, and each
   - **Orchestrator digest:** the same, rolled up per project.
 - **Awareness tools** (always loaded):
   - **Orchestrator:** `get_overview` (every project: running work, upcoming scheduled runs, inbox counts, recent outcomes).
-  - **PM:** `get_project_status`, `list_sessions` (filter by status, `workKey`, startedBy), `list_scheduled_runs` (upcoming runs per automation), `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run`, `stop_session`.
+  - **PM:** `get_project_status`, `list_sessions` (filter by status, `workKey`, startedBy), `get_session` (one session's last message, what it waits on, its result), `list_scheduled_runs` (upcoming runs per automation), `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run`, `stop_session`.
 - **Conflict detection is built into starting work.** `start_session`, `run_automation` and scheduled triggers first check for running or queued work with the same `workKey`, or an overlapping `scope` for the same kind of work, in that project.
   - **When there's a match,** the call returns `conflict` with the existing work's details instead of starting anything.
   - **The caller then picks one of:** `wait` (queue behind it), `skip`, `join` (send the request to the existing session as a follow-up), or `force` (start anyway, with a reason that's recorded).

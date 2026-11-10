@@ -101,6 +101,7 @@ describe("CodeDen MCP endpoint", () => {
       "share_to_chat",
       "get_project_status",
       "list_sessions",
+      "get_session",
       "start_session",
       "message_session",
       "stop_session",

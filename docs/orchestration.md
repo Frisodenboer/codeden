@@ -96,7 +96,7 @@ Agents see only the tools for their role; everything else isn't listed at all. T
 | Role | Tools |
 |---|---|
 | Orchestrator | `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox` |
-| PM: sessions and status | `get_project_status`, `list_sessions`, `start_session`, `message_session`, `stop_session`, `answer_question` |
+| PM: sessions and status | `get_project_status`, `list_sessions`, `get_session`, `start_session`, `message_session`, `stop_session`, `answer_question` |
 | PM: automations | `list_automations`, `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run` |
 | PM: issues and PRs | `list_issues`, `get_issue`, `triage_issue`, `create_issue`, `report_triage`, `comment_on_issue`, `get_pr_status` |
 | PM: other | `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `ask_user` |

@@ -137,9 +137,9 @@ export const messageSession = defineTool({
     whenBusy: z.enum(["queue", "steer"]).optional(),
   }),
   handler: async ({ sessionId, text, whenBusy }, { services, projectId }) => {
-    agentSessionOf(services, sessionId, projectId);
+    const session = agentSessionOf(services, sessionId, projectId);
     const res = await services.sessions.send(
-      sessionId,
+      session.id,
       {
         input: messageFrom("pm", text),
         whenBusy: whenBusy ?? "queue",
@@ -162,8 +162,8 @@ export const stopSession = defineTool({
   handler: async ({ sessionId }, { services, projectId }) => {
     const session = agentSessionOf(services, sessionId, projectId);
     if (ENDED.has(session.status))
-      throw new ToolError(`Session ${sessionId} already ${session.status}`);
-    const stopped = await services.sessions.stop(sessionId);
-    return { status: stopped.status, sessionId };
+      throw new ToolError(`Session ${session.id} already ${session.status}`);
+    const stopped = await services.sessions.stop(session.id);
+    return { status: stopped.status, sessionId: session.id };
   },
 });
