@@ -53,10 +53,14 @@ export const BrowserHistoryRequest = z.object({
 });
 export type BrowserHistoryRequest = z.infer<typeof BrowserHistoryRequest>;
 
-/** `POST /api/sessions/:id/browser/viewport` (CSS pixels, every tab of the session). */
+/**
+ * `POST /api/sessions/:id/browser/viewport` (CSS pixels, every tab of the session). The
+ * panel sizes the viewport over `/ws/browser` instead; a later panel resize replaces this.
+ */
 export const BrowserViewportRequest = z.object({
   width: z.int().min(200).max(7680),
   height: z.int().min(200).max(4320),
+  deviceScaleFactor: z.number().min(0.25).max(8).optional(),
 });
 export type BrowserViewportRequest = z.infer<typeof BrowserViewportRequest>;
 
@@ -105,6 +109,17 @@ export const BrowserScreencastSettings = z.object({
 });
 export type BrowserScreencastSettings = z.infer<typeof BrowserScreencastSettings>;
 
+/**
+ * A viewer's panel size: its content box in CSS pixels and its `devicePixelRatio`. Raw
+ * measurements; the runner clamps them when it applies the viewport.
+ */
+export const BrowserViewportSize = z.object({
+  width: z.int().min(1).max(16_384),
+  height: z.int().min(1).max(16_384),
+  deviceScaleFactor: z.number().min(0.25).max(8),
+});
+export type BrowserViewportSize = z.infer<typeof BrowserViewportSize>;
+
 /** Client -> server messages on `/ws/browser` (JSON text frames). */
 export const BrowserClientMessage = z.discriminatedUnion("type", [
   /** Human input for the active tab (mouse coordinates in displayed-frame space). */
@@ -115,6 +130,14 @@ export const BrowserClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("unwatch") }),
   /** Open the session's browser now (same as `open=1`). */
   z.object({ type: z.literal("open"), url: z.string().min(1).max(8_000).optional() }),
+  /**
+   * The size this viewer wants the page at: its panel's content box in CSS pixels and its
+   * `devicePixelRatio`. One viewer owns the session's viewport at a time: the first to report
+   * a size, until another viewer sends `claim: true` (it was focused or used). The page follows
+   * the owner's reports; when the owner leaves, the most recent claimant still connected takes
+   * over. The runner clamps the size (see `browser.viewport`).
+   */
+  BrowserViewportSize.extend({ type: z.literal("viewport"), claim: z.boolean().optional() }),
 ]);
 export type BrowserClientMessage = z.infer<typeof BrowserClientMessage>;
 
@@ -141,6 +164,23 @@ export const BrowserServerMessage = z.discriminatedUnion("type", [
   }),
   /** The session's tabs changed (opened, closed, activated, navigated, retitled). */
   z.object({ type: z.literal("tabs"), tabs: z.array(BrowserTab) }),
+  /**
+   * The viewport the runner applied (CSS pixels and device scale factor). `mine` is true when
+   * it follows this viewer's panel, so the panel can fill edge to edge; other viewers fit the
+   * frame inside their panel instead.
+   */
+  z.object({
+    type: z.literal("viewport"),
+    width: z.int().positive(),
+    height: z.int().positive(),
+    deviceScaleFactor: z.number().positive(),
+    mine: z.boolean(),
+  }),
+  /**
+   * Whether an agent is driving the browser: true while an agent `browser_*` tool runs and for
+   * a short while after the last one. Human input is never blocked either way.
+   */
+  z.object({ type: z.literal("agent"), acting: z.boolean() }),
   z.object({ type: z.literal("error"), code: z.string(), message: z.string() }),
 ]);
 export type BrowserServerMessage = z.infer<typeof BrowserServerMessage>;

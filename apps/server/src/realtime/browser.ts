@@ -10,6 +10,14 @@ import {
 import type { WSContext, WSEvents } from "hono/ws";
 import { type BrowserService, isBrowserNotOpen } from "../services/browser/browser-service";
 import { errorMessage, ServiceError } from "../services/errors";
+import { ViewportArbiter } from "./browser-viewport";
+
+interface AppliedViewport {
+  key: string;
+  width: number;
+  height: number;
+  deviceScaleFactor: number;
+}
 
 /** Skip frames for a socket that has this much unsent data (slow client). */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
@@ -40,8 +48,17 @@ export interface BrowserBridgeDeps {
  */
 export class BrowserBridge {
   private readonly viewers = new Map<string, Set<Viewer>>();
+  /** Per session: whose panel size the page follows. */
+  private readonly arbiters = new Map<string, ViewportArbiter>();
+  /** Per session: the viewport the runner last applied (cleared when the browser closes). */
+  private readonly applied = new Map<string, AppliedViewport>();
+  private readonly applying = new Map<string, Promise<void>>();
 
-  constructor(private readonly deps: BrowserBridgeDeps) {}
+  constructor(private readonly deps: BrowserBridgeDeps) {
+    deps.browser.agentActivity?.onChange((sessionId, acting) => {
+      for (const v of this.viewers.get(sessionId) ?? []) send(v.ws, { type: "agent", acting });
+    });
+  }
 
   handlers(query: BrowserWsQuery): WSEvents {
     let viewer: Viewer | undefined;
@@ -78,6 +95,15 @@ export class BrowserBridge {
         viewer.closed = true;
         this.remove(viewer);
         if (viewer.watching) void this.setWatching(viewer, false).catch(() => undefined);
+        // The owner left: the page follows the next viewer (or keeps its size if none).
+        const arbiter = this.arbiters.get(viewer.sessionId);
+        if (arbiter) {
+          const owner = arbiter.ownerId;
+          const resized = arbiter.remove(viewer.id);
+          if (arbiter.viewers === 0) this.arbiters.delete(viewer.sessionId);
+          else if (resized) this.applyViewport(viewer.sessionId);
+          else if (owner !== arbiter.ownerId) this.announceViewport(viewer.sessionId);
+        }
       },
     };
   }
@@ -93,6 +119,7 @@ export class BrowserBridge {
       return;
     }
     if (stream.kind === "browser.tabs") {
+      if (stream.tabs.length === 0) this.applied.delete(stream.sessionId);
       for (const v of this.viewers.get(stream.sessionId) ?? []) {
         if (stream.tabs.length === 0) {
           if (v.open) this.detach(v);
@@ -146,15 +173,88 @@ export class BrowserBridge {
         v.open = true;
         return this.watchIfWanted(v, opened.tabs);
       }
+      case "viewport": {
+        const { type: _t, claim, ...size } = msg;
+        let arbiter = this.arbiters.get(v.sessionId);
+        if (!arbiter) {
+          arbiter = new ViewportArbiter();
+          this.arbiters.set(v.sessionId, arbiter);
+        }
+        const owner = arbiter.ownerId;
+        if (arbiter.report(v.id, size, claim)) this.applyViewport(v.sessionId);
+        else if (owner !== arbiter.ownerId) this.announceViewport(v.sessionId);
+        return;
+      }
     }
   }
 
   private async watchIfWanted(v: Viewer, tabs: BrowserTab[]): Promise<void> {
     if (v.wantsWatch && !v.watching) await this.setWatching(v, true);
     this.sendState(v, tabs);
+    if (v.open) {
+      // A freshly opened browser (or a new server) gets the owner's size; otherwise tell this
+      // viewer what the page is at.
+      if (this.applied.has(v.sessionId)) this.announceViewport(v.sessionId, v);
+      else this.applyViewport(v.sessionId);
+    }
+    if (this.deps.browser.agentActivity?.isActing(v.sessionId)) {
+      send(v.ws, { type: "agent", acting: true });
+    }
+  }
+
+  /**
+   * Bring the runner's viewport in line with the owning viewer's panel. Serialized per session
+   * and always applies the latest size, so a burst of resizes ends at the final one.
+   */
+  private applyViewport(sessionId: string): void {
+    const run = async () => {
+      const size = this.arbiters.get(sessionId)?.size;
+      if (!size) return;
+      const key = `${size.width}x${size.height}@${size.deviceScaleFactor}`;
+      if (this.applied.get(sessionId)?.key === key) return this.announceViewport(sessionId);
+      try {
+        const result = await this.deps.browser.command({
+          name: "browser.viewport",
+          sessionId,
+          width: Math.min(size.width, 7680),
+          height: Math.min(size.height, 4320),
+          deviceScaleFactor: size.deviceScaleFactor,
+        });
+        this.applied.set(sessionId, {
+          key,
+          width: result.width ?? size.width,
+          height: result.height ?? size.height,
+          deviceScaleFactor: result.deviceScaleFactor ?? size.deviceScaleFactor,
+        });
+        this.announceViewport(sessionId);
+      } catch (error) {
+        // Not open yet: applied when it opens.
+        if (!isBrowserNotOpen(error)) this.deps.log?.(`browser viewport: ${errorMessage(error)}`);
+      }
+    };
+    const next = (this.applying.get(sessionId) ?? Promise.resolve()).then(run, run);
+    this.applying.set(sessionId, next);
+    void next.finally(() => {
+      if (this.applying.get(sessionId) === next) this.applying.delete(sessionId);
+    });
+  }
+
+  /** Tell viewers (or one) the applied viewport and whether it follows their panel. */
+  private announceViewport(sessionId: string, only?: Viewer): void {
+    const applied = this.applied.get(sessionId);
+    if (!applied) return;
+    const owner = this.arbiters.get(sessionId)?.ownerId;
+    const { key: _k, ...viewport } = applied;
+    for (const v of only ? [only] : (this.viewers.get(sessionId) ?? [])) {
+      if (v.open) send(v.ws, { type: "viewport", ...viewport, mine: v.id === owner });
+    }
   }
 
   private async setWatching(v: Viewer, watching: boolean): Promise<void> {
+    const before = v.watching;
+    // Set first: the runner replays the current frame to a new viewer before it answers, and
+    // a static page sends nothing more, so that frame must not be dropped.
+    v.watching = watching && !v.closed;
     try {
       await this.deps.browser.command({
         name: "browser.screencast",
@@ -163,8 +263,8 @@ export class BrowserBridge {
         watching: watching && !v.closed,
         ...v.settings,
       });
-      v.watching = watching && !v.closed;
     } catch (error) {
+      v.watching = before;
       if (!isBrowserNotOpen(error)) throw error;
       // The browser closed under us (session stopped): wait for it to open again.
       v.open = false;

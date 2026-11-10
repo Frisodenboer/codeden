@@ -1,15 +1,23 @@
 import type { BrowserInput, BrowserTab, RunnerStream } from "@codeden/contracts";
 import type { BrowserContext, CDPSession, Page } from "playwright-core";
 import { CommandError } from "../errors";
-import { InputForwarder, type ViewportSize } from "./input";
+import { InputForwarder } from "./input";
 import { BrowserLogs } from "./logs";
 import { type FrameStream, Screencast } from "./screencast";
 import { normalizeUrl } from "./urls";
+import {
+  deviceMetricsParams,
+  fitViewport,
+  framePixels,
+  sameViewport,
+  type ViewportMetrics,
+} from "./viewport";
 
 export interface BrowserSessionOptions {
   sessionId: string;
+  /** Created with `viewport: null`: the session emulates the viewport itself over CDP. */
   context: BrowserContext;
-  viewport: ViewportSize;
+  viewport: ViewportMetrics;
   stream: (data: RunnerStream) => void;
   /** Default timeout for navigation and agent actions. */
   timeoutMs: number;
@@ -19,6 +27,8 @@ interface TabState {
   tabId: string;
   page: Page;
   cdp?: Promise<CDPSession>;
+  /** Settles once the session's viewport is emulated on the tab. */
+  sized: Promise<void>;
 }
 
 /**
@@ -37,7 +47,7 @@ export class BrowserSession {
   private readonly stream: (data: RunnerStream) => void;
   private activeTabId: string | undefined;
   private nextTab = 1;
-  private viewport: ViewportSize;
+  private viewport: ViewportMetrics;
   private closed = false;
   private lastPublished = "";
   readonly timeoutMs: number;
@@ -51,6 +61,7 @@ export class BrowserSession {
     this.context.setDefaultTimeout(opts.timeoutMs);
     this.context.setDefaultNavigationTimeout(opts.timeoutMs);
     this.screencast = new Screencast(opts.sessionId, (frame: FrameStream) => this.stream(frame));
+    void this.screencast.setFrameSize(framePixels(this.viewport), this.viewport);
     // Pages opened by the page itself (popups, target=_blank) become tabs too.
     this.context.on("page", (page) => {
       if (!this.byPage.has(page)) this.register(page, false);
@@ -61,7 +72,8 @@ export class BrowserSession {
     return this.closed;
   }
 
-  get viewportSize(): ViewportSize {
+  /** The viewport every tab is emulated at (CSS pixels and device scale factor). */
+  get viewportSize(): ViewportMetrics {
     return { ...this.viewport };
   }
 
@@ -97,6 +109,7 @@ export class BrowserSession {
       this.publishTabs();
     }
     await state.page.bringToFront().catch(() => undefined);
+    await state.sized;
     await this.screencast.setTab({ tabId, cdp: await this.cdp(state) });
   }
 
@@ -127,19 +140,34 @@ export class BrowserSession {
     return page.url();
   }
 
-  async setViewport(size: ViewportSize): Promise<void> {
-    this.viewport = { ...size };
-    await Promise.all([...this.tabs.values()].map((t) => t.page.setViewportSize(size)));
+  /**
+   * Set the viewport of every tab, and of tabs opened later. The request is clamped
+   * (`fitViewport`); the screencast follows with frames at the new device pixels.
+   * Returns what was applied.
+   */
+  async setViewport(request: {
+    width: number;
+    height: number;
+    deviceScaleFactor?: number;
+  }): Promise<ViewportMetrics> {
+    this.assertOpen();
+    const next = fitViewport(request);
+    if (sameViewport(next, this.viewport)) return { ...next };
+    this.viewport = next;
+    await Promise.all(
+      [...this.tabs.values()].map((state) => {
+        state.sized = this.emulate(state);
+        return state.sized;
+      }),
+    );
+    await this.screencast.setFrameSize(framePixels(next), next);
+    return { ...next };
   }
 
   /** Forward panel input to the active tab. */
   async dispatchInput(input: BrowserInput): Promise<void> {
     const state = this.tabState();
-    const meta = this.screencast.metadata;
-    const viewport = meta
-      ? { width: meta.deviceWidth, height: meta.deviceHeight }
-      : (state.page.viewportSize() ?? this.viewport);
-    await this.input.dispatch(await this.cdp(state), input, viewport);
+    await this.input.dispatch(await this.cdp(state), input, this.viewport);
   }
 
   async close(): Promise<void> {
@@ -153,11 +181,11 @@ export class BrowserSession {
 
   private register(page: Page, quiet: boolean): TabState {
     const tabId = `t${this.nextTab++}`;
-    const state: TabState = { tabId, page };
+    const state: TabState = { tabId, page, sized: Promise.resolve() };
     this.tabs.set(tabId, state);
     this.byPage.set(page, state);
     this.logs.attach(page, tabId);
-    void page.setViewportSize(this.viewport).catch(() => undefined);
+    state.sized = this.emulate(state);
     page.on("framenavigated", (frame) => {
       if (frame === page.mainFrame()) void this.refreshTitle(page);
     });
@@ -186,6 +214,19 @@ export class BrowserSession {
     if (!state || page.isClosed()) return;
     this.titles.set(state.tabId, await page.title().catch(() => ""));
     this.publishTabs();
+  }
+
+  /** Emulate the session viewport on a tab (never throws: a closing tab just stays as is). */
+  private async emulate(state: TabState): Promise<void> {
+    try {
+      const cdp = await this.cdp(state);
+      await cdp.send(
+        "Emulation.setDeviceMetricsOverride",
+        deviceMetricsParams(this.viewport) as never,
+      );
+    } catch {
+      // The tab closed under us.
+    }
   }
 
   private cdp(state: TabState): Promise<CDPSession> {

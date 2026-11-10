@@ -19,6 +19,13 @@ describe("browser protocol", () => {
       { name: "browser.tabs.activate", sessionId: "s1", tabId: "t1" },
       { name: "browser.viewport", sessionId: "s1", width: 1280, height: 800 },
       {
+        name: "browser.viewport",
+        sessionId: "s1",
+        width: 460,
+        height: 712,
+        deviceScaleFactor: 1.5,
+      },
+      {
         name: "browser.screencast",
         sessionId: "s1",
         viewerId: "panel-1",
@@ -58,6 +65,31 @@ describe("browser protocol", () => {
         modifiers: 8,
       },
     });
+    roundTrip(BrowserInput, {
+      type: "mouse.wheel",
+      x: 230,
+      y: 300,
+      frameWidth: 920,
+      frameHeight: 1424,
+      viewportWidth: 460,
+      viewportHeight: 712,
+      deltaY: 100,
+    });
+    expect(() =>
+      RunnerCommand.parse({
+        name: "browser.viewport",
+        sessionId: "s1",
+        width: 800,
+        height: 600,
+        deviceScaleFactor: 0,
+      }),
+    ).toThrow();
+    roundTrip(RunnerCommandResults["browser.viewport"], {
+      width: 460,
+      height: 712,
+      deviceScaleFactor: 2,
+    });
+    roundTrip(RunnerCommandResults["browser.viewport"], {});
     roundTrip(BrowserInput, { type: "key.down", key: "a", code: "KeyA", text: "a" });
     roundTrip(BrowserInput, { type: "text.insert", text: "hello" });
     expect(() => BrowserInput.parse({ type: "mouse.move", x: 1, y: 1 })).toThrow();

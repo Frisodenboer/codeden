@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { BrowserInput } from "@codeden/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -161,8 +163,16 @@ describe.skipIf(!hasBrowser)("browser engine (installed Edge/Chrome)", { timeout
     await browser.execute({ name: "browser.tabs.activate", sessionId: s, tabId: "t1" });
     expect(manager.get(s).tabId()).toBe("t1");
 
-    await browser.execute({ name: "browser.viewport", sessionId: s, width: 900, height: 600 });
-    expect(manager.get(s).page("t2").viewportSize()).toEqual({ width: 900, height: 600 });
+    const applied = await browser.execute({
+      name: "browser.viewport",
+      sessionId: s,
+      width: 900,
+      height: 600,
+    });
+    expect(applied).toEqual({ width: 900, height: 600, deviceScaleFactor: 1 });
+    expect(await manager.get(s).page("t2").evaluate("[innerWidth, innerHeight]")).toEqual([
+      900, 600,
+    ]);
 
     const dev = await browser.handlers["browser.devServer"]({
       name: "browser.devServer",
@@ -179,6 +189,117 @@ describe.skipIf(!hasBrowser)("browser engine (installed Edge/Chrome)", { timeout
     ).rejects.toMatchObject({ code: "invalid_url" });
     await browser.execute({ name: "browser.close", sessionId: s });
     expect(manager.has(s)).toBe(false);
+  });
+
+  it("follows the panel size: viewport, scale, frames, input, new tabs and screenshots", async () => {
+    const s = "sized";
+    await browser.execute({ name: "browser.open", sessionId: s, url: site.url });
+    const session = manager.get(s);
+    await browser.execute({
+      name: "browser.screencast",
+      sessionId: s,
+      viewerId: "panel",
+      watching: true,
+    });
+    const frameAt = (width: number, height: number) =>
+      eventually(() => recorder.frames(s).find((f) => f.width === width && f.height === height));
+
+    // A 460x712 panel on a 2x screen: the page lays out at 460 CSS px, frames are 920x1424.
+    const hidpi = await browser.execute({
+      name: "browser.viewport",
+      sessionId: s,
+      width: 460,
+      height: 712,
+      deviceScaleFactor: 2,
+    });
+    expect(hidpi).toEqual({ width: 460, height: 712, deviceScaleFactor: 2 });
+    const page = session.page();
+    expect(await page.evaluate("[innerWidth, innerHeight, devicePixelRatio]")).toEqual([
+      460, 712, 2,
+    ]);
+    const frame = await frameAt(920, 1424);
+    expect(frame.metadata).toMatchObject({ deviceWidth: 460, deviceHeight: 712 });
+
+    // Input in frame pixels maps onto CSS pixels: the button centre (200,150) is (400,300).
+    await page.reload();
+    const send = (input: BrowserInput) =>
+      browser.execute({ name: "browser.input", sessionId: s, input });
+    const at = { x: 400, y: 300, frameWidth: 920, frameHeight: 1424 };
+    await send({ type: "mouse.down", ...at, viewportWidth: 460, viewportHeight: 712 });
+    await send({ type: "mouse.up", ...at, viewportWidth: 460, viewportHeight: 712 });
+    await eventually(async () => (await page.textContent("#big")) === "clicked by human");
+
+    // Resize again (wider, 1.25x): frames follow, and new tabs open at the current size.
+    await browser.execute({
+      name: "browser.viewport",
+      sessionId: s,
+      width: 1000,
+      height: 640,
+      deviceScaleFactor: 1.25,
+    });
+    await frameAt(1250, 800);
+    const tab = await session.openTab(`${site.url}/page2`);
+    expect(await session.page(tab.tabId).evaluate("[innerWidth, devicePixelRatio]")).toEqual([
+      1000, 1.25,
+    ]);
+    // Popups too.
+    const [popup] = await Promise.all([
+      session.context.waitForEvent("page"),
+      session.page(tab.tabId).evaluate(`window.open(${JSON.stringify(`${site.url}/page2`)})`),
+    ]);
+    await eventually(async () => (await popup.evaluate("innerWidth")) === 1000);
+
+    // Agent screenshots use the current viewport, in CSS pixels.
+    const shot = await browser.handlers["browser.screenshot"]({
+      name: "browser.screenshot",
+      sessionId: s,
+      path: join(tmpdir(), `codeden-shot-${Date.now()}.png`),
+    });
+    expect(shot).toMatchObject({ width: 1000, height: 640 });
+
+    // Clamped: a tiny panel still lays out at 320x240.
+    expect(
+      await browser.execute({ name: "browser.viewport", sessionId: s, width: 100, height: 80 }),
+    ).toEqual({ width: 320, height: 240, deviceScaleFactor: 1 });
+
+    // A reopened browser keeps the last size.
+    await browser.execute({ name: "browser.close", sessionId: s });
+    await browser.execute({ name: "browser.open", sessionId: s, url: site.url });
+    expect(await manager.get(s).page().evaluate("innerWidth")).toBe(320);
+    await browser.execute({ name: "browser.close", sessionId: s });
+  });
+
+  it("still pages get a frame at the final size after a burst of resizes", async () => {
+    const s = "burst";
+    await browser.execute({ name: "browser.open", sessionId: s, url: `${site.url}/page2` });
+    await browser.execute({
+      name: "browser.screencast",
+      sessionId: s,
+      viewerId: "panel",
+      watching: true,
+    });
+    for (let round = 0; round < 5; round++) {
+      const width = 500 + round * 37;
+      // Fire-and-forget resizes while frames are still unacked, like a panel being dragged.
+      await Promise.all(
+        [width - 30, width - 20, width - 10, width].map((w, i) =>
+          new Promise((r) => setTimeout(r, i * 15)).then(() =>
+            browser.execute({
+              name: "browser.viewport",
+              sessionId: s,
+              width: w,
+              height: 600,
+              deviceScaleFactor: 2,
+            }),
+          ),
+        ),
+      );
+      await eventually(
+        () => recorder.frames(s).some((f) => f.width === width * 2 && f.height === 1200),
+        5_000,
+      );
+    }
+    await browser.execute({ name: "browser.close", sessionId: s });
   });
 
   it("isolates sessions in separate contexts (cookies do not leak)", async () => {

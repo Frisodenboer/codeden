@@ -1,4 +1,4 @@
-import { Star } from "lucide-react";
+import { RefreshCw, Star } from "lucide-react";
 import { Fragment, type KeyboardEvent } from "react";
 import { ProviderMark } from "@/components/common/bits";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -52,11 +52,14 @@ export function ProviderRail({
   selectedId,
   onSelect,
   onFocusSearch,
+  refresh,
 }: {
   tabs: PickerTab[];
   selectedId: string;
   onSelect: (id: string) => void;
   onFocusSearch: () => void;
+  /** "Refresh models" at the foot of the rail, for the shown tab's provider(s). */
+  refresh?: { label: string; busy: boolean; onRefresh: () => void };
 }) {
   return (
     <div
@@ -121,6 +124,26 @@ export function ProviderRail({
           </Fragment>
         );
       })}
+      {refresh && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-picker-refresh
+              aria-label={refresh.label}
+              aria-busy={refresh.busy || undefined}
+              disabled={refresh.busy}
+              onClick={refresh.onRefresh}
+              className="mt-auto flex aspect-square w-full shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait"
+            >
+              <RefreshCw className={cn("size-3.5", refresh.busy && "animate-spin")} aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left" sideOffset={8} className="max-w-60">
+            {refresh.busy ? "Refreshing models…" : refresh.label}
+          </TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }

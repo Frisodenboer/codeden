@@ -111,7 +111,11 @@ export interface ScreenshotResult {
   bytes: number;
 }
 
-/** PNG of the viewport, the full page, or one element (`ref`), written to an absolute path. */
+/**
+ * PNG of the viewport, the full page, or one element (`ref`), written to an absolute path.
+ * The viewport is whatever the panel sized it to; images are in CSS pixels (`scale: "css"`),
+ * so a HiDPI viewer doesn't double what the agent gets back.
+ */
 export async function screenshot(
   session: BrowserSession,
   path: string,
@@ -124,8 +128,8 @@ export async function screenshot(
   const page = session.page(opts.tabId);
   const ref = opts.ref;
   const buffer = ref
-    ? await withRef(page, ref, (locator) => locator.screenshot({ type: "png" }))
-    : await page.screenshot({ type: "png", fullPage: opts.fullPage ?? false });
+    ? await withRef(page, ref, (locator) => locator.screenshot({ type: "png", scale: "css" }))
+    : await page.screenshot({ type: "png", scale: "css", fullPage: opts.fullPage ?? false });
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, buffer);
   const size = pngSize(buffer);

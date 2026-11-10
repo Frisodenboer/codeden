@@ -1,5 +1,5 @@
 import type { BrowserInput } from "@codeden/contracts";
-import { Bot, Globe, Hand, Loader2, X } from "lucide-react";
+import { Globe, Loader2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { EmptyState } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
@@ -7,14 +7,21 @@ import { useClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { BrowserCanvas } from "./browser/browser-canvas";
 import { BrowserToolbar, DevServerMenu } from "./browser/browser-toolbar";
+import { usePanelViewport, type ViewportMode } from "./browser/use-panel-viewport";
 import { type SessionBrowser, useSessionBrowser } from "./browser/use-session-browser";
 
-/** The browser the agents drive, streamed as screencast frames, with take-over (§12.2). */
+/**
+ * The browser the agents drive (§12.2), streamed as screencast frames edge to edge. The page
+ * is laid out at the panel's own size, and clicks, keys and scrolling always go to it.
+ */
 export function BrowserPanel({ sessionId }: { sessionId: string }) {
   const browser = useSessionBrowser(sessionId);
-  const [interactive, setInteractive] = useState(false);
+  const [mode, setMode] = useState<ViewportMode>("fit");
   const channel = browser.channel;
   const onInput = useCallback((input: BrowserInput) => channel?.input(input), [channel]);
+  // Re-registering as a viewer makes the runner send its current picture.
+  const onStall = useCallback(() => channel?.watch(), [channel]);
+  const measure = usePanelViewport(channel, mode, browser.viewport?.mine);
 
   if (browser.open === false) return <ClosedState sessionId={sessionId} browser={browser} />;
   if (browser.open === null) {
@@ -30,40 +37,30 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full flex-col" data-testid="browser-panel">
-      <BrowserToolbar sessionId={sessionId} browser={browser} />
+      <BrowserToolbar
+        sessionId={sessionId}
+        browser={browser}
+        viewportMode={mode}
+        onViewportMode={setMode}
+      />
       <BrowserTabs sessionId={sessionId} browser={browser} />
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3 text-2xs">
-        {interactive ? (
-          <>
-            <span className="flex items-center gap-1.5 text-status-waiting">
-              <Hand className="size-3.5" /> You're driving: mouse, keys and paste go to the page
-            </span>
-            <Button size="xs" className="ml-auto" onClick={() => setInteractive(false)}>
-              Hand back
-            </Button>
-          </>
-        ) : (
-          <>
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <span className="size-1.5 animate-pulse rounded-full bg-status-running" />
-              <Bot className="size-3.5" /> Watching the agent's browser
-            </span>
-            <Button
-              size="xs"
-              variant="outline"
-              className="ml-auto"
-              onClick={() => setInteractive(true)}
-            >
-              <Hand /> Take over
-            </Button>
-          </>
-        )}
-      </div>
-      <div className="relative flex min-h-0 flex-1 items-start justify-center overflow-auto bg-muted/30 p-3 scroll-thin">
+      <div
+        ref={measure}
+        data-testid="browser-viewport"
+        data-viewport={
+          browser.viewport
+            ? `${browser.viewport.width}x${browser.viewport.height}@${browser.viewport.deviceScaleFactor}`
+            : undefined
+        }
+        className="relative min-h-0 flex-1 overflow-hidden bg-background"
+      >
         <BrowserCanvas
           onFrame={browser.onFrame}
-          interactive={interactive}
           onInput={onInput}
+          onStall={onStall}
+          // Fill only when the page follows this panel; a preset or another viewer's size is
+          // fitted inside instead of stretched.
+          fit={mode === "fit" && browser.viewport?.mine ? "fill" : "contain"}
           title={browser.activeTab?.title || "Session browser"}
         />
       </div>

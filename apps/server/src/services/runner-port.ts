@@ -1,5 +1,6 @@
 import type {
   ProviderInfo,
+  RefreshModelsResponse,
   RunnerCommandName,
   RunnerCommandOf,
   RunnerCommandResult,
@@ -55,6 +56,36 @@ export function redetectProviders(runner: RunnerPort, log?: (message: string) =>
   runner.request({ name: "provider.detect" }, 60_000).catch((error: unknown) => {
     log?.(`runner: provider re-detect failed: ${error instanceof Error ? error.message : error}`);
   });
+}
+
+/** Model discovery starts a provider CLI (up to 30 s); detection runs first. */
+const REFRESH_MODELS_TIMEOUT_MS = 90_000;
+
+/**
+ * "Refresh models": re-detect one provider and wait until it has listed its models again.
+ * Resolves with every provider's list after the refresh (the runner also broadcasts it, so
+ * other clients update as well).
+ */
+export async function refreshProviderModels(
+  runner: RunnerPort,
+  providerId: string,
+): Promise<RefreshModelsResponse> {
+  if (!runner.isConnected()) {
+    throw new ServiceError(503, "runner_unavailable", "The runner is not connected");
+  }
+  if (!runner.providers().some((p) => p.id === providerId)) {
+    throw new ServiceError(404, "unknown_provider", `No provider "${providerId}" is loaded`);
+  }
+  try {
+    const result = await runner.request(
+      { name: "provider.detect", providerId, waitForModels: true },
+      REFRESH_MODELS_TIMEOUT_MS,
+    );
+    // An older runner answers without the lists; its `providers` update has arrived by now.
+    return { providers: result.providers ?? runner.providers() };
+  } catch (error) {
+    throw toServiceError(error);
+  }
 }
 
 /** `RunnerPort` over the server's (possibly absent) `RunnerClient`. */

@@ -2,16 +2,19 @@ import type { BrowserTab, RunnerStream } from "@codeden/contracts";
 import { CommandError } from "../errors";
 import { isAlive, killTree } from "../process/tree";
 import { DEFAULT_EVALUATE_GUARD, type EvaluateGuard } from "./agent";
-import type { ViewportSize } from "./input";
 import { type LaunchedBrowser, type LaunchOptions, launchChromium } from "./launcher";
 import { BrowserSession } from "./session";
 import { devServerUrl } from "./urls";
+import { DEFAULT_VIEWPORT, fitViewport, type ViewportMetrics } from "./viewport";
 
 export interface BrowserManagerOptions extends LaunchOptions {
   /** Ephemeral runner -> server stream (frames, tab updates). */
   stream: (data: RunnerStream) => void;
-  /** Viewport of new tabs. Default 1280x800. */
-  viewport?: ViewportSize;
+  /**
+   * Viewport of a session's first context until a panel sizes it. Default 1280x800 at 1x.
+   * After that a reopened session browser keeps its last viewport.
+   */
+  viewport?: { width: number; height: number; deviceScaleFactor?: number };
   /** Default timeout for navigation and agent actions. Default 30s. */
   timeoutMs?: number;
   evaluate?: Partial<EvaluateGuard>;
@@ -29,6 +32,7 @@ export class BrowserManager {
   private launching: Promise<LaunchedBrowser> | undefined;
   private readonly sessions = new Map<string, BrowserSession>();
   private readonly opening = new Map<string, Promise<BrowserSession>>();
+  private readonly lastViewport = new Map<string, ViewportMetrics>();
   private shuttingDown = false;
   readonly evaluateGuard: EvaluateGuard;
 
@@ -98,6 +102,16 @@ export class BrowserManager {
     return session.openTab(devServerUrl(port, path));
   }
 
+  /** Set a session's viewport (clamped) and remember it for when its browser reopens. */
+  async setViewport(
+    sessionId: string,
+    request: { width: number; height: number; deviceScaleFactor?: number },
+  ): Promise<ViewportMetrics> {
+    const applied = await this.get(sessionId).setViewport(request);
+    this.lastViewport.set(sessionId, applied);
+    return applied;
+  }
+
   async closeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     this.sessions.delete(sessionId);
@@ -127,8 +141,12 @@ export class BrowserManager {
     if (!pending) {
       pending = (async () => {
         const { browser } = await this.ensureBrowser();
-        const viewport = this.opts.viewport ?? { width: 1280, height: 800 };
-        const context = await browser.newContext({ viewport });
+        // A reopened browser comes back at the size the panel last gave it.
+        const viewport =
+          this.lastViewport.get(sessionId) ?? fitViewport(this.opts.viewport ?? DEFAULT_VIEWPORT);
+        // No Playwright viewport: the session emulates size and scale itself over CDP, so one
+        // override owns the metrics (Playwright fixes the scale factor per context).
+        const context = await browser.newContext({ viewport: null });
         const session = new BrowserSession({
           sessionId,
           context,

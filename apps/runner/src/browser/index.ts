@@ -20,3 +20,11 @@ export { BrowserManager, type BrowserManagerOptions } from "./manager";
 export { DEFAULT_SCREENCAST, Screencast, type ScreencastSettings } from "./screencast";
 export { BrowserSession } from "./session";
 export { devServerUrl, normalizeUrl } from "./urls";
+export {
+  DEFAULT_VIEWPORT,
+  deviceMetricsParams,
+  fitViewport,
+  framePixels,
+  VIEWPORT_LIMITS,
+  type ViewportMetrics,
+} from "./viewport";

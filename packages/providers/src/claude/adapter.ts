@@ -5,7 +5,8 @@ import type {
   ReasoningEffort,
   SessionOptions,
 } from "@codeden/contracts";
-import type { ProviderAdapter, ProviderSession } from "../adapter";
+import type { ProviderAdapter, ProviderSession, RefreshModelsOptions } from "../adapter";
+import { executableFingerprint, ModelFreshness } from "../freshness";
 import { ModelCatalog } from "../models";
 import { type ResolvedCommand, resolveExecutable } from "../util/exec";
 import type { UtilityModel } from "../utility";
@@ -58,8 +59,8 @@ export interface ClaudeAdapterOptions {
   /** Max time for model discovery, CLI start-up included. */
   modelListTimeoutMs?: number;
   /**
-   * Load the SDK (tests stub it). By default discovery uses `loadClaudeSdk()`, and only when
-   * the SDK is ready without an install (`claudeSdkReady()`).
+   * Load the SDK (tests stub it). By default sessions use `loadClaudeSdk()`, and discovery
+   * uses it only when the SDK is ready without an install (`claudeSdkReady()`).
    */
   loadSdk?: () => Promise<Pick<ClaudeSdkModule, "query">>;
 }
@@ -69,18 +70,21 @@ export class ClaudeAdapter implements ProviderAdapter {
   readonly id = CLAUDE_PROVIDER_ID;
   readonly displayName = "Claude Code";
   private readonly catalog = new ModelCatalog(FALLBACK_MODELS);
+  private readonly freshness = new ModelFreshness();
   private refreshing: Promise<void> | undefined;
-  private cachedExe: ResolvedCommand | undefined;
 
   constructor(private readonly options: ClaudeAdapterOptions = {}) {}
 
+  /**
+   * The `claude` to launch, looked up on PATH every time (a few `stat` calls): the runner
+   * outlives Claude Code updates and reinstalls, so a path found earlier may be gone or point
+   * at another install by now.
+   */
   private executable(): ResolvedCommand | undefined {
-    this.cachedExe ??= this.options.executable ?? resolveExecutable("claude");
-    return this.cachedExe;
+    return this.options.executable ?? resolveExecutable("claude");
   }
 
   detect(): Promise<ProviderStatus> {
-    this.cachedExe = undefined;
     return detectClaude({ executable: this.executable() });
   }
 
@@ -98,11 +102,19 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   /**
    * Load Claude Code's model list without a turn (`listClaudeModels`: the CLI starts and
-   * answers `initialize`; no message is sent). Concurrent calls share one discovery; a failed
-   * discovery keeps the last list. Skipped when Claude Code is not installed, or when the SDK
-   * would have to be installed first. Never throws.
+   * answers `initialize`; no message is sent). The list depends on the installed CLI and on
+   * the account (new models appear without a CLI update), so it can go stale while the runner
+   * runs. Concurrent calls share one discovery; a failed discovery keeps the last list.
+   * Skipped when Claude Code is not installed, when the SDK would have to be installed first,
+   * or (with `maxAgeMs`) when the list is recent and `claude` has not changed. Never throws.
    */
-  refreshModels(): Promise<void> {
+  refreshModels(opts: RefreshModelsOptions = {}): Promise<void> {
+    if (
+      opts.maxAgeMs !== undefined &&
+      this.freshness.isFresh(executableFingerprint(this.executable()), opts.maxAgeMs)
+    ) {
+      return this.refreshing ?? Promise.resolve();
+    }
     this.refreshing ??= this.discoverModels().finally(() => {
       this.refreshing = undefined;
     });
@@ -112,12 +124,15 @@ export class ClaudeAdapter implements ProviderAdapter {
   async openSession(opts: SessionOptions): Promise<ProviderSession> {
     const executable = this.executable();
     if (!executable) throw new Error("Claude Code is not installed (no `claude` on PATH)");
-    const { query } = await loadClaudeSdk();
+    const { query } = await (this.options.loadSdk ?? loadClaudeSdk)();
     return new ClaudeSession(opts, {
       executable,
       query,
+      // Every session start reports the list of the `claude` it runs: the cheapest refresh.
       onModels: (models) => {
-        if (models.length) this.catalog.set(toModelInfos(models));
+        if (!models.length) return;
+        this.freshness.confirm(executableFingerprint(executable));
+        this.catalog.set(toModelInfos(models));
       },
     });
   }
@@ -136,7 +151,10 @@ export class ClaudeAdapter implements ProviderAdapter {
       const models = await listClaudeModels(query, exe, {
         timeoutMs: this.options.modelListTimeoutMs,
       });
-      if (models.length) this.catalog.set(models);
+      if (models.length) {
+        this.freshness.confirm(executableFingerprint(exe));
+        this.catalog.set(models);
+      }
     } catch {
       // Keep the last list (the aliases, or what discovery or a session reported before).
     }

@@ -57,18 +57,31 @@ const VIRTUAL_KEYS: Record<string, number> = {
 
 const KEY_TEXT: Record<string, string> = { Enter: "\r", Tab: "\t", " ": " " };
 
-/** Map a point in the displayed frame onto the page viewport (CSS pixels), clamped. */
+/** Largest wheel delta forwarded per event (CSS pixels): no page-long jumps from one flick. */
+export const MAX_WHEEL_DELTA = 1200;
+
+/**
+ * Map a point in the displayed frame onto the page viewport (CSS pixels), clamped. The frame
+ * covers the viewport it was captured at (`viewportWidth`/`viewportHeight` from its metadata
+ * when the panel sends them, else `viewport`); the result is clamped to the current `viewport`.
+ */
 export function mapPoint(
-  input: Pick<BrowserMouseInput, "x" | "y" | "frameWidth" | "frameHeight">,
+  input: Pick<
+    BrowserMouseInput,
+    "x" | "y" | "frameWidth" | "frameHeight" | "viewportWidth" | "viewportHeight"
+  >,
   viewport: ViewportSize,
 ): { x: number; y: number } {
-  const x = (input.x / input.frameWidth) * viewport.width;
-  const y = (input.y / input.frameHeight) * viewport.height;
+  const x = (input.x / input.frameWidth) * (input.viewportWidth ?? viewport.width);
+  const y = (input.y / input.frameHeight) * (input.viewportHeight ?? viewport.height);
   return {
     x: Math.min(Math.max(x, 0), viewport.width - 1),
     y: Math.min(Math.max(y, 0), viewport.height - 1),
   };
 }
+
+const clampWheel = (delta: number | undefined) =>
+  Math.min(Math.max(delta ?? 0, -MAX_WHEEL_DELTA), MAX_WHEEL_DELTA);
 
 /** Windows virtual key code for a DOM key (letters and digits map to their char code). */
 export function virtualKeyCode(key: string): number | undefined {
@@ -129,8 +142,8 @@ export class InputForwarder {
       params.clickCount = input.clickCount ?? 1;
     }
     if (input.type === "mouse.wheel") {
-      params.deltaX = input.deltaX ?? 0;
-      params.deltaY = input.deltaY ?? 0;
+      params.deltaX = clampWheel(input.deltaX);
+      params.deltaY = clampWheel(input.deltaY);
     }
     return params;
   }
