@@ -159,7 +159,7 @@ check_launch() {
     if ! kill -0 "$app_pid" 2> /dev/null; then break; fi
     if [ -f "$home/install-token" ] && [ -f "$home/runner/runner.json" ]; then
       token="$(cat "$home/install-token")"
-      if curl -sf -H "authorization: Bearer $token" "http://127.0.0.1:$port/api/health" > /dev/null; then
+      if curl -sf --max-time 5 -H "authorization: Bearer $token" "http://127.0.0.1:$port/api/health" > /dev/null; then
         runner_pid="$(node -p "require(process.argv[1]).pid" "$home/runner/runner.json" 2> /dev/null || true)"
         healthy=true
         break
@@ -181,8 +181,25 @@ check_launch() {
       fi
     done
   fi
+  stop_app "$app_pid" "$home"
+}
+
+# Stops the app and everything it started for this home (server, runner): SIGTERM, then
+# SIGKILL after 30 s. The x64 app under Rosetta can take its time to quit, and a bare `wait`
+# hung the job.
+stop_app() {
+  local app_pid="$1" home="$2"
   kill "$app_pid" 2> /dev/null || true
-  if [ -n "$runner_pid" ]; then kill "$runner_pid" 2> /dev/null || true; fi
+  pkill -f -- "$home" 2> /dev/null || true
+  for _ in $(seq 1 30); do
+    kill -0 "$app_pid" 2> /dev/null || break
+    sleep 1
+  done
+  if kill -0 "$app_pid" 2> /dev/null; then
+    echo "the app did not quit within 30 s of SIGTERM; killing it"
+    kill -9 "$app_pid" 2> /dev/null || true
+  fi
+  pkill -9 -f -- "$home" 2> /dev/null || true
   wait "$app_pid" 2> /dev/null || true
 }
 
