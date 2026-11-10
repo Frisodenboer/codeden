@@ -132,6 +132,30 @@ describe.skipIf(!hasBrowser)("native engine (installed Edge/Chrome)", { timeout:
     expect(await page.textContent("#big")).toBe("clicked by human");
   });
 
+  it("a viewer's screencast follows the view's real size, without emulating it", async () => {
+    const session = manager.get("s1");
+    const before = await session.page().evaluate("[innerWidth, innerHeight]");
+    await handlers.execute({
+      name: "browser.screencast",
+      sessionId: "s1",
+      viewerId: "phone",
+      watching: true,
+      maxWidth: 400,
+      maxHeight: 400,
+    });
+    await session.page().evaluate("document.body.style.background = '#eef'");
+    await expect.poll(() => recorder.frames("s1").length, { timeout: 10_000 }).toBeGreaterThan(0);
+    const { width, height } = session.viewportSize;
+    expect([width, height]).toEqual(before);
+    expect(await session.page().evaluate("[innerWidth, innerHeight]")).toEqual(before);
+    await handlers.execute({
+      name: "browser.screencast",
+      sessionId: "s1",
+      viewerId: "phone",
+      watching: false,
+    });
+  });
+
   it("adopts the tabs the app already has when it connects again", async () => {
     const other = new BrowserManager({ stream: () => {}, connect });
     try {
