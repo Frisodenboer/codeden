@@ -46,6 +46,14 @@ export class ApprovalBroker {
     });
   }
 
+  /**
+   * Record a request CodeDen decided itself (`decidedBy: "policy"`): it shows in the transcript
+   * as decided, and nothing waits on it.
+   */
+  record(ctx: ItemCtx, item: Request): void {
+    this.emit({ type: "item.completed", ...ctx, item });
+  }
+
   /** Answer a pending request. Throws `unknown_request` for unknown ids. */
   respond(requestId: string, response: RuntimeResponse): void {
     const pending = this.pending.get(requestId);
