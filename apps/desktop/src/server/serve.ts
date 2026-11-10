@@ -1,6 +1,10 @@
 import { CODEDEN_VERSION, DesktopHostMessage, type DesktopServerMessage } from "@codeden/contracts";
 import { ensureHome, ensureInstallToken, resolveHome, startServer } from "@codeden/server";
+import { serverLog } from "./log";
 import { IpcDesktopUpdater } from "./update-bridge";
+
+/** How long a server whose app went away gets to close before it exits anyway. */
+const ORPHAN_CLOSE_MS = 30_000;
 
 /**
  * Start the server for the desktop app and connect it to the main process: report `ready`,
@@ -27,9 +31,7 @@ export async function serve(opts: { home?: string; port: number; fake: boolean }
       launcherVersion: CODEDEN_VERSION,
       desktop,
     },
-    log: (m) => {
-      if (process.env.CODEDEN_DEBUG) console.log(`[codeden] ${m}`);
-    },
+    log: serverLog(),
   });
 
   const close = (stopRunner: boolean) => {
@@ -47,9 +49,16 @@ export async function serve(opts: { home?: string; port: number; fake: boolean }
     if (parsed.data.type === "shutdown") close(parsed.data.stopRunner);
     else desktop.handle(parsed.data);
   });
-  // The app quit or crashed without asking: close; the runner keeps the agents going.
-  process.on("disconnect", () => close(false));
-  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => close(false));
+  // The app quit or crashed without asking: close; the runner keeps the agents going. Nobody
+  // is left to stop this process if closing hangs, so it exits on its own after a while.
+  process.on("disconnect", () => {
+    close(false);
+    setTimeout(() => process.exit(0), ORPHAN_CLOSE_MS).unref();
+  });
+  // A signal while already closing means the app gave up waiting: exit now.
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => (closing ? process.exit(0) : close(false)));
+  }
 
   console.log(`CodeDen ${CODEDEN_VERSION} is running at ${server.url}`);
   // Network access (§15.1) works the same as with \`codeden\`: the server moves only its HTTP

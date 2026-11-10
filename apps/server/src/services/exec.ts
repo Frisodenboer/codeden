@@ -131,7 +131,13 @@ export const runTool: Exec = (command, args, opts = {}) => {
     let settled = false;
     const child = spawn(file, argv, {
       cwd: opts.cwd,
-      env: mergeEnv(env, { NO_COLOR: "1", FORCE_COLOR: "0", GIT_TERMINAL_PROMPT: "0" }),
+      // No prompts and no Git Credential Manager sign-in windows from background git.
+      env: mergeEnv(env, {
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        GIT_TERMINAL_PROMPT: "0",
+        GCM_INTERACTIVE: "never",
+      }),
       windowsHide: true,
       windowsVerbatimArguments: isShim,
       stdio: ["ignore", "pipe", "pipe"],

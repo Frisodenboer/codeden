@@ -60,11 +60,12 @@ Package READMEs go deeper: [apps/server](apps/server/README.md), [packages/provi
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm lint` | Biome check |
 | `pnpm format` | Biome fix + format |
-| `pnpm test` | Vitest across all packages, including a server -> runner -> Fake provider end-to-end test |
-| `pnpm e2e` | Build the web app, then Playwright against a real server + runner with an isolated home and the Fake provider |
+| `pnpm test` | Vitest, the fast suites (what CI and the release run) |
+| `pnpm test:slow` | The real-browser and real-process suites (Chromium, terminals, detached runners); not in CI |
+| `pnpm e2e` | Build the web app, then Playwright against a real server + runner with an isolated home and the Fake provider; not in CI |
 | `pnpm db:generate` | Generate a Drizzle migration after editing `apps/server/src/db/schema-*.ts` |
 
-Before you push: **`pnpm typecheck && pnpm lint && pnpm test`** must pass. CI runs the same on Windows and Linux for pull requests (plus macOS on every push to `main` and nightly), then builds, packs the npm tarball, installs it and runs `codeden --version` and `codeden doctor`. Pull requests that only touch documentation skip the tests, and the desktop smoke test runs when `apps/desktop` changes. The **CI result** check sums it all up.
+Before you push: **`pnpm typecheck && pnpm lint && pnpm test`** must pass. CI runs the same in one Linux job, then builds, packs the npm tarball, installs it, runs `codeden doctor` and starts it to check the API and the web UI are served. Pull requests that only touch documentation skip it. The **CI result** check sums it up. The slow suites, the Playwright e2e suite and the desktop smoke test aren't part of CI; run them when you work in those areas. The release workflow builds and checks the desktop installers on Windows, macOS and Linux.
 
 ## Conventions
 
@@ -84,10 +85,10 @@ Before you push: **`pnpm typecheck && pnpm lint && pnpm test`** must pass. CI ru
 
 ## Testing
 
-- **Tests are required for new behaviour.** Vitest, in each package's `test/` folder.
+- **Keep tests lean.** Add a Vitest unit test (in the package's `test/` folder) when logic is easy to get wrong and costly when wrong: security checks, contracts, migrations, parsers, anything that can lose data. Skip end-to-end and real-browser tests for features unless they're asked for, and keep `pnpm test` fast and deterministic.
 - **Use the Fake provider** (scripted and deterministic) or the **Replay** provider (recorded sessions) in tests, never live agent turns.
 - Server tests run the runner without the real Claude and Codex adapters (`CODEDEN_BUILTIN_PROVIDERS=0`), so they never reach a live agent. GitHub is faked behind Octokit's `fetch` (`apps/server/test/support/fake-github.ts`).
-- From the repo root, `pnpm test` runs the suites that drive real processes (Chromium, terminals, detached runners) one file at a time after the parallel batch, so a loaded machine can't starve their waits.
+- `pnpm test:slow` runs the suites that drive real processes (Chromium, terminals, detached runners), one file at a time so a loaded machine can't starve their waits.
 - **End to end:** `pnpm e2e`. On the first run install the browser with `pnpm --filter @codeden/web exec playwright install chromium`.
 
 ### Live tests (opt in, small real cost)

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_PORT, parseLaunchArgs } from "../src/main/args";
 import { launchUrl } from "../src/main/connection";
 import { appMenuTemplate } from "../src/main/menu";
-import { allowPermission, externalUrl, isServerUrl } from "../src/main/security";
+import { allowPermission, externalUrl, isServerUrl, redactToken } from "../src/main/security";
 import { homeFiles, planServer } from "../src/main/server-plan";
 import { trayView } from "../src/main/tray-view";
 import { DEFAULT_SIZE, restoreBounds } from "../src/main/window-state";
@@ -213,5 +213,16 @@ describe("app menu", () => {
   it("puts About, Settings and Quit in the app menu on macOS only", () => {
     expect(appMenuTemplate("darwin", actions)[0]?.label).toBe("CodeDen");
     expect(appMenuTemplate("win32", actions)[0]?.label).toBe("File");
+  });
+});
+
+describe("redactToken", () => {
+  it("hides the install token in a failed launch-URL load", () => {
+    const error =
+      "Error: ERR_FAILED (-2) loading 'http://127.0.0.1:48253/?token=e7eaecd47bde&next=/inbox'";
+    expect(redactToken(error)).toBe(
+      "Error: ERR_FAILED (-2) loading 'http://127.0.0.1:48253/?token=[redacted]&next=/inbox'",
+    );
+    expect(redactToken("no token here")).toBe("no token here");
   });
 });

@@ -21,8 +21,9 @@ export interface GitResult {
 }
 
 /**
- * Run `git` non-interactively: no terminal prompts, no pager, no editor, stable output.
- * Throws `CommandError("git_failed")` with stderr for unexpected exit codes.
+ * Run `git` non-interactively: no terminal prompts, no credential manager windows, no pager,
+ * no editor, stable output. Throws `CommandError("git_failed")` with stderr for unexpected
+ * exit codes.
  */
 export function git(cwd: string, args: string[], opts: GitOptions = {}): Promise<GitResult> {
   return new Promise((resolve, reject) => {
@@ -31,6 +32,8 @@ export function git(cwd: string, args: string[], opts: GitOptions = {}): Promise
       windowsHide: true,
       env: childEnv({
         GIT_TERMINAL_PROMPT: "0",
+        // Git Credential Manager: fail instead of opening a sign-in window (a background fetch).
+        GCM_INTERACTIVE: "never",
         GIT_PAGER: "cat",
         GIT_EDITOR: "true",
         LC_ALL: "C",

@@ -21,6 +21,7 @@ import { pmTools } from "./pm";
 import { reportProgress } from "./report-progress";
 import { shareToChat } from "./share-to-chat";
 import { suggestFollowups } from "./suggest-followups";
+import { wakeupTools } from "./wakeups";
 
 /** Every CodeDen tool, in the order agents see them. Add new tools here (one file each). */
 export const allTools: AnyServerTool[] = [
@@ -42,6 +43,7 @@ export const allTools: AnyServerTool[] = [
   generateImage,
   ...orchestratorTools,
   ...pmTools,
+  ...wakeupTools,
   ...githubTools,
   ...factoryTools,
 ];

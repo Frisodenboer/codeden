@@ -17,4 +17,4 @@ guards:
   maxConcurrent: 5
   maxPerDay: 50
 ---
-Triage new issues against the project's vision, notes and existing work. Prefer asking for information over guessing, and never start work on anything that touches protected areas without the user.
+Triage new issues against the project's vision, notes and existing work. When an issue is unclear, mark it needs_info and ask its author the specific questions instead of guessing, and never start work on anything that touches protected areas without the user.

@@ -46,6 +46,33 @@ describe("ClaudePolicy", () => {
     expect(p.gate("AskUserQuestion", {}).ask).toBe(true);
   });
 
+  it("auto: searching and listing are not secrets reads, and writing an env file in the worktree is fine", () => {
+    const p = new ClaudePolicy("auto", ctx);
+    expect(p.gate("Grep", { pattern: "process.env", path: "src" }).ask).toBe(false);
+    expect(p.gate("Grep", { pattern: "import\\.meta\\.env", glob: "*.ts" }).ask).toBe(false);
+    expect(p.gate("Grep", { pattern: "x", glob: "**/.env*" }).ask).toBe(false);
+    expect(p.gate("Glob", { pattern: "**/*.env" }).ask).toBe(false);
+    expect(p.gate("Write", { file_path: "/work/repo/.env" }).ask).toBe(false);
+    expect(p.gate("Edit", { file_path: ".env.local" }).ask).toBe(false);
+    expect(p.gate("Bash", { command: "cp .env.example .env" }).ask).toBe(false);
+    // Reading a secret still asks, wherever the agent finds it.
+    expect(p.gate("Grep", { pattern: "KEY", path: ".env" })).toMatchObject({
+      ask: true,
+      action: "secrets",
+    });
+    expect(p.gate("Grep", { pattern: "KEY", path: "/home/me/.npmrc" })).toMatchObject({
+      action: "secrets",
+    });
+    expect(p.gate("Read", { file_path: "/work/repo/.env.local" })).toMatchObject({
+      action: "secrets",
+    });
+    // Writing one outside the worktree asks too, under Full as well.
+    expect(p.gate("Write", { file_path: "/home/me/.npmrc" })).toMatchObject({
+      action: "outside_worktree",
+    });
+    expect(new ClaudePolicy("full", ctx).gate("Write", { file_path: "/tmp/.env" }).ask).toBe(true);
+  });
+
   it("full asks only for writes outside the worktree (temp counts as inside, but not its secrets)", () => {
     const p = new ClaudePolicy("full", ctx);
     expect(p.gate("Bash", { command: "git push --force" }).ask).toBe(false);
@@ -68,6 +95,39 @@ describe("ClaudePolicy", () => {
       ask: true,
       action: "outside_worktree",
     });
+  });
+
+  it("resolves relative paths from a shell directory Claude reports in Git Bash form (Windows)", () => {
+    const win = {
+      cwd: "C:\\Users\\me\\.codeden\\wt\\myproj\\abcd1234",
+      platform: "win32" as const,
+      home: "C:\\Users\\me",
+      tempRoots: ["C:\\Users\\me\\AppData\\Local\\Temp"],
+    };
+    const dir = "/c/Users/me/.codeden/wt/myproj/abcd1234";
+    const sub = "/c/Users/me/.codeden/wt/myproj/abcd1234/apps/web";
+    for (const level of ["auto", "full"] as const) {
+      const p = new ClaudePolicy(level, win);
+      for (const command of [
+        "rm -rf dist",
+        "pnpm test > test.log 2>&1",
+        "cp src/a.ts src/b.ts",
+        "Remove-Item -Recurse -Force node_modules",
+        "cd apps && rm -rf build",
+      ]) {
+        expect(p.gate("Bash", { command }, dir).ask, `${level}: ${command}`).toBe(false);
+      }
+      expect(p.gate("Bash", { command: "cp a.ts ../../a.ts.bak" }, sub).ask).toBe(false);
+      expect(p.gate("Bash", { command: "rm -rf /tmp/scratch" }, "/tmp").ask).toBe(false);
+      expect(p.gate("Bash", { command: "rm -rf ../abcd9999" }, dir)).toMatchObject({
+        ask: true,
+        action: "outside_worktree",
+      });
+      expect(p.gate("Bash", { command: "cp a.ts ../../../../b.ts" }, sub)).toMatchObject({
+        ask: true,
+        action: "outside_worktree",
+      });
+    }
   });
 
   it("auto and supervised treat temp writes by their own rules", () => {

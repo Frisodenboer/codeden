@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -54,45 +54,75 @@ describe("macOS signing (electron-builder config)", () => {
     expect(mac.identity).toBeUndefined();
     expect(mac.notarize).toBe(true);
   });
+});
 
-  it.skipIf(process.platform === "win32")(
-    "makes node-pty's spawn-helper executable in the packed app (afterPack)",
-    async () => {
-      const file = "../electron-builder.config.mjs";
-      const config = (await import(/* @vite-ignore */ file)) as {
-        default: { afterPack: unknown };
-        makeSpawnHelperExecutable: (context: object) => Promise<void>;
-      };
-      expect(config.default.afterPack).toBe(config.makeSpawnHelperExecutable);
-      const out = mkdtempSync(join(tmpdir(), "codeden-afterpack-"));
-      try {
-        const pty = join(
-          out,
-          "CodeDen.app",
-          "Contents",
-          "Resources",
-          "app",
-          "node_modules",
-          "node-pty",
-        );
-        const helpers = ["prebuilds/darwin-arm64", "prebuilds/darwin-x64"].map((d) => {
-          mkdirSync(join(pty, d), { recursive: true });
-          const helper = join(pty, d, "spawn-helper");
-          writeFileSync(helper, "", { mode: 0o644 });
-          return helper;
-        });
-        await config.makeSpawnHelperExecutable({
-          appOutDir: out,
-          electronPlatformName: "darwin",
-          packager: { appInfo: { productFilename: "CodeDen" } },
-        });
-        for (const helper of helpers) expect(statSync(helper).mode & 0o777).toBe(0o755);
-      } finally {
-        rmSync(out, { recursive: true, force: true });
-      }
-    },
-  );
+type AfterPack = (context: object) => Promise<void>;
 
+/** The afterPack hook, and a packed macOS app (x64) in a temp dir with a staged app beside it. */
+async function packedApp() {
+  const file = "../electron-builder.config.mjs";
+  const config = (await import(/* @vite-ignore */ file)) as {
+    default: { afterPack: unknown };
+    prepareNativeModules: AfterPack;
+  };
+  const out = mkdtempSync(join(tmpdir(), "codeden-afterpack-"));
+  const modules = join(out, "mac", "CodeDen.app", "Contents", "Resources", "app", "node_modules");
+  const stage = join(out, "stage");
+  mkdirSync(modules, { recursive: true });
+  const context = {
+    appOutDir: join(out, "mac"),
+    electronPlatformName: "darwin",
+    arch: 1, // x64
+    packager: { appInfo: { productFilename: "CodeDen" }, info: { appDir: stage } },
+  };
+  return { config, out, modules, stage, context };
+}
+
+describe("native modules in the packed app (afterPack)", () => {
+  it.skipIf(process.platform === "win32")("makes node-pty's spawn-helper executable", async () => {
+    const { config, out, modules, stage, context } = await packedApp();
+    try {
+      expect(config.default.afterPack).toBe(config.prepareNativeModules);
+      const helpers = ["prebuilds/darwin-arm64", "prebuilds/darwin-x64"].map((d) => {
+        mkdirSync(join(modules, "node-pty", d), { recursive: true });
+        const helper = join(modules, "node-pty", d, "spawn-helper");
+        writeFileSync(helper, "", { mode: 0o644 });
+        return helper;
+      });
+      mkdirSync(join(modules, "@napi-rs", "keyring-darwin-x64"), { recursive: true });
+      mkdirSync(stage, { recursive: true });
+      await config.prepareNativeModules(context);
+      for (const helper of helpers) expect(statSync(helper).mode & 0o777).toBe(0o755);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it("copies the keychain binary for the target arch from the stage when it was left out", async () => {
+    const { config, out, modules, stage, context } = await packedApp();
+    try {
+      const staged = join(stage, "node_modules", "@napi-rs", "keyring-darwin-x64");
+      mkdirSync(staged, { recursive: true });
+      writeFileSync(join(staged, "keyring.darwin-x64.node"), "binary");
+      await config.prepareNativeModules(context);
+      const copied = join(modules, "@napi-rs", "keyring-darwin-x64", "keyring.darwin-x64.node");
+      expect(readFileSync(copied, "utf8")).toBe("binary");
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it("fails the build when the stage has no keychain binary for the target arch", async () => {
+    const { config, out, context } = await packedApp();
+    try {
+      await expect(config.prepareNativeModules(context)).rejects.toThrow(/keyring-darwin-x64/);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("macOS signing (electron-builder config), with a Developer ID name only", () => {
   it("signs with the Developer ID but skips notarization without the Apple account", async () => {
     const mac = await macConfig({ CSC_NAME: "Developer ID Application: Example (TEAMID1234)" });
     expect(mac.identity).toBeUndefined();

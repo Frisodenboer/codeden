@@ -13,10 +13,13 @@ import type {
  * - read_only  -> read-only sandbox + `never`: writes fail instead of asking, no network
  * - supervised -> `untrusted`: every command that isn't known-safe and every patch asks
  * - auto       -> workspace-write sandbox + `on-request`: the sandbox confines writes (to the
- *                 worktree, extra roots and the OS temp directory) and network; escaping it
- *                 (outside the worktree, network, force pushes) asks
- * - full       -> workspace-write + `never`, with network on: no approvals, still confined
- *                 to the worktree, extra roots and temp
+ *                 worktree, extra roots and the OS temp directory) and network; what Codex asks
+ *                 to run outside it goes through CodeDen's risk classifier (`./policy`), so
+ *                 `git commit` or `pnpm install` is approved by policy and only risky actions
+ *                 reach the user
+ * - full       -> workspace-write + `on-request`, with network on: the same, and only writes
+ *                 outside the worktree reach the user (with `never`, `git commit` could not run
+ *                 at all: the sandbox keeps `.git` read-only)
  */
 export function codexPolicy(
   autonomy: AutonomyLevel,
@@ -34,7 +37,7 @@ export function codexPolicy(
     return { approvalPolicy: "untrusted", sandbox: "workspace-write", networkAccess: false };
   if (autonomy === "auto")
     return { approvalPolicy: "on-request", sandbox: "workspace-write", networkAccess: false };
-  return { approvalPolicy: "never", sandbox: "workspace-write", networkAccess: true };
+  return { approvalPolicy: "on-request", sandbox: "workspace-write", networkAccess: true };
 }
 
 type PolicyOptions = Pick<SessionOptions, "autonomy" | "readOnly" | "additionalDirectories">;

@@ -146,6 +146,18 @@ export const sampleAgentEvents: AgentEvent[] = [
   },
   { type: "turn.completed", threadId: "t1", turnId: "u1", stopReason: "end_turn" },
   { type: "turn.failed", threadId: "t1", turnId: "u2", error: { message: "boom" } },
+  {
+    type: "turn.failed",
+    threadId: "t1",
+    turnId: "u4",
+    error: {
+      code: "rate_limit",
+      message: "You've hit your usage limit",
+      retryable: true,
+      kind: "usage_limit",
+      retryAt: "2026-11-10T22:00:00.000Z",
+    },
+  },
   { type: "turn.interrupted", threadId: "t1", turnId: "u3", reason: "user" },
 ];
 

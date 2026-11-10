@@ -46,7 +46,9 @@ interface Pending {
  * Batches notices into debounced wakes per target (`pm:<projectId>`, `orchestrator`) with a
  * loop guard (§8.2): notices arriving close together become one "updates since your last
  * turn" wake, and no target is woken more than `maxWakes` times per window. Held-back wakes
- * fire as soon as the window allows; nothing is dropped.
+ * fire as soon as the window allows, or right after `reset` when a person steps in; nothing
+ * is dropped. The orchestration service runs one for notice wakes and one for the
+ * orchestrator's messages to PMs (`LoopGuard`), so each conversation is counted on its own.
  */
 export class WakeScheduler {
   private readonly pending = new Map<string, Pending>();
@@ -105,9 +107,29 @@ export class WakeScheduler {
     return this.recent(key).length < this.opts.maxWakes;
   }
 
+  /** When the loop guard lets `key` be woken again (now, while it is under the limit). */
+  freeAt(key: string): number {
+    const recent = this.recent(key);
+    const over = recent.length - this.opts.maxWakes;
+    return over < 0 ? this.opts.now() : (recent[over] ?? this.opts.now()) + this.opts.windowMs;
+  }
+
   /** Count a wake that happened outside the scheduler (a direct message). */
   recordWake(key: string): void {
     this.history.set(key, [...this.recent(key), this.opts.now()]);
+  }
+
+  /**
+   * A person stepped in: forget `key`'s counted wakes, so whatever follows is not part of a
+   * loop, and let a wake the guard was holding back go out after the usual quiet period.
+   */
+  reset(key: string): void {
+    this.history.delete(key);
+    const entry = this.pending.get(key);
+    if (!entry?.suppressed || entry.firing) return;
+    entry.suppressed = false;
+    this.opts.clearTimer(entry.timer);
+    entry.timer = this.arm(key, this.opts.debounceMs);
   }
 
   /** Whether a wake is waiting for `key`. */
@@ -134,9 +156,8 @@ export class WakeScheduler {
   private async run(key: string): Promise<void> {
     const entry = this.pending.get(key);
     if (!entry || entry.firing) return;
-    const recent = this.recent(key);
-    if (recent.length >= this.opts.maxWakes) {
-      const until = (recent[0] ?? this.opts.now()) + this.opts.windowMs;
+    if (!this.allowed(key)) {
+      const until = this.freeAt(key);
       if (!entry.suppressed) this.opts.onSuppressed?.(key, until);
       entry.suppressed = true;
       entry.timer = this.arm(key, until - this.opts.now() + 1);

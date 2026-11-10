@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import type {
   CanUseTool,
@@ -19,13 +21,26 @@ import { type ProviderSession, ProviderSessionError, type SessionConfigChange } 
 import { ApprovalBroker } from "../approvals";
 import { AsyncQueue } from "../async-queue";
 import type { ResolvedCommand } from "../util/exec";
+import { interruptWithDeadline } from "../util/interrupt";
 import { explicitModel } from "../util/model";
 import { str, toJson } from "../util/text";
 import { ClaudeEventMapper } from "./mapper";
+import { claudeNotesDirs } from "./notes-dirs";
 import { buildQueryOptions, claudeEffort, toSdkUserMessage } from "./options";
 import { ClaudePolicy, permissionModeFor } from "./permissions";
 import type { ClaudeSdkModule } from "./sdk";
 import { approvalTitle, QUESTION_TOOL } from "./tools";
+
+/**
+ * `Query.interrupt` as the SDK implements it: `cancelQueued` also cancels user messages still
+ * waiting in the CLI's queue (CLIs advertising `interrupt_cancel_queued_v1`; older ones ignore
+ * it). The receipt lists the uuids that were cancelled.
+ */
+type InterruptibleQuery = {
+  interrupt(opts?: {
+    cancelQueued?: boolean;
+  }): Promise<{ still_queued: string[]; cancelled?: string[] } | undefined>;
+};
 
 export interface ClaudeSessionConfig {
   executable: ResolvedCommand;
@@ -35,6 +50,17 @@ export interface ClaudeSessionConfig {
   query: ClaudeSdkModule["query"];
   /** How long to wait for the CLI to confirm an interrupt before forcing the turn closed. */
   interruptTimeoutMs?: number;
+  /** Claude's notes folders (plans, auto-memory); found from the user's settings by default. */
+  notesRoots?: readonly string[];
+}
+
+/** Home and Claude config folder for a session (`CLAUDE_CONFIG_DIR` moves the latter). */
+function claudeHomes(env: Record<string, string> | undefined): {
+  home: string;
+  configDir?: string;
+} {
+  const configDir = env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR;
+  return { home: os.homedir(), ...(configDir ? { configDir } : {}) };
 }
 
 /**
@@ -56,6 +82,8 @@ export class ClaudeSession implements ProviderSession {
   private shellDir: string | undefined;
   /** Current autonomy: a query restarted after the CLI exits starts with it. */
   private autonomy: AutonomyLevel;
+  /** Uuids of messages steered into the running turn, so a Stop can tell which it cancelled. */
+  private readonly steered = new Set<string>();
 
   constructor(
     private readonly opts: SessionOptions,
@@ -67,7 +95,13 @@ export class ClaudeSession implements ProviderSession {
     this.autonomy = opts.autonomy;
     this.policy = new ClaudePolicy(
       opts.autonomy,
-      { cwd: opts.cwd, extraRoots: opts.additionalDirectories },
+      {
+        cwd: opts.cwd,
+        extraRoots: opts.additionalDirectories,
+        ...(opts.ownBranch ? { ownBranch: opts.ownBranch } : {}),
+        notesRoots:
+          config.notesRoots ?? claudeNotesDirs({ cwd: opts.cwd, ...claudeHomes(opts.env) }),
+      },
       opts.readOnly,
     );
     this.mapper.start(opts.resumeToken);
@@ -115,6 +149,7 @@ export class ClaudeSession implements ProviderSession {
       throw new ProviderSessionError("turn_running", "A turn is already running");
     const message = toSdkUserMessage(input);
     const prompts = this.ensureQuery();
+    this.steered.clear();
     const turnId = this.mapper.beginTurn();
     this.emitUserMessage(turnId, input);
     prompts.push(message);
@@ -125,24 +160,35 @@ export class ClaudeSession implements ProviderSession {
     const turnId = this.mapper.turnId;
     if (!turnId || !this.prompts) throw new ProviderSessionError("no_turn", "No turn is running");
     const message = toSdkUserMessage(input);
+    // A uuid lets a Stop cancel it while it still waits in the CLI's queue.
+    const uuid = randomUUID();
+    this.steered.add(uuid);
     this.emitUserMessage(turnId, input);
-    this.prompts.push(message);
+    this.prompts.push({ ...message, uuid });
   }
 
+  /**
+   * Stop the running turn. Messages steered into it that the CLI hasn't read yet are cancelled
+   * with it, so they can't start a new turn after the Stop. If the CLI doesn't confirm in time
+   * (or never answers the interrupt at all), the turn is closed as interrupted anyway.
+   */
   async interrupt(): Promise<void> {
-    if (!this.mapper.turnId) return;
+    const turnId = this.mapper.turnId;
+    if (!turnId) return;
     this.mapper.requestInterrupt();
     this.broker.cancelAll();
-    const turnId = this.mapper.turnId;
-    try {
-      await this.q?.interrupt();
-    } catch {
-      // The CLI may already be gone; the timeout below closes the turn.
-    }
-    setTimeout(() => {
-      if (this.mapper.turnId === turnId)
-        this.mapper.endTurn({ type: "interrupted", reason: "user" });
-    }, this.config.interruptTimeoutMs ?? 10_000).unref();
+    const q = this.q as InterruptibleQuery | undefined;
+    await interruptWithDeadline(
+      async () => {
+        const receipt = await q?.interrupt({ cancelQueued: true });
+        this.noteCancelled(turnId, receipt?.cancelled ?? []);
+      },
+      this.config.interruptTimeoutMs ?? 10_000,
+      () => {
+        if (this.mapper.turnId === turnId)
+          this.mapper.endTurn({ type: "interrupted", reason: "user" });
+      },
+    );
   }
 
   async respond(requestId: string, response: RuntimeResponse): Promise<void> {
@@ -164,6 +210,23 @@ export class ClaudeSession implements ProviderSession {
   }
 
   // ---------------------------------------------------------------- internals
+
+  /** Say in the transcript when a Stop dropped steered messages the agent never read. */
+  private noteCancelled(turnId: string, cancelled: string[]): void {
+    const count = cancelled.filter((uuid) => this.steered.has(uuid)).length;
+    if (count === 0 || this.mapper.turnId !== turnId) return;
+    this.mapper.item({ threadId: this.mapper.rootThreadId, turnId }, "item.completed", {
+      id: `cancelled-${turnId}`,
+      kind: "notice",
+      status: "completed",
+      level: "info",
+      code: "queued_messages_cancelled",
+      message:
+        count === 1
+          ? "Stopped before the agent read your last message; it was not delivered."
+          : `Stopped before the agent read your last ${count} messages; they were not delivered.`,
+    });
+  }
 
   private emitUserMessage(turnId: string, input: UserInput): void {
     this.mapper.item({ threadId: this.mapper.rootThreadId, turnId }, "item.completed", {
@@ -253,6 +316,8 @@ export class ClaudeSession implements ProviderSession {
           code: "provider_exited",
           message,
           retryable: true,
+          // The next message starts Claude Code again and resumes the conversation.
+          kind: "transient",
           ...(this.stderrTail ? { detail: this.stderrTail } : {}),
         },
       });

@@ -1,4 +1,6 @@
 import type { Project, Session, WorkSummary } from "@codeden/contracts";
+import { and, eq, like } from "drizzle-orm";
+import { sessions } from "../../../db/schema";
 import type { AppServices } from "../../../services/container";
 import { ToolError } from "../../define";
 
@@ -25,19 +27,48 @@ export function githubProject(services: AppServices, projectId: string): Project
   return project;
 }
 
-/** An agent session of the caller's project, or a tool error. */
+/**
+ * An agent session of the caller's project, or a tool error. Takes the full id or a unique
+ * prefix of at least six characters, as digests and updates show ids.
+ */
 export function agentSessionOf(
   services: AppServices,
   sessionId: string,
   projectId: string,
 ): Session {
-  const found = services.sessionRepo.find(sessionId)?.session;
+  const id = services.sessionRepo.find(sessionId)
+    ? sessionId
+    : byPrefix(services, sessionId, projectId);
+  const found = id ? services.sessionRepo.find(id)?.session : undefined;
   if (found?.role !== "agent" || found.projectId !== projectId) {
     throw new ToolError(
       `No agent session ${sessionId} in this project. Call list_sessions for the ids.`,
     );
   }
   return found;
+}
+
+/** The one agent session of a project whose id starts with `prefix`, if exactly one does. */
+function byPrefix(services: AppServices, prefix: string, projectId: string): string | undefined {
+  if (!/^[0-9a-f-]{6,}$/i.test(prefix)) return undefined;
+  const rows = services.db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.projectId, projectId),
+        eq(sessions.role, "agent"),
+        like(sessions.id, `${prefix.toLowerCase()}%`),
+      ),
+    )
+    .limit(5)
+    .all();
+  if (rows.length > 1) {
+    throw new ToolError(
+      `More than one session starts with ${prefix}: ${rows.map((r) => r.id).join(", ")}. Use the full id.`,
+    );
+  }
+  return rows[0]?.id;
 }
 
 /** A session as tools report it: enough to identify and judge the work. */

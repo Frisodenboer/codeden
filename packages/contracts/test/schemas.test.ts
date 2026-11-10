@@ -10,6 +10,7 @@ import {
   CODEDEN_VERSION,
   compareProjects,
   defaultSettings,
+  ErrorInfo,
   EventEnvelope,
   InboxItem,
   Item,
@@ -50,6 +51,15 @@ describe("agent events", () => {
     expect([...covered].sort()).toEqual([...AGENT_EVENT_TYPES].sort());
   });
 
+  it("classifies failed turns, and still reads errors stored before the kind existed", () => {
+    expect(ErrorInfo.parse({ message: "boom" })).toEqual({ message: "boom" });
+    expect(ErrorInfo.safeParse({ message: "x", kind: "flaky" }).success).toBe(false);
+    expect(ErrorInfo.safeParse({ message: "x", retryAt: "tomorrow" }).success).toBe(false);
+    for (const kind of ["transient", "usage_limit", "context_full", "auth", "fatal"] as const) {
+      roundTrip(ErrorInfo, { message: "x", kind });
+    }
+  });
+
   it("narrows tool calls by toolKind", () => {
     const item = Item.parse({
       id: "i1",
@@ -88,6 +98,20 @@ describe("agent events", () => {
       input: { text: "hi" },
     });
     expect(msg.kind === "user_message" && msg.input.attachments).toEqual([]);
+  });
+
+  it("records who answered a question", () => {
+    const answered = {
+      id: "q",
+      kind: "user_question",
+      status: "completed",
+      requestId: "r",
+      questions: [{ id: "q1", question: "Zod or Valibot?" }],
+      answers: { q1: ["Zod"] },
+      decidedBy: "pm",
+    };
+    expect(roundTrip(Item, answered)).toMatchObject({ decidedBy: "pm", answers: { q1: ["Zod"] } });
+    expect(Item.safeParse({ ...answered, decidedBy: "policy" }).success).toBe(false);
   });
 
   it("limits followups to four suggestions", () => {
@@ -190,6 +214,15 @@ describe("entities", () => {
     roundTrip(Project, { ...sampleProject, kind: "local", github: undefined });
     roundTrip(Session, sampleSession);
     roundTrip(InboxItem, sampleInboxItem);
+    roundTrip(InboxItem, {
+      ...sampleInboxItem,
+      kind: "cleanup_failed",
+      priority: "normal",
+      title: "Couldn't remove the worktree",
+      body: "A file in the worktree is in use",
+      itemId: null,
+      requestId: null,
+    });
     roundTrip(Automation, sampleAutomation);
   });
 
@@ -311,6 +344,15 @@ describe("provider contracts", () => {
     });
     expect(broken.broken?.[0]?.reason).toBe("points at a missing package");
     roundTrip(RuntimeResponse, { kind: "approval", decision: "deny", message: "no" });
+    roundTrip(RuntimeResponse, {
+      kind: "approval",
+      decision: "deny",
+      message: "Nobody is watching",
+      decidedBy: "policy",
+    });
+    expect(
+      RuntimeResponse.safeParse({ kind: "approval", decision: "deny", decidedBy: "bot" }).success,
+    ).toBe(false);
     roundTrip(RuntimeResponse, { kind: "answer", answers: { q1: ["SQLite"] } });
   });
 });

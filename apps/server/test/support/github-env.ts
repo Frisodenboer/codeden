@@ -38,6 +38,8 @@ export interface GithubEnv {
   runnerCalls: Array<RunnerCommandOf<RunnerCommandName>>;
   /** Uncommitted files `git.status` reports. */
   dirtyFiles: string[];
+  /** When set, a `git.push` without a lease fails with this git error (as after a rebase). */
+  pushRejection: string | null;
   events: RawEventEnvelope[];
   githubProject: Project;
   localProject: Project;
@@ -54,7 +56,12 @@ export function createGithubEnv(): GithubEnv {
   const events: RawEventEnvelope[] = [];
   store.subscribe((batch) => events.push(...batch));
   const gh = new FakeGithub();
-  const env = { ghTokens: ["tok-1"], runnerCalls: [], dirtyFiles: [] } as unknown as GithubEnv;
+  const env = {
+    ghTokens: ["tok-1"],
+    runnerCalls: [],
+    dirtyFiles: [],
+    pushRejection: null,
+  } as unknown as GithubEnv;
   let ghCalls = 0;
   const exec: Exec = async (command, args) => {
     if (command === "gh" && args[0] === "auth") {
@@ -90,7 +97,12 @@ export function createGithubEnv(): GithubEnv {
         env.dirtyFiles = [];
         return { commit: "c0ffee1234567" };
       }
-      if (command.name === "git.push") return { remote: "origin", branch: command.branch ?? "x" };
+      if (command.name === "git.push") {
+        if (env.pushRejection && !command.forceWithLease) {
+          throw Object.assign(new Error(env.pushRejection), { code: "git_failed" });
+        }
+        return { remote: "origin", branch: command.branch ?? "x" };
+      }
       if (command.name === "session.stop") {
         // Like the real runner: the provider exit is ingested before the request resolves.
         env.repo.update(command.sessionId, (s) => ({ ...s, status: "stopped" }));

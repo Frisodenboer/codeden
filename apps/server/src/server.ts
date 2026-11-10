@@ -125,6 +125,8 @@ export interface StartServerOptions {
   updates?: ServicesOptions["updates"];
   /** Worktree cleanup clock and sweep timings (tests). */
   worktreeCleanup?: ServicesOptions["worktreeCleanup"];
+  /** Automatic retry waits (tests). */
+  autoRetry?: ServicesOptions["autoRetry"];
   /** Network interfaces for the address list (tests). */
   networkInterfaces?: () => InterfaceMap;
   log?: (message: string) => void;
@@ -204,6 +206,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     selfUpdate: opts.selfUpdate,
     updates: opts.updates,
     worktreeCleanup: opts.worktreeCleanup,
+    autoRetry: opts.autoRetry,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
@@ -217,6 +220,9 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.automations.start();
   services.factory.start();
   services.worktreeCleanup.start();
+  services.unwatchedApprovals.start();
+  services.prFeedback.start();
+  services.autoRetry.start();
   const stopUpdateEvents = services.updates.onChange((status) => hub.broadcastUpdate(status));
   services.updates.start();
 
@@ -363,6 +369,9 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.automations.stop();
       services.factory.stop();
       services.worktreeCleanup.stop();
+      services.unwatchedApprovals.stop();
+      services.prFeedback.stop();
+      services.autoRetry.stop();
       services.updates.stop();
       await services.localStt.stop();
       stopUpdateEvents();

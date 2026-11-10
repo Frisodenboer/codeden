@@ -57,7 +57,12 @@ export function buildProjectStatus(input: ProjectStatusInput): ProjectStatus {
     return [];
   });
   return {
-    project: { id: input.project.id, name: input.project.name, kind: input.project.kind },
+    project: {
+      id: input.project.id,
+      name: input.project.name,
+      kind: input.project.kind,
+      mode: input.project.autonomyMode,
+    },
     running: input.work.filter((w) => w.status !== "queued"),
     queued: input.work.filter((w) => w.status === "queued"),
     scheduled: input.scheduled.slice(0, 5),
@@ -96,6 +101,27 @@ export function age(from: string, now: number): string {
   if (sec < 3600) return `${Math.round(sec / 60)}m`;
   if (sec < 86400) return `${Math.round(sec / 3600)}h`;
   return `${Math.round(sec / 86400)}d`;
+}
+
+/** How much of an agent's final message a `session.finished` notice carries. */
+export const FINAL_MESSAGE_MAX = 500;
+
+/**
+ * Shorten `text` to at most `max` characters, keeping its start and its end: agents put the
+ * question or the next step they need in their last paragraph, so cutting only the end would
+ * hide it. Keeps the whole last paragraph when it fits in about half of `max`.
+ */
+export function clipKeepingEnd(text: string, max = FINAL_MESSAGE_MAX): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) return trimmed;
+  const gap = " [...] ";
+  const room = max - gap.length;
+  const paragraphs = trimmed.split(/\n\s*\n/);
+  const last = paragraphs.length > 1 ? (paragraphs.at(-1) ?? "").trim() : "";
+  const tailMax = Math.floor(room / 2);
+  const tail = last && last.length <= tailMax ? last : trimmed.slice(-tailMax).trimStart();
+  const head = trimmed.slice(0, room - tail.length).trimEnd();
+  return `${head}${gap}${tail}`;
 }
 
 const short = (id: string) => id.slice(0, 8);
@@ -162,7 +188,7 @@ function block(open: string, close: string, lines: string[]): string {
 export function renderProjectDigest(s: ProjectStatus, now = Date.now()): string {
   const at = new Date(now).toISOString();
   return block(
-    `<codeden_status project=${quote(neutralizeTags(s.project.name))} at="${at}">`,
+    `<codeden_status project=${quote(neutralizeTags(s.project.name))} mode="${s.project.mode}" at="${at}">`,
     "</codeden_status>",
     projectLines(s, now),
   );
@@ -209,9 +235,15 @@ export function renderNotices(list: Notice[], projectName?: (id: string) => stri
 function noticeDetail(n: Notice): string {
   switch (n.type) {
     case "session.finished":
-      return ` · ${n.data.workKey} · session ${short(n.data.sessionId)}${n.data.summary ? ` · ${quote(n.data.summary, 200)}` : ""}`;
+      return ` · ${n.data.workKey} · session ${short(n.data.sessionId)}${n.data.summary ? ` · "${clipKeepingEnd(n.data.summary)}"` : ""}`;
     case "session.needs_input":
-      return ` · ${n.data.kind}: ${quote(n.data.question, 200)} (waiting in the user's inbox)`;
+      return ` · ${n.data.kind}: ${quote(n.data.question, 200)} (${
+        n.data.kind !== "question"
+          ? "waiting for the user's approval"
+          : n.data.startedBy.kind === "user"
+            ? `inbox item ${n.data.inboxItemId}: the user started this session and answers its questions`
+            : `inbox item ${n.data.inboxItemId}: answer it with answer_question when the brief, the notes or the vision settle it`
+      })`;
     case "session.failed":
       return ` · ${n.data.workKey} · ${quote(n.data.error, 200)}`;
     case "pr.opened":
@@ -232,6 +264,11 @@ function noticeDetail(n: Notice): string {
       return ` · ${n.data.workKey} requested by ${n.data.requestedBy.kind}, matches ${n.data.existing.map((w) => w.workKey).join(", ")} (conflict ${short(n.data.conflictId)} waits in the user's inbox)`;
     case "pm.message":
       return ` · ${quote(n.data.text, 2000)}`;
+    case "orchestrator.message":
+      // A held-back message is the task itself: deliver all of it, as a direct message would.
+      return ` · ${quote(n.data.text, Number.POSITIVE_INFINITY)}`;
+    case "reminder":
+      return ` · ${quote(n.data.note, 2000)} (scheduled for ${n.notBefore ?? n.createdAt})`;
     case "factory.update":
       return ` · ${n.data.event}\n${quote(n.data.text, 4000)}`;
   }

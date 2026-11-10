@@ -34,6 +34,9 @@ export function QuestionCard({
         {item.questions.map((q) => (
           <AnsweredQuestion key={q.id} question={q} answers={item.answers?.[q.id] ?? []} />
         ))}
+        {item.decidedBy === "pm" && (
+          <p className="text-2xs text-muted-foreground">Answered by the project manager</p>
+        )}
       </div>
     );
   }

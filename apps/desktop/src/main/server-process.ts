@@ -1,6 +1,22 @@
 import { type ChildProcess, fork } from "node:child_process";
-import { mkdirSync, openSync } from "node:fs";
+import { mkdirSync, openSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
+
+/** The server log is moved aside to `<file>.1` (one copy kept) when it grows past this. */
+const LOG_LIMIT_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Keep the server log from growing without bound: past `limit` it becomes `<file>.1`
+ * (replacing an older one) and a fresh file starts. Never throws.
+ */
+export function rotateLog(file: string, limit = LOG_LIMIT_BYTES): void {
+  try {
+    if (statSync(file).size > limit) renameSync(file, `${file}.1`);
+  } catch {
+    // No log yet, or it is in use: append to it as it is.
+  }
+}
+
 import {
   type DesktopHostMessage,
   DesktopServerMessage,
@@ -56,6 +72,7 @@ export class ServerProcess {
 
   start(): Promise<ServerReady> {
     mkdirSync(dirname(this.opts.logFile), { recursive: true });
+    rotateLog(this.opts.logFile);
     const out = openSync(this.opts.logFile, "a");
     const args = ["--home", this.opts.home, "--port", String(this.opts.port)];
     if (this.opts.fake) args.push("--fake");
@@ -102,21 +119,39 @@ export class ServerProcess {
 
   /**
    * Close the server; with `stopRunner` the runner drains and exits too (as `codeden stop`),
-   * so an update can replace the files it runs from. Kills the process if it hangs.
+   * so an update can replace the files it runs from. A server that doesn't exit in time gets
+   * SIGTERM (which ends a stuck close), then SIGKILL, so quitting the app never hangs on it.
    */
-  async stop(opts: { stopRunner: boolean; timeoutMs?: number }): Promise<void> {
+  async stop(opts: { stopRunner: boolean; timeoutMs?: number; graceMs?: number }): Promise<void> {
     const child = this.child;
     if (!child) return;
     this.stopping = true;
+    const grace = opts.graceMs ?? KILL_GRACE_MS;
     const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     this.send({ type: "shutdown", stopRunner: opts.stopRunner });
-    const timeout = new Promise<"timeout">((resolve) =>
-      setTimeout(() => resolve("timeout"), opts.timeoutMs ?? 20_000).unref(),
-    );
-    if ((await Promise.race([exited, timeout])) === "timeout") {
-      this.opts.log("server: did not exit in time; killing it");
-      child.kill();
-      await exited;
-    }
+    if (await settlesWithin(exited, opts.timeoutMs ?? 20_000)) return;
+    this.opts.log("server: did not exit in time; stopping it");
+    child.kill();
+    if (await settlesWithin(exited, grace)) return;
+    this.opts.log("server: still running; killing it");
+    child.kill("SIGKILL");
+    if (!(await settlesWithin(exited, grace))) this.opts.log("server: did not exit after SIGKILL");
+  }
+}
+
+/** How long a server gets after SIGTERM, and again after SIGKILL. */
+const KILL_GRACE_MS = 5_000;
+
+/** True when `promise` settles within `ms`; never waits longer. */
+async function settlesWithin(promise: Promise<void>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+    timer.unref();
+  });
+  try {
+    return await Promise.race([promise.then(() => true as const), timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }

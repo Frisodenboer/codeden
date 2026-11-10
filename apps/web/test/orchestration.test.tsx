@@ -182,6 +182,44 @@ describe("notice cards", () => {
     expect(screen.getByText("README added with a test")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Session/ }).getAttribute("href")).toBe("/sessions/s1");
   });
+
+  it("shows an orchestrator message the loop guard held back, linked to the orchestrator", async () => {
+    const held: Notice = {
+      id: "orchestrator.message:1",
+      type: "orchestrator.message",
+      projectId: null,
+      target: "pm",
+      sessionId: "orch1",
+      title: "Message from the orchestrator",
+      createdAt: ts,
+      deliveredAt: ts,
+      data: { fromSessionId: "orch1", text: "Please add a changelog entry" },
+    };
+    renderWithClient(<NoticeBatchCard notices={[held]} />, undefined, { withRouter: true });
+    expect(await screen.findByText("From the orchestrator")).toBeTruthy();
+    expect(screen.getByText("Please add a changelog entry")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Session/ }).getAttribute("href")).toBe(
+      "/sessions/orch1",
+    );
+  });
+
+  it("shows a wake-up the PM scheduled, with its note", async () => {
+    const reminder: Notice = {
+      id: "reminder:1",
+      type: "reminder",
+      projectId: null,
+      target: "pm",
+      sessionId: null,
+      title: "Wake-up you scheduled",
+      createdAt: ts,
+      deliveredAt: ts,
+      notBefore: ts,
+      data: { note: "Check whether the audit finished", requestedBy: "pm1" },
+    };
+    renderWithClient(<NoticeBatchCard notices={[reminder]} />, undefined, { withRouter: true });
+    expect(await screen.findByText("Wake-up")).toBeTruthy();
+    expect(screen.getByText("Check whether the audit finished")).toBeTruthy();
+  });
 });
 
 describe("http orchestration api", () => {

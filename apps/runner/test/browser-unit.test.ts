@@ -194,12 +194,24 @@ describe("screencast viewers", () => {
   it("sizes frames to the viewport's device pixels, under any viewer caps", async () => {
     const cast = new Screencast("s", () => {});
     expect(cast.startParams).toMatchObject({ maxWidth: 1280, maxHeight: 800, quality: 75 });
-    await cast.setFrameSize(
-      framePixels(fitViewport({ width: 460, height: 712, deviceScaleFactor: 2 })),
-    );
+    const hidpi = fitViewport({ width: 460, height: 712, deviceScaleFactor: 2 });
+    await cast.setFrameSize(framePixels(hidpi), hidpi);
     expect(cast.startParams).toMatchObject({ maxWidth: 920, maxHeight: 1424 });
     await cast.watch("phone", true, { maxWidth: 600 });
     expect(cast.startParams).toMatchObject({ maxWidth: 600, maxHeight: 1424 });
+  });
+
+  it("never asks for frames below one pixel per CSS pixel (macOS stalls below that)", async () => {
+    // Measured on macOS CI: a 1280x800 page capped to 640x400 sent no frames for 750 ms of
+    // page changes, and the frames it did send reported 640x400 as the viewport.
+    const cast = new Screencast("s", () => {});
+    await cast.watch("phone", true, { maxWidth: 640, maxHeight: 400 });
+    expect(cast.startParams).toMatchObject({ maxWidth: 1280, maxHeight: 800 });
+    // A 2x page can still be capped down to its CSS size (measured fine on macOS).
+    const hidpi = fitViewport({ width: 460, height: 712, deviceScaleFactor: 2 });
+    await cast.setFrameSize(framePixels(hidpi), hidpi);
+    await cast.watch("phone", true, { maxWidth: 200, maxHeight: 300 });
+    expect(cast.startParams).toMatchObject({ maxWidth: 460, maxHeight: 712 });
   });
 });
 
@@ -317,12 +329,11 @@ describe("viewport sizing", () => {
     expect(wide.deviceScaleFactor).toBeLessThan(2);
     const px = framePixels(wide);
     expect(px.width * px.height).toBeLessThanOrEqual(VIEWPORT_LIMITS.maxFramePixels);
-    // Even 1x is over budget: the frame is scaled down, keeping the aspect.
+    // Even 1x is over budget: frames stay at one pixel per CSS pixel (never below: macOS
+    // stalls and misreports frames scaled below the CSS size).
     const huge = fitViewport({ width: 3840, height: 2400, deviceScaleFactor: 2 });
     expect(huge.deviceScaleFactor).toBe(1);
-    const frame = framePixels(huge);
-    expect(frame.width / frame.height).toBeCloseTo(3840 / 2400, 2);
-    expect(frame.width * frame.height).toBeLessThanOrEqual(VIEWPORT_LIMITS.maxFramePixels);
+    expect(framePixels(huge)).toEqual({ width: 3840, height: 2400 });
   });
 
   it("emulates without mobile mode and with a matching screen", () => {

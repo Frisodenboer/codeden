@@ -44,3 +44,11 @@ export function allowPermission(
     return mediaTypes.length > 0 && mediaTypes.every((t) => t === "audio");
   return true;
 }
+
+/**
+ * Text with any `token=` value replaced, for errors and logs. A failed load of the launch URL
+ * (`/?token=…`) quotes the URL, and the install token must never reach a log.
+ */
+export function redactToken(text: string): string {
+  return text.replace(/([?&]token=)[^&\s'"]+/gi, "$1[redacted]");
+}

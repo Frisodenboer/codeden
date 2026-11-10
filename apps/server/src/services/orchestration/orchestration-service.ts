@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
-  type AgentEventOf,
-  agentEventToNewEvent,
   type ConflictRecord,
   messageFrom,
-  NOTICE_BATCH_CODE,
   type Notice,
   type Overview,
   type ProjectStatus,
@@ -16,22 +13,24 @@ import {
 } from "@codeden/contracts";
 import type { Db } from "../../db/client";
 import type { EventStore } from "../../events/store";
-import { errorMessage, ServiceError } from "../errors";
+import { errorMessage } from "../errors";
 import type { InboxService } from "../inbox-service";
 import type { ProjectService } from "../projects/project-service";
 import type { SessionRepo } from "../sessions/repo";
 import type { SessionService } from "../sessions/session-service";
 import { type AskOutcome, askMarker, finalAssistantMessage, PmAsks } from "./asks";
+import { NoticeCards } from "./cards";
 import { ConflictService } from "./conflicts";
+import { NoticeDelivery } from "./delivery";
 import {
   buildProjectStatus,
   dayAgo,
-  renderNotices,
   renderOverviewDigest,
   renderProjectDigest,
   sharedWork,
 } from "./digest";
 import { deriveGithubNotices, GITHUB_NOTICE_EVENTS } from "./github-notices";
+import { type HeldMessage, LoopGuard, type MessageOrigin } from "./loop-guard";
 import { ProjectNotes } from "./notes";
 import { deriveNotices, type NoticeDraft, NoticeStore } from "./notices";
 import {
@@ -40,6 +39,7 @@ import {
   UnavailableAutomationPort,
   UnavailableGithubPort,
 } from "./ports";
+import { Reminders } from "./reminders";
 import { type OrchestrationRole, RoleSessions } from "./role-sessions";
 import { type WakeResult, WakeScheduler, type WakeSchedulerOptions } from "./wake-scheduler";
 
@@ -47,6 +47,10 @@ export interface OrchestrationOptions {
   wake?: WakeSchedulerOptions;
   /** Default `ask_pm` wait (3 minutes). */
   askTimeoutMs?: number;
+  /** Waits before waking a role session again after a failed turn (`NoticeDelivery`). */
+  failedTurnRetryMs?: number[];
+  /** Shortest `schedule_wakeup` wait (default 1 minute). */
+  wakeupMinDelayMs?: number;
 }
 
 export interface OrchestrationDeps {
@@ -81,13 +85,16 @@ export class OrchestrationService {
   readonly github: GithubPort;
   readonly automation: AutomationPort;
   readonly wakes: WakeScheduler;
-  /** Notices to show as cards in the next turn of a role session. */
-  private readonly pendingCards = new Map<string, Notice[]>();
+  readonly loops: LoopGuard;
+  readonly reminders: Reminders;
+  private readonly cards: NoticeCards;
+  private readonly delivery: NoticeDelivery;
   private unsubscribe: (() => void) | undefined;
 
   constructor(private readonly deps: OrchestrationDeps) {
     this.roles = new RoleSessions(deps);
     this.notices = new NoticeStore(deps.db, deps.store);
+    this.cards = new NoticeCards(deps.store);
     this.notes = new ProjectNotes(deps.projects);
     this.github = deps.github ?? new UnavailableGithubPort();
     this.automation = deps.automation ?? new UnavailableAutomationPort();
@@ -97,12 +104,14 @@ export class OrchestrationService {
     });
     this.asks = new PmAsks({
       db: deps.db,
+      session: (id) => deps.repo.find(id)?.session,
       onLateReply: (reply) =>
         this.postToOrchestrator(
           reply.projectId,
           reply.pmSessionId,
           `Answer to your earlier ask_pm question:\n${reply.text}`,
           false,
+          `pm.message:ask:${reply.askId}`,
         ),
     });
     this.wakes = new WakeScheduler((key) => this.fire(key), {
@@ -116,16 +125,46 @@ export class OrchestrationService {
           `orchestration: ${key} stayed busy; its notices wait for its next message or notice`,
         ),
     });
+    this.loops = new LoopGuard({
+      wakes: this.wakes,
+      notices: this.notices,
+      wakePm: (projectId) => this.fire(wakeKey("pm", projectId)),
+      options: deps.options?.wake,
+      log: deps.log,
+    });
+    this.delivery = new NoticeDelivery({
+      db: deps.db,
+      notices: this.notices,
+      cards: this.cards,
+      wakes: this.wakes,
+      digestFor: (session) => this.digestFor(session),
+      projectName: (id) => this.projectName(id),
+      session: (id) => deps.repo.find(id)?.session,
+      projectIds: () => deps.projects.list().flatMap((p) => (p.archivedAt ? [] : [p.id])),
+      retryDelaysMs: deps.options?.failedTurnRetryMs,
+      log: deps.log,
+    });
+    const minDelayMs = deps.options?.wakeupMinDelayMs;
+    this.reminders = new Reminders({ notices: this.notices, wakes: this.wakes, minDelayMs });
   }
 
   start(): void {
     this.unsubscribe = this.deps.store.subscribe((events) => this.onEvents(events));
-    this.deps.sessions.setInputDecorator((session, input) => this.decorate(session, input));
+    this.deps.sessions.setInputDecorator((session, input, from) => {
+      this.loops.turnStarted(session, from);
+      // The status digest and undelivered notices, fresh at send time (§8.4, `NoticeDelivery`).
+      return this.delivery.decorate(session, input);
+    });
+    this.delivery.rearm();
+    this.reminders.start();
   }
 
   stop(): void {
     this.unsubscribe?.();
     this.wakes.dispose();
+    this.loops.dispose();
+    this.delivery.dispose();
+    this.reminders.dispose();
   }
 
   // ---------------------------------------------------------------- digest
@@ -169,35 +208,6 @@ export class OrchestrationService {
     return renderOverviewDigest({ ...this.overview(), pmMessages: [] });
   }
 
-  /**
-   * Prepend the status digest and any undelivered notices to a role session's input (§8.4).
-   * Runs at send time, so queued messages get a fresh digest too.
-   */
-  decorate(session: Session, input: UserInput): UserInput {
-    if (session.role === "agent") return input;
-    try {
-      const parts = [this.digestFor(session)];
-      const target = session.role === "pm" ? "pm" : "orchestrator";
-      const pending = this.notices.undelivered(
-        target,
-        session.role === "pm" ? session.projectId : null,
-      );
-      if (pending.length > 0) {
-        parts.push(renderNotices(pending, (id) => this.projectName(id)));
-        this.notices.markDelivered(pending.map((n) => n.id));
-        this.pendingCards.set(session.id, [
-          ...(this.pendingCards.get(session.id) ?? []),
-          ...pending,
-        ]);
-      }
-      parts.push(input.text);
-      return { ...input, text: parts.join("\n\n") };
-    } catch (error) {
-      this.deps.log?.(`orchestration digest: ${errorMessage(error)}`);
-      return input;
-    }
-  }
-
   // ---------------------------------------------------------------- messaging
 
   /**
@@ -216,9 +226,19 @@ export class OrchestrationService {
     return { sessionId: session.id, status: res.status };
   }
 
-  /** `message_pm`: hand a PM a task without waiting. */
-  async messagePm(projectId: string, text: string): Promise<RoleMessageResponse> {
-    this.guard(`pm:${projectId}`);
+  /**
+   * `message_pm`: hand a PM a task without waiting. Past the loop guard's limit (§8.2) the
+   * message is held and delivered automatically; the user's own requests are never held.
+   */
+  async messagePm(
+    projectId: string,
+    text: string,
+    origin: MessageOrigin,
+  ): Promise<RoleMessageResponse | HeldMessage> {
+    await this.roles.ensure("pm", projectId);
+    if (!this.loops.mayDeliver(projectId, origin)) {
+      return { status: "held", until: this.loops.hold(projectId, origin.sessionId, text) };
+    }
     return this.sendToRole(
       "pm",
       projectId,
@@ -228,27 +248,34 @@ export class OrchestrationService {
     );
   }
 
-  /** `ask_pm`: ask a PM and wait (up to `timeoutMs`) for the answer. */
+  /**
+   * `ask_pm`: ask a PM and wait (up to `timeoutMs`) for the answer. A question the loop guard
+   * holds back (§8.2) is answered later, as a message to the orchestrator.
+   */
   async askPm(
     projectId: string,
     question: string,
-    opts: { fromSessionId: string | null; timeoutMs?: number; signal?: AbortSignal },
-  ): Promise<AskOutcome & { pmSessionId: string }> {
-    this.guard(`pm:${projectId}`);
+    opts: { origin: MessageOrigin; timeoutMs?: number; signal?: AbortSignal },
+  ): Promise<(AskOutcome & { pmSessionId: string }) | HeldMessage> {
     const pm = await this.roles.ensure("pm", projectId);
     const askId = randomUUID().slice(0, 8);
-    this.asks.register(askId, { pmSessionId: pm.id, projectId, fromSessionId: opts.fromSessionId });
-    const answer = this.asks.wait(
-      askId,
-      opts.timeoutMs ?? this.deps.options?.askTimeoutMs ?? 180_000,
-      opts.signal,
-    );
+    const target = { pmSessionId: pm.id, projectId, fromSessionId: opts.origin.sessionId };
     const text = [
       `Question from the orchestrator ${askMarker(askId)}:`,
       question,
       "",
       "Answer in your final message of this turn: it is returned to the orchestrator directly.",
     ].join("\n");
+    if (!this.loops.mayDeliver(projectId, opts.origin)) {
+      this.asks.register(askId, target, { detached: true });
+      return { status: "held", until: this.loops.hold(projectId, opts.origin.sessionId, text) };
+    }
+    this.asks.register(askId, target);
+    const answer = this.asks.wait(
+      askId,
+      opts.timeoutMs ?? this.deps.options?.askTimeoutMs ?? 180_000,
+      opts.signal,
+    );
     await this.deps.sessions.send(
       pm.id,
       { input: { text, attachments: [] }, whenBusy: "queue" },
@@ -270,7 +297,7 @@ export class OrchestrationService {
 
   /** Record a notice (other services: GitHub checks, automations); wakes its target when asked. */
   notify(draft: NoticeDraft, wake = true): Notice | undefined {
-    const created = this.notices.create(draft);
+    const created = this.notices.create({ ...draft, wake });
     if (created && wake) this.wakes.request(wakeKey(created.target, created.projectId));
     return created;
   }
@@ -282,11 +309,12 @@ export class OrchestrationService {
     fromSessionId: string,
     text: string,
     informational: boolean,
+    id = `pm.message:${randomUUID()}`,
   ): void {
     const name = projectId ? this.projectName(projectId) : "a project";
     this.notify(
       {
-        id: `pm.message:${randomUUID()}`,
+        id,
         type: "pm.message",
         projectId,
         target: "orchestrator",
@@ -317,22 +345,12 @@ export class OrchestrationService {
     });
   }
 
-  private guard(key: string): void {
-    if (!this.wakes.allowed(key)) {
-      throw new ServiceError(
-        409,
-        "loop_guard",
-        "Too many messages to this session recently (loop guard). Wait a few minutes or ask the user.",
-      );
-    }
-    this.wakes.recordWake(key);
-  }
-
   private onEvents(events: RawEventEnvelope[]): void {
     this.asks.onEvents(events);
     const relevant = events.some(
       (e) =>
         e.type === "agent.turn.completed" ||
+        e.type === "agent.turn.failed" ||
         e.type === "agent.turn.started" ||
         e.type === "inbox.created" ||
         e.type === "session.updated" ||
@@ -342,7 +360,8 @@ export class OrchestrationService {
     if (!relevant) return;
     setImmediate(() => {
       try {
-        this.attachCards(events);
+        this.cards.attach(events);
+        this.delivery.onEvents(events);
         const session = (id: string) => this.deps.repo.find(id)?.session;
         const derived = [
           ...deriveNotices(events, {
@@ -357,33 +376,6 @@ export class OrchestrationService {
         this.deps.log?.(`orchestration notices: ${errorMessage(error)}`);
       }
     });
-  }
-
-  /** Show the notices a wake delivered as cards at the start of the role session's turn. */
-  private attachCards(events: RawEventEnvelope[]): void {
-    for (const e of events) {
-      if (e.type !== "agent.turn.started" || !e.sessionId) continue;
-      const cards = this.pendingCards.get(e.sessionId);
-      if (!cards) continue;
-      this.pendingCards.delete(e.sessionId);
-      const event = e.payload as AgentEventOf<"turn.started">;
-      this.deps.store.append([
-        agentEventToNewEvent(e.sessionId, {
-          type: "item.completed",
-          threadId: event.threadId,
-          turnId: event.turnId,
-          item: {
-            id: `notices-${event.turnId}`,
-            kind: "notice",
-            status: "completed",
-            level: "info",
-            code: NOTICE_BATCH_CODE,
-            message: `${cards.length} update${cards.length === 1 ? "" : "s"} since the last turn`,
-            data: JSON.parse(JSON.stringify({ notices: cards })),
-          },
-        }),
-      ]);
-    }
   }
 
   /** Deliver pending notices to their target with one wake (called by the scheduler). */

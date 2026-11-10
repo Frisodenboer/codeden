@@ -34,6 +34,16 @@ export const UNATTENDED_ANSWER = [
 ].join("\n");
 
 /**
+ * The denial an unattended factory session gets instead of waiting for an approval. Nothing is
+ * ever approved on the user's behalf: the agent finds a way that needs no approval, or flags it.
+ */
+export const UNATTENDED_APPROVAL = [
+  "Not approved: this project runs as a dark factory, so nobody is watching to approve it. Don't wait for it or try the same thing again.",
+  "- Find a way that stays inside your worktree and the factory's limits. To publish your work, commit it and call `create_pull_request`: it pushes your own branch (with a lease after a rebase).",
+  "- If the work can't be done without this, call `factory_record_decision` with `needsHuman: true`, saying what you needed and why, and carry on with whatever doesn't depend on it.",
+].join("\n");
+
+/**
  * True when nobody is expected to answer this session's questions: its project is a dark factory
  * and the session is the PM or one of the factory's own agent sessions. Sessions the user
  * started themselves still ask as usual.

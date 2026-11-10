@@ -12,6 +12,7 @@ import type { LaunchArgs } from "./args";
 import { AppBadge } from "./badge";
 import { NativeBrowserFeature } from "./browser/feature";
 import { type Connection, connect, launchUrl } from "./connection";
+import { armQuitWatchdog, forceExit } from "./exit";
 import { registerBridge } from "./ipc";
 import { appMenuTemplate } from "./menu";
 import { homeFiles } from "./server-plan";
@@ -32,6 +33,8 @@ import { MainWindow } from "./window";
 import { windowShot } from "./window-shot";
 
 const DOCS_URL = "https://github.com/leonvanzyl/codeden/blob/main/docs/desktop.md";
+/** Longest a quit may take (browser hand-off 15 s + server stop up to 30 s) before it's forced. */
+const QUIT_LIMIT_MS = 45_000;
 
 /**
  * The desktop app (§17): one window on the server's UI, a tray with live counts, the app
@@ -56,6 +59,11 @@ export class DesktopApp {
   private quitting = false;
   private quitReady = false;
   private standaloneTimer: NodeJS.Timeout | undefined;
+
+  /** True once a quit has started (startup errors after that are part of quitting). */
+  get isQuitting(): boolean {
+    return this.quitting;
+  }
   private notifiedUpdate: string | null = null;
 
   constructor(private readonly args: LaunchArgs) {
@@ -193,19 +201,34 @@ export class DesktopApp {
     event.preventDefault();
     if (this.quitting) return;
     this.quitting = true;
+    // Every step below is bounded, but quitting must finish even if one isn't: a timer here,
+    // and a separate process for when the main thread itself is stuck in native shutdown.
+    const watchdog = setTimeout(() => {
+      this.log(`app: still quitting after ${QUIT_LIMIT_MS / 1000} s; exiting now`);
+      forceExit(0);
+    }, QUIT_LIMIT_MS);
+    const hardStop = armQuitWatchdog(QUIT_LIMIT_MS + 5_000, this.log);
     void (async () => {
-      this.window?.allowClose();
-      clearInterval(this.standaloneTimer);
-      this.monitor?.stop();
-      this.keepAwake.set(false);
-      // Open session browsers move to the runner's Chromium before the views go.
-      await this.browser?.quit();
-      if (this.updates && quitAction(this.updates.state.phase) === "install") {
-        await this.updates.installOnQuit();
-        return;
+      try {
+        this.window?.allowClose();
+        clearInterval(this.standaloneTimer);
+        this.monitor?.stop();
+        this.keepAwake.set(false);
+        // Open session browsers move to the runner's Chromium before the views go.
+        await this.browser?.quit();
+        if (this.updates && quitAction(this.updates.state.phase) === "install") {
+          // Installing drains the runner first (up to 90 s); the installer ends the app.
+          clearTimeout(watchdog);
+          hardStop.cancel();
+          await this.updates.installOnQuit();
+          return;
+        }
+        await this.conn?.server?.stop({ stopRunner: false });
+        this.tray?.destroy();
+      } catch (error) {
+        // A failed step must not leave the app unable to quit.
+        this.log(`app: while quitting: ${String(error)}`);
       }
-      await this.conn?.server?.stop({ stopRunner: false });
-      this.tray?.destroy();
       this.quitReady = true;
       app.quit();
     })();

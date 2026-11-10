@@ -11,6 +11,11 @@ import { Id, Timestamp } from "./common";
 export const StartedBy = z.object({
   kind: z.enum(["user", "orchestrator", "pm", "automation"]),
   id: z.string().optional(),
+  /**
+   * Who else hears when the work finishes or fails: `orchestrator` when a PM started it for a
+   * request the orchestrator passed on (§8.2), so the result reaches whoever asked for it.
+   */
+  reportTo: z.literal("orchestrator").optional(),
 });
 export type StartedBy = z.infer<typeof StartedBy>;
 

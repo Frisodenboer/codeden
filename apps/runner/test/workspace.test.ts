@@ -35,7 +35,8 @@ const prepare = (sessionId: string, repoPath: string, extra: Record<string, unkn
   ...extra,
 });
 
-describe("workspace.prepare", () => {
+// Git-heavy (clones, worktrees, fetches): slow on loaded Windows runners.
+describe("workspace.prepare", { timeout: 20_000 }, () => {
   it("creates a worktree under <home>/wt/<slug>/<short> on codeden/<short> from the default branch", async () => {
     const { repo, home, ctx } = setup();
     sh(repo, "checkout", "-q", "-b", "other");
@@ -92,15 +93,17 @@ describe("workspace.prepare", () => {
       defaultProvider: "fake",
     };
     const { repo, events, ctx } = setup({ ".codeden/project.json": JSON.stringify(config) });
+    const failing = "node -e \"console.error('lockfile missing'); process.exit(3)\"";
     const result = await prepareWorkspace(
-      prepare("sess-setup", repo, { setupCommands: ['node -e "process.exit(3)"', "echo never"] }),
+      prepare("sess-setup", repo, { setupCommands: [failing, "echo never"] }),
       ctx,
     );
     expect(result.config).toMatchObject({ devServer: config.devServer, defaultProvider: "fake" });
     expect(readFileSync(join(result.cwd, "setup.done"), "utf8")).toBe("ok");
+    // The failed step carries the end of its output, so the agent can be told why.
     expect(result.setup).toEqual([
       { command: config.setup[0], exitCode: 0, ok: true },
-      { command: 'node -e "process.exit(3)"', exitCode: 3, ok: false },
+      { command: failing, exitCode: 3, ok: false, outputTail: "lockfile missing" },
     ]);
     const setupEvents = events.filter((e) => e.kind === "workspace.setup");
     const output = setupEvents
@@ -111,6 +114,7 @@ describe("workspace.prepare", () => {
       "running",
       "running",
       "succeeded",
+      "running",
       "running",
       "failed",
     ]);
@@ -213,7 +217,7 @@ describe("workspace.prepare", () => {
   });
 });
 
-describe("git operations", () => {
+describe("git operations", { timeout: 20_000 }, () => {
   it("lists branches, commits and pushes to a remote", async () => {
     const { repo, ctx } = setup();
     const remote = tempDir("codeden-remote-");

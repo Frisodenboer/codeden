@@ -58,7 +58,8 @@ function halfDelete(cwd: string): void {
   rmSync(join(cwd, ".gitignore"));
 }
 
-describe("workspace.remove", () => {
+// Git-heavy (worktrees, removals): slow on loaded Windows runners.
+describe("workspace.remove", { timeout: 20_000 }, () => {
   it("removes a pnpm-style node_modules without following links out of the worktree", async () => {
     const { repo, home, ctx } = setup();
     const wt = await prepareWorkspace(prepare("sess-links", repo), ctx);
@@ -228,7 +229,7 @@ describe("workspace.remove", () => {
   );
 });
 
-describe("workspace.prepare after an interrupted removal", () => {
+describe("workspace.prepare after an interrupted removal", { timeout: 20_000 }, () => {
   it("replaces a half-deleted leftover at the target path with the worktree from its branch", async () => {
     const { repo, ctx } = setup();
     const first = await prepareWorkspace(prepare("sess-redo", repo), ctx);

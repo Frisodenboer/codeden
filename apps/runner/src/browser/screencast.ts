@@ -62,8 +62,8 @@ export class Screencast {
   private readonly viewers = new Set<string>();
   private settings: ScreencastSettings = { ...DEFAULT_SCREENCAST };
   private frameSize = { ...DEFAULT_FRAME };
-  /** The page viewport in CSS pixels (metadata for still frames). */
-  private viewportCss = { ...DEFAULT_FRAME };
+  /** The page viewport: CSS pixels and scale (metadata for still and normalized frames). */
+  private viewport = { ...DEFAULT_FRAME, deviceScaleFactor: 1 };
   private target: Target | undefined;
   private tab: { tabId: string; cdp: CDPSession } | undefined;
   private lastFrame: FrameStream | undefined;
@@ -123,11 +123,25 @@ export class Screencast {
    */
   setFrameSize(
     size: { width: number; height: number },
-    viewportCss?: { width: number; height: number },
+    viewport?: { width: number; height: number; deviceScaleFactor?: number },
   ): Promise<void> {
     return this.serial(async () => {
-      if (viewportCss) this.viewportCss = { width: viewportCss.width, height: viewportCss.height };
-      if (size.width === this.frameSize.width && size.height === this.frameSize.height) return;
+      const before = this.viewport;
+      if (viewport) {
+        this.viewport = {
+          width: viewport.width,
+          height: viewport.height,
+          deviceScaleFactor: viewport.deviceScaleFactor ?? 1,
+        };
+      }
+      const sameViewport =
+        before.width === this.viewport.width &&
+        before.height === this.viewport.height &&
+        before.deviceScaleFactor === this.viewport.deviceScaleFactor;
+      const sameSize = size.width === this.frameSize.width && size.height === this.frameSize.height;
+      // Also restart when only the viewport changed (460 @2x and 920 @1x are both 920 px wide):
+      // the frame size floor (`startParams`) follows the viewport.
+      if (sameSize && sameViewport) return;
       this.frameSize = { width: size.width, height: size.height };
       if (!this.target) return;
       await this.stopTarget();
@@ -135,15 +149,22 @@ export class Screencast {
     });
   }
 
-  /** `Page.startScreencast` parameters for the current settings and frame size. */
+  /**
+   * `Page.startScreencast` parameters for the current settings and frame size. Frames never go
+   * below one pixel per CSS pixel of the viewport, whatever a viewer's cap or the pixel budget
+   * ask for: below that, Chromium on macOS stops sending frames and reports the scaled frame
+   * as the viewport size (a 1280x800 page capped to 640x400 said 640x400), which breaks the
+   * picture and input mapping. Windows and Linux would cope, but the floor keeps every platform
+   * on the same, measured-good path.
+   */
   get startParams(): Record<string, unknown> {
-    const cap = (value: number, max: number | undefined) =>
-      Math.max(1, Math.round(max === undefined ? value : Math.min(value, max)));
+    const size = (value: number, max: number | undefined, floor: number) =>
+      Math.max(1, Math.round(floor), Math.round(max === undefined ? value : Math.min(value, max)));
     return {
       format: "jpeg",
       quality: this.settings.quality,
-      maxWidth: cap(this.frameSize.width, this.settings.maxWidth),
-      maxHeight: cap(this.frameSize.height, this.settings.maxHeight),
+      maxWidth: size(this.frameSize.width, this.settings.maxWidth, this.viewport.width),
+      maxHeight: size(this.frameSize.height, this.settings.maxHeight, this.viewport.height),
       everyNthFrame: 1,
     };
   }
@@ -182,6 +203,7 @@ export class Screencast {
     if (!tab) return;
     const { cdp, tabId } = tab;
     const interval = Math.round(1000 / this.settings.maxFps);
+    const params = this.startParams;
     const onFrame = (event: ScreencastFrameEvent) => {
       const ack = () => {
         cdp.send("Page.screencastFrameAck", { sessionId: event.sessionId }).catch(() => undefined);
@@ -214,7 +236,7 @@ export class Screencast {
     const target: Target = { tabId, cdp, onFrame, frames: 0 };
     cdp.on("Page.screencastFrame", onFrame);
     this.target = target;
-    const started = await cdp.send("Page.startScreencast", this.startParams as never).then(
+    const started = await cdp.send("Page.startScreencast", params as never).then(
       () => true,
       () => {
         // The tab closed under us; the session will retarget.
@@ -259,8 +281,8 @@ export class Screencast {
         width: size.width,
         height: size.height,
         metadata: {
-          deviceWidth: this.viewportCss.width,
-          deviceHeight: this.viewportCss.height,
+          deviceWidth: this.viewport.width,
+          deviceHeight: this.viewport.height,
           pageScaleFactor: view?.scale ?? 1,
           offsetTop: 0,
           scrollOffsetX: view?.pageX ?? 0,

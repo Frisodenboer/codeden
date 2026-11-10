@@ -126,6 +126,8 @@ Guards are checked in this order every time a trigger fires:
 
 ## Runs
 
+**Approvals nobody answers.** A session started by an automation, a PM or the factory that asks for an approval (a risky action under its permission level) waits 30 minutes for you, then gets a denial telling it to find another way or report what it needed, so a run finishes instead of blocking the next ones. Nothing is ever approved on your behalf. Sessions you start yourself wait for you as long as it takes.
+
 Every outcome is recorded as a run: `queued`, `running`, `completed`, `failed`, `skipped` or `cancelled`. Skipped runs carry a reason: `overlap`, `concurrency`, `quiet_hours`, `daily_cap`, `disabled`, `skipped_by_pm`, `conflict_skip` or `factory_intake`. Session runs follow their session, and link to it both ways. Skipped runs send an `automation.skipped` notice to the PM, which may take over or adjust the schedule.
 
 PMs manage automations with `list_automations`, `create_automation` and `update_automation` (created off; files stay read-only), `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation` / `resume_automation` (no cron or event runs while paused) and `cancel_queued_run`.

@@ -40,7 +40,7 @@ export const getIssue = defineTool({
 export const triageIssue = defineTool({
   name: "triage_issue",
   description:
-    "Record a triage decision on an issue: ready, needs_info, unsafe, out_of_scope or duplicate, with labels to add or remove and an optional comment (close: true for out of scope or duplicates). Follow the project's policy; ask the user when unsure.",
+    "Record a triage decision on an issue: ready, needs_info, unsafe, out_of_scope or duplicate, with labels to add or remove and an optional comment (close: true for out of scope or duplicates). Follow the project's policy. When you can't decide, choose needs_info (ask the author the specific questions in the comment) or unsafe (it needs a human decision); don't wait on the user.",
   roles: ["pm"],
   scope: "project",
   isAvailable: inGithubProject,

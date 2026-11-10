@@ -159,7 +159,7 @@ check_launch() {
     if ! kill -0 "$app_pid" 2> /dev/null; then break; fi
     if [ -f "$home/install-token" ] && [ -f "$home/runner/runner.json" ]; then
       token="$(cat "$home/install-token")"
-      if curl -sf -H "authorization: Bearer $token" "http://127.0.0.1:$port/api/health" > /dev/null; then
+      if curl -sf --max-time 5 -H "authorization: Bearer $token" "http://127.0.0.1:$port/api/health" > /dev/null; then
         runner_pid="$(node -p "require(process.argv[1]).pid" "$home/runner/runner.json" 2> /dev/null || true)"
         healthy=true
         break
@@ -183,7 +183,35 @@ check_launch() {
   fi
   kill "$app_pid" 2> /dev/null || true
   if [ -n "$runner_pid" ]; then kill "$runner_pid" 2> /dev/null || true; fi
-  wait "$app_pid" 2> /dev/null || true
+  # The app must quit on SIGTERM; one that hangs would hang for users too. Never wait forever.
+  # It gets the same time as its launch: under Rosetta everything, shutdown included, is slow.
+  # The marker tells this check's kill apart from the app's own quit watchdog (both SIGKILL).
+  local killed="$work/killed-by-check-$label"
+  (sleep "$limit" && touch "$killed" && kill -KILL "$app_pid") > /dev/null 2>&1 &
+  local watchdog=$! status=0
+  wait "$app_pid" 2> /dev/null || status=$?
+  kill "$watchdog" 2> /dev/null || true
+  if [ -f "$killed" ]; then
+    fail "$label: the app did not quit within $limit s of SIGTERM"
+    print_app_logs "$label" "$home"
+  elif [ "$status" -eq 137 ]; then
+    # It quit in time, but only because its watchdog ended a main thread stuck in shutdown.
+    echo "::warning::$label: the app's quit watchdog had to end it (its main thread hung while quitting)"
+    print_app_logs "$label" "$home"
+  fi
+}
+
+# The app's output and its own logs, which show which quit step it was stuck in.
+print_app_logs() {
+  local label="$1" home="$2"
+  echo "--- app output"
+  tail -n 50 "$work/app-$label.log" || true
+  for log in "$home"/logs/*.log; do
+    if [ -f "$log" ]; then
+      echo "--- $log"
+      tail -n 40 "$log"
+    fi
+  done
 }
 
 # --- 3. Downloaded: Gatekeeper ---------------------------------------------------------------
@@ -193,7 +221,7 @@ check_gatekeeper() {
   xattr -r -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;" "$app"
   xattr -p com.apple.quarantine "$app"
   local out
-  out="$(spctl --assess --type execute -vv "$app" 2>&1 || true)"
+  out="$(with_timeout 300 spctl --assess --type execute -vv "$app" 2>&1 || true)"
   echo "$out"
   if echo "$out" | grep -qiE 'not signed at all|invalid signature|sealed resource|has been modified|damaged|code has no resources|nested code is modified'; then
     fail "$label: Gatekeeper would report the downloaded app as damaged"
@@ -218,7 +246,7 @@ for dmg in "$release"/*.dmg; do
   echo "=== $label"
   mnt="$work/mnt-$label"
   mkdir -p "$mnt"
-  hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg" > /dev/null
+  with_timeout 300 hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg" > /dev/null
   dest="$work/dmg-$label"
   mkdir -p "$dest"
   ditto "$mnt/CodeDen.app" "$dest/CodeDen.app"

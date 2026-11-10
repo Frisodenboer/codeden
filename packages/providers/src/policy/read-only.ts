@@ -1,3 +1,5 @@
+import { ghDenial, gitDenial, sedDenial } from "./read-only-tools";
+
 /**
  * Read-only sessions (the orchestrator and PMs, and agent sessions with the `read_only`
  * permission level, §11.2) may inspect a repository but never change it. This allowlist decides
@@ -85,36 +87,17 @@ const READ_ONLY_BINS = new Set([
   "out-string",
   "sort-object",
   "gh",
+  "nl",
+  // Changing directory only moves where the next command runs.
+  "cd",
+  "pushd",
+  "popd",
+  "chdir",
+  "set-location",
+  "sl",
+  "push-location",
+  "pop-location",
 ]);
-
-/** Git subcommands that never change the repository. */
-const READ_ONLY_GIT = new Set([
-  "status",
-  "log",
-  "show",
-  "diff",
-  "blame",
-  "grep",
-  "ls-files",
-  "ls-tree",
-  "rev-parse",
-  "rev-list",
-  "describe",
-  "shortlog",
-  "cat-file",
-  "remote",
-  "branch",
-  "tag",
-  "config",
-  "reflog",
-  "merge-base",
-  "name-rev",
-  "for-each-ref",
-  "worktree",
-]);
-
-/** `gh` subcommand verbs that only read. */
-const READ_ONLY_GH = new Set(["view", "list", "status", "diff", "checks"]);
 
 const bin = (token: string | undefined): string =>
   (token ?? "")
@@ -212,23 +195,18 @@ export function readOnlyCommandDenial(
     const name = bin(tokens[0]);
     const args = tokens.slice(1).map((a) => a.toLowerCase());
     if (name === "git") {
-      const sub = args.find((a) => !a.startsWith("-"));
-      if (!sub || !READ_ONLY_GIT.has(sub)) return `git ${sub ?? ""} may change the repository`;
-      if (
-        (sub === "branch" || sub === "tag" || sub === "remote" || sub === "worktree") &&
-        args.some((a) => /^-(d|D|m|M|f|-delete|-move|-force)$/.test(a) || a === "add")
-      ) {
-        return `git ${sub} with these options changes the repository`;
-      }
-      if (sub === "config" && !args.some((a) => a === "--get" || a === "--list" || a === "-l")) {
-        return "Only reading git config is allowed";
-      }
+      const reason = gitDenial(tokens.slice(1));
+      if (reason) return reason;
       continue;
     }
     if (name === "gh") {
-      if (!args.some((a) => READ_ONLY_GH.has(a)) || args.includes("api")) {
-        return "Only read-only gh commands are allowed (view, list, status, diff, checks)";
-      }
+      const reason = ghDenial(args);
+      if (reason) return reason;
+      continue;
+    }
+    if (name === "sed") {
+      const reason = sedDenial(tokens.slice(1));
+      if (reason) return reason;
       continue;
     }
     if (name === "find" && args.some((a) => a === "-delete" || a === "-exec" || a === "-execdir")) {

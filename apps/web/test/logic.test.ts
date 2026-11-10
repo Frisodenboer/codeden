@@ -97,6 +97,15 @@ describe("inbox grouping", () => {
   it("counts tabs including conflicts", () => {
     expect(inboxCounts(inboxItems, 1)).toEqual({ all: 7, asks: 4, reviews: 2, problems: 1 });
   });
+  it("shows worktrees that couldn't be removed with the problems", () => {
+    const base = inboxItems.find((i) => i.kind === "run_failed");
+    if (!base) throw new Error("fixture");
+    const items = [...inboxItems, { ...base, id: "cleanup", kind: "cleanup_failed" as const }];
+    expect(groupInbox(items, "problems").map((g) => g.id)).toEqual([
+      "run_failed",
+      "cleanup_failed",
+    ]);
+  });
 });
 
 describe("shortcuts", () => {

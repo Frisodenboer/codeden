@@ -23,6 +23,7 @@ import type { InboxService } from "../inbox-service";
 import type { OrchestrationService } from "../orchestration/orchestration-service";
 import type { ProjectService } from "../projects/project-service";
 import type { SessionService } from "../sessions/session-service";
+import { issueSessionPrompt, triageRequestText } from "./triage-prompts";
 
 export interface TriageDeps {
   db: Db;
@@ -65,34 +66,8 @@ export class TriageService {
   ): Promise<string> {
     if (project.kind !== "github") throw badRequest("Triage needs a GitHub project", "not_github");
     const policy = policyOf(automation);
-    const labels = Object.entries(policy.labels)
-      .map(([decision, names]) => `  - ${decision}: ${names.length ? names.join(", ") : "(none)"}`)
-      .join("\n");
     const canStart = policy.autoStart && project.autonomyMode !== "manual";
-    const text = [
-      `Issue triage (automation "${automation.name}", run ${run.id}).`,
-      `New issue #${issue.number}: ${issue.title ?? ""}`,
-      issue.url,
-      "",
-      "1. Read it with get_issue (and list_issues to look for duplicates). Compare it with the project notes, the vision and the work already running.",
-      "2. Classify it as exactly one of: ready (clear, in scope, safe to implement), needs_info (unclear or missing reproduction), unsafe (touches protected areas or needs a human decision), out_of_scope, duplicate.",
-      `3. Apply it with triage_issue using these labels:\n${labels}`,
-      policy.comment
-        ? "   Include a short, friendly comment explaining the decision (for needs_info, ask the specific questions)."
-        : "   Do not comment on the issue.",
-      policy.closeRejected
-        ? "   Close duplicates and out-of-scope issues (close: true)."
-        : "   Do not close the issue.",
-      "4. Then call report_triage with the issue number, the decision and a two-sentence summary.",
-      canStart
-        ? "   For ready issues CodeDen starts an agent session automatically; do not call start_session yourself."
-        : "   For ready issues CodeDen asks the user whether to take it on; do not call start_session yourself.",
-      automation.action.type === "triage" && automation.action.instructions
-        ? `\nProject guidance:\n${automation.action.instructions}`
-        : "",
-    ]
-      .filter((l) => l !== "")
-      .join("\n");
+    const text = triageRequestText({ automation, run, issue, policy, canStart });
     const res = await this.deps
       .orchestration()
       .sendToRole("pm", project.id, { text, attachments: [] }, "queue", "automation");
@@ -196,16 +171,7 @@ export class TriageService {
     decision?: TriageDecisionRequest["conflict"],
   ): Promise<StartSessionResponse> {
     const title = issue.title ?? `Issue #${issue.number}`;
-    const prompt = [
-      `Resolve GitHub issue #${issue.number}: ${title}`,
-      issue.url,
-      summary ? `\nTriage summary: ${summary}` : "",
-      "",
-      `Read the full issue and its comments first (\`gh issue view ${issue.number} --comments\`). Implement the change in your worktree following the project's conventions, add or update tests that prove it, and run the test suite.`,
-      `Then open a pull request with create_pull_request whose body includes "Fixes #${issue.number}", attach evidence (test output, and screenshots for UI changes) with attach_evidence, and call finish. If the issue turns out to be unclear or unsafe, ask with ask_user instead of guessing.`,
-    ]
-      .filter((l) => l !== "")
-      .join("\n");
+    const prompt = issueSessionPrompt(issue, summary);
     return this.deps.sessions.start(
       StartSessionRequest.parse({
         projectId: project.id,

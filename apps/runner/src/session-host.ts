@@ -56,6 +56,11 @@ export class SessionHost {
     }));
   }
 
+  /** Working directories of the hosted sessions, by session id. */
+  cwds(): Map<string, string> {
+    return new Map([...this.sessions.entries()].map(([id, h]) => [id, h.cwd]));
+  }
+
   /** Number of sessions with a running turn. */
   get running(): number {
     return [...this.sessions.values()].filter((h) => h.state === "running").length;

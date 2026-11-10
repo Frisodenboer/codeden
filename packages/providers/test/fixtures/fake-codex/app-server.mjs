@@ -5,13 +5,36 @@
 //   "paged"  real-shaped models over two pages, with a hidden model and unknown efforts
 //   "error"  a JSON-RPC error
 //   "hang"   never answers `initialize`
-import { appendFileSync } from "node:fs";
+// FAKE_CODEX_REQUESTS names a JSON file of server requests (`{ method, params }`) to send during
+// every turn, one after the other (`notify: true` ones as notifications); each answer is logged as `{ method: "answer:<method>", params }`
+// and the turn completes once all are answered.
+// FAKE_CODEX_TURN=hang starts turns that never complete and never answers `turn/interrupt`.
+import { appendFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const log = process.env.FAKE_CODEX_LOG;
 const mode = process.env.FAKE_CODEX_MODEL_LIST;
+const turnMode = process.env.FAKE_CODEX_TURN;
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let turns = 0;
+let nextRequestId = 9000;
+const waiting = new Map();
+const scripted = process.env.FAKE_CODEX_REQUESTS
+  ? JSON.parse(readFileSync(process.env.FAKE_CODEX_REQUESTS, "utf8"))
+  : [];
+
+/** Send a server request and wait for the client's answer. */
+function ask(method, params) {
+  const id = nextRequestId++;
+  return new Promise((resolve) => {
+    waiting.set(id, (result) => {
+      if (log) appendFileSync(log, `${JSON.stringify({ method: `answer:${method}`, params: result })}
+`);
+      resolve(result);
+    });
+    send({ id, method, params });
+  });
+}
 
 const efforts = (...names) => names.map((reasoningEffort) => ({ reasoningEffort, description: "" }));
 const model = (slug, extra) => ({
@@ -55,6 +78,11 @@ function modelList(msg) {
 
 createInterface({ input: process.stdin }).on("line", (line) => {
   const msg = JSON.parse(line);
+  if (msg.id !== undefined && !msg.method && waiting.has(msg.id)) {
+    const resolve = waiting.get(msg.id);
+    waiting.delete(msg.id);
+    return resolve(msg.result ?? msg.error);
+  }
   if (msg.id === undefined || !msg.method) return;
   if (log) appendFileSync(log, `${JSON.stringify({ method: msg.method, params: msg.params })}\n`);
   switch (msg.method) {
@@ -69,10 +97,31 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     case "turn/start": {
       const turn = { id: `turn-${++turns}`, status: "completed", items: [], error: null };
       send({ id: msg.id, result: { turn: { ...turn, status: "inProgress" } } });
+      if (turnMode === "hang") return;
       // Like the real server: the turn completes after the response has been handled.
-      setTimeout(() => send({ method: "turn/completed", params: { threadId: "thread-1", turn } }), 50);
+      setTimeout(async () => {
+        for (const [i, r] of scripted.entries()) {
+          // `notify: true` entries are notifications (such as `item/started`), sent as they are.
+          if (r.notify) {
+            send({ method: r.method, params: { threadId: "thread-1", turnId: turn.id, ...r.params } });
+            continue;
+          }
+          await ask(r.method, {
+            threadId: "thread-1",
+            turnId: turn.id,
+            itemId: `${turn.id}-item-${i}`,
+            startedAtMs: 1,
+            environmentId: null,
+            ...r.params,
+          });
+        }
+        send({ method: "turn/completed", params: { threadId: "thread-1", turn } });
+      }, 50);
       return;
     }
+    case "turn/interrupt":
+      if (turnMode === "hang") return;
+      return send({ id: msg.id, result: {} });
     default:
       return send({ id: msg.id, result: {} });
   }

@@ -43,7 +43,7 @@ export const listSessions = defineTool({
 export const startSession = defineTool({
   name: "start_session",
   description:
-    "Start an agent session in its own worktree to do one piece of work. Always pass a workKey (issue:<n>, pr:<n>, automation:<name> or request:<slug>) and a one-line purpose; add scope (paths or area) when known. If matching work is already running or queued, nothing starts and the result is 'conflict' with the existing work: then call again with conflict = {resolution: 'wait'} (queue behind it), {resolution: 'skip'}, {resolution: 'join', sessionId} (send the prompt to the existing session) or {resolution: 'force', reason}.",
+    "Start an agent session in its own worktree to do one piece of work. Always pass a workKey (issue:<n>, pr:<n>, automation:<name> or request:<slug>) and a one-line purpose; add scope (paths or area) when known. If matching work is already running or queued, nothing starts and the result is 'conflict' with the existing work: choose the resolution yourself and call again with conflict = {resolution: 'wait'} (queue behind it), {resolution: 'skip'} (it is the same work), {resolution: 'join', sessionId} (send the prompt to the existing session) or {resolution: 'force', reason}.",
   roles: ["pm"],
   scope: "project",
   alwaysLoad: true,
@@ -52,7 +52,9 @@ export const startSession = defineTool({
       .string()
       .min(1)
       .max(50_000)
-      .describe("The brief for the agent: goal, context, acceptance criteria"),
+      .describe(
+        "The brief for the agent: goal, context, acceptance criteria, and the decisions you already made (defaults, scope, whether to open a pull request), so the agent doesn't have to ask",
+      ),
     purpose: z.string().trim().min(1).max(300),
     workKey: WorkKey.optional(),
     scope: z
@@ -64,6 +66,12 @@ export const startSession = defineTool({
     model: z.string().min(1).optional(),
     effort: ReasoningEffort.optional(),
     conflict: ConflictDecision.optional(),
+    reportTo: z
+      .enum(["orchestrator"])
+      .optional()
+      .describe(
+        "'orchestrator' when the orchestrator passed this work on: its finish or failure also reaches the orchestrator, so it can tell the user",
+      ),
   }),
   handler: async (input, { services, projectId, sessionId }) => {
     const project = projectFor(services, projectId);
@@ -85,7 +93,7 @@ export const startSession = defineTool({
       scope: input.scope,
       title: input.title,
       issue,
-      startedBy: { kind: "pm", id: sessionId ?? undefined },
+      startedBy: { kind: "pm", id: sessionId ?? undefined, reportTo: input.reportTo },
       parentSessionId: sessionId ?? undefined,
       input: { text: input.prompt },
       conflict: input.conflict,
@@ -108,7 +116,7 @@ export const startSession = defineTool({
         return {
           status: "conflict",
           message:
-            "Matching work is already running or queued; nothing was started. Report it, or call start_session again with a conflict resolution (wait, skip, join with sessionId, force with reason).",
+            "Matching work is already running or queued; nothing was started. Choose a resolution yourself and call start_session again with it: wait (queue behind it), skip (it is the same work), join with sessionId (it adds to that work) or force with a reason. Then say in one line what you chose.",
           existing: result.existing.map(compactWork),
         };
     }
@@ -129,9 +137,9 @@ export const messageSession = defineTool({
     whenBusy: z.enum(["queue", "steer"]).optional(),
   }),
   handler: async ({ sessionId, text, whenBusy }, { services, projectId }) => {
-    agentSessionOf(services, sessionId, projectId);
+    const session = agentSessionOf(services, sessionId, projectId);
     const res = await services.sessions.send(
-      sessionId,
+      session.id,
       {
         input: messageFrom("pm", text),
         whenBusy: whenBusy ?? "queue",
@@ -154,8 +162,8 @@ export const stopSession = defineTool({
   handler: async ({ sessionId }, { services, projectId }) => {
     const session = agentSessionOf(services, sessionId, projectId);
     if (ENDED.has(session.status))
-      throw new ToolError(`Session ${sessionId} already ${session.status}`);
-    const stopped = await services.sessions.stop(sessionId);
-    return { status: stopped.status, sessionId };
+      throw new ToolError(`Session ${session.id} already ${session.status}`);
+    const stopped = await services.sessions.stop(session.id);
+    return { status: stopped.status, sessionId: session.id };
   },
 });

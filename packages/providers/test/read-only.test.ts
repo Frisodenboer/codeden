@@ -46,6 +46,55 @@ describe("read-only sessions (orchestrator and PMs, §11.2)", () => {
     }
   });
 
+  it("reads git, gh and sed the way agents write them", () => {
+    for (const ok of [
+      "cd /c/Users/me/.codeden/wt/proj/ab12 && git log --oneline -5",
+      "Set-Location C:\\repo; git status",
+      "git -C ../ab12 log --oneline",
+      "git -C C:\\Users\\me\\.codeden\\wt\\proj\\ab12 diff --stat",
+      "git -c core.pager=cat log -3",
+      "git --no-pager log -3",
+      "git stash list",
+      "git stash show -p stash@{0}",
+      "git show-ref",
+      "git ls-remote origin",
+      "git config user.name",
+      "git config --get remote.origin.url",
+      "gh search issues login --repo o/r",
+      "gh api repos/o/r/pulls",
+      "gh api -X GET repos/o/r/issues --paginate",
+      "gh pr list --json number,title",
+      "sed -n 1,40p README.md",
+      "sed -n '/start/,/end/p' notes.md",
+      "sed 's/foo/bar/g' file.txt | head",
+      "nl -ba src/a.ts | head -40",
+    ]) {
+      expect(readOnlyCommandDenial(ok), ok).toBeUndefined();
+    }
+    for (const bad of [
+      "git -C ../ab12 commit -m x",
+      "git -c core.pager='rm -rf ~' log",
+      "git --exec-path=/tmp/x log",
+      "git stash",
+      "git stash pop",
+      "git config user.name x",
+      "gh api -X POST repos/o/r/issues",
+      "gh api repos/o/r/issues -f title=x",
+      "gh api graphql -F query=@q.graphql",
+      "gh pr merge 5",
+      "sed -i 's/a/b/' file.txt",
+      "sed -i.bak 's/a/b/' file.txt",
+      "sed -n 'w out.txt' file.txt",
+      "sed 's/a/b/w out.txt' file.txt",
+      "sed 's/a/b/e' file.txt",
+      "sed -f script.sed file.txt",
+      "awk '{print $1}' file.txt",
+      "cd src && rm -rf build",
+    ]) {
+      expect(readOnlyCommandDenial(bad), bad).toBeTruthy();
+    }
+  });
+
   it("denies Claude edit tools and writing commands natively", () => {
     const policy = new ClaudePolicy("auto", { cwd: "/repo", extraRoots: [] }, true);
     expect(policy.denial("Edit", { file_path: "/repo/a.ts" })).toMatch(/read-only/);

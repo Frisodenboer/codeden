@@ -135,6 +135,25 @@ describe("wake scheduler (§8.2 batching, debounce, loop guard)", () => {
     expect(s.allowed("pm:p1")).toBe(true);
   });
 
+  it("says when the guard frees up, and forgets the count when a person steps in", async () => {
+    const { s, fired } = scheduler();
+    expect(s.freeAt("pm:p1")).toBe(0);
+    for (let i = 0; i < 2; i += 1) {
+      s.request("pm:p1");
+      await vi.advanceTimersByTimeAsync(5_000);
+    }
+    expect(s.freeAt("pm:p1")).toBe(65_000); // the first wake (t=5s) leaves the 60 s window
+    s.request("pm:p1");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fired).toHaveLength(2); // held back
+    s.reset("pm:p1");
+    expect(s.allowed("pm:p1")).toBe(true);
+    await vi.advanceTimersByTimeAsync(5_000); // released after the quiet period, not at t=65s
+    expect(fired).toHaveLength(3);
+    s.reset("orchestrator"); // nothing pending: a no-op
+    expect(s.isPending("orchestrator")).toBe(false);
+  });
+
   it("drops a wake with nothing left to deliver", async () => {
     const { s, fired } = scheduler(["empty"]);
     s.request("pm:p1");

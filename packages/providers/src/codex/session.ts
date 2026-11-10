@@ -10,6 +10,7 @@ import { type ProviderSession, ProviderSessionError, type SessionConfigChange } 
 import { ApprovalBroker } from "../approvals";
 import { AsyncQueue } from "../async-queue";
 import type { ResolvedCommand } from "../util/exec";
+import { interruptWithDeadline } from "../util/interrupt";
 import { explicitModel } from "../util/model";
 import { handleServerRequest } from "./approvals";
 import { codexConfigOverrides, codexPolicy, codexSandboxPolicy, toCodexInput } from "./config";
@@ -150,19 +151,23 @@ export class CodexSession implements ProviderSession {
     });
   }
 
+  /**
+   * Stop the running turn. If app-server doesn't end it in time (or never answers
+   * `turn/interrupt` at all), the turn is closed as interrupted anyway.
+   */
   async interrupt(): Promise<void> {
     const turnId = this.mapper.currentTurnId;
-    if (!turnId || !this.rpc) return;
+    const rpc = this.rpc;
+    if (!turnId || !rpc) return;
     this.broker.cancelAll();
-    try {
-      await this.rpc.request("turn/interrupt", { threadId: this.threadId(), turnId });
-    } catch {
-      // Process gone or turn already over; the timeout below closes the turn.
-    }
-    setTimeout(() => {
-      if (this.mapper.currentTurnId === turnId)
-        this.mapper.endTurn({ type: "interrupted" }, turnId);
-    }, this.config.interruptTimeoutMs ?? 10_000).unref();
+    await interruptWithDeadline(
+      () => rpc.request("turn/interrupt", { threadId: this.threadId(), turnId }),
+      this.config.interruptTimeoutMs ?? 10_000,
+      () => {
+        if (this.mapper.currentTurnId === turnId)
+          this.mapper.endTurn({ type: "interrupted" }, turnId);
+      },
+    );
   }
 
   async respond(requestId: string, response: RuntimeResponse): Promise<void> {
@@ -216,7 +221,12 @@ export class CodexSession implements ProviderSession {
         onRequest: (req) =>
           handleServerRequest(req, {
             broker: this.broker,
-            risk: { cwd: this.opts.cwd, extraRoots: this.opts.additionalDirectories },
+            risk: {
+              cwd: this.opts.cwd,
+              extraRoots: this.opts.additionalDirectories,
+              ...(this.opts.ownBranch ? { ownBranch: this.opts.ownBranch } : {}),
+            },
+            autonomy: () => (this.opts.readOnly ? "read_only" : this.autonomy),
             ctx: (turnId) => ({ threadId: this.mapper.rootThreadId, turnId }),
             filePaths: (itemId) => this.filePaths.get(itemId),
           }),
@@ -339,6 +349,8 @@ export class CodexSession implements ProviderSession {
     this.mapper.endTurn({
       type: "failed",
       code: "provider_exited",
+      // The next message starts app-server again and resumes the thread.
+      kind: "transient",
       message: `codex app-server exited (code ${code ?? "unknown"})`,
       ...(stderr ? { detail: stderr.slice(-2000) } : {}),
     });

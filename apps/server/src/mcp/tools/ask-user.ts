@@ -12,7 +12,7 @@ import { currentTurn } from "../transcript";
 export const askUser = defineTool({
   name: "ask_user",
   description:
-    "Ask the user a question when you cannot proceed without their decision. Offer options when there are clear choices. The call waits a few minutes for an answer. If it returns 'pending', do not wait or ask again: finish whatever does not depend on the answer, then end your turn; the answer will arrive as your next message.",
+    "Ask the user for a decision only they can make: destructive or irreversible steps, spending money or creating accounts or credentials, outward-facing actions nobody asked for (publishing, releases, deploys, messages to other people), protected areas, or a request with two readings that lead to very different work. For anything else, pick a sensible default, say what you assumed, and carry on. Put your recommended option first. The call waits a few minutes for an answer. If it returns 'pending', do not wait or ask again: finish whatever does not depend on the answer, then end your turn; the answer will arrive as your next message.",
   roles: ["agent", "pm"],
   scope: "session",
   alwaysLoad: true,
@@ -45,7 +45,10 @@ export const askUser = defineTool({
       },
       signal,
     );
-    if (outcome.status === "answered") return `The user answered:\n${outcome.text}`;
+    if (outcome.status === "answered") {
+      const who = outcome.by === "pm" ? "Your project manager" : "The user";
+      return `${who} answered:\n${outcome.text}`;
+    }
     if (outcome.status === "dismissed") return "The user dismissed the question without answering.";
     return "pending: the question is waiting in the user's inbox. Do not wait for it. Finish what you can without the answer, then end your turn; the answer will arrive as your next message.";
   },

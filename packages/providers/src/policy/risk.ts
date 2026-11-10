@@ -1,7 +1,19 @@
-import type { ApprovalAction } from "@codeden/contracts";
+import { currentGitBranch } from "../util/git-head";
+import { type RiskAssessment, risky, SAFE } from "./assessment";
 import { binName, unwrap } from "./command-words";
-import { isInWorkspace, isSecretPath, isWritable, type PathContext, resolveAgainst } from "./paths";
+import { classifyGit } from "./git";
+import { classifyInstall } from "./installs";
+import {
+  isInside,
+  isInWorkspace,
+  isSecretPath,
+  isTempRoot,
+  isWritable,
+  type PathContext,
+  resolveAgainst,
+} from "./paths";
 import { pipesDownloadIntoInterpreter } from "./remote-scripts";
+import { dumpsEnvironment, secretArgument, toolOutputs } from "./secrets";
 import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
 
 /**
@@ -11,23 +23,18 @@ import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
  * everything else runs freely. Writes inside the worktree, the extra roots and the OS temp
  * directory are not risky; secrets files are, wherever they are.
  */
-export type RiskAssessment =
-  | { risky: false }
-  | { risky: true; action: ApprovalAction; reason: string };
+export type { RiskAssessment };
 
 export interface RiskContext extends PathContext {
   /** Hosts the agent may fetch freely. When omitted, web fetches are not flagged. */
   allowedHosts?: readonly string[];
   /** The shell a command runs in, for its quoting rules. Default `auto`. */
   shell?: ShellDialect;
+  /** The branch the session owns, which it may force-push with a lease (§11.2). */
+  ownBranch?: string;
+  /** The branch checked out in the worktree. Defaults to reading `cwd`'s git `HEAD`. */
+  currentBranch?: () => string | undefined;
 }
-
-const SAFE: RiskAssessment = { risky: false };
-const risky = (action: ApprovalAction, reason: string): RiskAssessment => ({
-  risky: true,
-  action,
-  reason,
-});
 
 /** How deep `bash -c "…"` style inline scripts are followed. */
 const MAX_DEPTH = 4;
@@ -116,16 +123,6 @@ function inlineScript(
   return undefined;
 }
 
-/**
- * The argument as a path, or undefined when it can't be one: inline code, multi-line text
- * or anything with shell or code punctuation (`selected={row.key`) is not a file name.
- */
-function asPath(arg: string): string | undefined {
-  const value = arg.replace(/^-+[a-z-]*=/i, "");
-  if (!value || /[\n\r{}()<>|;=`]/.test(value)) return undefined;
-  return value;
-}
-
 const DISCARD = /^(\/dev\/(null|stdout|stderr|tty)|nul|\$null)$/i;
 
 function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): RiskAssessment {
@@ -147,7 +144,13 @@ function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): Ri
     if (write.risky) return write;
   }
 
-  if (bin === "git") return classifyGit(lower);
+  if (bin === "git") {
+    return classifyGit(args, {
+      ownBranch: ctx.ownBranch,
+      currentBranch: ctx.currentBranch ?? (() => currentGitBranch(ctx.cwd)),
+      inWorktree: isInside(resolveAgainst(".", ctx), ctx.cwd, ctx),
+    });
+  }
 
   const install = classifyInstall(bin, lower);
   if (install.risky) return install;
@@ -155,38 +158,43 @@ function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): Ri
   if (["rm", "rmdir", "del", "erase", "rd", "remove-item", "ri", "unlink", "shred"].includes(bin)) {
     const targets = args.filter((a) => !a.startsWith("-") && !/^\/[a-z]$/i.test(a));
     for (const target of targets) {
-      if (target === "*" || /^[\\/]$/.test(target) || /^[a-z]:[\\/]?$/i.test(target)) {
+      if (/^[\\/]$/.test(target) || /^[a-z]:[\\/]?$/i.test(target)) {
         return risky("outside_worktree", `Deletes ${target}`);
       }
-      if (!isWritable(target, ctx)) {
+      // `*` empties the current directory: fine in the worktree or a folder in temp.
+      if (!isWritable(target === "*" ? "." : target, ctx)) {
         return risky("outside_worktree", `Deletes ${target}, outside the worktree`);
       }
     }
   }
 
   const dest = copyDestination(bin, args);
-  if (dest) {
-    const write = classifyWrite(dest, ctx);
+  const outputs = toolOutputs(bin, args);
+  const written = dest ? [dest, ...outputs] : outputs;
+  for (const target of [...(dest ? copyTargets(bin, args, dest, ctx) : []), ...outputs]) {
+    const write = classifyWrite(target, ctx);
     if (write.risky) return write;
   }
 
-  // Secrets: any argument naming a credentials file.
-  const secret = args.find((a) => {
-    const value = asPath(a);
-    return value !== undefined && isSecretPath(value);
-  });
+  // Secrets: any argument that reads a credentials file.
+  const secret = secretArgument(bin, args, written);
   if (secret) return risky("secrets", `Accesses the secrets file ${secret}`);
 
-  const listsEnvDrive =
-    /^(get-childitem|gci|ls|dir)$/.test(bin) && lower.some((a) => a.startsWith("env:"));
-  if (bin === "printenv" || listsEnvDrive) {
-    return risky("secrets", "Dumps environment variables");
-  }
+  if (dumpsEnvironment(bin, args)) return risky("secrets", "Dumps environment variables");
   return SAFE;
 }
 
 const COPIES = ["cp", "mv", "copy", "move", "copy-item", "move-item", "xcopy", "robocopy"];
 const WRITERS = ["tee", "set-content", "out-file", "add-content"];
+/** cmd-style copies, whose `/X` words are switches; for `cp` and `mv`, `/tmp` is a path. */
+const CMD_COPIES = ["copy", "move", "xcopy", "robocopy"];
+
+/** The path-like words of a copy or write: not options, nor cmd switches (`/E`, `/R:3`). */
+function operands(bin: string, args: string[]): string[] {
+  return args.filter(
+    (a) => !a.startsWith("-") && !(CMD_COPIES.includes(bin) && /^\/[a-z]+(:\S*)?$/i.test(a)),
+  );
+}
 
 /** Where a copy, move or file-writing command writes. */
 function copyDestination(bin: string, args: string[]): string | undefined {
@@ -195,133 +203,42 @@ function copyDestination(bin: string, args: string[]): string | undefined {
     ? namedArg(args, ["-path", "-filepath", "-literalpath"])
     : namedArg(args, ["-destination"]);
   if (named) return named;
-  const positional = args.filter((a) => !a.startsWith("-") && !/^\/[a-z]+$/i.test(a));
+  const positional = operands(bin, args);
   return WRITERS.includes(bin) ? positional[0] : positional.at(-1);
 }
 
-function classifyGit(args: string[]): RiskAssessment {
-  // Skip global options like `-C dir` / `-c k=v`.
-  let i = 0;
-  while (i < args.length && args[i]?.startsWith("-"))
-    i += args[i] === "-c" || args[i] === "-C" ? 2 : 1;
-  const sub = args[i];
-  const rest = args.slice(i + 1);
-  if (sub === "push") {
-    if (
-      rest.some(
-        (a) =>
-          a === "--force" ||
-          a === "-f" ||
-          a.startsWith("--force-with-lease") ||
-          a === "--mirror" ||
-          /^-[a-z]*f[a-z]*$/.test(a),
-      )
-    ) {
-      return risky("git_destructive", "Force-pushes, which can overwrite remote history");
-    }
-    if (rest.some((a) => a.startsWith("+") && a.length > 1)) {
-      return risky("git_destructive", "Force-pushes a refspec");
-    }
-    if (
-      rest.includes("--delete") ||
-      rest.includes("-d") ||
-      rest.some((a) => a.startsWith(":") && a.length > 1)
-    ) {
-      return risky("git_destructive", "Deletes a remote branch");
-    }
-  }
-  if (
-    sub === "branch" &&
-    rest.some((a) => a === "-d" || a === "-D" || a === "--delete" || /^-[a-z]*d/i.test(a))
-  ) {
-    return risky("git_destructive", "Deletes a branch");
-  }
-  if (sub === "tag" && rest.some((a) => a === "-d" || a === "--delete")) {
-    return risky("git_destructive", "Deletes a tag");
-  }
-  if (sub === "update-ref" && rest.includes("-d")) return risky("git_destructive", "Deletes a ref");
-  if (sub === "config" && rest.includes("--global")) {
-    return risky("outside_worktree", "Changes global git configuration");
-  }
-  return SAFE;
-}
-
-const GLOBAL_FLAGS = new Set(["-g", "--global", "--location=global"]);
-
-function classifyInstall(bin: string, args: string[]): RiskAssessment {
-  const sub = args[0];
-  const isInstall = (verbs: string[]) => sub !== undefined && verbs.includes(sub);
-  if (
-    ["npm", "pnpm", "bun", "cnpm"].includes(bin) &&
-    isInstall(["i", "install", "add", "link", "update", "up", "remove", "rm", "uninstall"])
-  ) {
-    if (args.some((a) => GLOBAL_FLAGS.has(a)))
-      return risky("other", `Installs packages globally (${bin} ${sub} -g)`);
-  }
-  if (bin === "yarn" && sub === "global")
-    return risky("other", "Installs packages globally (yarn global)");
-  if (bin === "volta" && sub === "install")
-    return risky("other", "Installs a global tool (volta install)");
-  if (
-    (bin === "pip" || bin === "pip3" || bin === "uv" || bin === "pipx") &&
-    args.includes("install")
-  ) {
-    if (
-      bin === "pipx" ||
-      args.includes("--user") ||
-      args.includes("--system") ||
-      args.includes("--break-system-packages")
-    ) {
-      return risky("other", `Installs Python packages outside the project (${bin})`);
-    }
-  }
-  if (bin === "uv" && sub === "tool" && args[1] === "install")
-    return risky("other", "Installs a global tool (uv tool install)");
-  if (
-    (bin === "cargo" || bin === "go" || bin === "gem" || bin === "dotnet") &&
-    (sub === "install" || (bin === "dotnet" && sub === "tool" && args.includes("-g")))
-  ) {
-    return risky("other", `Installs a global tool (${bin} ${sub})`);
-  }
-  if (
-    [
-      "brew",
-      "apt",
-      "apt-get",
-      "yum",
-      "dnf",
-      "pacman",
-      "zypper",
-      "apk",
-      "choco",
-      "winget",
-      "scoop",
-      "port",
-      "snap",
-    ].includes(bin)
-  ) {
-    if (args.some((a) => ["install", "upgrade", "remove", "uninstall", "-s", "add"].includes(a))) {
-      return risky("other", `Changes system packages (${bin})`);
-    }
-  }
-  if (bin === "install-module" || bin === "install-package")
-    return risky("other", `Installs a system-wide module (${bin})`);
-  return SAFE;
+/**
+ * The paths a copy or write lands on. A copy into a temp directory itself (`cp a.png /tmp/`)
+ * writes the copied names inside it, so they are checked instead (a secrets file there asks).
+ */
+function copyTargets(bin: string, args: string[], dest: string, ctx: RiskContext): string[] {
+  if (!COPIES.includes(bin) || !isTempRoot(dest, ctx)) return [dest];
+  const sources = operands(bin, args).filter((a) => a !== dest);
+  const names = sources
+    .map(
+      (s) =>
+        s
+          .replace(/[\\/]+$/, "")
+          .split(/[\\/]/)
+          .pop() ?? "",
+    )
+    .filter(Boolean);
+  return names.length ? names.map((name) => `${dest.replace(/[\\/]+$/, "")}/${name}`) : [dest];
 }
 
 /**
- * Classify a file write/edit. The worktree, extra roots and OS temp are fine; secrets ask. A
- * secrets file in temp counts as outside the worktree, so Full autonomy (which only asks for
- * writes outside the worktree) still asks for it.
+ * Classify a file write/edit. The worktree, extra roots and OS temp are fine, secrets files in
+ * the worktree included: writing one (`cp .env.example .env`) reads nothing. A secrets file in
+ * temp counts as outside the worktree, so Full autonomy (which only asks for writes outside the
+ * worktree) still asks for it.
  */
 export function classifyWrite(target: string, ctx: RiskContext): RiskAssessment {
   if (!isWritable(target, ctx))
     return risky("outside_worktree", `Writes ${target}, outside the worktree`);
-  if (!isSecretPath(target)) return SAFE;
-  if (!isInWorkspace(target, ctx)) {
-    return risky("outside_worktree", `Writes the secrets file ${target} in the temp directory`);
+  if (isSecretPath(target) && !isInWorkspace(target, ctx)) {
+    return risky("outside_worktree", `Writes the secrets file ${target}, outside the worktree`);
   }
-  return risky("secrets", `Writes the secrets file ${target}`);
+  return SAFE;
 }
 
 /** Classify a file read or search. Reads anywhere are fine except credential files. */

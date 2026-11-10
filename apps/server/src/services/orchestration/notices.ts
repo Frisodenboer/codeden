@@ -8,10 +8,11 @@ import type {
   RawEventEnvelope,
   Session,
 } from "@codeden/contracts";
-import { and, desc, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { notices } from "../../db/schema-orchestration";
 import type { EventStore } from "../../events/store";
+import { clipKeepingEnd } from "./digest";
 
 /** A notice before it is stored (`deliveredAt` is set by delivery). */
 export type NoticeDraft = Notice extends infer N
@@ -44,6 +45,16 @@ export function wakesPm(session: Session): boolean {
   return session.startedBy.kind !== "user" || session.parentSessionId !== null;
 }
 
+/** Work a PM started for a request the orchestrator passed on (`startedBy.reportTo`). */
+function reportsToOrchestrator(session: Session): boolean {
+  return session.startedBy.reportTo === "orchestrator";
+}
+
+/** A session notice, copied for the orchestrator so the result reaches whoever asked (§8.2). */
+function forOrchestrator(notice: NoticeDraft, id: string): DerivedNotice {
+  return { wake: true, notice: { ...notice, id, target: "orchestrator" } };
+}
+
 /** The id of an opened PR's notice: the same whether it came from the session or GitHub sync. */
 export function prOpenedNoticeId(projectId: string, number: number): string {
   return `pr.opened:${projectId}:${number}`;
@@ -70,22 +81,24 @@ export function deriveNotices(events: RawEventEnvelope[], lookup: NoticeLookup):
       const s = agentSession(e.sessionId);
       if (!s || s.rootThreadId !== event.threadId) continue;
       const final = lookup.finalMessage(s.id, event.turnId);
-      out.push({
-        wake: wakesPm(s),
-        notice: {
-          id: `session.finished:${s.id}:${event.turnId}`,
-          type: "session.finished",
-          projectId: s.projectId,
-          target: "pm",
-          sessionId: s.id,
-          title: `Finished: ${s.title ?? s.purpose}`,
-          data: {
-            ...workRef(s),
-            summary: s.result?.summary ?? (final ? clip(final) : null),
-            outcome: s.result?.outcome ?? null,
-          },
+      const finished: NoticeDraft = {
+        id: `session.finished:${s.id}:${event.turnId}`,
+        type: "session.finished",
+        projectId: s.projectId,
+        target: "pm",
+        sessionId: s.id,
+        title: `Finished: ${s.title ?? s.purpose}`,
+        data: {
+          ...workRef(s),
+          summary: s.result?.summary ?? (final ? clipKeepingEnd(final) : null),
+          outcome: s.result?.outcome ?? null,
         },
-      });
+      };
+      out.push({ wake: wakesPm(s), notice: finished });
+      // Once per `finish` call: a turn without a result is the PM's business only.
+      if (reportsToOrchestrator(s) && s.result) {
+        out.push(forOrchestrator(finished, `session.finished:orchestrator:${s.id}:${s.result.at}`));
+      }
     } else if (e.type === "inbox.created") {
       const { item } = e.payload as { item: InboxItem };
       const s = agentSession(item.sessionId);
@@ -104,18 +117,19 @@ export function deriveNotices(events: RawEventEnvelope[], lookup: NoticeLookup):
           },
         });
       } else if (item.kind === "run_failed") {
-        out.push({
-          wake: wakesPm(s),
-          notice: {
-            id: `session.failed:${item.id}`,
-            type: "session.failed",
-            projectId: s.projectId,
-            target: "pm",
-            sessionId: s.id,
-            title: `Failed: ${s.title ?? s.purpose}`,
-            data: { ...workRef(s), error: clip(item.body ?? item.title) },
-          },
-        });
+        const failed: NoticeDraft = {
+          id: `session.failed:${item.id}`,
+          type: "session.failed",
+          projectId: s.projectId,
+          target: "pm",
+          sessionId: s.id,
+          title: `Failed: ${s.title ?? s.purpose}`,
+          data: { ...workRef(s), error: clip(item.body ?? item.title) },
+        };
+        out.push({ wake: wakesPm(s), notice: failed });
+        if (reportsToOrchestrator(s)) {
+          out.push(forOrchestrator(failed, `session.failed:orchestrator:${item.id}`));
+        }
       }
     } else if (e.type === "session.updated") {
       const { session } = e.payload as { session: Session };
@@ -189,7 +203,10 @@ export class NoticeStore {
       .map((r) => r.notice);
   }
 
-  /** Undelivered notices for a target, oldest first. `projectId` null = the orchestrator. */
+  /**
+   * Undelivered notices for a target, oldest first. `projectId` null = the orchestrator. A
+   * scheduled wake-up counts once it is due.
+   */
   undelivered(target: NoticeTarget, projectId: string | null): Notice[] {
     return this.db
       .select()
@@ -199,10 +216,47 @@ export class NoticeStore {
           eq(notices.target, target),
           isNull(notices.deliveredAt),
           projectId === null ? undefined : eq(notices.projectId, projectId),
+          or(isNull(notices.notBefore), lte(notices.notBefore, new Date().toISOString())),
         ),
       )
       .orderBy(notices.createdAt)
       .limit(50)
+      .all()
+      .map((r) => r.notice);
+  }
+
+  /** A target's scheduled wake-ups still to deliver (due or not), soonest first. */
+  scheduled(target: NoticeTarget, projectId: string | null): Notice[] {
+    return this.db
+      .select()
+      .from(notices)
+      .where(
+        and(
+          eq(notices.type, "reminder"),
+          eq(notices.target, target),
+          isNull(notices.deliveredAt),
+          projectId === null ? isNull(notices.projectId) : eq(notices.projectId, projectId),
+        ),
+      )
+      .orderBy(asc(notices.notBefore))
+      .all()
+      .map((r) => r.notice);
+  }
+
+  /** Undelivered notices held back until a time: the due ones, or the soonest still ahead. */
+  heldBack(due: boolean): Notice[] {
+    const now = new Date().toISOString();
+    return this.db
+      .select()
+      .from(notices)
+      .where(
+        and(
+          isNull(notices.deliveredAt),
+          due ? lte(notices.notBefore, now) : gt(notices.notBefore, now),
+        ),
+      )
+      .orderBy(asc(notices.notBefore))
+      .limit(due ? 200 : 1)
       .all()
       .map((r) => r.notice);
   }
@@ -230,6 +284,18 @@ export class NoticeStore {
     this.store.append([
       {
         type: "notice.delivered",
+        sessionId: null,
+        payload: { noticeIds: ids, at: new Date().toISOString() },
+      },
+    ]);
+  }
+
+  /** Back to undelivered: the turn that carried them failed, so the next wake carries them. */
+  markReturned(ids: string[]): void {
+    if (ids.length === 0) return;
+    this.store.append([
+      {
+        type: "notice.returned",
         sessionId: null,
         payload: { noticeIds: ids, at: new Date().toISOString() },
       },

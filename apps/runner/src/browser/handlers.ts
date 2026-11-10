@@ -84,6 +84,7 @@ export function createBrowserCommandHandlers(deps: BrowserCommandDeps): BrowserC
     "browser.screencast": async (c) => {
       const { quality, maxWidth, maxHeight, maxFps } = c;
       const session = manager.get(c.sessionId);
+      if (c.watching) await session.syncViewport();
       const viewers = await session.screencast.watch(c.viewerId, c.watching, {
         quality,
         maxWidth,

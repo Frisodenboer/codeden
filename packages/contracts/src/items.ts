@@ -165,6 +165,13 @@ export const TodoListItem = z.object({
 export const ApprovalDecision = z.enum(["allow_once", "allow_session", "deny"]);
 export type ApprovalDecision = z.infer<typeof ApprovalDecision>;
 
+/**
+ * Who decided an approval: the user, CodeDen's policy (an action the permission level allows,
+ * or a denial in a session nobody is watching), or a PM.
+ */
+export const ApprovalDecider = z.enum(["user", "policy", "pm"]);
+export type ApprovalDecider = z.infer<typeof ApprovalDecider>;
+
 /** What an approval request is about. */
 export const ApprovalAction = z.enum([
   "command",
@@ -200,7 +207,7 @@ export const ApprovalRequestItem = z.object({
   toolCallItemId: Id.optional(),
   options: z.array(ApprovalDecision).default(["allow_once", "allow_session", "deny"]),
   decision: ApprovalDecision.optional(),
-  decidedBy: z.enum(["user", "policy", "pm"]).optional(),
+  decidedBy: ApprovalDecider.optional(),
 });
 
 /** One question in a `user_question` item. */
@@ -223,6 +230,11 @@ export const UserQuestionItem = z.object({
   questions: z.array(UserQuestion).min(1),
   /** Answers keyed by question id, once answered. */
   answers: z.record(z.string(), z.array(z.string())).optional(),
+  /**
+   * Who answered: the user, or the project manager of the session's project (its
+   * `answer_question` tool, §8.2 step 5). Absent on questions answered before it was recorded.
+   */
+  decidedBy: z.enum(["user", "pm"]).optional(),
   /**
    * Asked through CodeDen's `ask_user` tool rather than the provider: stays open after its
    * turn ends, and an answer that arrives after the tool returned is sent as a new message.

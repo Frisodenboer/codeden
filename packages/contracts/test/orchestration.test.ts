@@ -8,6 +8,7 @@ import {
   Notice,
   NoticeBatchData,
   Overview,
+  ProjectStatus,
   ProviderCapabilities,
   RoleMessageRequest,
   RunnerCommand,
@@ -68,7 +69,28 @@ describe("orchestration contracts (§8)", () => {
       payload: { noticeIds: ["n1"], at: ts },
     };
     expect(EventEnvelope.parse(delivered)).toEqual(delivered);
+    const returned = { ...delivered, seq: 3, type: "notice.returned" };
+    expect(EventEnvelope.parse(returned)).toEqual(returned);
+    expect(Notice.parse({ ...notice, wake: false })).toEqual({ ...notice, wake: false });
     expect(() => Notice.parse({ ...notice, type: "session.failed" })).toThrow();
+  });
+
+  it("round-trips a scheduled wake-up (§8.2)", () => {
+    const reminder: Notice = {
+      id: "reminder:1",
+      type: "reminder",
+      projectId: "p1",
+      target: "pm",
+      sessionId: null,
+      title: "Wake-up you scheduled",
+      createdAt: ts,
+      deliveredAt: null,
+      wake: true,
+      notBefore: "2026-11-10T12:00:00.000Z",
+      data: { note: "Check whether the audit finished", requestedBy: "pm-1" },
+    };
+    expect(Notice.parse(reminder)).toEqual(reminder);
+    expect(() => Notice.parse({ ...reminder, notBefore: "tomorrow" })).toThrow();
   });
 
   it("round-trips the GitHub notices (§8.2, §9)", () => {
@@ -116,6 +138,25 @@ describe("orchestration contracts (§8)", () => {
     expect(() => Notice.parse({ ...list[3], type: "pr.merged" })).toThrow();
   });
 
+  it("round-trips an orchestrator message held back by the loop guard (§8.2)", () => {
+    const held: Notice = {
+      id: "orchestrator.message:1",
+      type: "orchestrator.message",
+      projectId: "p1",
+      target: "pm",
+      sessionId: "orch1",
+      title: "Message from the orchestrator",
+      createdAt: ts,
+      deliveredAt: null,
+      data: { fromSessionId: "orch1", text: "Please take issue #4 next" },
+    };
+    expect(Notice.parse(JSON.parse(JSON.stringify(held)))).toEqual(held);
+    const anonymous = { ...held, data: { fromSessionId: null, text: "Status?" } };
+    expect(Notice.parse(anonymous)).toEqual(anonymous);
+    expect(NoticeBatchData.parse({ notices: [held] })).toEqual({ notices: [held] });
+    expect(() => Notice.parse({ ...held, data: { text: "missing sender" } })).toThrow();
+  });
+
   it("round-trips conflict records and the conflict inbox kind", () => {
     const record: ConflictRecord = {
       id: "conflict:1",
@@ -138,6 +179,20 @@ describe("orchestration contracts (§8)", () => {
     expect(
       StartWorkResult.parse({ status: "conflict", existing: [work], conflictId: "conflict:1" }),
     ).toMatchObject({ conflictId: "conflict:1" });
+  });
+
+  it("round-trips a project status with its autonomy mode", () => {
+    const status: ProjectStatus = {
+      project: { id: "p1", name: "Shop", kind: "github", mode: "assisted" },
+      running: [work],
+      queued: [],
+      scheduled: [],
+      inbox: { open: 0, items: [] },
+      recent: [],
+    };
+    expect(ProjectStatus.parse(status)).toEqual(status);
+    const { mode: _mode, ...noMode } = status.project;
+    expect(ProjectStatus.safeParse({ ...status, project: noMode }).success).toBe(false);
   });
 
   it("defaults role sessions in the snapshot and validates the HTTP shapes", () => {

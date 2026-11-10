@@ -101,9 +101,11 @@ describe("CodeDen MCP endpoint", () => {
       "share_to_chat",
       "get_project_status",
       "list_sessions",
+      "get_session",
       "start_session",
       "message_session",
       "stop_session",
+      "answer_question",
       "list_scheduled_runs",
       "skip_next_run",
       "pause_automation",
@@ -116,6 +118,9 @@ describe("CodeDen MCP endpoint", () => {
       "run_automation",
       "create_automation",
       "update_automation",
+      "schedule_wakeup",
+      "list_wakeups",
+      "cancel_wakeup",
     ]);
     await pm.close();
   });
@@ -207,6 +212,36 @@ describe("CodeDen MCP endpoint", () => {
     });
     expect(snapshot).toBeTruthy();
   }, 30_000);
+
+  it("keeps a session's token when a turn fails, so its next turn still has the tools", async () => {
+    const failing = await h.startFakeSession();
+    const live = h.server.services.mcpTokens.mint({
+      role: "agent",
+      sessionId: failing,
+      projectId: h.projectId,
+    });
+    await h.api("POST", `/sessions/${failing}/messages`, { input: { text: "[fail] try it" } });
+    await waitUntil(async () =>
+      (await h.detail(failing)).session.status === "failed" ? true : undefined,
+    );
+    // Give the lifecycle (which revokes tokens of ended sessions) a chance to run.
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await initialize(live)).status).toBe(200);
+
+    // The provider process lives on, so the next turn reaches it with the same token.
+    await h.api("POST", `/sessions/${failing}/messages`, { input: { text: "Try again" } });
+    await waitUntil(async () =>
+      (await h.detail(failing)).session.status === "idle" ? true : undefined,
+    );
+    const client = await connect(live);
+    const res = await client.callTool({
+      name: "report_progress",
+      arguments: { text: "Back on track" },
+    });
+    expect(res.isError).toBeFalsy();
+    await client.close();
+    expect((await h.detail(failing)).session.progress?.text).toBe("Back on track");
+  });
 
   it("revokes the session's tokens when it stops", async () => {
     await h.api("POST", `/sessions/${sessionId}/stop`);

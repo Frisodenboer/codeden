@@ -11,17 +11,23 @@ import { conflict } from "../errors";
 type Answers = Record<string, string[]>;
 type QuestionItem = ItemOf<"user_question">;
 
+/** Who answers a question: the user, or the project manager of the session's project. */
+export type Answerer = "user" | "pm";
+
 /** Outcome of `ask`: answered in time, dismissed, or still waiting in the inbox. */
 export type AskOutcome =
-  | { status: "answered"; answers: Answers; text: string }
+  | { status: "answered"; answers: Answers; text: string; by: Answerer }
   | { status: "dismissed" }
   | { status: "pending"; requestId: string };
 
 export interface QuestionBrokerDeps {
   db: Db;
   store: EventStore;
-  /** Deliver a late answer to the agent as a user message (queued while a turn runs). */
-  sendMessage: () => (sessionId: string, text: string) => Promise<void>;
+  /**
+   * Deliver a late answer to the agent as a message (queued while a turn runs), from the user
+   * or, when the project manager answered, from the PM.
+   */
+  sendMessage: () => (sessionId: string, text: string, by: Answerer) => Promise<void>;
   /** How long `ask` waits before returning `pending`. Default 4 minutes. */
   waitMs?: number;
 }
@@ -74,7 +80,12 @@ export class QuestionBroker {
    * Handle a response if `requestId` belongs to an `ask_user` question. Returns false for
    * provider-native requests (the caller forwards those to the runner).
    */
-  async respond(sessionId: string, requestId: string, response: RuntimeResponse): Promise<boolean> {
+  async respond(
+    sessionId: string,
+    requestId: string,
+    response: RuntimeResponse,
+    by: Answerer = "user",
+  ): Promise<boolean> {
     const record = this.find(sessionId, requestId);
     if (!record) return false;
     const item = record.item as QuestionItem;
@@ -82,16 +93,20 @@ export class QuestionBroker {
       throw conflict("The question was already answered", "answered");
     const answers = response.kind === "answer" ? response.answers : undefined;
     const done: QuestionItem = answers
-      ? { ...item, status: "completed", answers }
+      ? { ...item, status: "completed", answers, decidedBy: by }
       : { ...item, status: "cancelled" };
     this.put(sessionId, record, done);
     const outcome: AskOutcome = answers
-      ? { status: "answered", answers, text: formatAnswers(item, answers) }
+      ? { status: "answered", answers, text: formatAnswers(item, answers), by }
       : { status: "dismissed" };
     const waiter = this.waiters.get(requestId);
     if (waiter) waiter(outcome);
     else if (outcome.status === "answered") {
-      await this.deps.sendMessage()(sessionId, `Answer to your earlier question:\n${outcome.text}`);
+      await this.deps.sendMessage()(
+        sessionId,
+        `Answer to your earlier question:\n${outcome.text}`,
+        by,
+      );
     }
     return true;
   }

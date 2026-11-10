@@ -1,7 +1,10 @@
 import {
+  agentEventToNewEvent,
+  type Item,
   type ItemOf,
   type ItemRecord,
   type ListSessionsQuery,
+  type NewEvent,
   type Session,
   SessionStartMeta,
   type ThreadItemsPage,
@@ -14,7 +17,7 @@ import {
 import { and, asc, desc, eq, gt, inArray, lt, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { rowToItemRecord, rowToSession } from "../../db/rows";
-import { automationRuns, items, sessions } from "../../db/schema";
+import { automationRuns, items, sessions, turns } from "../../db/schema";
 import type { EventStore } from "../../events/store";
 import { notFound } from "../errors";
 import { ACTIVE_RUN_STATUSES, ACTIVE_SESSION_STATUSES } from "./conflicts";
@@ -25,8 +28,14 @@ export interface PendingStart {
   workspace: WorkspaceRequest;
 }
 
-/** Start metadata as stored: the public `SessionStartMeta` plus a pending start. */
-export type StoredStartMeta = SessionStartMeta & { pending?: PendingStart | null };
+/**
+ * Start metadata as stored: the public `SessionStartMeta` plus a pending start, and the PR
+ * feedback already sent per PR number (`PrFeedbackService`).
+ */
+export type StoredStartMeta = SessionStartMeta & {
+  pending?: PendingStart | null;
+  prFeedback?: Record<string, { rounds: number; keys: string[] }>;
+};
 
 /** Session rows and transcript reads. Every session change goes through the event log. */
 export class SessionRepo {
@@ -168,6 +177,63 @@ export class SessionRepo {
         }),
       ),
     ];
+  }
+
+  /**
+   * Close what a runner that went away without a word (crash, kill, power loss) left open in a
+   * session it no longer hosts (§4.2). Turns still `running` end as interrupted by a restart,
+   * which cancels their approvals and provider questions and dismisses their inbox items; any
+   * other provider request still open is cancelled too, so none of them can keep the session
+   * `waiting`. CodeDen's deferred `ask_user` questions outlive their turn and stay open.
+   * Returns how many turns and requests it closed.
+   */
+  closeOrphanedTurns(sessionId: string): number {
+    const running = this.db
+      .select()
+      .from(turns)
+      .where(and(eq(turns.sessionId, sessionId), eq(turns.status, "running")))
+      .orderBy(asc(turns.startedAt))
+      .all();
+    const ended = new Set(running.map((t) => t.id));
+    const requests = this.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          eq(items.sessionId, sessionId),
+          inArray(items.kind, ["approval_request", "user_question"]),
+          eq(items.status, "in_progress"),
+        ),
+      )
+      .all()
+      .map(rowToItemRecord)
+      .filter((r) => !ended.has(r.turnId))
+      .filter((r) => !(r.item.kind === "user_question" && r.item.deferred));
+    const root = this.find(sessionId)?.session.rootThreadId;
+    const isRoot = (t: { threadId: string }) => Number(t.threadId === root);
+    const events: NewEvent[] = [
+      ...requests.map((r) =>
+        agentEventToNewEvent(sessionId, {
+          type: "item.completed",
+          threadId: r.threadId,
+          turnId: r.turnId,
+          item: { ...r.item, status: "cancelled" } as Item,
+        }),
+      ),
+      // Child threads first, so the root turn ends last and sets the session's status.
+      ...running
+        .sort((a, b) => isRoot(a) - isRoot(b))
+        .map((t) =>
+          agentEventToNewEvent(sessionId, {
+            type: "turn.interrupted",
+            threadId: t.threadId,
+            turnId: t.id,
+            reason: "runner_restart",
+          }),
+        ),
+    ];
+    if (events.length > 0) this.store.append(events);
+    return events.length;
   }
 
   item(sessionId: string, itemId: string): ItemRecord | undefined {
