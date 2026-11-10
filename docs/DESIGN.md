@@ -46,7 +46,6 @@ Installed with `npx codeden`, or as the desktop app (§17). Open source under th
 | Agent ↔ app | One internal **MCP server** (Streamable HTTP) with **role-scoped tokens** (orchestrator, PM, agent) |
 | Process model | **Server and runner are separate processes** from day one (§4) |
 | Terminal | node-pty in the runner, xterm.js in the UI |
-| Browser | Chromium driven through CDP (playwright-core) in the runner, streamed into the UI. Uses the installed Edge or Chrome when present |
 | Default autonomy | **Auto, risky actions ask** (§11.2). Overridable per project and per session |
 | Image generation | A pluggable `generate_image` tool available to every agent. Engines: Codex (the default when Codex is logged in), Gemini image models, OpenAI Images. Chosen in Settings (§12.5) |
 | Utility model | One small, cheap model setting for side jobs: follow-up suggestions, read-aloud summaries, session titles (§7.4) |
@@ -654,7 +653,7 @@ The owner can open CodeDen from a phone or tablet on the same network or over th
 
 **Packaging and release.** electron-builder from a staged app (`dist/` plus the runtime dependencies installed with npm, no asar): NSIS per-user (no admin, Start menu and desktop shortcuts, uninstaller), dmg + zip for arm64 and x64 (the zip feeds the updater), AppImage + deb. Signing is optional through `CSC_LINK`/`CSC_KEY_PASSWORD` and notarization through `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`; without them builds are unsigned (SmartScreen and Gatekeeper warn). The release workflow builds all three on a version tag after the npm publish and attaches the installers and `latest*.yml` metadata to the same GitHub Release. The desktop version always equals the CLI version.
 
-**Phase 2.** The browser panel stays the CDP screencast (§12.2); an embedded Electron browser view behind the same panel is a later step. Browser speech recognition doesn't work inside Electron, so dictation there uses local Whisper (§11.3) or a cloud engine; the UI finds this out by feature detection.
+**Phase 2.** How the browser panel displays the browser is open. Today it is the CDP screencast (§12.2); an embedded native browser view in the desktop app is being considered, with the screencast still available where a native view isn't (a plain browser tab, phones). Browser speech recognition doesn't work inside Electron, so dictation there uses local Whisper (§11.3) or a cloud engine; the UI finds this out by feature detection.
 
 ## 18. Testing
 
