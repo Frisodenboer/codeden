@@ -268,6 +268,7 @@ defineTool({
 - **Situational-awareness tools** (§8.4) are core tools for the orchestrator and PMs and are always loaded.
 - **Initial tool set** (to be extended):
   - **Orchestrator:** `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `get_overview`, `list_inbox`.
+  - **Orchestrator and PM:** `schedule_wakeup`, `list_wakeups`, `cancel_wakeup` (a wake-up they schedule for themselves, stored as a `reminder` notice held back until it is due, so they follow up later without the user).
   - **PM:**
     - Sessions: `list_sessions`, `start_session`, `message_session`, `stop_session`, `answer_question` (questions from work it, the orchestrator or an automation started; approvals stay with the user).
     - Issues: `list_issues`, `get_issue`, `triage_issue` (labels, comment, accept/decline), `create_issue`.

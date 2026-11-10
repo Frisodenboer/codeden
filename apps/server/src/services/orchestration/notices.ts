@@ -8,7 +8,7 @@ import type {
   RawEventEnvelope,
   Session,
 } from "@codeden/contracts";
-import { and, desc, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { notices } from "../../db/schema-orchestration";
 import type { EventStore } from "../../events/store";
@@ -203,7 +203,10 @@ export class NoticeStore {
       .map((r) => r.notice);
   }
 
-  /** Undelivered notices for a target, oldest first. `projectId` null = the orchestrator. */
+  /**
+   * Undelivered notices for a target, oldest first. `projectId` null = the orchestrator. A
+   * scheduled wake-up counts once it is due.
+   */
   undelivered(target: NoticeTarget, projectId: string | null): Notice[] {
     return this.db
       .select()
@@ -213,10 +216,47 @@ export class NoticeStore {
           eq(notices.target, target),
           isNull(notices.deliveredAt),
           projectId === null ? undefined : eq(notices.projectId, projectId),
+          or(isNull(notices.notBefore), lte(notices.notBefore, new Date().toISOString())),
         ),
       )
       .orderBy(notices.createdAt)
       .limit(50)
+      .all()
+      .map((r) => r.notice);
+  }
+
+  /** A target's scheduled wake-ups still to deliver (due or not), soonest first. */
+  scheduled(target: NoticeTarget, projectId: string | null): Notice[] {
+    return this.db
+      .select()
+      .from(notices)
+      .where(
+        and(
+          eq(notices.type, "reminder"),
+          eq(notices.target, target),
+          isNull(notices.deliveredAt),
+          projectId === null ? isNull(notices.projectId) : eq(notices.projectId, projectId),
+        ),
+      )
+      .orderBy(asc(notices.notBefore))
+      .all()
+      .map((r) => r.notice);
+  }
+
+  /** Undelivered notices held back until a time: the due ones, or the soonest still ahead. */
+  heldBack(due: boolean): Notice[] {
+    const now = new Date().toISOString();
+    return this.db
+      .select()
+      .from(notices)
+      .where(
+        and(
+          isNull(notices.deliveredAt),
+          due ? lte(notices.notBefore, now) : gt(notices.notBefore, now),
+        ),
+      )
+      .orderBy(asc(notices.notBefore))
+      .limit(due ? 200 : 1)
       .all()
       .map((r) => r.notice);
   }

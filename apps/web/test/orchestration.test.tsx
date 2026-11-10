@@ -202,6 +202,24 @@ describe("notice cards", () => {
       "/sessions/orch1",
     );
   });
+
+  it("shows a wake-up the PM scheduled, with its note", async () => {
+    const reminder: Notice = {
+      id: "reminder:1",
+      type: "reminder",
+      projectId: null,
+      target: "pm",
+      sessionId: null,
+      title: "Wake-up you scheduled",
+      createdAt: ts,
+      deliveredAt: ts,
+      notBefore: ts,
+      data: { note: "Check whether the audit finished", requestedBy: "pm1" },
+    };
+    renderWithClient(<NoticeBatchCard notices={[reminder]} />, undefined, { withRouter: true });
+    expect(await screen.findByText("Wake-up")).toBeTruthy();
+    expect(screen.getByText("Check whether the audit finished")).toBeTruthy();
+  });
 });
 
 describe("http orchestration api", () => {

@@ -118,6 +118,9 @@ describe("CodeDen MCP endpoint", () => {
       "run_automation",
       "create_automation",
       "update_automation",
+      "schedule_wakeup",
+      "list_wakeups",
+      "cancel_wakeup",
     ]);
     await pm.close();
   });

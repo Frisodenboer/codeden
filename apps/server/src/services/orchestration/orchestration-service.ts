@@ -39,6 +39,7 @@ import {
   UnavailableAutomationPort,
   UnavailableGithubPort,
 } from "./ports";
+import { Reminders } from "./reminders";
 import { type OrchestrationRole, RoleSessions } from "./role-sessions";
 import { type WakeResult, WakeScheduler, type WakeSchedulerOptions } from "./wake-scheduler";
 
@@ -48,6 +49,8 @@ export interface OrchestrationOptions {
   askTimeoutMs?: number;
   /** Waits before waking a role session again after a failed turn (`NoticeDelivery`). */
   failedTurnRetryMs?: number[];
+  /** Shortest `schedule_wakeup` wait (default 1 minute). */
+  wakeupMinDelayMs?: number;
 }
 
 export interface OrchestrationDeps {
@@ -83,6 +86,7 @@ export class OrchestrationService {
   readonly automation: AutomationPort;
   readonly wakes: WakeScheduler;
   readonly loops: LoopGuard;
+  readonly reminders: Reminders;
   private readonly cards: NoticeCards;
   private readonly delivery: NoticeDelivery;
   private unsubscribe: (() => void) | undefined;
@@ -140,6 +144,8 @@ export class OrchestrationService {
       retryDelaysMs: deps.options?.failedTurnRetryMs,
       log: deps.log,
     });
+    const minDelayMs = deps.options?.wakeupMinDelayMs;
+    this.reminders = new Reminders({ notices: this.notices, wakes: this.wakes, minDelayMs });
   }
 
   start(): void {
@@ -150,6 +156,7 @@ export class OrchestrationService {
       return this.delivery.decorate(session, input);
     });
     this.delivery.rearm();
+    this.reminders.start();
   }
 
   stop(): void {
@@ -157,6 +164,7 @@ export class OrchestrationService {
     this.wakes.dispose();
     this.loops.dispose();
     this.delivery.dispose();
+    this.reminders.dispose();
   }
 
   // ---------------------------------------------------------------- digest

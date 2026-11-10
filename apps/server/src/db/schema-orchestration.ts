@@ -19,6 +19,8 @@ export const notices = sqliteTable(
     notice: json<Notice>("notice").notNull(),
     createdAt: text("created_at").notNull(),
     deliveredAt: text("delivered_at"),
+    /** Not delivered before this time (a scheduled wake-up); null: at once. */
+    notBefore: text("not_before"),
   },
   (t) => [
     index("notices_target").on(t.target, t.projectId, t.deliveredAt),

@@ -265,6 +265,8 @@ function noticeDetail(n: Notice): string {
     case "orchestrator.message":
       // A held-back message is the task itself: deliver all of it, as a direct message would.
       return ` · ${quote(n.data.text, Number.POSITIVE_INFINITY)}`;
+    case "reminder":
+      return ` · ${quote(n.data.note, 2000)} (scheduled for ${n.notBefore ?? n.createdAt})`;
     case "factory.update":
       return ` · ${n.data.event}\n${quote(n.data.text, 4000)}`;
   }

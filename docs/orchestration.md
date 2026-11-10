@@ -95,11 +95,11 @@ Agents see only the tools for their role; everything else isn't listed at all. T
 
 | Role | Tools |
 |---|---|
-| Orchestrator | `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox` |
+| Orchestrator | `get_overview`, `list_projects`, `create_project`, `update_project`, `message_pm`, `ask_pm`, `list_inbox`, `schedule_wakeup`, `list_wakeups`, `cancel_wakeup` |
 | PM: sessions and status | `get_project_status`, `list_sessions`, `get_session`, `start_session`, `message_session`, `stop_session`, `answer_question` |
 | PM: automations | `list_automations`, `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation`, `resume_automation`, `cancel_queued_run` |
 | PM: issues and PRs | `list_issues`, `get_issue`, `triage_issue`, `create_issue`, `report_triage`, `comment_on_issue`, `get_pr_status` |
-| PM: other | `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `ask_user` |
+| PM: other | `message_orchestrator`, `read_project_notes`, `update_project_notes` (`.codeden/notes.md`), `ask_user`, `schedule_wakeup`, `list_wakeups`, `cancel_wakeup` |
 | Agent | `report_progress`, `ask_user`, `share_to_chat`, `suggest_followups`, `finish`, `create_pull_request`, `attach_evidence`, `comment_on_issue`, `get_pr_status`, the `browser_*` tools |
 | Everyone | `generate_image` (when an image engine is available) |
 
@@ -113,6 +113,7 @@ Factory projects add a few more (see [Autonomy and the dark factory](autonomy-an
 - **`message_orchestrator`** with `informational: true` never wakes the orchestrator; it shows in its next digest.
 - **`ask_user`** (agent or PM → you) puts a question card in the transcript and the inbox. The tool waits up to 4 minutes; if you haven't answered, the agent is told to finish what it can, and your later answer is sent to the session as a new message. This works the same on every provider.
 - **`answer_question`** (PM → agent): a question from work the PM, the orchestrator or an automation started wakes the PM first. When the brief, its notes or the vision settle it, the PM answers it; the agent carries on and the inbox item closes as answered by the PM. Approvals, and questions from sessions you started, always wait for you.
+- **`schedule_wakeup`** (orchestrator or PM → itself): wake me in N minutes, or at a time up to 7 days ahead, with a note. When it's due, CodeDen wakes them with the note and the usual status digest, so they can check on work or try again later without you prompting them. Wake-ups survive restarts; `list_wakeups` and `cancel_wakeup` manage them (at most 20 pending each).
 - **`start_session` with `reportTo: "orchestrator"`** (PM): for work the orchestrator passed on. When the session finishes (calls `finish`) or fails, the orchestrator is woken with the result too, so it can tell you.
 
 ## The inbox

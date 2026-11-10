@@ -30,6 +30,7 @@ export const NoticeType = z.enum([
   "pm.message",
   "orchestrator.message",
   "factory.update",
+  "reminder",
 ]);
 export type NoticeType = z.infer<typeof NoticeType>;
 
@@ -49,6 +50,11 @@ const noticeBase = {
    * next turn. Absent on notices stored before it was recorded.
    */
   wake: z.boolean().optional(),
+  /**
+   * Not delivered before this time: a wake-up the PM or the orchestrator scheduled for itself
+   * (`schedule_wakeup`). Absent or null: deliverable at once.
+   */
+  notBefore: Timestamp.nullable().optional(),
 };
 
 /** The work a session notice is about. */
@@ -195,6 +201,20 @@ export const Notice = z.discriminatedUnion("type", [
       /** Instructions (for the PM) or a summary (for the orchestrator). */
       text: z.string(),
       itemIds: z.array(Id).default([]),
+    }),
+  }),
+  /**
+   * A wake-up the PM or the orchestrator scheduled for itself (`schedule_wakeup`), due at
+   * `notBefore`: it wakes them then with their note, so they follow up without the user.
+   */
+  z.object({
+    ...noticeBase,
+    type: z.literal("reminder"),
+    data: z.object({
+      /** What to do when it fires, as they wrote it. */
+      note: z.string(),
+      /** The role session that scheduled it. */
+      requestedBy: Id.nullable(),
     }),
   }),
 ]);

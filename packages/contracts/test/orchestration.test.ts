@@ -75,6 +75,24 @@ describe("orchestration contracts (§8)", () => {
     expect(() => Notice.parse({ ...notice, type: "session.failed" })).toThrow();
   });
 
+  it("round-trips a scheduled wake-up (§8.2)", () => {
+    const reminder: Notice = {
+      id: "reminder:1",
+      type: "reminder",
+      projectId: "p1",
+      target: "pm",
+      sessionId: null,
+      title: "Wake-up you scheduled",
+      createdAt: ts,
+      deliveredAt: null,
+      wake: true,
+      notBefore: "2026-11-10T12:00:00.000Z",
+      data: { note: "Check whether the audit finished", requestedBy: "pm-1" },
+    };
+    expect(Notice.parse(reminder)).toEqual(reminder);
+    expect(() => Notice.parse({ ...reminder, notBefore: "tomorrow" })).toThrow();
+  });
+
   it("round-trips the GitHub notices (§8.2, §9)", () => {
     const base = { projectId: "p1", target: "pm", createdAt: ts, deliveredAt: null } as const;
     const pr = { number: 7, url: "https://github.com/o/r/pull/7", state: "open" } as const;

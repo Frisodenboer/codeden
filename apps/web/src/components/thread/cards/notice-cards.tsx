@@ -7,6 +7,7 @@ import {
 } from "@codeden/contracts";
 import { Link } from "@tanstack/react-router";
 import {
+  AlarmClock,
   ArrowUpRight,
   CheckCircle2,
   CircleDot,
@@ -58,6 +59,7 @@ const look: Record<NoticeType, { icon: LucideIcon; tone: string; label: string }
     tone: "text-primary",
     label: "From the orchestrator",
   },
+  reminder: { icon: AlarmClock, tone: "text-primary", label: "Wake-up" },
 };
 
 /** One line of detail under the title, specific to the notice type. */
@@ -86,6 +88,8 @@ function detail(n: Notice): string | null {
     case "pm.message":
     case "orchestrator.message":
       return n.data.text;
+    case "reminder":
+      return n.data.note;
     default:
       return null;
   }
