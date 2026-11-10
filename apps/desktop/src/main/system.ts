@@ -52,7 +52,7 @@ export function openedAtLogin(): boolean {
 
 /**
  * Whether the macOS app carries a Developer ID signature (required for updates there). An
- * unsigned or ad-hoc signed app (a local or unsigned CI build) can't update itself.
+ * unsigned or ad-hoc signed app (any build without a Developer ID) can't update itself.
  */
 export function macSigned(appPath: string): Promise<boolean> {
   if (process.platform !== "darwin") return Promise.resolve(false);
