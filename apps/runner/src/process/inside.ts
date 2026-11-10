@@ -147,6 +147,92 @@ export function processesToEnd(opts: SelectOptions): number[] {
   return opts.rows
     .filter((r) => r.pid > 0 && !safe.has(r.pid))
     .filter((r) => opts.allowed.has(r.pid) && !opts.spare?.has(r.pid))
+    .filter((r) => !isUserApp(r, opts.dir, opts.windows))
     .filter((r) => runsInside(opts.dir, r, opts.windows))
     .map((r) => r.pid);
+}
+
+/**
+ * Apps a person works in: editors, IDEs, terminals and file managers. One may have a file of
+ * the worktree open (and look orphaned once its launcher exits), but ending it would close the
+ * user's other windows and lose unsaved work, so it is never chosen, whoever started it.
+ */
+const USER_APPS = new Set([
+  "code",
+  "code - insiders",
+  "codium",
+  "cursor",
+  "windsurf",
+  "zed",
+  "fleet",
+  "sublime_text",
+  "subl",
+  "notepad",
+  "notepad++",
+  "devenv",
+  "idea",
+  "idea64",
+  "webstorm",
+  "webstorm64",
+  "pycharm",
+  "pycharm64",
+  "rider",
+  "rider64",
+  "goland",
+  "goland64",
+  "clion",
+  "clion64",
+  "phpstorm",
+  "phpstorm64",
+  "rubymine",
+  "rubymine64",
+  "studio",
+  "studio64",
+  "emacs",
+  "vim",
+  "gvim",
+  "nvim",
+  "nvim-qt",
+  "nano",
+  "explorer",
+  "windowsterminal",
+  "wt",
+  "alacritty",
+  "wezterm",
+  "wezterm-gui",
+  "kitty",
+  "ghostty",
+  "warp",
+  "iterm2",
+  "terminal",
+  "gnome-terminal-server",
+  "konsole",
+  "xterm",
+  "tmux",
+  "screen",
+]);
+
+/** The program a process runs (its executable, else the command line's first word). */
+function programPath(row: ProcessRow): string | null {
+  if (row.exe) return row.exe;
+  const line = row.commandLine?.trim();
+  if (!line) return null;
+  return line.startsWith('"')
+    ? line.slice(1, line.indexOf('"', 1))
+    : (line.split(/\s+/)[0] ?? null);
+}
+
+/** Whether `row` is an app a person works in (see `USER_APPS`), outside the worktree. */
+export function isUserApp(row: ProcessRow, dir: string, windows: boolean): boolean {
+  const path = programPath(row);
+  if (!path || pathIsInside(dir, path, windows)) return false;
+  // A macOS app bundle (`Foo.app/Contents/MacOS/Foo`), such as an editor built on Electron.
+  if (/\.app\/Contents\/MacOS\//.test(path)) return true;
+  const name = path
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop()
+    ?.toLowerCase()
+    .replace(/\.(exe|app)$/, "");
+  return name !== undefined && USER_APPS.has(name);
 }

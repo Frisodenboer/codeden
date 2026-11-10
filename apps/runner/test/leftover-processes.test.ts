@@ -108,7 +108,42 @@ describe("choosing which processes to end", () => {
       spare: new Set([41]),
     });
     // 19 (the CLI that started the server) names a file inside, but ending it would end CodeDen.
-    expect(ended.sort((a, b) => a - b)).toEqual([6, 8, 31, 50, 60]);
+    // 6 is the user's editor with a file of the worktree open: never ended.
+    expect(ended.sort((a, b) => a - b)).toEqual([8, 31, 50, 60]);
+  });
+
+  it("never ends an editor, IDE, file manager or terminal, even one that looks orphaned", () => {
+    // Started after the runner, launcher gone: they look like an agent's leftovers.
+    const later = (pid: number, extra: Partial<ProcessRow>) =>
+      row(pid, 96, { startedAt: 9000, ...extra });
+    const apps: ProcessRow[] = [
+      row(RUNNER, 99, { startedAt: 1500 }),
+      later(80, {
+        exe: "C:\\Program Files\\Microsoft VS Code\\Code.exe",
+        commandLine: `Code.exe ${WT}\\src\\a.ts`,
+      }),
+      later(81, {
+        commandLine: `"C:\\Users\\me\\AppData\\Local\\cursor\\Cursor.exe" ${WT}\\README.md`,
+      }),
+      later(82, {
+        exe: "/Applications/Visual Studio Code.app/Contents/MacOS/Electron",
+        commandLine: `Electron ${WT}/src/a.ts`,
+      }),
+      later(83, { exe: "C:\\Windows\\explorer.exe", commandLine: `explorer.exe ${WT}\\dist` }),
+      // An Electron app the agent built and runs from inside the worktree is still ended.
+      later(84, { exe: `${WT}\\node_modules\\electron\\dist\\electron.exe` }),
+      later(85, { commandLine: `node ${WT}\\node_modules\\vite\\bin\\vite.js` }),
+    ];
+    const allowed = startedByAgents(apps, RUNNER, 1500);
+    expect([...allowed].sort((a, b) => a - b)).toEqual([80, 81, 82, 83, 84, 85]);
+    const ended = processesToEnd({
+      dir: WT,
+      rows: apps,
+      windows: true,
+      protect: [RUNNER],
+      allowed,
+    });
+    expect(ended.sort((a, b) => a - b)).toEqual([84, 85]);
   });
 });
 
