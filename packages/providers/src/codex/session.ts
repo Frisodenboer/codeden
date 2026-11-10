@@ -349,6 +349,8 @@ export class CodexSession implements ProviderSession {
     this.mapper.endTurn({
       type: "failed",
       code: "provider_exited",
+      // The next message starts app-server again and resumes the thread.
+      kind: "transient",
       message: `codex app-server exited (code ${code ?? "unknown"})`,
       ...(stderr ? { detail: stderr.slice(-2000) } : {}),
     });

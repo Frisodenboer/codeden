@@ -250,6 +250,12 @@ export const Settings = z.object({
        * changes or it gets merge conflicts (once per head commit, at most a few rounds per PR).
        */
       prFeedback: z.boolean().default(true),
+      /**
+       * Continue an agent session by itself after a turn fails for a passing reason: an
+       * overloaded API or dropped connection (after 20 s, 90 s and 5 min, then it gives up) or
+       * a usage limit (a minute after it resets). Off: such a turn fails the session as before.
+       */
+      autoRetry: z.boolean().default(true),
     })
     .prefault({}),
   /** Master switch; individual automations are still off by default (§10). */

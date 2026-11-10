@@ -1,5 +1,6 @@
-import type { AgentEvent, Item, ItemOf, Usage } from "@codeden/contracts";
+import type { AgentEvent, ErrorKind, Item, ItemOf, Usage } from "@codeden/contracts";
 import { count, unixToIso } from "../util/text";
+import { classifyCodexError, codexErrorCode, usageLimitResetsAt } from "./errors";
 import { mapThreadItem, startedItem } from "./items";
 import type { ServerNotification } from "./protocol";
 import type { RateLimitSnapshot, ThreadTokenUsage, Turn } from "./protocol/v2";
@@ -18,6 +19,8 @@ export class CodexEventMapper {
   private readonly open = new Map<string, Item>();
   private plan: { id: string; todos: Todo[] } | undefined;
   private readonly turnUsage = new CodexTurnUsage();
+  /** The latest rate-limit snapshot, for when a reached usage limit lifts. */
+  private limits: RateLimitSnapshot | undefined;
 
   constructor(
     sessionId: string,
@@ -91,6 +94,7 @@ export class CodexEventMapper {
         });
         return;
       case "account/rateLimits/updated":
+        this.limits = n.params.rateLimits;
         this.emit({
           type: "usage.updated",
           threadId: this.rootThreadId,
@@ -183,9 +187,18 @@ export class CodexEventMapper {
     if (turn.status === "completed") this.endTurn({ type: "completed" }, turn.id);
     else if (turn.status === "interrupted") this.endTurn({ type: "interrupted" }, turn.id);
     else {
-      const message = turn.error?.message ?? "Codex turn failed";
+      const info = turn.error?.codexErrorInfo;
+      const kind = classifyCodexError(info);
+      const retryAt = kind === "usage_limit" ? usageLimitResetsAt(this.limits) : undefined;
       this.endTurn(
-        { type: "failed", message, detail: turn.error?.additionalDetails ?? undefined },
+        {
+          type: "failed",
+          message: turn.error?.message ?? "Codex turn failed",
+          detail: turn.error?.additionalDetails ?? undefined,
+          code: codexErrorCode(info),
+          kind,
+          retryAt,
+        },
         turn.id,
       );
     }
@@ -196,7 +209,14 @@ export class CodexEventMapper {
     outcome:
       | { type: "completed" }
       | { type: "interrupted" }
-      | { type: "failed"; message: string; detail?: string; code?: string },
+      | {
+          type: "failed";
+          message: string;
+          detail?: string;
+          code?: string;
+          kind?: ErrorKind;
+          retryAt?: string;
+        },
     turnId = this.turnId,
   ): void {
     if (!turnId || turnId !== this.turnId) return;
@@ -236,6 +256,13 @@ export class CodexEventMapper {
           code: outcome.code ?? "turn_failed",
           message: outcome.message,
           ...(outcome.detail ? { detail: outcome.detail } : {}),
+          ...(outcome.kind
+            ? {
+                kind: outcome.kind,
+                retryable: outcome.kind === "transient" || outcome.kind === "usage_limit",
+              }
+            : {}),
+          ...(outcome.retryAt ? { retryAt: outcome.retryAt } : {}),
         },
       });
     }

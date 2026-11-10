@@ -316,6 +316,8 @@ export class ClaudeSession implements ProviderSession {
           code: "provider_exited",
           message,
           retryable: true,
+          // The next message starts Claude Code again and resumes the conversation.
+          kind: "transient",
           ...(this.stderrTail ? { detail: this.stderrTail } : {}),
         },
       });

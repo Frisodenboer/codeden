@@ -58,15 +58,24 @@ export function GeneralSettings() {
       </SettingsSection>
       <SettingsSection
         title="Agent sessions"
-        description="What CodeDen does by itself for sessions you start. Work started by a project manager, the orchestrator or an automation is followed up by the project manager."
+        description="What CodeDen does by itself to keep agent sessions going."
       >
         <SettingRow
           label="Pass on pull request feedback"
-          help="Tells the agent when its pull request's checks fail, a reviewer requests changes or it has merge conflicts. Once per commit, up to three times per pull request."
+          help="In sessions you start, tells the agent when its pull request's checks fail, a reviewer requests changes or it has merge conflicts. Once per commit, up to three times per pull request. The project manager follows up on work it started."
         >
           <Switch
             checked={settings.sessions.prFeedback}
             onCheckedChange={(v) => update({ sessions: { prFeedback: v } })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Retry after passing failures"
+          help="When a turn fails because the API was overloaded or the connection dropped, continue after 20 s, 90 s and 5 min; after a usage limit, continue once it resets. Applies to every agent session."
+        >
+          <Switch
+            checked={settings.sessions.autoRetry}
+            onCheckedChange={(v) => update({ sessions: { autoRetry: v } })}
           />
         </SettingRow>
       </SettingsSection>

@@ -105,8 +105,10 @@ describe("speechExcerpt", () => {
 
 describe("Settings.sessions", () => {
   it("turns PR feedback on by default, so settings files from before it existed still load", () => {
-    expect(defaultSettings().sessions).toEqual({ prFeedback: true });
+    expect(defaultSettings().sessions).toEqual({ prFeedback: true, autoRetry: true });
     expect(Settings.parse({ worktrees: { cleanup: false } }).sessions.prFeedback).toBe(true);
+    // Saved before automatic retries existed.
+    expect(Settings.parse({ sessions: { prFeedback: false } }).sessions.autoRetry).toBe(true);
   });
 
   it("round-trips the switch", () => {

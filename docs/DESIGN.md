@@ -205,6 +205,10 @@ A conversation is a **thread** made of **turns**, and each turn holds **items**.
   - `notice`, `error`
 - **Usage:** `usage.updated` (tokens, cost where reported, rate-limit state).
 
+**Failed turns are classified** by the adapter in `ErrorInfo.kind`: `transient` (overloaded or failing API, dropped connection, the CLI exiting), `usage_limit` (with `retryAt` when the provider says when the limit resets), `context_full`, `auth` or `fatal`. Adapters read their own signals (Claude: the turn's assistant error, `api_error_status`, `terminal_reason` and the last rejected rate-limit window; Codex: `codexErrorInfo` and the latest rate-limit snapshot); nothing outside them looks at a provider id.
+
+**Automatic retry** (`settings.sessions.autoRetry`, default on). When an agent session's root turn fails as `transient` or `usage_limit`, the session goes idle with no inbox item, and the server continues it with a `codeden` message ("Previous turn stopped (<reason>); continue where you left off."): after 20 s, 90 s and 5 min for transient failures (at most three in a row), or a minute after a usage limit resets. A notice in the failed turn says when. A user message or Stop cancels a pending retry; pending retries are derived from the turns table, so a restart keeps them. When the retries run out, there is no reset time, or the setting is off, the session fails as before (`failed`, a `run_failed` inbox item and the PM notices that follow). Orchestrator and PM sessions are never retried this way.
+
 **Subagents** are child threads with `parentThreadId` and `parentItemId`. The parent transcript shows a compact subagent card with live status. Clicking it opens the child thread in a side panel or as its own view, and approvals raised inside a subagent surface in the parent and in the inbox.
 
 ### 7.4 Utility model
