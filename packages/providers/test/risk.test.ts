@@ -301,6 +301,79 @@ describe("quoting, heredocs and here-strings", () => {
   });
 });
 
+describe("secrets: patterns, data and writes are not reads", () => {
+  it("lets agents search for env usage, mention .env and create env files in the worktree", () => {
+    for (const cmd of [
+      'grep -rn "process.env" src/',
+      "grep -rn process.env -A 3 src",
+      "rg 'import.meta.env' apps/web/src",
+      "rg -n -t ts process.env",
+      'grep -e ".env" -r docs',
+      "echo '.env' >> .gitignore",
+      "printf '\\n.env.local\\n' >> .gitignore",
+      "test -f .env && echo has-env",
+      "[ -f .env.local ] || cp .env.example .env.local",
+      "ls -la .env*",
+      "ls certs/*.pem",
+      "find . -name '*.pem'",
+      "cp .env.example .env",
+      "cp .env.example .env.local",
+      "echo PORT=3000 >> .env",
+      "tee .env < .env.example",
+      "openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 1 -nodes",
+    ]) {
+      expect(action(cmd), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "Select-String -Path src\\*.ts -Pattern 'process.env'",
+      'findstr /s /c:"process.env" *.ts',
+      "Copy-Item .env.example .env",
+      "Copy-Item -Path .env.example -Destination .env.local",
+      "Set-Content -Path .env -Value 'PORT=3000'",
+    ]) {
+      expect(action(cmd, win), cmd).toBeNull();
+    }
+  });
+
+  it("still asks for reading secrets, and for writing them outside the worktree", () => {
+    for (const cmd of [
+      "cat .env",
+      "grep KEY .env",
+      "grep -rn API_KEY .env.local",
+      "rg -e TOKEN .env.production",
+      "grep -f patterns.txt .env",
+      "grep -r --include=*.env KEY .",
+      "find . -name .env -exec cat {} ;",
+      "cp .env .env.backup",
+      "cp ~/.ssh/id_rsa ./id_rsa",
+      "dotenv -e .env.test -- vitest run",
+      "docker compose --env-file .env up -d",
+    ]) {
+      expect(action(cmd), cmd).toBe("secrets");
+    }
+    expect(action("Get-Content .env.local | Select-Object -First 3", win)).toBe("secrets");
+    expect(action("Select-String -Pattern KEY -Path .env", win)).toBe("secrets");
+    for (const cmd of [
+      "cp .env.example ../other/.env",
+      "cp .env.example ~/.env",
+      "echo TOKEN=x > /tmp/.env",
+      "cp config/.env.local /tmp/",
+      "openssl genrsa -out ~/keys/key.pem 2048",
+    ]) {
+      expect(action(cmd), cmd).toBe("outside_worktree");
+    }
+  });
+
+  it("reads code expressions as code, not file names", () => {
+    for (const p of ["process.env", "import.meta.env", "Deno.env", "Bun.env"]) {
+      expect(isSecretPath(p), p).toBe(false);
+    }
+    for (const p of ["prod.env", "local.env", "config/app.env"]) {
+      expect(isSecretPath(p), p).toBe(true);
+    }
+  });
+});
+
 describe("relative paths after cd", () => {
   it("resolves relative paths from where a cd moved", () => {
     expect(action("cd apps/web && cp a.ts ../../a.ts.bak")).toBeNull();
@@ -354,7 +427,7 @@ describe("the OS temp directory", () => {
     // A secrets file in temp asks as a write outside the worktree, so Full asks for it too.
     expect(classifyWrite("/tmp/.env", posix)).toMatchObject({ action: "outside_worktree" });
     expect(action("echo x > /tmp/.npmrc")).toBe("outside_worktree");
-    expect(classifyWrite(".env", posix)).toMatchObject({ action: "secrets" });
+    expect(classifyWrite(".env", posix)).toEqual({ risky: false });
     expect(action("cp .env.production /tmp/x.env")).toBe("outside_worktree");
     expect(action("cp .env.production /tmp/notes.txt")).toBe("secrets");
     expect(action("rm -rf /tmp")).toBe("outside_worktree");
@@ -460,7 +533,8 @@ describe("classifyWrite / classifyRead / classifyFetch", () => {
       action: "outside_worktree",
     });
     expect(classifyWrite("D:\\shared\\x.txt", win).risky).toBe(false);
-    expect(classifyWrite(".env", posix)).toMatchObject({ action: "secrets" });
+    expect(classifyWrite(".env", posix)).toEqual({ risky: false });
+    expect(classifyWrite("/work/other/.env", posix)).toMatchObject({ action: "outside_worktree" });
   });
 
   it("flags only secret reads", () => {

@@ -199,7 +199,11 @@ export function isSecretPath(target: string): boolean {
   if (base === ".env" || base.startsWith(".env.")) {
     return !SAFE_ENV_SUFFIXES.some((s) => base.endsWith(s));
   }
-  if (base.endsWith(".env") && base !== ".env") return !base.includes("example");
+  if (base.endsWith(".env") && base !== ".env") {
+    // `process.env`, `import.meta.env`, `Deno.env` and `Bun.env` are code, not files.
+    if (/^(process|deno|bun|(.+\.)?meta)\.env$/.test(base)) return false;
+    return !base.includes("example");
+  }
   if (SECRET_BASENAMES.has(base)) return true;
   if (SECRET_EXTENSIONS.some((ext) => base.endsWith(ext))) return true;
   return /(^|\/)\.(ssh|aws|gnupg|docker)\//i.test(normalized) && !base.endsWith(".pub");

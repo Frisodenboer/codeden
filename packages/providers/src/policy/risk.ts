@@ -11,6 +11,7 @@ import {
   resolveAgainst,
 } from "./paths";
 import { pipesDownloadIntoInterpreter } from "./remote-scripts";
+import { dumpsEnvironment, secretArgument, toolOutputs } from "./secrets";
 import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
 
 /**
@@ -116,16 +117,6 @@ function inlineScript(
   return undefined;
 }
 
-/**
- * The argument as a path, or undefined when it can't be one: inline code, multi-line text
- * or anything with shell or code punctuation (`selected={row.key`) is not a file name.
- */
-function asPath(arg: string): string | undefined {
-  const value = arg.replace(/^-+[a-z-]*=/i, "");
-  if (!value || /[\n\r{}()<>|;=`]/.test(value)) return undefined;
-  return value;
-}
-
 const DISCARD = /^(\/dev\/(null|stdout|stderr|tty)|nul|\$null)$/i;
 
 function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): RiskAssessment {
@@ -166,38 +157,19 @@ function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): Ri
   }
 
   const dest = copyDestination(bin, args);
-  if (dest) {
-    for (const target of copyTargets(bin, args, dest, ctx)) {
-      const write = classifyWrite(target, ctx);
-      if (write.risky) return write;
-    }
+  const outputs = toolOutputs(bin, args);
+  const written = dest ? [dest, ...outputs] : outputs;
+  for (const target of [...(dest ? copyTargets(bin, args, dest, ctx) : []), ...outputs]) {
+    const write = classifyWrite(target, ctx);
+    if (write.risky) return write;
   }
 
-  // Secrets: any argument naming a credentials file.
-  const secret = args.find((a) => {
-    const value = asPath(a);
-    return value !== undefined && isSecretPath(value);
-  });
+  // Secrets: any argument that reads a credentials file.
+  const secret = secretArgument(bin, args, written);
   if (secret) return risky("secrets", `Accesses the secrets file ${secret}`);
 
   if (dumpsEnvironment(bin, args)) return risky("secrets", "Dumps environment variables");
   return SAFE;
-}
-
-/** Variable names that may hold a credential. */
-const SECRET_VAR = /key|token|secret|passw|pwd|credential|auth|private|session|cookie/i;
-
-/**
- * True for `printenv` and `Get-ChildItem env:` listings. Printing named variables that don't
- * look like credentials (`printenv PATH`, `Get-ChildItem env:NODE_ENV`) is not a dump.
- */
-function dumpsEnvironment(bin: string, args: string[]): boolean {
-  const named = (names: string[]) =>
-    names.length > 0 && names.every((n) => /^\w+$/.test(n) && !SECRET_VAR.test(n));
-  if (bin === "printenv") return !named(args.filter((a) => !a.startsWith("-")));
-  if (!/^(get-childitem|gci|ls|dir)$/.test(bin)) return false;
-  const drives = args.filter((a) => /^env:/i.test(a));
-  return drives.length > 0 && !named(drives.map((a) => a.slice(4)));
 }
 
 const COPIES = ["cp", "mv", "copy", "move", "copy-item", "move-item", "xcopy", "robocopy"];
@@ -243,18 +215,18 @@ function copyTargets(bin: string, args: string[], dest: string, ctx: RiskContext
 }
 
 /**
- * Classify a file write/edit. The worktree, extra roots and OS temp are fine; secrets ask. A
- * secrets file in temp counts as outside the worktree, so Full autonomy (which only asks for
- * writes outside the worktree) still asks for it.
+ * Classify a file write/edit. The worktree, extra roots and OS temp are fine, secrets files in
+ * the worktree included: writing one (`cp .env.example .env`) reads nothing. A secrets file in
+ * temp counts as outside the worktree, so Full autonomy (which only asks for writes outside the
+ * worktree) still asks for it.
  */
 export function classifyWrite(target: string, ctx: RiskContext): RiskAssessment {
   if (!isWritable(target, ctx))
     return risky("outside_worktree", `Writes ${target}, outside the worktree`);
-  if (!isSecretPath(target)) return SAFE;
-  if (!isInWorkspace(target, ctx)) {
+  if (isSecretPath(target) && !isInWorkspace(target, ctx)) {
     return risky("outside_worktree", `Writes the secrets file ${target} in the temp directory`);
   }
-  return risky("secrets", `Writes the secrets file ${target}`);
+  return SAFE;
 }
 
 /** Classify a file read or search. Reads anywhere are fine except credential files. */

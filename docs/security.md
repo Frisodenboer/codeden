@@ -70,7 +70,7 @@ Under **Auto**, edits and ordinary commands inside the worktree run freely, and 
 - **force pushes**, deleting branches, tags or refs;
 - **global installs** (`npm -g`, `pip` outside a project, system package managers) and elevated commands (`sudo`);
 - **piping a downloaded script into a shell** or executing a download (`curl … | sh`, `irm … | iex`, `curl … | python3`). Piping a download into a program that only reads it as data, such as `node -e '…'`, `python -c '…'`, `jq` or a script file in the project, runs freely;
-- **secrets access**: reading or writing secrets files, dumping the environment (printing a named variable such as `printenv PATH` doesn't ask, unless its name looks like a credential);
+- **secrets access**: reading secrets files (`.env`, `.npmrc`, SSH keys, `*.pem`, ...) and dumping the environment. Searching for a pattern such as `process.env`, mentioning a file name (`echo .env >> .gitignore`), checking that one exists, listing them, and creating or editing one inside the worktree (`cp .env.example .env`) are not reads and run freely. Printing a named variable such as `printenv PATH` doesn't ask either, unless its name looks like a credential. Writing a secrets file outside the worktree, temp included, asks as a write outside the worktree, under Full too;
 - network fetches to hosts not on the allowed list, where a list applies.
 
 When you approve, you can approve once or for the rest of the session.

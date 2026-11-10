@@ -416,7 +416,7 @@ The UI calls these **Permissions** and shows them as a ladder, **Read-only → S
 - **Supervised:** every edit and command asks.
 - **Auto, risky actions ask** (default):
   - Edits and normal commands inside the worktree run freely.
-  - Risky actions go to the inbox: writes outside the worktree, force pushes, deleting branches, global installs, network access to unlisted hosts, and secrets access.
+  - Risky actions go to the inbox: writes outside the worktree, force pushes, deleting branches, global installs, network access to unlisted hosts, and secrets access (reading a credentials file or dumping the environment; search patterns, file names used as data and creating an env file inside the worktree are not access).
   - **Claude:** `acceptEdits` plus a `canUseTool` policy classifier.
   - **Codex:** workspace-write sandbox plus on-request approvals.
 - **Full:** no approvals inside the worktree.

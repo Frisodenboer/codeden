@@ -225,12 +225,13 @@ export function assessClaudeTool(name: string, input: Input, ctx: RiskContext): 
   }
   if (EDIT_TOOLS.has(name)) return classifyWrite(editPath(input), ctx);
   if (name === "Read") return classifyRead(str(input, "file_path") ?? "", ctx);
-  if (name === "Grep" || name === "Glob") {
-    const target = [str(input, "path"), str(input, "glob"), str(input, "pattern")].find(
-      (t) => t && /\.env|id_rsa|\.pem|\.npmrc/i.test(t),
-    );
+  // Grep reads the files under `path`; its `pattern` and `glob` are not files. Glob only lists
+  // names, so it never reads a secret.
+  if (name === "Grep") {
+    const target = str(input, "path");
     return target ? classifyRead(target, ctx) : { risky: false };
   }
+  if (name === "Glob") return { risky: false };
   if (name === "WebFetch") return classifyFetch(str(input, "url") ?? "", ctx);
   return { risky: false };
 }

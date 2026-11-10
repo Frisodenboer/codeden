@@ -46,6 +46,33 @@ describe("ClaudePolicy", () => {
     expect(p.gate("AskUserQuestion", {}).ask).toBe(true);
   });
 
+  it("auto: searching and listing are not secrets reads, and writing an env file in the worktree is fine", () => {
+    const p = new ClaudePolicy("auto", ctx);
+    expect(p.gate("Grep", { pattern: "process.env", path: "src" }).ask).toBe(false);
+    expect(p.gate("Grep", { pattern: "import\\.meta\\.env", glob: "*.ts" }).ask).toBe(false);
+    expect(p.gate("Grep", { pattern: "x", glob: "**/.env*" }).ask).toBe(false);
+    expect(p.gate("Glob", { pattern: "**/*.env" }).ask).toBe(false);
+    expect(p.gate("Write", { file_path: "/work/repo/.env" }).ask).toBe(false);
+    expect(p.gate("Edit", { file_path: ".env.local" }).ask).toBe(false);
+    expect(p.gate("Bash", { command: "cp .env.example .env" }).ask).toBe(false);
+    // Reading a secret still asks, wherever the agent finds it.
+    expect(p.gate("Grep", { pattern: "KEY", path: ".env" })).toMatchObject({
+      ask: true,
+      action: "secrets",
+    });
+    expect(p.gate("Grep", { pattern: "KEY", path: "/home/me/.npmrc" })).toMatchObject({
+      action: "secrets",
+    });
+    expect(p.gate("Read", { file_path: "/work/repo/.env.local" })).toMatchObject({
+      action: "secrets",
+    });
+    // Writing one outside the worktree asks too, under Full as well.
+    expect(p.gate("Write", { file_path: "/home/me/.npmrc" })).toMatchObject({
+      action: "outside_worktree",
+    });
+    expect(new ClaudePolicy("full", ctx).gate("Write", { file_path: "/tmp/.env" }).ask).toBe(true);
+  });
+
   it("full asks only for writes outside the worktree (temp counts as inside, but not its secrets)", () => {
     const p = new ClaudePolicy("full", ctx);
     expect(p.gate("Bash", { command: "git push --force" }).ask).toBe(false);
