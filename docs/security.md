@@ -69,7 +69,7 @@ Under **Auto**, edits and ordinary commands inside the worktree run freely, and 
 - writes or deletes **outside the worktree** (and outside the OS temp directory), and changes to global git config;
 - **force pushes**, deleting branches, tags or refs;
 - **global installs** (`npm -g`, `pip` outside a project, system package managers) and elevated commands (`sudo`);
-- **piping a downloaded script into a shell** or executing a download;
+- **piping a downloaded script into a shell** or executing a download (`curl … | sh`, `irm … | iex`, `curl … | python3`). Piping a download into a program that only reads it as data, such as `node -e '…'`, `python -c '…'`, `jq` or a script file in the project, runs freely;
 - **secrets access**: reading or writing secrets files, dumping the environment;
 - network fetches to hosts not on the allowed list, where a list applies.
 

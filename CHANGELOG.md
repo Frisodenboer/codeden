@@ -33,6 +33,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Re-check picks up PATH changes without a restart.** On Windows, **Re-check** (and the runner's provider re-detect) adds folders that were added to your user or system `Path` since CodeDen started, so the desktop app's long-running server and runner see newly installed tools. Agents and terminals started afterwards get the new PATH too.
 - **Sign in runs the copy CodeDen found.** The setup **Sign in** buttons for Claude Code, Codex and GitHub run that copy by its full path, quoted for the terminal's shell (`& 'C:\Users\you\.local\bin\claude.exe' auth login` in PowerShell), instead of whatever `claude` means in the terminal.
 - **"Could not read the login state" shows why.** The row's new **Details** show the underlying error (exit code and output).
+- **Fewer false "Pipes a downloaded script straight into a shell" approvals.** Under Auto and Full, commands that pipe a download into a program that only reads it as data, such as `curl … | node -e '…'`, `curl … | python -c '…'` or `curl … | node scripts/x.mjs`, no longer ask. A `|` inside quotes (`sed 's|a|b|'`) no longer counts as a pipe either. Downloads piped into an interpreter that runs them (`curl … | sh`, `curl … | python3`, `irm … | iex`) still ask.
 
 ## [0.4.4] - 2026-11-09
 
