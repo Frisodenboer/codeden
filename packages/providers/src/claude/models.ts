@@ -12,10 +12,14 @@ import type { ClaudeSdkModule } from "./sdk";
 /** Default limit for model discovery, CLI start-up included. */
 export const CLAUDE_MODEL_LIST_TIMEOUT_MS = 30_000;
 
-/** The SDK's model rows as CodeDen models. The first row is Claude Code's default. */
+/**
+ * The SDK's model rows as CodeDen models. The first row is Claude Code's default. An alias row
+ * (`opus`) keeps the full id it runs today (`resolvedModel`) as `resolvedId`.
+ */
 export function toModelInfos(models: readonly SdkModelInfo[]): ModelInfo[] {
   return models.map((m, i) => ({
     id: m.value,
+    ...(m.resolvedModel && m.resolvedModel !== m.value ? { resolvedId: m.resolvedModel } : {}),
     label: m.displayName || m.value,
     ...(m.description ? { description: m.description } : {}),
     efforts: (m.supportedEffortLevels ?? []) as ReasoningEffort[],

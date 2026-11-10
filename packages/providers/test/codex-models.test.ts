@@ -133,6 +133,18 @@ describe("CodexAdapter model discovery", () => {
     expect(fallback?.description).toMatch(/could not be loaded: no models/);
   });
 
+  it("skips a refresh with maxAgeMs while the list is recent", async () => {
+    process.env.FAKE_CODEX_MODEL_LIST = "paged";
+    const adapter = new CodexAdapter({ executable: fakeCodex });
+    const starts = () => requests().filter((r) => r.method === "initialize").length;
+    await adapter.refreshModels({ maxAgeMs: 60_000 });
+    expect(starts()).toBe(1);
+    await adapter.refreshModels({ maxAgeMs: 60_000 });
+    expect(starts()).toBe(1);
+    await adapter.refreshModels({ maxAgeMs: 0 });
+    expect(starts()).toBe(2);
+  });
+
   it("keeps the last real list when a later discovery fails", async () => {
     process.env.FAKE_CODEX_MODEL_LIST = "paged";
     const adapter = new CodexAdapter({ executable: fakeCodex, modelListTimeoutMs: 300 });
