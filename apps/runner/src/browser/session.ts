@@ -1,4 +1,10 @@
-import type { BrowserInput, BrowserTab, RunnerStream } from "@codeden/contracts";
+import type {
+  BrowserEngine,
+  BrowserHandoffTab,
+  BrowserInput,
+  BrowserTab,
+  RunnerStream,
+} from "@codeden/contracts";
 import type { BrowserContext, CDPSession, Page } from "playwright-core";
 import { CommandError } from "../errors";
 import { InputForwarder } from "./input";
@@ -21,7 +27,17 @@ export interface BrowserSessionOptions {
   stream: (data: RunnerStream) => void;
   /** Default timeout for navigation and agent actions. */
   timeoutMs: number;
+  /**
+   * `native`: the tabs are the desktop app's views behind its CDP relay (§17 Phase 2). Their
+   * size follows the desktop panel, so the session never emulates a viewport. Default `runner`.
+   */
+  engine?: BrowserEngine;
+  /** Native only: drop the relay connection (the views stay in the app). */
+  disconnect?: () => Promise<void>;
 }
+
+/** Native tabs that close within this long of each other count as one disconnect. */
+const NATIVE_CLOSE_SETTLE_MS = 100;
 
 interface TabState {
   tabId: string;
@@ -38,6 +54,7 @@ interface TabState {
 export class BrowserSession {
   readonly sessionId: string;
   readonly context: BrowserContext;
+  readonly engine: BrowserEngine;
   readonly logs = new BrowserLogs();
   readonly screencast: Screencast;
   private readonly tabs = new Map<string, TabState>();
@@ -49,8 +66,11 @@ export class BrowserSession {
   private nextTab = 1;
   private viewport: ViewportMetrics;
   private closed = false;
+  /** Native: the relay connection dropped; tabs closing now are not really closing. */
+  private disconnected = false;
   private lastPublished = "";
   readonly timeoutMs: number;
+  private readonly disconnect: (() => Promise<void>) | undefined;
 
   constructor(opts: BrowserSessionOptions) {
     this.sessionId = opts.sessionId;
@@ -58,14 +78,24 @@ export class BrowserSession {
     this.viewport = opts.viewport;
     this.stream = opts.stream;
     this.timeoutMs = opts.timeoutMs;
+    this.engine = opts.engine ?? "runner";
+    this.disconnect = opts.disconnect;
     this.context.setDefaultTimeout(opts.timeoutMs);
     this.context.setDefaultNavigationTimeout(opts.timeoutMs);
     this.screencast = new Screencast(opts.sessionId, (frame: FrameStream) => this.stream(frame));
-    void this.screencast.setFrameSize(framePixels(this.viewport), this.viewport);
+    // Native views have whatever size the desktop panel gives them: frames are only capped.
+    const frame = this.native ? framePixels(fitViewport({ width: 3840, height: 2400 })) : null;
+    void this.screencast.setFrameSize(frame ?? framePixels(this.viewport), this.viewport);
     // Pages opened by the page itself (popups, target=_blank) become tabs too.
     this.context.on("page", (page) => {
       if (!this.byPage.has(page)) this.register(page, false);
     });
+    // A relay announces the views the app already has (the runner reconnected).
+    for (const page of this.context.pages()) if (!this.byPage.has(page)) this.register(page, true);
+  }
+
+  private get native(): boolean {
+    return this.engine === "native";
   }
 
   get isClosed(): boolean {
@@ -151,6 +181,8 @@ export class BrowserSession {
     deviceScaleFactor?: number;
   }): Promise<ViewportMetrics> {
     this.assertOpen();
+    // A native view is as big as the desktop panel: report that instead of emulating.
+    if (this.native) return this.measure();
     const next = fitViewport(request);
     if (sameViewport(next, this.viewport)) return { ...next };
     this.viewport = next;
@@ -170,13 +202,42 @@ export class BrowserSession {
     await this.input.dispatch(await this.cdp(state), input, this.viewport);
   }
 
-  async close(): Promise<void> {
+  /**
+   * Close the session's browser. Native: with `closeTabs` (the browser was closed) the views
+   * close too; without it (the runner stops, or the session moves to the runner's Chromium) only
+   * the relay connection is dropped and the views stay in the app.
+   */
+  async close(opts: { closeTabs?: boolean } = {}): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     await this.screencast.dispose();
-    await this.context.close().catch(() => undefined);
+    if (this.native) {
+      if (opts.closeTabs) {
+        await Promise.all([...this.tabs.values()].map((t) => t.page.close().catch(() => {})));
+      }
+      await this.disconnect?.().catch(() => undefined);
+    } else {
+      await this.context.close().catch(() => undefined);
+    }
     this.tabs.clear();
     this.activeTabId = undefined;
+  }
+
+  /**
+   * Native: the relay connection dropped (the app quit or crashed). Returns the tabs as they
+   * were, for reopening them in the runner's Chromium; the session is closed.
+   */
+  markDisconnected(): BrowserHandoffTab[] {
+    const tabs = [...this.tabs.values()].map(({ tabId, page }) => ({
+      url: page.url(),
+      active: tabId === this.activeTabId,
+    }));
+    this.disconnected = true;
+    this.closed = true;
+    void this.screencast.dispose();
+    this.tabs.clear();
+    this.activeTabId = undefined;
+    return tabs;
   }
 
   private register(page: Page, quiet: boolean): TabState {
@@ -190,13 +251,19 @@ export class BrowserSession {
       if (frame === page.mainFrame()) void this.refreshTitle(page);
     });
     page.on("load", () => void this.refreshTitle(page));
-    page.on("close", () => void this.onClosed(state));
+    page.on("close", () => {
+      // A dropped relay closes every native tab at once: wait a moment to tell that apart
+      // from a tab really closing, so the tabs can still be reopened elsewhere.
+      if (this.native) setTimeout(() => void this.onClosed(state), NATIVE_CLOSE_SETTLE_MS);
+      else void this.onClosed(state);
+    });
     if (!this.activeTabId) void this.activate(tabId).catch(() => undefined);
     else if (!quiet) this.publishTabs();
     return state;
   }
 
   private async onClosed(state: TabState): Promise<void> {
+    if (this.disconnected) return;
     this.tabs.delete(state.tabId);
     this.titles.delete(state.tabId);
     if (this.closed) return;
@@ -218,6 +285,7 @@ export class BrowserSession {
 
   /** Emulate the session viewport on a tab (never throws: a closing tab just stays as is). */
   private async emulate(state: TabState): Promise<void> {
+    if (this.native) return;
     try {
       const cdp = await this.cdp(state);
       await cdp.send(
@@ -227,6 +295,21 @@ export class BrowserSession {
     } catch {
       // The tab closed under us.
     }
+  }
+
+  /** A native view's actual size (CSS pixels and scale), as the desktop panel laid it out. */
+  private async measure(): Promise<ViewportMetrics> {
+    try {
+      // A string: the runner has no DOM types, and the page computes it in its own realm.
+      const metrics = (await this.page().evaluate(
+        "[window.innerWidth, window.innerHeight, window.devicePixelRatio]",
+      )) as number[];
+      const [width, height, scale] = metrics;
+      if (width && height) this.viewport = { width, height, deviceScaleFactor: scale || 1 };
+    } catch {
+      // No tab yet, or it is navigating: keep the last size.
+    }
+    return { ...this.viewport };
   }
 
   private cdp(state: TabState): Promise<CDPSession> {
@@ -263,6 +346,6 @@ export class BrowserSession {
     const key = JSON.stringify(tabs);
     if (key === this.lastPublished) return;
     this.lastPublished = key;
-    this.stream({ kind: "browser.tabs", sessionId: this.sessionId, tabs });
+    this.stream({ kind: "browser.tabs", sessionId: this.sessionId, tabs, engine: this.engine });
   }
 }
