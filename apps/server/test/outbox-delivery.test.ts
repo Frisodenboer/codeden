@@ -162,3 +162,33 @@ describe("queued message delivery", () => {
     expect(texts()).toEqual(["from the orchestrator"]);
   });
 });
+
+describe("decorated input", () => {
+  it("tells the decorator whether the runner took the turn", async () => {
+    let away = true;
+    const { sessions, sent } = service({
+      status: "idle",
+      send: async () => {
+        if (away) throw unavailable();
+      },
+    });
+    const delivered = vi.fn();
+    const failed = vi.fn();
+    sessions.setInputDecorator((_session, raw) => ({
+      input: { ...raw, text: `digest\n\n${raw.text}` },
+      delivered,
+      failed,
+    }));
+    await expect(
+      sessions.send("s1", { input: input("hello"), whenBusy: "queue" }, "user"),
+    ).rejects.toMatchObject({ code: "runner_unavailable" });
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(delivered).not.toHaveBeenCalled();
+
+    away = false;
+    await sessions.send("s1", { input: input("hello"), whenBusy: "queue" }, "user");
+    expect(sent).toEqual(["digest\n\nhello"]);
+    expect(delivered).toHaveBeenCalledTimes(1);
+    expect(failed).toHaveBeenCalledTimes(1);
+  });
+});

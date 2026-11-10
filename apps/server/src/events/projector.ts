@@ -105,6 +105,7 @@ export function applyProjection(tx: Tx, e: EventEnvelope): NewEvent[] {
       return [];
     case "notice.created":
     case "notice.delivered":
+    case "notice.returned":
     case "conflict.created":
       applyOrchestrationProjection(tx, e);
       return [];

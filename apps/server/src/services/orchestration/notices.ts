@@ -236,4 +236,16 @@ export class NoticeStore {
       },
     ]);
   }
+
+  /** Back to undelivered: the turn that carried them failed, so the next wake carries them. */
+  markReturned(ids: string[]): void {
+    if (ids.length === 0) return;
+    this.store.append([
+      {
+        type: "notice.returned",
+        sessionId: null,
+        payload: { noticeIds: ids, at: new Date().toISOString() },
+      },
+    ]);
+  }
 }

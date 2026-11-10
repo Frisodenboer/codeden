@@ -22,6 +22,7 @@ import { projectDefaultProvider } from "../projects/project-config";
 import type { ProjectService } from "../projects/project-service";
 import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port";
 import { derivePurpose, deriveWorkKey, findConflicts } from "./conflicts";
+import type { InputDecorator } from "./input-decorator";
 import type { SessionLauncher } from "./launcher";
 import type { Outbox } from "./outbox";
 import { isTransientRunnerError, OutboxHolds } from "./outbox-holds";
@@ -43,12 +44,6 @@ export interface SessionServiceDeps {
   /** Wait before retrying a queued message the runner could not take (default 30 s). */
   outboxRetryMs?: number;
 }
-
-/**
- * Rewrites a turn's input at send time. `from` is who sent the input that starts the turn, so
- * orchestration can tell the turns the user started from automatic ones (the loop guard).
- */
-export type InputDecorator = (session: Session, input: UserInput, from: QueueSender) => UserInput;
 
 /** Preferred providers when the choice is `auto` (first ready one wins). */
 const AUTO_ORDER = ["claude", "codex"];
@@ -329,7 +324,18 @@ export class SessionService {
   // ---------------------------------------------------------------- internals
 
   private async sendNow(session: Session, raw: UserInput, from: QueueSender): Promise<void> {
-    const input = this.forRunner(session, this.inputDecorator?.(session, raw, from) ?? raw);
+    const decorated = this.inputDecorator?.(session, raw, from) ?? { input: raw };
+    try {
+      await this.deliver(session, this.forRunner(session, decorated.input));
+    } catch (error) {
+      decorated.failed?.();
+      throw error;
+    }
+    decorated.delivered?.();
+  }
+
+  /** Hand a turn's input to the runner, resuming the session when it no longer hosts it. */
+  private async deliver(session: Session, input: UserInput): Promise<void> {
     await applyPendingConfig(this.deps.repo, this.deps.runner, session);
     const previous = session.status;
     // Messaging an archived session brings it back.

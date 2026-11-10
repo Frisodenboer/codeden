@@ -1,10 +1,12 @@
-import type { AgentEventOf, Item, RawEventEnvelope } from "@codeden/contracts";
+import type { AgentEventOf, Item, RawEventEnvelope, Session } from "@codeden/contracts";
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { items } from "../../db/schema";
 
 /** The marker that ties a PM turn to an `ask_pm` call. */
 export const askMarker = (askId: string) => `(ask ${askId})`;
+
+const MARKER = /\(ask ([0-9a-f]{8})\)/g;
 
 export type AskOutcome = { status: "answered"; text: string } | { status: "pending" };
 
@@ -21,11 +23,24 @@ interface Waiter {
   createdAt: number;
 }
 
+/** An answer the `ask_pm` call didn't wait for; it reaches the orchestrator as a message. */
+export interface LateReply {
+  askId: string;
+  projectId: string;
+  pmSessionId: string;
+  text: string;
+}
+
 export interface PmAsksDeps {
   db: Db;
-  /** A reply that arrived after the `ask_pm` call gave up. */
-  onLateReply: (reply: { projectId: string; pmSessionId: string; text: string }) => void;
+  /** A session by id (to tell PMs from other sessions). */
+  session: (sessionId: string) => Session | undefined;
+  /** A reply that arrived after the `ask_pm` call gave up, or that no call waits for. */
+  onLateReply: (reply: LateReply) => void;
 }
+
+/** Asks answered recently (kept so a turn's answer is never sent twice). */
+const SETTLED_LIMIT = 500;
 
 const MAX_AGE_MS = 6 * 60 * 60_000;
 
@@ -34,10 +49,12 @@ const MAX_AGE_MS = 6 * 60 * 60_000;
  * PM's turn that handles it is found by the marker in its user message, and the final
  * assistant message of that turn is the answer (or a `message_orchestrator` call with
  * `replyTo`, whichever comes first). If the call times out, the answer still reaches the
- * orchestrator later, as a message.
+ * orchestrator later, as a message. So does the answer to an ask nothing tracks any more (a
+ * restart, an ask older than six hours): the marker in the turn's input is enough.
  */
 export class PmAsks {
   private readonly waiters = new Map<string, Waiter>();
+  private readonly settled = new Set<string>();
 
   constructor(private readonly deps: PmAsksDeps) {}
 
@@ -93,9 +110,12 @@ export class PmAsks {
 
   /** Follow committed events: find the answering turn, then its final message. */
   onEvents(events: RawEventEnvelope[]): void {
-    if (this.waiters.size === 0) return;
     for (const e of events) {
       if (!e.sessionId) continue;
+      if (e.type === "agent.turn.completed") {
+        this.answerUntracked(e.sessionId, (e.payload as AgentEventOf<"turn.completed">).turnId);
+      }
+      if (this.waiters.size === 0) continue;
       if (e.type === "agent.item.started" || e.type === "agent.item.completed") {
         const event = e.payload as AgentEventOf<"item.completed">;
         const item: Item = event.item;
@@ -135,11 +155,51 @@ export class PmAsks {
 
   private finish(waiter: Waiter, text: string): void {
     this.waiters.delete(waiter.askId);
+    this.settle(waiter.askId);
     if (waiter.resolve) waiter.resolve(text);
     else if (waiter.late) {
-      const reply = { projectId: waiter.projectId, pmSessionId: waiter.pmSessionId, text };
-      setImmediate(() => this.deps.onLateReply(reply));
+      const { askId, projectId, pmSessionId } = waiter;
+      setImmediate(() => this.deps.onLateReply({ askId, projectId, pmSessionId, text }));
     }
+  }
+
+  /**
+   * A PM's turn completed: answer the asks in its input that no waiter tracks (registered
+   * before a restart, or pruned). Tracked ones are answered by their waiter instead.
+   */
+  private answerUntracked(sessionId: string, turnId: string): void {
+    const session = this.deps.session(sessionId);
+    if (session?.role !== "pm" || !session.projectId) return;
+    const projectId = session.projectId;
+    const askIds = new Set<string>();
+    for (const row of this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          eq(items.sessionId, sessionId),
+          eq(items.turnId, turnId),
+          eq(items.kind, "user_message"),
+        ),
+      )
+      .all()) {
+      if (row.data.kind !== "user_message") continue;
+      for (const m of row.data.input.text.matchAll(MARKER)) if (m[1]) askIds.add(m[1]);
+    }
+    const untracked = [...askIds].filter((id) => !this.waiters.has(id) && !this.settled.has(id));
+    if (untracked.length === 0) return;
+    const text = this.finalMessage(sessionId, turnId) ?? "(The PM finished without a reply.)";
+    for (const askId of untracked) {
+      this.settle(askId);
+      setImmediate(() => this.deps.onLateReply({ askId, projectId, pmSessionId: sessionId, text }));
+    }
+  }
+
+  private settle(askId: string): void {
+    this.settled.add(askId);
+    if (this.settled.size <= SETTLED_LIMIT) return;
+    const oldest = this.settled.values().next().value;
+    if (oldest !== undefined) this.settled.delete(oldest);
   }
 
   private finalMessage(sessionId: string, turnId: string): string | null {

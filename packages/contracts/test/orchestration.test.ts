@@ -69,6 +69,9 @@ describe("orchestration contracts (§8)", () => {
       payload: { noticeIds: ["n1"], at: ts },
     };
     expect(EventEnvelope.parse(delivered)).toEqual(delivered);
+    const returned = { ...delivered, seq: 3, type: "notice.returned" };
+    expect(EventEnvelope.parse(returned)).toEqual(returned);
+    expect(Notice.parse({ ...notice, wake: false })).toEqual({ ...notice, wake: false });
     expect(() => Notice.parse({ ...notice, type: "session.failed" })).toThrow();
   });
 

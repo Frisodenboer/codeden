@@ -21,6 +21,13 @@ export class NoticeCards {
     this.pending.set(sessionId, [...(this.pending.get(sessionId) ?? []), ...notices]);
   }
 
+  /** Forget notices a turn was going to carry: its send failed, they wait for the next one. */
+  remove(sessionId: string, ids: string[]): void {
+    const left = (this.pending.get(sessionId) ?? []).filter((n) => !ids.includes(n.id));
+    if (left.length > 0) this.pending.set(sessionId, left);
+    else this.pending.delete(sessionId);
+  }
+
   /** Append the waiting cards to each role session whose turn just started. */
   attach(events: RawEventEnvelope[]): void {
     for (const e of events) {

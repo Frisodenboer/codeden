@@ -44,6 +44,11 @@ const noticeBase = {
   createdAt: Timestamp,
   /** Set when a wake delivered it to its target (or it was shown in a digest). */
   deliveredAt: Timestamp.nullable(),
+  /**
+   * Whether it wakes its target (§8.2); a routine notice only rides along with the target's
+   * next turn. Absent on notices stored before it was recorded.
+   */
+  wake: z.boolean().optional(),
 };
 
 /** The work a session notice is about. */

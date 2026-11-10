@@ -128,6 +128,11 @@ export const EventEnvelope = z.discriminatedUnion("type", [
   globalEvent("notice.created", z.object({ notice: Notice })),
   /** Notices delivered to their target (a wake, or shown in a digest). */
   globalEvent("notice.delivered", z.object({ noticeIds: z.array(Id), at: Timestamp })),
+  /**
+   * Delivered notices back to undelivered: the role session's turn that carried them failed, so
+   * the next wake carries them again (§8.2).
+   */
+  globalEvent("notice.returned", z.object({ noticeIds: z.array(Id), at: Timestamp })),
   /** A start request matched running work; persisted with its `conflict` inbox item (§8.4). */
   globalEvent("conflict.created", z.object({ conflict: ConflictRecord })),
   /** A runner terminal exited. */
