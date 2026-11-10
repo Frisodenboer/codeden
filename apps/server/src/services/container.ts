@@ -40,7 +40,7 @@ import { SessionService } from "./sessions/session-service";
 import { WorktreeCleanup, type WorktreeCleanupDeps } from "./sessions/worktree-cleanup";
 import { ClaudeSdkService } from "./setup/claude-sdk";
 import { SetupService } from "./setup/setup-service";
-import type { Locate } from "./setup/tool-lookup";
+import { execLocate, type Locate } from "./setup/tool-lookup";
 import { DesktopUpdateService } from "./updates/desktop";
 import { notesSources, updateRegistry } from "./updates/registry";
 import { type SelfUpdateHost, UpdateService, type Updates } from "./updates/service";
@@ -245,7 +245,8 @@ export function createServices(opts: ServicesOptions): AppServices {
   const setup = new SetupService({
     exec,
     settings: opts.settings,
-    locate: opts.locate,
+    // Tests that bring their own `exec` fake every CLI; the look-up goes through it too.
+    locate: opts.locate ?? (opts.exec ? execLocate(opts.exec) : undefined),
     refreshPath: opts.refreshPath,
     userHome,
     // After an install or a login is re-checked, the runner's model lists follow.

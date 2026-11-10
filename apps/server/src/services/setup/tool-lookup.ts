@@ -1,9 +1,22 @@
 import type { SetupCheck, SetupCommand } from "@codeden/contracts";
 import { brokenInstallMessage, type ExecutableLookup, shellCommandLine } from "@codeden/providers";
-import type { ExecResult } from "../exec";
+import type { Exec, ExecResult } from "../exec";
 
 /** Finds a working copy of a tool (PATH, then known install locations); injectable for tests. */
 export type Locate = (name: string) => Promise<ExecutableLookup>;
+
+/**
+ * A look-up through an `Exec` only (`<name> --version`): used when a server is given its own
+ * `exec` (tests with fake CLIs) and no `locate`, so no real tool is ever looked for or run.
+ */
+export function execLocate(exec: Exec): Locate {
+  return async (name) => {
+    const run = await exec(name, ["--version"], { timeoutMs: 10_000 });
+    if (run.notFound || run.code !== 0) return { version: null, broken: [] };
+    const version = /\d+\.\d+\.\d+(?:-[\w.]+)?/.exec(run.stdout)?.[0] ?? null;
+    return { command: { kind: "native", path: run.path ?? name }, version, broken: [] };
+  };
+}
 
 /** Tools whose sign-in runs in the setup terminal, with the arguments that sign them in. */
 export const LOGIN_COMMANDS = {

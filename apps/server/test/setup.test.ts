@@ -13,6 +13,7 @@ import {
   parseVersion,
 } from "../src/services/setup/parse";
 import { SetupService, type SetupServiceDeps } from "../src/services/setup/setup-service";
+import { execLocate } from "../src/services/setup/tool-lookup";
 import { SettingsStore } from "../src/settings-store";
 
 const NOW = Date.parse("2026-11-07T10:00:00.000Z");
@@ -283,6 +284,18 @@ describe("installed but broken, and the resolved sign-in command", () => {
       args: ["auth", "login"],
     });
     expect(setup.loginCommand("codex").command).toBe("& '/bin/codex' login");
+  });
+
+  it("looks tools up through an injected exec, so fake CLIs never reach real ones", async () => {
+    const calls: string[] = [];
+    const locate = execLocate(fakeExec(happy, calls));
+    expect(await locate("claude")).toEqual({
+      command: { kind: "native", path: "/bin/claude" },
+      version: "2.1.318",
+      broken: [],
+    });
+    expect(await locate("gh")).toEqual({ version: null, broken: [] });
+    expect(calls).toEqual(["claude --version", "gh --version"]);
   });
 
   it("picks up a PATH change on re-check, without a restart", async () => {
