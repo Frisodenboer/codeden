@@ -70,7 +70,7 @@ function completed(item: Request, response: RuntimeResponse): Request {
         ...item,
         status: response.decision === "deny" ? "declined" : "completed",
         decision: response.decision,
-        decidedBy: "user",
+        decidedBy: response.decidedBy ?? "user",
       };
     }
     return { ...item, status: "cancelled" };

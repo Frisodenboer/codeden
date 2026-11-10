@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AutonomyLevel, Id, ProviderId, ReasoningEffort, Role, Timestamp } from "./common";
-import { ApprovalDecision } from "./items";
+import { ApprovalDecider, ApprovalDecision } from "./items";
 
 /**
  * What a provider can do (§7.1). The UI and orchestration read these flags and never branch
@@ -190,6 +190,8 @@ export const RuntimeResponse = z.discriminatedUnion("kind", [
     decision: ApprovalDecision,
     /** Optional note passed to the agent (e.g. why it was denied). */
     message: z.string().optional(),
+    /** Who decided; default the user. CodeDen's own decisions are recorded as `policy`. */
+    decidedBy: ApprovalDecider.optional(),
   }),
   z.object({
     kind: z.literal("answer"),

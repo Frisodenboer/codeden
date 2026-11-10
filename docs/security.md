@@ -77,6 +77,8 @@ Under **Auto**, edits and ordinary commands inside the worktree run freely, and 
 
 When you approve, you can approve once or for the rest of the session.
 
+**Approvals nobody is there to answer are denied, never approved.** In a Dark factory project, the PM's and the factory's approvals are denied at once, with guidance to find a way that needs no approval or to flag it for you. Sessions started by an automation, a PM or the factory in other modes wait 30 minutes for you, then are denied the same way, so unattended work finishes instead of waiting forever. Sessions you start yourself wait for you. These denials are recorded as decided by CodeDen's policy.
+
 ## Credentials
 
 - **Provider logins** (Claude Code, Codex) stay with their CLIs. CodeDen runs your installed `claude` and `codex`, which use their own logins; it never implements a login and never sees your password.
