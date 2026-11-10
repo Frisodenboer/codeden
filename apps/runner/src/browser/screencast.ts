@@ -1,5 +1,6 @@
 import type { BrowserFrameMetadata, RunnerStream } from "@codeden/contracts";
 import type { CDPSession } from "playwright-core";
+import { normalizeFrameMetadata } from "./frame-metadata";
 import { jpegSize } from "./images";
 
 export interface ScreencastSettings {
@@ -62,8 +63,8 @@ export class Screencast {
   private readonly viewers = new Set<string>();
   private settings: ScreencastSettings = { ...DEFAULT_SCREENCAST };
   private frameSize = { ...DEFAULT_FRAME };
-  /** The page viewport in CSS pixels (metadata for still frames). */
-  private viewportCss = { ...DEFAULT_FRAME };
+  /** The page viewport: CSS pixels and scale (metadata for still and normalized frames). */
+  private viewport = { ...DEFAULT_FRAME, deviceScaleFactor: 1 };
   private target: Target | undefined;
   private tab: { tabId: string; cdp: CDPSession } | undefined;
   private lastFrame: FrameStream | undefined;
@@ -123,11 +124,25 @@ export class Screencast {
    */
   setFrameSize(
     size: { width: number; height: number },
-    viewportCss?: { width: number; height: number },
+    viewport?: { width: number; height: number; deviceScaleFactor?: number },
   ): Promise<void> {
     return this.serial(async () => {
-      if (viewportCss) this.viewportCss = { width: viewportCss.width, height: viewportCss.height };
-      if (size.width === this.frameSize.width && size.height === this.frameSize.height) return;
+      const before = this.viewport;
+      if (viewport) {
+        this.viewport = {
+          width: viewport.width,
+          height: viewport.height,
+          deviceScaleFactor: viewport.deviceScaleFactor ?? 1,
+        };
+      }
+      const sameViewport =
+        before.width === this.viewport.width &&
+        before.height === this.viewport.height &&
+        before.deviceScaleFactor === this.viewport.deviceScaleFactor;
+      const sameSize = size.width === this.frameSize.width && size.height === this.frameSize.height;
+      // Also restart when only the viewport changed (460 @2x and 920 @1x are both 920 px wide):
+      // a running screencast normalizes metadata against the viewport it started with.
+      if (sameSize && sameViewport) return;
       this.frameSize = { width: size.width, height: size.height };
       if (!this.target) return;
       await this.stopTarget();
@@ -182,6 +197,10 @@ export class Screencast {
     if (!tab) return;
     const { cdp, tabId } = tab;
     const interval = Math.round(1000 / this.settings.maxFps);
+    const params = this.startParams;
+    // What this screencast was started for, to normalize frame metadata (see frame-metadata.ts).
+    const viewport = { ...this.viewport };
+    const cap = { width: params.maxWidth as number, height: params.maxHeight as number };
     const onFrame = (event: ScreencastFrameEvent) => {
       const ack = () => {
         cdp.send("Page.screencastFrameAck", { sessionId: event.sessionId }).catch(() => undefined);
@@ -200,7 +219,7 @@ export class Screencast {
         data: event.data,
         width: size.width,
         height: size.height,
-        metadata: pickMetadata(event.metadata),
+        metadata: normalizeFrameMetadata(pickMetadata(event.metadata), size, viewport, cap),
       };
       this.lastFrame = frame;
       this.frames++;
@@ -214,7 +233,7 @@ export class Screencast {
     const target: Target = { tabId, cdp, onFrame, frames: 0 };
     cdp.on("Page.screencastFrame", onFrame);
     this.target = target;
-    const started = await cdp.send("Page.startScreencast", this.startParams as never).then(
+    const started = await cdp.send("Page.startScreencast", params as never).then(
       () => true,
       () => {
         // The tab closed under us; the session will retarget.
@@ -259,8 +278,8 @@ export class Screencast {
         width: size.width,
         height: size.height,
         metadata: {
-          deviceWidth: this.viewportCss.width,
-          deviceHeight: this.viewportCss.height,
+          deviceWidth: this.viewport.width,
+          deviceHeight: this.viewport.height,
           pageScaleFactor: view?.scale ?? 1,
           offsetTop: 0,
           scrollOffsetX: view?.pageX ?? 0,

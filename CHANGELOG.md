@@ -22,6 +22,7 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 - **Sessions on a full model id get their effort control back.** A session on, say, `claude-opus-5-5` (what Opus runs today) was shown as "isn't in the provider's list any more" with no effort levels. The picker now shows it as **Opus 5.5** with Opus's effort levels, and an id no entry covers still gets the default model's levels.
 - **A second viewer of a still page now sees it straight away.** It used to wait for the page to change before its first frame arrived.
 - **Scrolling in the browser panel is natural.** It now moves the page at the speed of your gesture, also for mice that scroll by lines.
+- **Clicks land in the right place in the browser panel on macOS** when its picture is scaled down (very large panels, or a viewer asking for smaller frames). macOS reported such frames at their reduced size, which put clicks at half the distance from the corner.
 
 ## [0.4.4] - 2026-11-09
 

@@ -68,6 +68,10 @@ stops); slow sockets skip frames server-side. Because Chromium only sends frames
 a still page could leave a viewer with nothing to draw: a new viewer gets the last frame, a
 (re)started screencast that sends nothing within 1 s gets a still from
 `Page.captureScreenshot`, and a panel that still has no frame after 3 s re-sends `watch`.
+Frame metadata is normalized to the page viewport (`frame-metadata.ts`): when frames are
+scaled below the viewport's device pixels (a viewer's cap, or the pixel budget), Chromium on
+macOS reports the scaled frame's size (frame pixels / scale) instead of the viewport, which
+would halve clicks mapped from such frames.
 
 **Input:** the panel maps pointer positions from where the frame is drawn (the whole box, or
 the letterboxed rectangle when fitted) into frame pixels and sends the frame's own viewport

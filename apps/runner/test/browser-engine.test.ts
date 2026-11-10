@@ -85,6 +85,12 @@ describe.skipIf(!hasBrowser)("browser engine (installed Edge/Chrome)", { timeout
       return frames.length > 0 ? frames : undefined;
     });
     expect(frame).toMatchObject({ mediaType: "image/jpeg", tabId: "t1" });
+    // The page is laid out at full size on every platform...
+    expect(await manager.get("s1").page().evaluate("[innerWidth, innerHeight]")).toEqual([
+      1280, 800,
+    ]);
+    // ...and the metadata says so, also on macOS, where Chromium reports frames capped to
+    // 640x400 as 640x400 and the runner normalizes them (frame-metadata.ts).
     expect(frame?.metadata).toMatchObject({ deviceWidth: 1280, deviceHeight: 800 });
     const size = jpegSize(Buffer.from(frame?.data ?? "", "base64"));
     expect(size).toEqual({ width: frame?.width, height: frame?.height });
