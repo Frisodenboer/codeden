@@ -166,6 +166,12 @@ export const SessionOptions = z.object({
   env: z.record(z.string(), z.string()).optional(),
   /** Extra directories the agent may read/write. */
   additionalDirectories: z.array(z.string()).default([]),
+  /**
+   * The branch this session owns: the branch of its own worktree, never the base branch. Under
+   * Auto the agent may force-push it with a lease (`git push --force-with-lease`) without an
+   * approval, for example after a rebase (§11.2).
+   */
+  ownBranch: z.string().min(1).optional(),
   /** Start in plan mode where supported. */
   planMode: z.boolean().default(false),
   /**

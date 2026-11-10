@@ -2,6 +2,7 @@ import { type GitHubRepo, GithubPr, githubPrId, type Session } from "@codeden/co
 import type { EventStore } from "../../events/store";
 import { badRequest, conflict, notFound } from "../errors";
 import { type RunnerPort, toServiceError } from "../runner-port";
+import { ownBranch } from "../sessions/own-branch";
 import type { SessionRepo } from "../sessions/repo";
 import { sessionWorkdir } from "../sessions/workdir";
 import type { GithubClient } from "./client";
@@ -60,6 +61,30 @@ export function pullRequestBody(text: string, issue: number | null, session: Ses
   return parts.filter(Boolean).join("\n\n");
 }
 
+/** git's answer when a push would rewrite the remote branch's history. */
+const NOT_FAST_FORWARD = /\((non-fast-forward|fetch first)\)|updates were rejected/i;
+
+/**
+ * Push the session's branch. When the session owns it (its own worktree's branch) and the push
+ * is rejected as not a fast-forward, as after a rebase, push again with a lease: that rewrites
+ * only the session's own work, and refuses if someone else pushed there since.
+ */
+async function pushBranch(
+  deps: PullRequestDeps,
+  session: Session,
+  cwd: string,
+  branch: string,
+): Promise<void> {
+  const push = { name: "git.push", cwd, branch, setUpstream: true } as const;
+  try {
+    await deps.runner.request(push, 5 * 60_000);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (ownBranch(session) !== branch || !NOT_FAST_FORWARD.test(message)) throw error;
+    await deps.runner.request({ ...push, forceWithLease: true }, 5 * 60_000);
+  }
+}
+
 /**
  * Push the session's branch through the runner and open (or update) its pull request (§8.2,
  * §9). The PR is projected right away (`pr.opened` / `pr.updated`) and linked to the session.
@@ -99,7 +124,7 @@ export async function createPullRequest(
         )
       ).commit;
     }
-    await deps.runner.request({ name: "git.push", cwd, branch, setUpstream: true }, 5 * 60_000);
+    await pushBranch(deps, session, cwd, branch);
   } catch (error) {
     throw toServiceError(error);
   }

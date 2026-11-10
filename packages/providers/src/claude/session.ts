@@ -83,6 +83,7 @@ export class ClaudeSession implements ProviderSession {
       {
         cwd: opts.cwd,
         extraRoots: opts.additionalDirectories,
+        ...(opts.ownBranch ? { ownBranch: opts.ownBranch } : {}),
         notesRoots:
           config.notesRoots ?? claudeNotesDirs({ cwd: opts.cwd, ...claudeHomes(opts.env) }),
       },

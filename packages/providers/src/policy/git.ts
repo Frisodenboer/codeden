@@ -1,42 +1,44 @@
 import { type RiskAssessment, risky, SAFE } from "./assessment";
 
-/** Git rules of the risk classifier (§11.2): force pushes, deleting refs, global config. */
-export function classifyGit(args: string[]): RiskAssessment {
-  // Skip global options like `-C dir` / `-c k=v`.
+/** What the git rules know about the session. */
+export interface GitContext {
+  /** The branch the session owns (SessionOptions.ownBranch). */
+  ownBranch?: string;
+  /** The branch checked out in the worktree, read when needed. */
+  currentBranch?: () => string | undefined;
+  /** True when the command runs in the session's worktree (not `cd`'d or `-C`'d elsewhere). */
+  inWorktree: boolean;
+}
+
+/**
+ * Git rules of the risk classifier (§11.2): force pushes, deleting refs, global config. `args`
+ * keep their case (`-D` is not `-d`, branch names are case-sensitive).
+ */
+export function classifyGit(
+  args: string[],
+  ctx: GitContext = { inWorktree: false },
+): RiskAssessment {
+  // Skip global options like `-C dir` / `-c k=v`; another directory is not the worktree.
   let i = 0;
-  while (i < args.length && args[i]?.startsWith("-"))
-    i += args[i] === "-c" || args[i] === "-C" ? 2 : 1;
-  const sub = args[i];
-  const rest = args.slice(i + 1);
-  if (sub === "push") {
-    if (
-      rest.some(
-        (a) =>
-          a === "--force" ||
-          a === "-f" ||
-          a.startsWith("--force-with-lease") ||
-          a === "--mirror" ||
-          /^-[a-z]*f[a-z]*$/.test(a),
-      )
-    ) {
-      return risky("git_destructive", "Force-pushes, which can overwrite remote history");
+  let elsewhere = false;
+  while (i < args.length && args[i]?.startsWith("-")) {
+    const option = args[i] as string;
+    if (option === "-C" || option.startsWith("--git-dir") || option.startsWith("--work-tree")) {
+      elsewhere = true;
     }
-    if (rest.some((a) => a.startsWith("+") && a.length > 1)) {
-      return risky("git_destructive", "Force-pushes a refspec");
-    }
-    if (
-      rest.includes("--delete") ||
-      rest.includes("-d") ||
-      rest.some((a) => a.startsWith(":") && a.length > 1)
-    ) {
-      return risky("git_destructive", "Deletes a remote branch");
-    }
+    i +=
+      option === "-c" || option === "-C" || option === "--git-dir" || option === "--work-tree"
+        ? 2
+        : 1;
   }
-  if (
-    sub === "branch" &&
-    rest.some((a) => a === "-d" || a === "-D" || a === "--delete" || /^-[a-z]*d/i.test(a))
-  ) {
-    return risky("git_destructive", "Deletes a branch");
+  const sub = args[i]?.toLowerCase();
+  const raw = args.slice(i + 1);
+  const rest = raw.map((a) => a.toLowerCase());
+  if (sub === "push") {
+    return classifyPush(raw, { ...ctx, inWorktree: ctx.inWorktree && !elsewhere });
+  }
+  if (sub === "branch" && deletesUnmerged(raw)) {
+    return risky("git_destructive", "Deletes a branch with unmerged work (-D)");
   }
   if (sub === "tag" && rest.some((a) => a === "-d" || a === "--delete")) {
     return risky("git_destructive", "Deletes a tag");
@@ -46,6 +48,66 @@ export function classifyGit(args: string[]): RiskAssessment {
     if (writesConfig(rest)) return risky("outside_worktree", "Changes global git configuration");
   }
   return SAFE;
+}
+
+/**
+ * `git branch` deleting without the merged check: `-D`, or `-d`/`--delete` with `--force`.
+ * A plain `-d` refuses to delete unmerged work, so it is safe.
+ */
+function deletesUnmerged(args: string[]): boolean {
+  const short = args.filter((a) => /^-[a-zA-Z]+$/.test(a));
+  if (short.some((a) => a.includes("D"))) return true;
+  const deletes = args.includes("--delete") || short.some((a) => a.includes("d"));
+  const force = args.includes("--force") || short.some((a) => a.includes("f"));
+  return deletes && force;
+}
+
+/** `git push` options that take the next word as their value. */
+const PUSH_VALUED = new Set(["-o", "--push-option", "--repo", "--receive-pack", "--exec"]);
+
+/**
+ * Force pushes and remote deletions ask. A force push with a lease (`--force-with-lease`) of
+ * the session's own branch doesn't: it only rewrites the session's own work, and the lease
+ * refuses if someone else pushed there since.
+ */
+function classifyPush(args: string[], ctx: GitContext): RiskAssessment {
+  const flags = args.filter((a) => a.startsWith("-")).map((a) => a.toLowerCase());
+  const operands = args.filter((a, i) => !a.startsWith("-") && !PUSH_VALUED.has(args[i - 1] ?? ""));
+  if (operands.some((a) => a.startsWith("+") && a.length > 1)) {
+    return risky("git_destructive", "Force-pushes a refspec");
+  }
+  if (
+    flags.includes("--delete") ||
+    flags.includes("-d") ||
+    operands.some((a) => a.startsWith(":") && a.length > 1)
+  ) {
+    return risky("git_destructive", "Deletes a remote branch");
+  }
+  const hard = flags.some((a) => a === "--force" || a === "--mirror" || /^-[a-z]*f[a-z]*$/.test(a));
+  const lease = flags.some((a) => a.startsWith("--force-with-lease"));
+  if (hard || (lease && !pushesOwnBranch(flags, operands.slice(1), ctx))) {
+    return risky("git_destructive", "Force-pushes, which can overwrite remote history");
+  }
+  return SAFE;
+}
+
+/** True when every ref the push updates is the session's own branch. */
+function pushesOwnBranch(flags: string[], refspecs: string[], ctx: GitContext): boolean {
+  const own = ctx.ownBranch;
+  if (!own || !ctx.inWorktree) return false;
+  if (flags.some((a) => ["--all", "--branches", "--tags", "--mirror", "--prune"].includes(a))) {
+    return false;
+  }
+  const current = () => ctx.currentBranch?.();
+  if (refspecs.length === 0) return current() === own;
+  return refspecs.every((spec) => {
+    const [src = "", dst] = spec.split(":");
+    const target = (dst ?? (src === "HEAD" || src === "@" ? current() : src))?.replace(
+      /^refs\/heads\//,
+      "",
+    );
+    return target === own;
+  });
 }
 
 /** `git config` options and subcommands that change the configuration. */

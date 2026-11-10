@@ -62,11 +62,54 @@ describe("classifyCommand", () => {
 
   it("flags branch, tag and remote branch deletion", () => {
     expect(action("git branch -D old")).toBe("git_destructive");
-    expect(action("git branch --delete old")).toBe("git_destructive");
+    expect(action("git branch --delete --force old")).toBe("git_destructive");
+    expect(action("git branch -d -f old")).toBe("git_destructive");
+    expect(action("git branch -df old")).toBe("git_destructive");
     expect(action("git push origin --delete old")).toBe("git_destructive");
     expect(action("git push origin :old")).toBe("git_destructive");
     expect(action("git tag -d v1")).toBe("git_destructive");
     expect(action("git branch -a")).toBeNull();
+    // A plain -d refuses to delete unmerged work.
+    expect(action("git branch -d tmp/spike")).toBeNull();
+    expect(action("git branch --delete tmp/spike")).toBeNull();
+    expect(action("git branch -dr origin/tmp")).toBeNull();
+  });
+
+  it("lets the session force-push its own branch with a lease", () => {
+    const own = "codeden/fix-login-ab12";
+    const mine = { ...posix, ownBranch: own, currentBranch: () => own };
+    for (const cmd of [
+      "git push --force-with-lease",
+      "git push --force-with-lease origin",
+      "git push --force-with-lease origin HEAD",
+      `git push --force-with-lease origin ${own}`,
+      `git push --force-with-lease=${own} -u origin HEAD:refs/heads/${own}`,
+      "git push --force-with-lease --force-if-includes origin HEAD",
+      "git rebase origin/main && git push --force-with-lease",
+      "cd src && git push --force-with-lease",
+    ]) {
+      expect(action(cmd, mine), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "git push -f",
+      `git push --force origin ${own}`,
+      `git push --force-with-lease -f origin ${own}`,
+      "git push --force-with-lease origin main",
+      "git push --force-with-lease origin HEAD:main",
+      `git push --force-with-lease origin ${own} main`,
+      "git push --force-with-lease --all",
+      `git push origin +${own}`,
+      `git push origin --delete ${own}`,
+      "git -C ../other push --force-with-lease",
+      "cd ../other && git push --force-with-lease",
+    ]) {
+      expect(action(cmd, mine), cmd).toBe("git_destructive");
+    }
+    // Checked out elsewhere, or no branch of its own: asks.
+    const onMain = { ...mine, currentBranch: () => "main" };
+    expect(action("git push --force-with-lease", onMain)).toBe("git_destructive");
+    expect(action("git push --force-with-lease origin HEAD", onMain)).toBe("git_destructive");
+    expect(action(`git push --force-with-lease origin ${own}`, posix)).toBe("git_destructive");
   });
 
   it("flags rm outside the worktree", () => {

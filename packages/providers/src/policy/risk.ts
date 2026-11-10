@@ -1,8 +1,10 @@
+import { currentGitBranch } from "../util/git-head";
 import { type RiskAssessment, risky, SAFE } from "./assessment";
 import { binName, unwrap } from "./command-words";
 import { classifyGit } from "./git";
 import { classifyInstall } from "./installs";
 import {
+  isInside,
   isInWorkspace,
   isSecretPath,
   isTempRoot,
@@ -28,6 +30,10 @@ export interface RiskContext extends PathContext {
   allowedHosts?: readonly string[];
   /** The shell a command runs in, for its quoting rules. Default `auto`. */
   shell?: ShellDialect;
+  /** The branch the session owns, which it may force-push with a lease (§11.2). */
+  ownBranch?: string;
+  /** The branch checked out in the worktree. Defaults to reading `cwd`'s git `HEAD`. */
+  currentBranch?: () => string | undefined;
 }
 
 /** How deep `bash -c "…"` style inline scripts are followed. */
@@ -138,7 +144,13 @@ function classifySimple(cmd: SimpleCommand, ctx: RiskContext, depth: number): Ri
     if (write.risky) return write;
   }
 
-  if (bin === "git") return classifyGit(lower);
+  if (bin === "git") {
+    return classifyGit(args, {
+      ownBranch: ctx.ownBranch,
+      currentBranch: ctx.currentBranch ?? (() => currentGitBranch(ctx.cwd)),
+      inWorktree: isInside(resolveAgainst(".", ctx), ctx.cwd, ctx),
+    });
+  }
 
   const install = classifyInstall(bin, lower);
   if (install.risky) return install;
