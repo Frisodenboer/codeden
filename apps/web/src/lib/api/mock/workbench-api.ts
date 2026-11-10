@@ -38,6 +38,7 @@ type WorkbenchApi = Pick<
   | "network"
   | "auth"
   | "loginCommand"
+  | "refreshModels"
   | "getClaudeSdkStatus"
   | "installClaudeSdk"
   | "completeSetup"
@@ -125,6 +126,11 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
         canRollback: false,
         warning: null,
       }),
+    // The fixtures are the provider lists; a refresh finds them unchanged.
+    refreshModels: (providerId) =>
+      world.snapshot.runner.providers.some((p) => p.id === providerId)
+        ? delay({ providers: world.snapshot.runner.providers }, 700)
+        : Promise.reject(new Error(`No provider "${providerId}" is loaded`)),
     updates: mockUpdatesApi(),
     network: mockNetworkApi(),
     auth: mockAuthApi(),

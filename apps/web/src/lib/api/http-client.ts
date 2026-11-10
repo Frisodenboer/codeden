@@ -10,6 +10,7 @@ import {
   InboxItem,
   LoginCommandResponse,
   Project,
+  RefreshModelsResponse,
   RefreshProjectResponse,
   ReorderProjectsResponse,
   RestoreFilesResponse,
@@ -124,6 +125,10 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     getSetupStatus: (o) =>
       get(`/setup/status${o?.refresh ? "?refresh=1" : ""}`, (v) => SetupStatus.parse(v)),
     loginCommand: (tool) => post(`/setup/login/${tool}`, {}, (v) => LoginCommandResponse.parse(v)),
+    refreshModels: (providerId) =>
+      post(`/providers/${encodeURIComponent(providerId)}/refresh-models`, {}, (v) =>
+        RefreshModelsResponse.parse(v),
+      ),
     getClaudeSdkStatus: () => get("/setup/claude-sdk", (v) => ClaudeSdkStatus.parse(v)),
     installClaudeSdk: () => post("/setup/claude-sdk/install", {}, (v) => ClaudeSdkStatus.parse(v)),
     getUpdates: (o) =>

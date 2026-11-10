@@ -5,6 +5,7 @@ import type {
   ReasoningEffort,
   SetupCheck,
 } from "@codeden/contracts";
+import { aliasFor, DEFAULT_MODEL_ID } from "./alias";
 
 /**
  * Pure rules behind the provider, model and effort picker. Nothing here branches on a provider
@@ -41,11 +42,7 @@ export function sortEfforts(efforts: readonly ReasoningEffort[]): ReasoningEffor
   return EFFORT_ORDER.filter((e) => efforts.includes(e));
 }
 
-/**
- * Stored model id meaning "the provider's default model", like `null`. The server never sends it
- * to a provider; before discovery a provider may also list a real entry with this id.
- */
-export const DEFAULT_MODEL_ID = "default";
+export { aliasFor, DEFAULT_MODEL_ID };
 
 /** The model a choice points at, and how it got there. */
 export interface ResolvedModel {
@@ -58,7 +55,8 @@ export interface ResolvedModel {
 
 /**
  * Resolve a stored model id: an exact match; `null` or `default` as the provider's default model
- * (its `isDefault` entry, else its first); anything else as missing.
+ * (its `isDefault` entry, else its first); a full id as the alias entry that runs it (see
+ * `aliasFor`); anything else as missing.
  */
 export function resolveModel(
   provider: ProviderInfo | undefined,
@@ -72,6 +70,8 @@ export function resolveModel(
     const model = provider?.models.find((m) => m.isDefault) ?? provider?.models[0];
     return { model, followsDefault: Boolean(model), missing: null };
   }
+  const alias = aliasFor(provider, modelId);
+  if (alias) return { model: alias, followsDefault: false, missing: null };
   return { model: undefined, followsDefault: false, missing: modelId };
 }
 
@@ -89,6 +89,19 @@ export function effortLevels(
 ): ReasoningEffort[] {
   if (!provider?.capabilities.reasoningEffort || !model) return [];
   return sortEfforts(model.efforts);
+}
+
+/**
+ * Effort levels for a resolved choice, and the default among them. A stored id the provider
+ * doesn't list (and no alias covers) gets the provider default model's levels: the provider
+ * still runs it, and its effort can still be set.
+ */
+export function resolvedEfforts(
+  provider: ProviderInfo | undefined,
+  resolved: ResolvedModel,
+): { levels: ReasoningEffort[]; defaultEffort: ReasoningEffort | undefined } {
+  const model = resolved.missing ? resolveModel(provider, null).model : resolved.model;
+  return { levels: effortLevels(provider, model), defaultEffort: model?.defaultEffort };
 }
 
 /**
