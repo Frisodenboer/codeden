@@ -100,10 +100,18 @@ check_signature() {
         fi
         ;;
     esac
-  done < <(find "$app" -type f \( -perm -u+x -o -name '*.node' -o -name '*.dylib' -o -name '*.so' \) -print0)
+  done < <(find "$app" -type f \( -perm -u+x -o -name '*.node' -o -name '*.dylib' -o -name '*.so' -o -name spawn-helper \) -print0)
   echo "$label: $count Mach-O files, $bad without a valid signature"
   [ "$count" -gt 0 ] || fail "$label: found no Mach-O files"
   [ "$bad" -eq 0 ] || fail "$label: $bad Mach-O files have no valid signature"
+
+  # node-pty starts every terminal through spawn-helper; without its executable bit they fail.
+  local helpers=0
+  while IFS= read -r -d '' file; do
+    helpers=$((helpers + 1))
+    [ -x "$file" ] || fail "$label: ${file#"$app"/} is not executable"
+  done < <(find "$app/Contents/Resources/app/node_modules/node-pty" -type f -name spawn-helper -print0)
+  [ "$helpers" -gt 0 ] || fail "$label: node-pty's spawn-helper is missing"
 }
 
 # --- 2. Launch ------------------------------------------------------------------------------
@@ -117,6 +125,9 @@ check_launch() {
     echo "::warning::$label: skipping the launch check, this runner can't run $archs"
     return
   fi
+  # Under Rosetta the first start translates Electron's framework, which takes minutes.
+  local limit=90
+  [ "$archs" = "$(uname -m)" ] || limit=300
 
   echo "--- launch: the main binary as Node.js ($label)"
   local script='
@@ -130,7 +141,7 @@ check_launch() {
       console.log("electron " + process.versions.electron + " (" + process.arch + "), pty: " + out.trim());
       process.exit(exitCode === 0 && out.includes("pty-ok") ? 0 : 1);
     });'
-  if ! with_timeout 60 env ELECTRON_RUN_AS_NODE=1 MODULES="$modules" "$bin" -e "$script"; then
+  if ! with_timeout "$limit" env ELECTRON_RUN_AS_NODE=1 MODULES="$modules" "$bin" -e "$script"; then
     fail "$label: the main binary did not run as Node.js with its native modules"
     return
   fi
@@ -144,7 +155,7 @@ check_launch() {
   pids="$pids $app_pid"
 
   local healthy=false runner_pid="" token
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$limit"); do
     if ! kill -0 "$app_pid" 2> /dev/null; then break; fi
     if [ -f "$home/install-token" ] && [ -f "$home/runner/runner.json" ]; then
       token="$(cat "$home/install-token")"
@@ -160,7 +171,7 @@ check_launch() {
   if [ "$healthy" = true ] && [ -n "$runner_pid" ] && kill -0 "$runner_pid" 2> /dev/null; then
     echo "$label: the app started its server on port $port and the runner (pid $runner_pid)"
   else
-    fail "$label: the app did not start its server and runner within 90 s"
+    fail "$label: the app did not start its server and runner within $limit s"
     echo "--- app output"
     cat "$work/app-$label.log" || true
     for log in "$home"/logs/*.log; do
