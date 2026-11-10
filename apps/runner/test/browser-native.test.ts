@@ -96,6 +96,32 @@ describe.skipIf(!hasBrowser)("native engine (installed Edge/Chrome)", { timeout:
     expect(list.engine).toBe("native");
   });
 
+  it("maps a viewer's clicks on the view's own size, not the frame metadata's", async () => {
+    const page = manager.get("s1").page();
+    await page.goto(site.url);
+    const [width, height] = (await page.evaluate("[innerWidth, innerHeight]")) as number[];
+    // A phone draws a 400x300 frame of the whole view; the metadata claims half the size (as
+    // HiDPI macOS can report DIPs). The click aims at the big button's centre (200, 150 CSS).
+    const at = { x: (200 / (width ?? 1)) * 400, y: (150 / (height ?? 1)) * 300 };
+    const pointer = {
+      ...at,
+      frameWidth: 400,
+      frameHeight: 300,
+      viewportWidth: (width ?? 2) / 2,
+      viewportHeight: (height ?? 2) / 2,
+      button: "left" as const,
+      clickCount: 1,
+    };
+    for (const type of ["mouse.down", "mouse.up"] as const) {
+      await handlers.execute({
+        name: "browser.input",
+        sessionId: "s1",
+        input: { type, ...pointer },
+      });
+    }
+    expect(await page.textContent("#big")).toBe("clicked by human");
+  });
+
   it("adopts the tabs the app already has when it connects again", async () => {
     const other = new BrowserManager({ stream: () => {}, connect });
     try {

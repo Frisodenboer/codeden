@@ -108,7 +108,9 @@ browser.
 - **No viewport emulation.** A native view is exactly as big as the desktop panel. `setViewport`
   measures it and `browser.viewport` answers with `fixed: true`, so the server tells every
   viewer to fit the frames instead of claiming the size. Screencast frames are only capped
-  (2560x1600 device pixels), never sized to a viewer.
+  (2560x1600 device pixels), never sized to a viewer. Pointer input from those viewers is mapped
+  against the view's measured CSS size (re-measured at most once a second), never the frame
+  metadata, whose units follow the platform's scale handling (DIPs on HiDPI macOS).
 - **Everything else is unchanged**: aria snapshots and refs, click/type/press, screenshots,
   console and network logs, evaluate, waits, the screencast for phones and input from them.
   Refs in native views may carry a frame prefix (`f1e5`); they work like any other ref.

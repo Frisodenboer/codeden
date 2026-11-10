@@ -38,6 +38,8 @@ export interface BrowserSessionOptions {
 
 /** Native tabs that close within this long of each other count as one disconnect. */
 const NATIVE_CLOSE_SETTLE_MS = 100;
+/** How long a measured native view size is trusted for mapping a viewer's pointer input. */
+const NATIVE_MEASURE_MS = 1_000;
 
 interface TabState {
   tabId: string;
@@ -68,6 +70,8 @@ export class BrowserSession {
   private closed = false;
   /** Native: the relay connection dropped; tabs closing now are not really closing. */
   private disconnected = false;
+  /** Native: when the view's size was last measured (it follows the desktop panel). */
+  private measuredAt = 0;
   private lastPublished = "";
   readonly timeoutMs: number;
   private readonly disconnect: (() => Promise<void>) | undefined;
@@ -199,6 +203,14 @@ export class BrowserSession {
   /** Forward panel input to the active tab. */
   async dispatchInput(input: BrowserInput): Promise<void> {
     const state = this.tabState();
+    if (this.native && "frameWidth" in input) {
+      // A native view's frame always shows the whole view, so map against the view's own CSS
+      // size. Frame metadata isn't trusted for that: its units follow the platform's scale
+      // handling (DIPs rather than CSS pixels on HiDPI macOS).
+      const { viewportWidth: _w, viewportHeight: _h, ...pointer } = input;
+      const viewport = await this.nativeViewport();
+      return this.input.dispatch(await this.cdp(state), pointer, viewport);
+    }
     await this.input.dispatch(await this.cdp(state), input, this.viewport);
   }
 
@@ -306,9 +318,16 @@ export class BrowserSession {
       )) as number[];
       const [width, height, scale] = metrics;
       if (width && height) this.viewport = { width, height, deviceScaleFactor: scale || 1 };
+      this.measuredAt = Date.now();
     } catch {
       // No tab yet, or it is navigating: keep the last size.
     }
+    return { ...this.viewport };
+  }
+
+  /** The native view's size for input, measured at most once a second (pointer moves are many). */
+  private async nativeViewport(): Promise<ViewportMetrics> {
+    if (Date.now() - this.measuredAt > NATIVE_MEASURE_MS) return this.measure();
     return { ...this.viewport };
   }
 
