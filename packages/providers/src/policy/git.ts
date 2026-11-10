@@ -84,7 +84,7 @@ const CONFIG_VALUED = new Set(["--type", "--default", "--file", "-f", "--blob", 
  * True when `git config <rest>` changes something: a writing option or subcommand, or a name
  * and a value (`git config --global user.name x`). A bare name reads it.
  */
-function writesConfig(rest: string[]): boolean {
+export function writesConfig(rest: string[]): boolean {
   const positional = rest.filter(
     (a, i) => !a.startsWith("-") && !CONFIG_VALUED.has(rest[i - 1] ?? ""),
   );
