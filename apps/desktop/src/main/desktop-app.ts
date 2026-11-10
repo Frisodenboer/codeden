@@ -29,6 +29,7 @@ import { UpdateController } from "./updates/controller";
 import { quitAction, standaloneAction, updateSupport } from "./updates/policy";
 import { loadUpdater, waitForRunnerExit } from "./updates/updater";
 import { MainWindow } from "./window";
+import { windowShot } from "./window-shot";
 
 const DOCS_URL = "https://github.com/leonvanzyl/codeden/blob/main/docs/desktop.md";
 
@@ -354,6 +355,7 @@ export class DesktopApp {
       updateState: () => this.updates.state,
       zoomFactor: () => this.window.zoomFactor,
       nativeViews: () => this.browser.browsers.views(),
+      windowShot: () => windowShot(this.window.window),
     };
   }
 }
