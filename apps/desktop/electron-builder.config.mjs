@@ -15,17 +15,37 @@
 // frameworks have no Team ID to match. scripts/check-mac-signature.sh verifies the result.
 // Only a Developer ID app can update itself on macOS.
 
-import { chmod, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, cp, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
+/** electron-builder's `Arch` enum values, by name. */
+const ARCH_NAMES = { 0: "ia32", 1: "x64", 2: "armv7l", 3: "arm64", 4: "universal" };
+
+/** The keychain module's (`@napi-rs/keyring`) prebuilt binary package for a platform and arch. */
+export function keyringBinary(platform, arch) {
+  return {
+    win32: `@napi-rs/keyring-win32-${arch}-msvc`,
+    darwin: `@napi-rs/keyring-darwin-${arch}`,
+    linux: `@napi-rs/keyring-linux-${arch}-gnu`,
+  }[platform];
+}
+
 /**
- * node-pty starts every terminal through a prebuilt `spawn-helper` (macOS, Linux). npm no
- * longer runs node-pty's install script, which set its executable bit, so terminals failed
- * with "posix_spawnp failed". Set it on the packed app, before it is signed.
+ * Native module fixes on the packed app, before it is signed (`afterPack`):
+ *
+ * - node-pty starts every terminal through a prebuilt `spawn-helper` (macOS, Linux). npm no
+ *   longer runs node-pty's install script, which set its executable bit, so terminals failed
+ *   with "posix_spawnp failed".
+ * - electron-builder leaves out platform binaries of a dependency that don't match the build
+ *   machine, so the x64 macOS app (built on Apple silicon) had no keychain binary and kept
+ *   API keys in memory only. scripts/package.mjs installs the binary for every target arch
+ *   into the stage; copy the one for this arch into the app.
  */
-export async function makeSpawnHelperExecutable(context) {
+export async function prepareNativeModules(context) {
+  const platform = context.electronPlatformName === "mas" ? "darwin" : context.electronPlatformName;
   const resources =
-    context.electronPlatformName === "darwin" || context.electronPlatformName === "mas"
+    platform === "darwin"
       ? join(
           context.appOutDir,
           `${context.packager.appInfo.productFilename}.app`,
@@ -33,11 +53,19 @@ export async function makeSpawnHelperExecutable(context) {
           "Resources",
         )
       : join(context.appOutDir, "resources");
-  const pty = join(resources, "app", "node_modules", "node-pty");
+  const modules = join(resources, "app", "node_modules");
+
+  const pty = join(modules, "node-pty");
   const prebuilds = await readdir(join(pty, "prebuilds")).catch(() => []);
   for (const dir of ["build/Release", ...prebuilds.map((d) => `prebuilds/${d}`)]) {
     await chmod(join(pty, dir, "spawn-helper"), 0o755).catch(() => undefined);
   }
+
+  const binary = keyringBinary(platform, ARCH_NAMES[context.arch]);
+  if (!binary || existsSync(join(modules, ...binary.split("/")))) return;
+  const staged = join(context.packager.info.appDir, "node_modules", ...binary.split("/"));
+  if (!existsSync(staged)) throw new Error(`${binary} is not in the staged app (${staged})`);
+  await cp(staged, join(modules, ...binary.split("/")), { recursive: true });
 }
 
 const macSigning = Boolean(process.env.CSC_LINK || process.env.CSC_NAME);
@@ -60,7 +88,7 @@ export default {
   // Native modules are Node-API (node-pty, @napi-rs/keyring): no rebuild for Electron needed.
   npmRebuild: false,
   files: ["**/*", "!**/*.map", "!**/*.d.ts"],
-  afterPack: makeSpawnHelperExecutable,
+  afterPack: prepareNativeModules,
   protocols: [{ name: "CodeDen", schemes: ["codeden"] }],
   publish: [{ provider: "github", owner: "leonvanzyl", repo: "codeden", releaseType: "release" }],
   electronFuses: {
