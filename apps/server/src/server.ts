@@ -218,6 +218,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.factory.start();
   services.worktreeCleanup.start();
   services.unwatchedApprovals.start();
+  services.prFeedback.start();
   const stopUpdateEvents = services.updates.onChange((status) => hub.broadcastUpdate(status));
   services.updates.start();
 
@@ -365,6 +366,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.factory.stop();
       services.worktreeCleanup.stop();
       services.unwatchedApprovals.stop();
+      services.prFeedback.stop();
       services.updates.stop();
       await services.localStt.stop();
       stopUpdateEvents();

@@ -33,6 +33,7 @@ import type { SecretStore } from "./secrets";
 import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
 import { Outbox } from "./sessions/outbox";
+import { PrFeedbackService } from "./sessions/pr-feedback";
 import { QuestionBroker } from "./sessions/questions";
 import { QueueService } from "./sessions/queue";
 import { SessionRecovery } from "./sessions/recovery";
@@ -155,6 +156,8 @@ export interface AppServices {
   worktreeCleanup: WorktreeCleanup;
   /** Denies approvals nobody is there to answer, so unattended work never waits forever. */
   unwatchedApprovals: UnwatchedApprovals;
+  /** CI failures, requested changes and conflicts sent to user-started sessions' agents (§9). */
+  prFeedback: PrFeedbackService;
   userHome: string;
 }
 
@@ -387,6 +390,13 @@ export function createServices(opts: ServicesOptions): AppServices {
     factory,
     worktreeCleanup,
     unwatchedApprovals,
+    prFeedback: new PrFeedbackService({
+      store: opts.store,
+      repo: sessionRepo,
+      settings: () => opts.settings.get(),
+      send: (id, input) => sessions.send(id, { input, whenBusy: "queue" }, "codeden"),
+      log: opts.log,
+    }),
     configFiles: new ConfigFiles({
       projects,
       home: userHome,

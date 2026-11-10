@@ -28,8 +28,14 @@ export interface PendingStart {
   workspace: WorkspaceRequest;
 }
 
-/** Start metadata as stored: the public `SessionStartMeta` plus a pending start. */
-export type StoredStartMeta = SessionStartMeta & { pending?: PendingStart | null };
+/**
+ * Start metadata as stored: the public `SessionStartMeta` plus a pending start, and the PR
+ * feedback already sent per PR number (`PrFeedbackService`).
+ */
+export type StoredStartMeta = SessionStartMeta & {
+  pending?: PendingStart | null;
+  prFeedback?: Record<string, { rounds: number; keys: string[] }>;
+};
 
 /** Session rows and transcript reads. Every session change goes through the event log. */
 export class SessionRepo {

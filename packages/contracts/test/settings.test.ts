@@ -102,3 +102,17 @@ describe("speechExcerpt", () => {
     expect(out.endsWith("word...")).toBe(true);
   });
 });
+
+describe("Settings.sessions", () => {
+  it("turns PR feedback on by default, so settings files from before it existed still load", () => {
+    expect(defaultSettings().sessions).toEqual({ prFeedback: true });
+    expect(Settings.parse({ worktrees: { cleanup: false } }).sessions.prFeedback).toBe(true);
+  });
+
+  it("round-trips the switch", () => {
+    const off = Settings.parse({ sessions: { prFeedback: false } });
+    expect(Settings.parse(JSON.parse(JSON.stringify(off)))).toEqual(off);
+    expect(off.sessions.prFeedback).toBe(false);
+    expect(Settings.safeParse({ sessions: { prFeedback: "yes" } }).success).toBe(false);
+  });
+});

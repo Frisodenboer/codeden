@@ -56,6 +56,20 @@ export function GeneralSettings() {
           />
         </SettingRow>
       </SettingsSection>
+      <SettingsSection
+        title="Agent sessions"
+        description="What CodeDen does by itself for sessions you start. Work started by a project manager, the orchestrator or an automation is followed up by the project manager."
+      >
+        <SettingRow
+          label="Pass on pull request feedback"
+          help="Tells the agent when its pull request's checks fail, a reviewer requests changes or it has merge conflicts. Once per commit, up to three times per pull request."
+        >
+          <Switch
+            checked={settings.sessions.prFeedback}
+            onCheckedChange={(v) => update({ sessions: { prFeedback: v } })}
+          />
+        </SettingRow>
+      </SettingsSection>
       <SettingsSection title="Background work">
         <SettingRow
           label="Automations"

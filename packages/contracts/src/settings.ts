@@ -239,6 +239,19 @@ export const Settings = z.object({
       afterDays: z.int().min(1).max(365).default(7),
     })
     .prefault({}),
+  /**
+   * What CodeDen does by itself for agent sessions the user started (work started by a PM, the
+   * orchestrator or an automation is followed up by the PM instead).
+   */
+  sessions: z
+    .object({
+      /**
+       * Tell the session that owns a pull request when its checks fail, a reviewer requests
+       * changes or it gets merge conflicts (once per head commit, at most a few rounds per PR).
+       */
+      prFeedback: z.boolean().default(true),
+    })
+    .prefault({}),
   /** Master switch; individual automations are still off by default (§10). */
   automations: z
     .object({

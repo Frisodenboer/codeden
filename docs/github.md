@@ -54,6 +54,10 @@ When a session's PR is merged, CodeDen:
 
 In **Manual** and **Assisted** projects, nothing is ever merged without you. Automatic merges only happen in the experimental [factory modes](autonomy-and-dark-factory.md), and only after every merge check passes.
 
+### Feedback on your sessions' pull requests
+
+When a pull request owned by a session **you** started fails its checks, gets a review that requests changes, or runs into merge conflicts, CodeDen sends the session a message (from CodeDen, queued behind a running turn) so the agent can fix it without you relaying anything: the failing checks with their links (and a hint to read the logs with `gh run view <run-id> --log-failed`), the reviewer's comments, or the base branch to merge. Each problem is sent once per head commit, and at most three messages go out per pull request; after that it's up to you. Archived and stopped sessions aren't messaged. Sessions started by a project manager, the orchestrator or an automation are followed up by the project manager instead. Turn it off under **Settings › General › Agent sessions › Pass on pull request feedback**.
+
 ## Evidence
 
 Agents attach screenshots, test output and other files with `attach_evidence`:
