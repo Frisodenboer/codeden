@@ -184,14 +184,15 @@ check_launch() {
   kill "$app_pid" 2> /dev/null || true
   if [ -n "$runner_pid" ]; then kill "$runner_pid" 2> /dev/null || true; fi
   # The app must quit on SIGTERM; one that hangs would hang for users too. Never wait forever.
+  # It gets the same time as its launch: under Rosetta everything, shutdown included, is slow.
   # The marker tells this check's kill apart from the app's own quit watchdog (both SIGKILL).
   local killed="$work/killed-by-check-$label"
-  (sleep 60 && touch "$killed" && kill -KILL "$app_pid") > /dev/null 2>&1 &
+  (sleep "$limit" && touch "$killed" && kill -KILL "$app_pid") > /dev/null 2>&1 &
   local watchdog=$! status=0
   wait "$app_pid" 2> /dev/null || status=$?
   kill "$watchdog" 2> /dev/null || true
   if [ -f "$killed" ]; then
-    fail "$label: the app did not quit within 60 s of SIGTERM"
+    fail "$label: the app did not quit within $limit s of SIGTERM"
     print_app_logs "$label" "$home"
   elif [ "$status" -eq 137 ]; then
     # It quit in time, but only because its watchdog ended a main thread stuck in shutdown.
