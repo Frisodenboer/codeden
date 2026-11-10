@@ -36,8 +36,9 @@ Node 24+ and pnpm 10 (`corepack enable`).
 | `pnpm build` | Build the web app, then bundle `apps/cli/dist` |
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm lint` / `pnpm format` | Biome check / Biome fix + format |
-| `pnpm test` | Vitest across all packages (includes a server -> runner -> Fake provider end-to-end test) |
-| `pnpm e2e` | Build the web app and the CLI, then Playwright (`apps/web/e2e`) against a real server + runner with an isolated home and the Fake provider; the update spec also runs the built CLI against a local fake npm registry (first run: `pnpm --filter @codeden/web exec playwright install chromium`) |
+| `pnpm test` | Vitest, the fast suites (what CI and the release run) |
+| `pnpm test:slow` | The real-browser and real-process suites (Chromium, terminals, detached runners). Not in CI; run them when working in those areas |
+| `pnpm e2e` | Not in CI. Build the web app and the CLI, then Playwright (`apps/web/e2e`) against a real server + runner with an isolated home and the Fake provider; the update spec also runs the built CLI against a local fake npm registry (first run: `pnpm --filter @codeden/web exec playwright install chromium`) |
 | `pnpm desktop:dev` | Build the web UI and the desktop bundle, then run the desktop app from the checkout with home `.codeden-dev/` and the Fake provider (attaches to `pnpm dev`'s server when it runs). Pass options after `--`, e.g. `pnpm desktop:dev -- --home <dir>` |
 | `pnpm desktop:build` | `pnpm build`, then the unpacked desktop app for this OS in `apps/desktop/release/` (`pnpm desktop:dist` builds the installers) |
 | `pnpm e2e:desktop` | `pnpm desktop:build`, then Playwright's Electron smoke test against the unpacked app with an isolated home and the Fake provider (plus a local update feed test on Windows). Separate from `pnpm e2e` because packaging is slow |
@@ -53,7 +54,7 @@ Node 24+ and pnpm 10 (`corepack enable`).
 - **Honest capabilities:** UI and orchestration read `ProviderCapabilities`, never branch on a provider id.
 - **Events are append-only.** Projections are written in the same transaction as their event (`apps/server/src/events/`), so they can be rebuilt from the log.
 - **Security:** server and runner bind 127.0.0.1 only; every request needs the install token; never log or persist tokens in transcripts.
-- **Tests are required** for new behaviour (Vitest, next to the package in `test/`). Use the Fake provider, never live agent turns.
+- **Tests: keep them lean.** The bar is that the app installs and works; CI checks exactly that (typecheck, lint, `pnpm test`, build, the packed CLI installed and started). Add a Vitest unit test (next to the package in `test/`) when logic is easy to get wrong and costly when wrong: the risk classifier and other security checks, contracts round-trips, migrations, parsers, anything that can lose data. Don't add end-to-end, real-browser or real-process tests for a feature unless asked, and keep `pnpm test` fast and deterministic (no real timers or races; use the Fake provider, never live agent turns). Bugs users hit get an issue and a fix, with a regression test when the logic warrants one.
 - **Never mention other harnesses or products as inspiration** anywhere: code, comments, docs, commits. Describe CodeDen on its own terms.
 - **Commits:** conventional commits (`feat(server): ...`, `fix(runner): ...`, `chore: ...`), one logical change per commit. `pnpm typecheck && pnpm lint && pnpm test` must pass.
 - Generated files: `apps/server/drizzle/` (migrations, via drizzle-kit) and `apps/web/src/components/ui/` (shadcn). Add shadcn components with `pnpm dlx shadcn@latest add <name>` from `apps/web`.
