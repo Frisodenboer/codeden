@@ -269,6 +269,39 @@ describe.skipIf(!hasBrowser)("browser engine (installed Edge/Chrome)", { timeout
     await browser.execute({ name: "browser.close", sessionId: s });
   });
 
+  it("still pages get a frame at the final size after a burst of resizes", async () => {
+    const s = "burst";
+    await browser.execute({ name: "browser.open", sessionId: s, url: `${site.url}/page2` });
+    await browser.execute({
+      name: "browser.screencast",
+      sessionId: s,
+      viewerId: "panel",
+      watching: true,
+    });
+    for (let round = 0; round < 5; round++) {
+      const width = 500 + round * 37;
+      // Fire-and-forget resizes while frames are still unacked, like a panel being dragged.
+      await Promise.all(
+        [width - 30, width - 20, width - 10, width].map((w, i) =>
+          new Promise((r) => setTimeout(r, i * 15)).then(() =>
+            browser.execute({
+              name: "browser.viewport",
+              sessionId: s,
+              width: w,
+              height: 600,
+              deviceScaleFactor: 2,
+            }),
+          ),
+        ),
+      );
+      await eventually(
+        () => recorder.frames(s).some((f) => f.width === width * 2 && f.height === 1200),
+        5_000,
+      );
+    }
+    await browser.execute({ name: "browser.close", sessionId: s });
+  });
+
   it("isolates sessions in separate contexts (cookies do not leak)", async () => {
     await manager.open("alice", `${site.url}/set?v=alice`);
     await manager.open("bob", `${site.url}/whoami`);

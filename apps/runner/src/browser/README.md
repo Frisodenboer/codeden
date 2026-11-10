@@ -63,7 +63,11 @@ sized frames). The launcher passes `--force-device-scale-factor=2` (the max we e
 supersamples 1x and 1.25x viewers.
 
 **Frames:** JPEG quality 75 (60 visibly smeared small text at device pixels), at most 20 fps,
-only on change, throttled by delaying acks; slow sockets skip frames server-side.
+only on change, throttled by delaying acks (held-back acks are sent when the screencast
+stops); slow sockets skip frames server-side. Because Chromium only sends frames on change,
+a still page could leave a viewer with nothing to draw: a new viewer gets the last frame, a
+(re)started screencast that sends nothing within 1 s gets a still from
+`Page.captureScreenshot`, and a panel that still has no frame after 3 s re-sends `watch`.
 
 **Input:** the panel maps pointer positions from where the frame is drawn (the whole box, or
 the letterboxed rectangle when fitted) into frame pixels and sends the frame's own viewport

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import type { CDPSession } from "playwright-core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deviceMetricsParams,
   devServerUrl,
@@ -13,7 +14,12 @@ import {
 } from "../src/browser";
 import { jpegSize, pngSize } from "../src/browser/images";
 import { MAX_WHEEL_DELTA } from "../src/browser/input";
-import { DEFAULT_SCREENCAST, Screencast } from "../src/browser/screencast";
+import {
+  DEFAULT_SCREENCAST,
+  type FrameStream,
+  Screencast,
+  STILL_FRAME_MS,
+} from "../src/browser/screencast";
 
 describe("input mapping", () => {
   const viewport = { width: 1280, height: 800 };
@@ -194,6 +200,83 @@ describe("screencast viewers", () => {
     expect(cast.startParams).toMatchObject({ maxWidth: 920, maxHeight: 1424 });
     await cast.watch("phone", true, { maxWidth: 600 });
     expect(cast.startParams).toMatchObject({ maxWidth: 600, maxHeight: 1424 });
+  });
+});
+
+/** A CDP session for a still page: the screencast never sends a frame on its own. */
+function stillPageCdp() {
+  // SOI, APP0, SOF0 460x712.
+  const jpeg = Buffer.from([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x02, 0xc8, 0x01,
+    0xcc, 0x03, 0x00, 0x00, 0x00, 0x00,
+  ]).toString("base64");
+  const listeners = new Map<string, (e: unknown) => void>();
+  const sent: string[] = [];
+  const cdp = {
+    on: (event: string, l: (e: unknown) => void) => listeners.set(event, l),
+    off: (event: string) => listeners.delete(event),
+    send: async (method: string) => {
+      sent.push(method);
+      if (method === "Page.captureScreenshot") return { data: jpeg };
+      if (method === "Page.getLayoutMetrics") return { cssVisualViewport: { pageX: 0, pageY: 40 } };
+      return {};
+    },
+  };
+  const frame = (sessionId: number) =>
+    listeners.get("Page.screencastFrame")?.({
+      data: jpeg,
+      sessionId,
+      metadata: {
+        deviceWidth: 460,
+        deviceHeight: 712,
+        pageScaleFactor: 1,
+        offsetTop: 0,
+        scrollOffsetX: 0,
+        scrollOffsetY: 0,
+      },
+    });
+  return { cdp: cdp as unknown as CDPSession, sent, frame };
+}
+
+describe("screencast still frames", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("captures a still when a started screencast sends nothing", async () => {
+    const emitted: FrameStream[] = [];
+    const cast = new Screencast("s", (f) => emitted.push(f));
+    const page = stillPageCdp();
+    await cast.setFrameSize({ width: 920, height: 1424 }, { width: 460, height: 712 });
+    await cast.setTab({ tabId: "t1", cdp: page.cdp });
+    await cast.watch("panel", true);
+    expect(emitted).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(STILL_FRAME_MS + 10);
+    expect(page.sent).toContain("Page.captureScreenshot");
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      tabId: "t1",
+      width: 460,
+      height: 712,
+      metadata: { deviceWidth: 460, deviceHeight: 712, scrollOffsetY: 40 },
+    });
+    // A later viewer gets that picture straight away.
+    await cast.watch("phone", true);
+    expect(emitted).toHaveLength(2);
+  });
+
+  it("doesn't capture when Chromium sent a frame, and stops cleanly", async () => {
+    const emitted: FrameStream[] = [];
+    const cast = new Screencast("s", (f) => emitted.push(f));
+    const page = stillPageCdp();
+    await cast.setTab({ tabId: "t1", cdp: page.cdp });
+    await cast.watch("panel", true);
+    page.frame(1);
+    await vi.advanceTimersByTimeAsync(STILL_FRAME_MS + 10);
+    expect(page.sent).not.toContain("Page.captureScreenshot");
+    expect(emitted).toHaveLength(1);
+    // Stopping sends the held-back ack before stopping the screencast.
+    await cast.watch("panel", false);
+    expect(page.sent.slice(-2)).toEqual(["Page.screencastFrameAck", "Page.stopScreencast"]);
   });
 });
 

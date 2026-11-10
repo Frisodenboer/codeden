@@ -61,7 +61,7 @@ export class BrowserSession {
     this.context.setDefaultTimeout(opts.timeoutMs);
     this.context.setDefaultNavigationTimeout(opts.timeoutMs);
     this.screencast = new Screencast(opts.sessionId, (frame: FrameStream) => this.stream(frame));
-    void this.screencast.setFrameSize(framePixels(this.viewport));
+    void this.screencast.setFrameSize(framePixels(this.viewport), this.viewport);
     // Pages opened by the page itself (popups, target=_blank) become tabs too.
     this.context.on("page", (page) => {
       if (!this.byPage.has(page)) this.register(page, false);
@@ -160,7 +160,7 @@ export class BrowserSession {
         return state.sized;
       }),
     );
-    await this.screencast.setFrameSize(framePixels(next));
+    await this.screencast.setFrameSize(framePixels(next), next);
     return { ...next };
   }
 
