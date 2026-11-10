@@ -14,6 +14,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type RunningServer, startServer } from "../src";
 import type { Exec } from "../src/services/exec";
+import type { Locate } from "../src/services/setup/tool-lookup";
 
 const TOKEN = "a".repeat(64);
 let home: string;
@@ -34,6 +35,12 @@ const fakeExec: Exec = async (command, args) => {
   return { code: null, stdout: "", stderr: "", notFound: true, timedOut: false, path: null };
 };
 
+/** Only the fake codex is installed. */
+const fakeLocate: Locate = async (name) =>
+  name === "codex"
+    ? { command: { kind: "native", path: "codex" }, version: "0.1.0", broken: [] }
+    : { version: null, broken: [] };
+
 beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), "codeden-routes-"));
   mkdirSync(join(home, "user", "work", "app"), { recursive: true });
@@ -45,6 +52,7 @@ beforeEach(async () => {
     secrets: "memory",
     checkSetupOnStart: false,
     exec: fakeExec,
+    locate: fakeLocate,
     userHome: join(home, "user"),
   });
 });

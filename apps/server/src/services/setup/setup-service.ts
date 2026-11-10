@@ -4,11 +4,13 @@ import type {
   SetupStatus,
   SetupToolId,
 } from "@codeden/contracts";
+import { defaultShell, findExecutable, refreshProcessPath } from "@codeden/providers";
 import type { SettingsStore } from "../../settings-store";
 import { errorMessage } from "../errors";
 import type { Exec } from "../exec";
 import type { BrowserProbe } from "./browsers";
-import { CHECKS, type CheckEnv, LOGIN_COMMANDS } from "./checks";
+import { CHECKS, type CheckEnv } from "./checks";
+import { LOGIN_COMMANDS, type Locate, type LoginTool, loginCommandLine } from "./tool-lookup";
 
 export interface SetupServiceDeps {
   exec: Exec;
@@ -21,6 +23,17 @@ export interface SetupServiceDeps {
   nodeVersion?: string;
   browserProbe?: Partial<BrowserProbe>;
   now?: () => number;
+  /** Finds claude, codex and gh (default: PATH, then their known install locations). */
+  locate?: Locate;
+  /** The user's home folder, for known install locations (default: `os.homedir()`). */
+  userHome?: string;
+  /**
+   * Picks up PATH changes made since CodeDen started, before an explicit re-check (default:
+   * the Windows registry's user and machine `Path`; nothing elsewhere).
+   */
+  refreshPath?: () => Promise<unknown>;
+  /** The setup terminal's shell, for sign-in commands (default: `defaultShell()`). */
+  shell?: string;
   /**
    * Called after every completed check (not for cached results), e.g. so the runner re-detects
    * its providers after an install or a login and refreshes their model lists.
@@ -54,7 +67,7 @@ export class SetupService {
     if (this.cached && fresh && !opts.refresh) {
       return { ...this.cached, setupCompleted: this.deps.settings.get().setup.completed };
     }
-    this.running ??= this.runChecks().finally(() => {
+    this.running ??= this.refreshThenCheck(opts.refresh === true).finally(() => {
       this.running = undefined;
     });
     return this.running;
@@ -68,15 +81,38 @@ export class SetupService {
     return true;
   }
 
-  /** The command to run in a terminal to sign `tool` in. */
-  loginCommand(tool: keyof typeof LOGIN_COMMANDS): LoginCommandResponse {
-    const [command, ...args] = LOGIN_COMMANDS[tool];
-    return { tool, command: [command, ...args].join(" "), args };
+  /**
+   * The command to run in a terminal to sign `tool` in: the copy the last check found, by
+   * its full path, so the terminal's own PATH lookup is not involved.
+   */
+  loginCommand(tool: LoginTool): LoginCommandResponse {
+    const check = this.cached?.checks.find((c) => c.id === tool);
+    const program = check?.installed ? check.executablePath : null;
+    const args = LOGIN_COMMANDS[tool].slice(1);
+    return { tool, command: loginCommandLine(tool, this.shell(), program), args };
+  }
+
+  private async refreshThenCheck(refresh: boolean): Promise<SetupStatus> {
+    if (refresh) {
+      try {
+        await (this.deps.refreshPath ?? refreshProcessPath)();
+      } catch {
+        // Checks run with the PATH this process has.
+      }
+    }
+    return this.runChecks();
+  }
+
+  private shell(): string {
+    return this.deps.shell ?? defaultShell();
   }
 
   private async runChecks(): Promise<SetupStatus> {
+    const userHome = this.deps.userHome;
     const env: CheckEnv = {
       exec: this.deps.exec,
+      locate: this.deps.locate ?? ((name) => findExecutable(name, { home: userHome })),
+      shell: this.shell(),
       platform: this.deps.platform ?? process.platform,
       nodeVersion: this.deps.nodeVersion ?? process.version,
       now: this.now(),

@@ -36,6 +36,7 @@ import type { Exec } from "./services/exec";
 import { runnerPort } from "./services/runner-port";
 import { createSecretStore, MemorySecretStore, type SecretStore } from "./services/secrets";
 import { sessionWorkdir } from "./services/sessions/workdir";
+import type { Locate } from "./services/setup/tool-lookup";
 import type { UtilityService } from "./services/utility";
 import { SettingsStore } from "./settings-store";
 
@@ -79,6 +80,13 @@ export interface StartServerOptions {
   utility?: UtilityService;
   /** Runs CLI tools (detection, git); injectable for tests. */
   exec?: Exec;
+  /** Finds claude, codex and gh for the setup checks; injectable for tests. */
+  locate?: Locate;
+  /**
+   * Picks up PATH changes before a setup re-check (default: the Windows registry's `Path`).
+   * Tests that pin PATH pass a no-op.
+   */
+  refreshPath?: () => Promise<unknown>;
   /** User home for provider config files and the default clone folder. */
   userHome?: string;
   /** Where clones go by default (`~/codeden-projects`). */
@@ -181,6 +189,8 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     runner: runnerPort(() => runner),
     secrets,
     exec: opts.exec,
+    locate: opts.locate,
+    refreshPath: opts.refreshPath,
     utility: opts.utility,
     userHome: opts.userHome,
     projectsDir: opts.projectsDir,

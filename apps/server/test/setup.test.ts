@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { basename, join } from "node:path";
+import type { ExecutableLookup } from "@codeden/providers";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Exec, ExecResult } from "../src/services/exec";
 import {
   expiresWithin,
@@ -11,7 +12,7 @@ import {
   parseGhAuthText,
   parseVersion,
 } from "../src/services/setup/parse";
-import { SetupService } from "../src/services/setup/setup-service";
+import { SetupService, type SetupServiceDeps } from "../src/services/setup/setup-service";
 import { SettingsStore } from "../src/settings-store";
 
 const NOW = Date.parse("2026-11-07T10:00:00.000Z");
@@ -63,10 +64,10 @@ describe("detection parsers", () => {
   });
 });
 
-/** Fake CLIs: a map from "command args" to a result. */
+/** Fake CLIs: a map from "command args" to a result (commands match by file name). */
 function fakeExec(table: Record<string, Partial<ExecResult>>, calls: string[] = []): Exec {
   return async (command, args) => {
-    const key = [command, ...args].join(" ");
+    const key = [basename(command), ...args].join(" ");
     calls.push(key);
     const hit = table[key];
     if (!hit)
@@ -81,6 +82,38 @@ function fakeExec(table: Record<string, Partial<ExecResult>>, calls: string[] = 
       ...hit,
     };
   };
+}
+
+/** Fake look-up: a tool is found at `/bin/<name>` when the table answers its `--version`. */
+function fakeLocate(
+  table: Record<string, Partial<ExecResult>>,
+  overrides: Record<string, ExecutableLookup> = {},
+): (name: string) => Promise<ExecutableLookup> {
+  return async (name) => {
+    const override = overrides[name];
+    if (override) return override;
+    const hit = table[`${name} --version`];
+    if (!hit || (hit.code ?? 0) !== 0) return { version: null, broken: [] };
+    const version = /\d+\.\d+\.\d+/.exec(hit.stdout ?? "")?.[0] ?? null;
+    return { command: { kind: "native", path: `/bin/${name}` }, version, broken: [] };
+  };
+}
+
+/** A service over fake CLIs, with no PATH refresh and a bash setup terminal. */
+function service(
+  table: Record<string, Partial<ExecResult>>,
+  deps: Partial<SetupServiceDeps> & { calls?: string[] } = {},
+): SetupService {
+  const { calls, ...rest } = deps;
+  return new SetupService({
+    exec: fakeExec(table, calls),
+    locate: fakeLocate(table),
+    refreshPath: async () => undefined,
+    shell: "/bin/bash",
+    settings,
+    platform: "linux",
+    ...rest,
+  });
 }
 
 let dir: string;
@@ -111,18 +144,16 @@ const happy: Record<string, Partial<ExecResult>> = {
 
 describe("SetupService", () => {
   it("runs every check, flags an expiring Claude login and reports readiness", async () => {
-    const service = new SetupService({
-      exec: fakeExec(happy),
-      settings,
-      platform: "linux",
+    const setup = service(happy, {
       nodeVersion: "v24.16.0",
       now: () => NOW,
       browserProbe: { exists: () => false },
     });
-    const status = await service.status();
+    const status = await setup.status();
     const by = Object.fromEntries(status.checks.map((c) => [c.id, c]));
     expect(by.claude).toMatchObject({ state: "warning", loggedIn: true, version: "2.1.318" });
-    expect(by.claude?.fix?.command).toBe("claude auth login");
+    // Sign in runs the copy that was found, by its full path.
+    expect(by.claude?.fix?.command).toBe("/bin/claude auth login");
     expect(by.codex).toMatchObject({ state: "missing", installed: true, loggedIn: false });
     expect(by.gh).toMatchObject({ state: "missing", installed: false });
     expect(by.git).toMatchObject({ state: "ok", account: "Ada <ada@example.com>" });
@@ -135,53 +166,147 @@ describe("SetupService", () => {
 
   it("caches results and re-checks on refresh", async () => {
     const calls: string[] = [];
-    const service = new SetupService({ exec: fakeExec(happy, calls), settings, platform: "linux" });
-    await service.status();
+    const setup = service(happy, { calls });
+    await setup.status();
     const first = calls.length;
-    await service.status();
+    await setup.status();
     expect(calls.length).toBe(first);
-    await service.status({ refresh: true });
+    await setup.status({ refresh: true });
     expect(calls.length).toBe(first * 2);
   });
 
   it("reports every completed check, but not cached results", async () => {
     const checked: string[] = [];
-    const service = new SetupService({
-      exec: fakeExec(happy),
-      settings,
-      platform: "linux",
+    const setup = service(happy, {
       onChecked: (status) => {
         checked.push(status.checkedAt);
         throw new Error("a failing listener does not fail the check");
       },
     });
-    await service.status();
-    await service.status();
+    await setup.status();
+    await setup.status();
     expect(checked).toHaveLength(1);
-    await expect(service.status({ refresh: true })).resolves.toMatchObject({ ready: true });
+    await expect(setup.status({ refresh: true })).resolves.toMatchObject({ ready: true });
     expect(checked).toHaveLength(2);
   });
 
   it("times out slow checks instead of hanging", async () => {
     const slow: Exec = (command, args) =>
-      command === "claude" ? new Promise(() => {}) : fakeExec(happy)(command, args);
-    const service = new SetupService({
-      exec: slow,
-      settings,
-      platform: "linux",
-      checkTimeoutMs: 50,
-    });
-    const status = await service.status();
+      basename(command) === "claude" ? new Promise(() => {}) : fakeExec(happy)(command, args);
+    const setup = service(happy, { exec: slow, checkTimeoutMs: 50 });
+    const status = await setup.status();
     expect(status.checks.find((c) => c.id === "claude")).toMatchObject({ state: "error" });
     expect(status.ready).toBe(false);
   });
 
   it("persists completion in settings and hands out login commands", () => {
-    const service = new SetupService({ exec: fakeExec({}), settings });
-    service.complete();
+    const setup = service({});
+    setup.complete();
     expect(new SettingsStore(join(dir, "settings.json")).get().setup.completed).toBe(true);
-    expect(service.loginCommand("gh")).toMatchObject({
+    // Before a check found gh, the bare command is all there is.
+    expect(setup.loginCommand("gh")).toMatchObject({
       command: "gh auth login --web --git-protocol https",
+    });
+  });
+});
+
+const BROKEN_SHIM = "C:\\Users\\Ada\\AppData\\Roaming\\npm\\claude.cmd";
+
+describe("installed but broken, and the resolved sign-in command", () => {
+  it("reports a broken install with its paths instead of a login error", async () => {
+    const broken: ExecutableLookup = {
+      version: null,
+      broken: [
+        {
+          path: BROKEN_SHIM,
+          reason: "points at a missing package",
+          target:
+            "C:\\Users\\Ada\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js",
+        },
+        { path: BROKEN_SHIM.replace(".cmd", ".ps1"), reason: "points at a missing package" },
+      ],
+    };
+    const calls: string[] = [];
+    const setup = service(happy, { calls, locate: fakeLocate(happy, { claude: broken }) });
+    const claude = (await setup.status()).checks.find((c) => c.id === "claude");
+    expect(claude).toMatchObject({ state: "missing", installed: false, loggedIn: null });
+    expect(claude?.message).toBe(
+      `Claude Code is installed but broken: \`${BROKEN_SHIM}\` points at a missing package (and 1 more). Reinstall it, or remove the leftover shim.`,
+    );
+    expect(claude?.broken).toHaveLength(2);
+    expect(claude?.fix?.kind).toBe("install");
+    // A broken copy is never asked for its login state.
+    expect(calls.some((c) => c.startsWith("claude auth"))).toBe(false);
+  });
+
+  it("keeps not installed for a tool that is nowhere", async () => {
+    const setup = service({ ...happy, "claude --version": { code: 1 } });
+    const claude = (await setup.status()).checks.find((c) => c.id === "claude");
+    expect(claude).toMatchObject({ state: "missing", message: "Claude Code is not installed" });
+    expect(claude?.broken).toBeUndefined();
+  });
+
+  it("explains an unreadable login state with the underlying error", async () => {
+    const setup = service({
+      ...happy,
+      "claude auth status": { code: 1, stderr: "Error: config is corrupt" },
+    });
+    const claude = (await setup.status()).checks.find((c) => c.id === "claude");
+    expect(claude).toMatchObject({
+      state: "warning",
+      installed: true,
+      message: "Could not read the Claude login state",
+    });
+    expect(claude?.detail).toContain("exited with code 1");
+    expect(claude?.detail).toContain("Error: config is corrupt");
+  });
+
+  it("signs in with the resolved copy, quoted for the terminal's shell", async () => {
+    const native = "C:\\Users\\Ada Lovelace\\.local\\bin\\claude.exe";
+    const found: ExecutableLookup = {
+      command: { kind: "native", path: native },
+      version: "2.1.319",
+      broken: [{ path: BROKEN_SHIM, reason: "points at a missing package" }],
+    };
+    const setup = service(happy, {
+      locate: fakeLocate(happy, { claude: found }),
+      shell: "powershell.exe",
+    });
+    const claude = (await setup.status()).checks.find((c) => c.id === "claude");
+    // The working native copy wins over the broken shim, which is still reported.
+    expect(claude).toMatchObject({ installed: true, version: "2.1.319", executablePath: native });
+    expect(claude?.broken).toHaveLength(1);
+    expect(claude?.fix?.command).toBe(`& '${native}' auth login`);
+    expect(setup.loginCommand("claude")).toEqual({
+      tool: "claude",
+      command: `& '${native}' auth login`,
+      args: ["auth", "login"],
+    });
+    expect(setup.loginCommand("codex").command).toBe("& '/bin/codex' login");
+  });
+
+  it("picks up a PATH change on re-check, without a restart", async () => {
+    let path = ["/usr/bin"];
+    const refreshPath = vi.fn(async () => {
+      path = ["/usr/bin", "/home/ada/.local/bin"];
+    });
+    const locate = async (name: string): Promise<ExecutableLookup> =>
+      name === "claude" && path.includes("/home/ada/.local/bin")
+        ? {
+            command: { kind: "native", path: "/home/ada/.local/bin/claude" },
+            version: "2.1.319",
+            broken: [],
+          }
+        : fakeLocate({})(name);
+    const setup = service(happy, { locate, refreshPath });
+    expect((await setup.status()).checks.find((c) => c.id === "claude")?.installed).toBe(false);
+    // A plain (cached or first) status leaves PATH alone; a re-check refreshes it first.
+    expect(refreshPath).not.toHaveBeenCalled();
+    const after = await setup.status({ refresh: true });
+    expect(refreshPath).toHaveBeenCalledTimes(1);
+    expect(after.checks.find((c) => c.id === "claude")).toMatchObject({
+      installed: true,
+      executablePath: "/home/ada/.local/bin/claude",
     });
   });
 });
