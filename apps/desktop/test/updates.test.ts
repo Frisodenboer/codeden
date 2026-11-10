@@ -40,7 +40,7 @@ describe("update policy", () => {
     expect(updateSupport({ packaged: true, platform: "win32", macSigned: false })).toBeNull();
     expect(updateSupport({ packaged: true, platform: "linux", macSigned: false })).toBeNull();
     expect(updateSupport({ packaged: true, platform: "darwin", macSigned: false })).toMatch(
-      /not signed/,
+      /isn't signed with a Developer ID/,
     );
     expect(updateSupport({ packaged: true, platform: "darwin", macSigned: true })).toBeNull();
   });

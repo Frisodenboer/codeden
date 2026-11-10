@@ -14,7 +14,7 @@ export function updateSupport(opts: {
 }): string | null {
   if (!opts.packaged) return "Updates are installed by the desktop app's installed builds only.";
   if (opts.platform === "darwin" && !opts.macSigned) {
-    return "This macOS build is not signed, so it can't update itself. Download new versions from GitHub Releases.";
+    return "This macOS build isn't signed with a Developer ID, so it can't update itself. Download new versions from GitHub Releases.";
   }
   return null;
 }

@@ -7,7 +7,9 @@
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
-    <!-- Native modules (node-pty, the keychain module) are loaded by the server and runner. -->
+    <!-- Native modules (node-pty, the keychain module) are loaded by the server and runner.
+         An ad-hoc signed build (no Developer ID) also needs it for Electron's own frameworks,
+         which have no Team ID that library validation could match. -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
     <!-- Dictation uses the microphone. -->

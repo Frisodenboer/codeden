@@ -103,6 +103,19 @@ if (missing.length) {
   ]);
 }
 
+// electron-builder bundles only the platform binaries the app declares itself (it skips
+// transitive optional ones), so declare the keychain module's binary for every target
+// architecture; without it the keychain doesn't load and saved API keys live in memory only.
+const stagePkgPath = join(stage, "package.json");
+const stagePkg = JSON.parse(readFileSync(stagePkgPath, "utf8"));
+stagePkg.optionalDependencies = Object.fromEntries(
+  archs
+    .map(keyringBinary)
+    .filter(Boolean)
+    .map((name) => [name, keyring.version]),
+);
+writeFileSync(stagePkgPath, `${JSON.stringify(stagePkg, null, 2)}\n`);
+
 // 3. Build.
 const platform = { win32: Platform.WINDOWS, darwin: Platform.MAC, linux: Platform.LINUX }[
   process.platform

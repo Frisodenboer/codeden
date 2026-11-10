@@ -135,7 +135,8 @@ jobs:
 
   # The desktop app (docs/desktop.md): installers plus the update metadata the app reads
   # (latest.yml, latest-mac.yml, latest-linux.yml, blockmaps), attached to the same GitHub
-  # Release. Signing is optional: without the secrets the builds are unsigned.
+  # Release. Signing is optional: without the secrets Windows builds are unsigned and macOS
+  # builds are signed ad hoc.
   desktop:
     name: desktop (${{ matrix.os }})
     needs: release
@@ -201,7 +202,8 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # Unset empty secrets so electron-builder treats the build as unsigned.
+          # Unset empty secrets so electron-builder skips signing on Windows and signs ad hoc
+          # on macOS (see electron-builder.config.mjs).
           for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
             [ -z "${!v}" ] && unset "$v"
           done
@@ -211,6 +213,14 @@ jobs:
             pnpm --filter @codeden/desktop package
           fi
           ls -la apps/desktop/release
+
+      # The .dmg and .zip as a user downloads them: a valid signature with the hardened
+      # runtime and our entitlements, an app that launches, and a Gatekeeper verdict on the
+      # quarantined copy that is never "damaged". Fails the release otherwise.
+      - name: Check the macOS signatures
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash apps/desktop/scripts/check-mac-signature.sh apps/desktop/release
 
       - name: Collect the release files
         id: files

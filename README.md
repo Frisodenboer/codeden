@@ -55,7 +55,7 @@ Prefer an app? **[Download the desktop app](https://github.com/leonvanzyl/codede
 npx codeden            # or: npm i -g codeden && codeden
 ```
 
-Or install the **desktop app** from the [latest release](https://github.com/leonvanzyl/codeden/releases/latest) (`CodeDen-Setup-<version>.exe` on Windows, a `.dmg` on macOS, an AppImage or `.deb` on Linux). It needs no Node.js, uses the same data as `npx codeden` (`~/.codeden`), lives in the tray and updates itself. Unsigned builds show a SmartScreen or Gatekeeper warning the first time; see [The desktop app](docs/desktop.md).
+Or install the **desktop app** from the [latest release](https://github.com/leonvanzyl/codeden/releases/latest) (`CodeDen-Setup-<version>.exe` on Windows, a `.dmg` on macOS, an AppImage or `.deb` on Linux). It needs no Node.js, uses the same data as `npx codeden` (`~/.codeden`), lives in the tray and updates itself. Builds without a publisher signature show a warning the first time you open them: on Windows choose **More info › Run anyway**; on macOS open CodeDen once, then choose **Open Anyway** under **System Settings › Privacy & Security**. If macOS says the app is "damaged", see [Unsigned builds](docs/desktop.md#unsigned-builds).
 
 1. The **setup checklist** detects Claude Code, Codex, GitHub, your git identity and a browser, and only asks about what's missing. Each failed check has one fix: an install command, or a **Sign in** button that runs the tool's own login in an embedded terminal.
 2. **Add a project:** pick a local folder (a server-side folder picker) or paste a GitHub URL to clone.
