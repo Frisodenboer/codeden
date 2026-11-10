@@ -33,7 +33,7 @@ export const browserNavigate = defineTool({
   scope: "session",
   input: z.object({ url: z.string().min(1).max(8_000), tabId }),
   handler: async (input, { services, sessionId }) => {
-    const result = await services.browser.navigate(sessionId, input.url, input.tabId);
+    const result = await services.browser.agentNavigate(sessionId, input.url, input.tabId);
     const { tabs } = await services.browser.tabs(sessionId);
     const status = result.status ? ` (HTTP ${result.status})` : "";
     return `Navigated to ${result.url ?? input.url}${status}.\nTabs:\n${tabLine(tabs)}`;
@@ -48,7 +48,7 @@ export const browserSnapshot = defineTool({
   scope: "session",
   input: z.object({ tabId }),
   handler: async (input, { services, sessionId }) => {
-    const snap = await services.browser.command({
+    const snap = await services.browser.agentCommand({
       name: "browser.snapshot",
       sessionId,
       tabId: input.tabId,
@@ -70,7 +70,7 @@ export const browserClick = defineTool({
     tabId,
   }),
   handler: async (input, { services, sessionId }) => {
-    await services.browser.command({ name: "browser.click", sessionId, ...input });
+    await services.browser.agentCommand({ name: "browser.click", sessionId, ...input });
     return `Clicked ${input.ref}.`;
   },
 });
@@ -88,7 +88,7 @@ export const browserType = defineTool({
     tabId,
   }),
   handler: async (input, { services, sessionId }) => {
-    await services.browser.command({ name: "browser.type", sessionId, ...input });
+    await services.browser.agentCommand({ name: "browser.type", sessionId, ...input });
     return `Typed into ${input.ref}${input.submit ? " and pressed Enter" : ""}.`;
   },
 });
@@ -100,7 +100,7 @@ export const browserPress = defineTool({
   scope: "session",
   input: z.object({ key: z.string().min(1).max(60), tabId }),
   handler: async (input, { services, sessionId }) => {
-    await services.browser.command({ name: "browser.press", sessionId, ...input });
+    await services.browser.agentCommand({ name: "browser.press", sessionId, ...input });
     return `Pressed ${input.key}.`;
   },
 });
@@ -118,6 +118,7 @@ export const browserLogs = defineTool({
     tabId,
   }),
   handler: async (input, { services, sessionId }) => {
+    // Reads captured buffers only: not shown as the agent acting on the page.
     const logs = await services.browser.command({
       name: "browser.logs",
       sessionId,
@@ -161,7 +162,7 @@ export const browserWait = defineTool({
       message: "Pass exactly one of selector, text or networkIdle",
     }),
   handler: async (input, { services, sessionId }) => {
-    const { matched } = await services.browser.command({
+    const { matched } = await services.browser.agentCommand({
       name: "browser.wait",
       sessionId,
       ...input,
@@ -178,7 +179,7 @@ export const browserEvaluate = defineTool({
   scope: "session",
   input: z.object({ expression: z.string().min(1).max(20_000), tabId }),
   handler: async (input, { services, sessionId }) => {
-    const result = await services.browser.command({
+    const result = await services.browser.agentCommand({
       name: "browser.evaluate",
       sessionId,
       ...input,
@@ -211,7 +212,7 @@ export const browserOpenDevServer = defineTool({
       }
       port = servers[0]?.port as number;
     }
-    const { tab } = await services.browser.command({
+    const { tab } = await services.browser.agentCommand({
       name: "browser.devServer",
       sessionId,
       port,

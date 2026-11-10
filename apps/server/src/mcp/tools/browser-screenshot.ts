@@ -40,7 +40,7 @@ export const browserScreenshot = defineTool({
     mkdirSync(incoming, { recursive: true });
     const tmp = join(incoming, `${randomUUID()}.png`);
     try {
-      const shot = await services.browser.command({
+      const shot = await services.browser.agentCommand({
         name: "browser.screenshot",
         sessionId,
         path: tmp,
