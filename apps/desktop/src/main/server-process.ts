@@ -1,6 +1,22 @@
 import { type ChildProcess, fork } from "node:child_process";
-import { mkdirSync, openSync } from "node:fs";
+import { mkdirSync, openSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
+
+/** The server log is moved aside to `<file>.1` (one copy kept) when it grows past this. */
+const LOG_LIMIT_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Keep the server log from growing without bound: past `limit` it becomes `<file>.1`
+ * (replacing an older one) and a fresh file starts. Never throws.
+ */
+export function rotateLog(file: string, limit = LOG_LIMIT_BYTES): void {
+  try {
+    if (statSync(file).size > limit) renameSync(file, `${file}.1`);
+  } catch {
+    // No log yet, or it is in use: append to it as it is.
+  }
+}
+
 import {
   type DesktopHostMessage,
   DesktopServerMessage,
@@ -56,6 +72,7 @@ export class ServerProcess {
 
   start(): Promise<ServerReady> {
     mkdirSync(dirname(this.opts.logFile), { recursive: true });
+    rotateLog(this.opts.logFile);
     const out = openSync(this.opts.logFile, "a");
     const args = ["--home", this.opts.home, "--port", String(this.opts.port)];
     if (this.opts.fake) args.push("--fake");

@@ -204,6 +204,15 @@ describe("entities", () => {
     roundTrip(Project, { ...sampleProject, kind: "local", github: undefined });
     roundTrip(Session, sampleSession);
     roundTrip(InboxItem, sampleInboxItem);
+    roundTrip(InboxItem, {
+      ...sampleInboxItem,
+      kind: "cleanup_failed",
+      priority: "normal",
+      title: "Couldn't remove the worktree",
+      body: "A file in the worktree is in use",
+      itemId: null,
+      requestId: null,
+    });
     roundTrip(Automation, sampleAutomation);
   });
 

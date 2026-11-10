@@ -71,7 +71,23 @@ export function InboxActions({ item }: { item: InboxItem }) {
     onError: fail,
     onSuccess: () => toast.success("Retrying"),
   });
-  const busy = dismiss.isPending || merge.isPending || retry.isPending;
+  // Archiving again retries the worktree removal; the server resolves the item when it works.
+  const removeAgain = useMutation({
+    mutationFn: async () => {
+      if (!item.sessionId) throw new Error("This item has no session");
+      return client.archiveSession(item.sessionId);
+    },
+    onError: fail,
+    onSuccess: (res) => {
+      if (res.worktree.status === "removed") toast.success("Worktree removed");
+      else {
+        toast.error("Couldn't remove the worktree", {
+          description: res.worktree.message ?? undefined,
+        });
+      }
+    },
+  });
+  const busy = dismiss.isPending || merge.isPending || retry.isPending || removeAgain.isPending;
   const dismissButton = (
     <Button
       size="sm"
@@ -117,6 +133,15 @@ export function InboxActions({ item }: { item: InboxItem }) {
         <>
           <Button size="sm" onClick={() => retry.mutate()} disabled={busy}>
             <RotateCcw /> Retry
+          </Button>
+          {dismissButton}
+        </>
+      );
+    case "cleanup_failed":
+      return (
+        <>
+          <Button size="sm" onClick={() => removeAgain.mutate()} disabled={busy}>
+            <RotateCcw /> {removeAgain.isPending ? "Removing…" : "Try again"}
           </Button>
           {dismissButton}
         </>

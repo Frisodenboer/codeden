@@ -8,6 +8,7 @@ import { topLevel } from "../git/checkpoints";
 import { git, gitOk, isWorkTree } from "../git/exec";
 import { currentBranch, defaultBranch } from "../git/ops";
 import type { ProcessSupervisor } from "../process/supervisor";
+import { endProcessesInside } from "../process/worktree-processes";
 import { readProjectConfig } from "./project-config";
 import { pruneWorktrees, worktreeState } from "./removal";
 import { runSetup, type SetupStep } from "./setup";
@@ -109,6 +110,7 @@ async function clearTarget(
   }
   if (info.state === "orphan" && isManagedWorktreePath(ctx.home, path) && !info.containsOther) {
     await ctx.supervisor.killUnder(path);
+    await endProcessesInside(path, { home: ctx.home });
     await discardFolder(ctx.home, path);
   } else if (info.state !== "missing" && !isEmptyDir(path)) {
     throw new CommandError("path_exists", `${path} exists and is not a worktree`);

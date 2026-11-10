@@ -322,6 +322,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     store: opts.store,
     settings: () => opts.settings.get(),
     stopSession: (id) => (sessions as SessionService).stop(id),
+    inbox,
     ...opts.worktreeCleanup,
     log: opts.log,
   });
