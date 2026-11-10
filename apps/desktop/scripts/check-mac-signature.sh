@@ -192,6 +192,13 @@ check_launch() {
     fail "$label: the app did not quit within 60 s of SIGTERM"
     echo "--- app output"
     tail -n 50 "$work/app-$label.log" || true
+    # The app's own logs show which quit step it was stuck in.
+    for log in "$home"/logs/*.log; do
+      if [ -f "$log" ]; then
+        echo "--- $log"
+        tail -n 40 "$log"
+      fi
+    done
   fi
 }
 

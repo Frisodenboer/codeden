@@ -12,6 +12,7 @@ import type { LaunchArgs } from "./args";
 import { AppBadge } from "./badge";
 import { NativeBrowserFeature } from "./browser/feature";
 import { type Connection, connect, launchUrl } from "./connection";
+import { forceExit } from "./exit";
 import { registerBridge } from "./ipc";
 import { appMenuTemplate } from "./menu";
 import { homeFiles } from "./server-plan";
@@ -32,6 +33,8 @@ import { MainWindow } from "./window";
 import { windowShot } from "./window-shot";
 
 const DOCS_URL = "https://github.com/leonvanzyl/codeden/blob/main/docs/desktop.md";
+/** Longest a quit may take (browser hand-off 15 s + server stop up to 30 s) before it's forced. */
+const QUIT_LIMIT_MS = 45_000;
 
 /**
  * The desktop app (§17): one window on the server's UI, a tray with live counts, the app
@@ -56,6 +59,11 @@ export class DesktopApp {
   private quitting = false;
   private quitReady = false;
   private standaloneTimer: NodeJS.Timeout | undefined;
+
+  /** True once a quit has started (startup errors after that are part of quitting). */
+  get isQuitting(): boolean {
+    return this.quitting;
+  }
   private notifiedUpdate: string | null = null;
 
   constructor(private readonly args: LaunchArgs) {
@@ -193,6 +201,11 @@ export class DesktopApp {
     event.preventDefault();
     if (this.quitting) return;
     this.quitting = true;
+    // Every step below is bounded, but quitting must finish even if one isn't.
+    const watchdog = setTimeout(() => {
+      this.log(`app: still quitting after ${QUIT_LIMIT_MS / 1000} s; exiting now`);
+      forceExit(0);
+    }, QUIT_LIMIT_MS);
     void (async () => {
       try {
         this.window?.allowClose();
@@ -202,6 +215,8 @@ export class DesktopApp {
         // Open session browsers move to the runner's Chromium before the views go.
         await this.browser?.quit();
         if (this.updates && quitAction(this.updates.state.phase) === "install") {
+          // Installing drains the runner first (up to 90 s); the installer ends the app.
+          clearTimeout(watchdog);
           await this.updates.installOnQuit();
           return;
         }

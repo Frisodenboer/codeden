@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { app, BrowserWindow, nativeTheme, type Rectangle, screen, shell } from "electron";
-import { allowPermission, externalUrl, isServerUrl } from "./security";
+import { allowPermission, externalUrl, isServerUrl, redactToken } from "./security";
 import { readWindowState, restoreBounds, type WindowState } from "./window-state";
 import { WindowZoom, type ZoomCommand } from "./zoom";
 
@@ -78,7 +78,12 @@ export class MainWindow {
   /** Load the server's UI (the launch URL authenticates and is replaced by a redirect). */
   async load(url: string): Promise<void> {
     this.origin = new URL(url).origin;
-    await this.window.loadURL(url);
+    try {
+      await this.window.loadURL(url);
+    } catch (error) {
+      // The error quotes the launch URL, which carries the install token.
+      throw new Error(redactToken(String(error)));
+    }
   }
 
   get serverOrigin(): string | null {
