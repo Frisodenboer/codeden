@@ -108,11 +108,7 @@ describe.skipIf(!hasBrowser)("session browser (panel routes, /ws/browser, agent 
     expect(await viewer.waitFor((m) => m.type === "viewport" && m.mine && m.width === 460)).toEqual(
       { type: "viewport", width: 460, height: 712, deviceScaleFactor: 2, mine: true },
     );
-    // A frame captured just before the new size applied (the default page scaled to 920 px
-    // wide) can arrive first, so wait for one at the panel's size.
-    const frame = await viewer.waitFor(
-      (m) => m.type === "frame" && m.width === 920 && m.height === 1424,
-    );
+    const frame = await viewer.waitFor((m) => m.type === "frame" && m.width === 920);
     expect(frame).toMatchObject({ type: "frame", mediaType: "image/jpeg", height: 1424 });
 
     const snap = text(await mcp.callTool({ name: "browser_snapshot", arguments: {} }));
