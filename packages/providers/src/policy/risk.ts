@@ -1,5 +1,7 @@
 import type { ApprovalAction } from "@codeden/contracts";
+import { binName, unwrap } from "./command-words";
 import { isInWorkspace, isSecretPath, isWritable, type PathContext, resolveAgainst } from "./paths";
+import { pipesDownloadIntoInterpreter } from "./remote-scripts";
 import { parseShell, type ShellDialect, type SimpleCommand } from "./shell";
 
 /**
@@ -31,51 +33,12 @@ const risky = (action: ApprovalAction, reason: string): RiskAssessment => ({
 const MAX_DEPTH = 4;
 
 /**
- * Words that don't change what runs: elevation (`sudo`), wrappers (`env X=1`, `command`,
- * `exec`) and shell keywords that start a compound command (`if`, `then`, `do`, `{`, ...).
+ * Classify a shell command (any shell: POSIX, PowerShell or cmd). Downloads piped into an
+ * interpreter (`curl … | sh`, `irm … | iex`) are found on the parsed pipeline in
+ * `classifyList`; here, a download run through a substitution (`iex (irm …)`,
+ * `bash -c "$(curl …)"`, `bash <(curl …)`).
  */
-function unwrap(words: string[]): { tokens: string[]; elevated: boolean } {
-  let elevated = false;
-  let rest = words;
-  for (;;) {
-    const head = rest[0]?.toLowerCase();
-    if (head === "sudo" || head === "doas" || head === "runas" || head === "gsudo") {
-      elevated = true;
-      rest = rest.slice(1).filter((t, i) => !(i === 0 && t.startsWith("-")));
-    } else if (head === "env" || head === "command" || head === "exec" || head === "nohup") {
-      rest = rest.slice(1);
-    } else if (head && KEYWORDS.has(head)) {
-      rest = rest.slice(1);
-    } else if (head && /^[A-Za-z_][A-Za-z0-9_]*=/.test(head)) {
-      rest = rest.slice(1);
-    } else break;
-  }
-  return { tokens: rest, elevated };
-}
-
-const KEYWORDS = new Set(["if", "then", "else", "elif", "do", "while", "until", "time", "!", "{"]);
-
-const binName = (token: string | undefined): string =>
-  (token ?? "")
-    .replace(/\\/g, "/")
-    .split("/")
-    .pop()
-    ?.toLowerCase()
-    .replace(/\.(exe|cmd|bat|ps1)$/, "") ?? "";
-
-const DOWNLOADERS = /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b|downloadstring/i;
-const SHELLS =
-  /^\s*(sudo\s+)?(sh|bash|zsh|fish|dash|ksh|iex|invoke-expression|python3?|node|pwsh|powershell|perl|ruby)(\s|$)/i;
-
-/** Classify a shell command (any shell: POSIX, PowerShell or cmd). */
 export function classifyCommand(command: string, ctx: RiskContext): RiskAssessment {
-  // Remote script piped into an interpreter: `curl ... | sh`, `irm ... | iex`, `iex (irm ...)`.
-  const pipeline = command.split(/\|(?!\|)/);
-  for (let i = 1; i < pipeline.length; i += 1) {
-    if (DOWNLOADERS.test(pipeline[i - 1] ?? "") && SHELLS.test(pipeline[i] ?? "")) {
-      return risky("network", "Pipes a downloaded script straight into a shell");
-    }
-  }
   if (
     /\b(iex|invoke-expression)\b[^|]*\b(irm|iwr|invoke-restmethod|invoke-webrequest|downloadstring)\b/i.test(
       command,
@@ -97,6 +60,9 @@ export function classifyCommand(command: string, ctx: RiskContext): RiskAssessme
  * substitutions and subshells are classified too, without their `cd` leaking out.
  */
 function classifyList(list: SimpleCommand[], ctx: RiskContext, depth: number): RiskAssessment {
+  if (pipesDownloadIntoInterpreter(list)) {
+    return risky("network", "Pipes a downloaded script straight into a shell");
+  }
   let here = ctx;
   for (const cmd of list) {
     for (const nested of cmd.nested) {

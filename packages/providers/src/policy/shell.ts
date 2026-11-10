@@ -17,6 +17,8 @@ export interface SimpleCommand {
   writes: string[];
   /** Command lists inside substitutions and subshells (`$(…)`, `(…)`, `<(…)`), in order. */
   nested: SimpleCommand[][];
+  /** True when the command reads the output of the one before it (`a | b`, `a |& b`). */
+  piped?: boolean;
 }
 
 /** Parse a command line into its simple commands. */
@@ -62,7 +64,9 @@ class Builder {
     this.endWord();
     this.target = "word";
     const { cmd } = this;
-    if (cmd.words.length || cmd.writes.length || cmd.nested.length) this.out.push(cmd);
+    // An empty command keeps its state, so `curl … |` then `sh` on the next line stays piped.
+    if (!cmd.words.length && !cmd.writes.length && !cmd.nested.length) return;
+    this.out.push(cmd);
     this.cmd = { words: [], writes: [], nested: [] };
   }
 }
@@ -102,6 +106,8 @@ class Lexer {
         this.i += 1;
       } else if (c === "|") {
         b.endCommand();
+        // `||` runs the next command on failure; `|` and `|&` pipe into it.
+        if (next !== "|") b.cmd.piped = true;
         this.i += next === "|" || next === "&" ? 2 : 1;
       } else if (c === "&" && next === ">") {
         b.endWord();
