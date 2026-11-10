@@ -4,6 +4,14 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **Setup finds Claude Code and Codex where their installers put them.** After checking PATH, CodeDen also looks in the native installers' folders (`~/.local/bin` for Claude Code and Codex, `~/.claude/local`, Codex's standalone folder, and the GitHub CLI's default location), so a native install whose folder isn't on your PATH is found and used.
+- **Broken installs are named, not hidden.** A leftover npm shim whose package is gone used to show as "Could not read the Claude login state". Now every copy CodeDen finds is checked before it's used: broken copies are skipped in favour of a working one, and when none works, the row says **installed but broken** and lists the paths, with how to fix it.
+- **Re-check picks up PATH changes without a restart.** On Windows, **Re-check** (and the runner's provider re-detect) adds folders that were added to your user or system `Path` since CodeDen started, so the desktop app's long-running server and runner see newly installed tools. Agents and terminals started afterwards get the new PATH too.
+- **Sign in runs the copy CodeDen found.** The setup **Sign in** buttons for Claude Code, Codex and GitHub run that copy by its full path, quoted for the terminal's shell (`& 'C:\Users\you\.local\bin\claude.exe' auth login` in PowerShell), instead of whatever `claude` means in the terminal.
+- **"Could not read the login state" shows why.** The row's new **Details** show the underlying error (exit code and output).
+
 ## [0.4.4] - 2026-11-09
 
 ### Added

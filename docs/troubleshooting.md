@@ -63,6 +63,27 @@ The browser doesn't have the install token cookie, for example after clearing co
 
 Install Node.js 24 or later from <https://nodejs.org>, or with your version manager (`nvm install 24`, `fnm install 24`, `volta install node@24`). Check with `node --version` in the same terminal you run `npx codeden` from.
 
+### Claude Code or Codex is installed but broken
+
+The setup row says, for example, **"Claude Code is installed but broken: `C:\Users\you\AppData\Roaming\npm\claude.cmd` points at a missing package. Reinstall it, or remove the leftover shim."** CodeDen found the tool's file, but it doesn't run. Usually it's an npm shim (`claude.cmd`, `claude.ps1`, or a link in npm's `bin` folder) whose package was removed or only half installed. Typing `claude` in a terminal fails the same way, often with *"The term '' is not recognized"* in PowerShell. Open **Details** on the row to see every broken copy and what it points at.
+
+Fix it in one of two ways:
+
+- **Reinstall** the tool the way you want to use it, for example the native installer (`irm https://claude.ai/install.ps1 | iex` on Windows, `curl -fsSL https://claude.ai/install.sh | bash` elsewhere) or `npm install -g @anthropic-ai/claude-code`.
+- **Remove the leftover shim** if you've moved to another install. With npm: `npm uninstall -g @anthropic-ai/claude-code` (or `@openai/codex`), then delete any `claude*` / `codex*` files left in npm's global folder (`%APPDATA%\npm` on Windows, `$(npm prefix -g)/bin` elsewhere).
+
+Then press **Re-check**. You don't need to restart CodeDen.
+
+Where CodeDen looks, in order:
+
+1. Your PATH, as CodeDen sees it. On Windows, **Re-check** first adds folders that were added to your user or system `Path` since CodeDen started.
+2. The installers' own folders, even when they aren't on your PATH:
+   - Claude Code: `~/.local/bin/claude` (`%USERPROFILE%\.local\bin\claude.exe` on Windows), then `~/.claude/local/claude`.
+   - Codex: `~/.local/bin/codex`, then `~/.codex/packages/standalone/current` (or under `CODEX_HOME`).
+   - GitHub CLI: `C:\Program Files\GitHub CLI\gh.exe` on Windows; `/opt/homebrew/bin/gh` and `/usr/local/bin/gh` on macOS.
+
+The first copy that answers `--version` is used for detection, for sessions and for **Sign in**, so a working native install wins over a broken shim earlier on PATH. When the native installer says its folder *"is not in your PATH"*, CodeDen still finds it; add the folder to your PATH if you also want `claude` to work in your own terminals.
+
 ### Claude Code or Codex shows as not signed in
 
 Use **Sign in** on the setup checklist, or run the CLI's own login in a terminal and re-check:
@@ -74,6 +95,8 @@ gh auth login
 ```
 
 A Claude login close to expiry shows as a warning; signing in again clears it.
+
+**Sign in** runs the copy CodeDen found by its full path (in PowerShell, for example `& 'C:\Users\you\.local\bin\claude.exe' auth login`), so it works even when that copy isn't on your PATH. If the row says **"Could not read the Claude login state"**, CodeDen ran `claude auth status` but couldn't understand the answer. Open **Details** to see the exit code and output.
 
 ### "Claude Code support could not be installed"
 
@@ -136,7 +159,7 @@ Open the factory panel. A **paused** loop shows its reason (budget reached, repe
 
 CodeDen is tested on Windows first. Things worth knowing:
 
-- **Install the CLIs normally.** The native Claude Code installer (`claude.exe`) and the npm `claude.cmd` / `codex.cmd` shims all work; CodeDen unwraps npm shims itself, so no shell is involved.
+- **Install the CLIs normally.** The native Claude Code installer (`claude.exe`) and the npm `claude.cmd` / `codex.cmd` shims all work; CodeDen unwraps npm shims itself, so no shell is involved. The native installer's `%USERPROFILE%\.local\bin` is found even when it isn't on your PATH, and a PATH you change while CodeDen runs is picked up on **Re-check** (see [installed but broken](#claude-code-or-codex-is-installed-but-broken)).
 - **Terminal shell.** Terminals open **PowerShell** (`powershell.exe`). To use PowerShell 7 or Git Bash, set `CODEDEN_SHELL` before starting, for example in PowerShell:
 
   ```powershell

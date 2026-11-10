@@ -571,6 +571,7 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
 
 1. **Start.** `npx codeden` checks the Node version, creates `~/.codeden/`, generates the install token, starts the server and runner, and opens the browser on an already-authenticated URL.
 2. **Detect.** One checklist screen with live ticks. All checks run in parallel and nothing is asked when a check passes:
+   - **Finding the tools.** Claude Code, Codex and gh are looked for on PATH, then in their installers' own folders (Claude Code: `~/.local/bin`, and the older `~/.claude/local`; Codex: `~/.local/bin` and `$CODEX_HOME/packages/standalone`; gh: Program Files on Windows, Homebrew on macOS). Each copy found is checked before it is used: a shim's package must exist, a link must not dangle, and `--version` must answer within a few seconds (cached per file and modification time). Broken copies are skipped, so a working native install wins over a leftover npm shim earlier on PATH. When only broken copies exist the row says **installed but broken** and lists their paths; when nothing is found it says **not installed**. A re-check (and the runner's provider re-detect) first picks up PATH changes made since CodeDen started: on Windows from the user's and the machine's `Path` in the registry, added to the server's and the runner's PATH so agents and terminals started afterwards see them too.
    - **Claude Code:** `claude --version`, then `claude auth status`. This returns JSON with `loggedIn`, `authMethod` and `loginExpiresAt`. Logged in means ready; the Agent SDK uses the installed binary and its login.
    - **Claude Code support:** when `claude` is installed, a row for the Claude Agent SDK. It installs into `~/.codeden/deps/` when the user continues, with live progress; a failure shows npm's reason and a **Retry**. Sessions that start before it is installed install it themselves, and `codeden doctor --install` does it from a terminal.
    - **Codex:** `codex --version`, then `codex login status`. Logged in also enables **image generation through Codex** as the default engine (§12.5).
@@ -579,7 +580,8 @@ The goal is to get from `npx codeden` to your first session in under a minute, w
    - **Browser:** an installed Edge or Chrome.
 3. **Fix only what's missing.** Each failed check has one action:
    - The install command for the tool.
-   - Or a **Sign in** button that runs the tool's own login (`claude auth login`, `codex login`, `gh auth login`) in an embedded terminal, so the provider's normal browser login flow handles it.
+   - Or a **Sign in** button that runs the tool's own login (`claude auth login`, `codex login`, `gh auth login`) in an embedded terminal, so the provider's normal browser login flow handles it. It runs the exact copy detection found, by its full path and quoted for the terminal's shell (`& 'C:\Users\x\.local\bin\claude.exe' auth login` in PowerShell), so a broken shim or an outdated PATH in the terminal can't get in the way.
+   - A login state that can't be read is a warning with the underlying error (exit code, output) in the row's details.
    - API keys are only an advanced alternative, never the default ask.
 
    At least one agent provider is required; GitHub is recommended but optional (local-only projects work without it).
