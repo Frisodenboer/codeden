@@ -133,6 +133,32 @@ export class FakeSession implements ProviderSession {
         });
         return;
       }
+      // Classified failures: `[fail:transient]` (an overloaded API) and `[fail:usage]` (a usage
+      // limit that resets a second later).
+      if (prompt.includes("[fail:transient]") || prompt.includes("[fail:usage]")) {
+        await this.step(turn);
+        const usage = prompt.includes("[fail:usage]");
+        this.emit({
+          type: "turn.failed",
+          threadId,
+          turnId,
+          error: usage
+            ? {
+                code: "usage_limit",
+                message: "Scripted usage limit",
+                retryable: true,
+                kind: "usage_limit",
+                retryAt: new Date(Date.now() + 1000).toISOString(),
+              }
+            : {
+                code: "overloaded",
+                message: "Scripted overload",
+                retryable: true,
+                kind: "transient",
+              },
+        });
+        return;
+      }
 
       await this.streamAssistant(turn, threadId, this.replyFor(prompt));
       await this.todoList(turn);

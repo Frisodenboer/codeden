@@ -30,9 +30,11 @@ import { ProjectService } from "./projects/project-service";
 import { ProjectRedetector } from "./projects/redetector";
 import { type RunnerPort, redetectProviders } from "./runner-port";
 import type { SecretStore } from "./secrets";
+import { AutoRetry, type AutoRetryDeps } from "./sessions/auto-retry";
 import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
 import { Outbox } from "./sessions/outbox";
+import { PrFeedbackService } from "./sessions/pr-feedback";
 import { QuestionBroker } from "./sessions/questions";
 import { QueueService } from "./sessions/queue";
 import { SessionRecovery } from "./sessions/recovery";
@@ -97,6 +99,8 @@ export interface ServicesOptions {
   worktreeCleanup?: Pick<WorktreeCleanupDeps, "now" | "intervalMs" | "initialDelayMs">;
   /** Unwatched approvals: how long they wait for the user (tests shorten it). */
   unwatchedApprovals?: Pick<UnwatchedApprovalsDeps, "waitMs" | "now">;
+  /** Shorter retry waits (tests). */
+  autoRetry?: Pick<AutoRetryDeps, "delaysMs" | "usageMarginMs">;
   log?: (message: string) => void;
 }
 
@@ -155,6 +159,10 @@ export interface AppServices {
   worktreeCleanup: WorktreeCleanup;
   /** Denies approvals nobody is there to answer, so unattended work never waits forever. */
   unwatchedApprovals: UnwatchedApprovals;
+  /** CI failures, requested changes and conflicts sent to user-started sessions' agents (§9). */
+  prFeedback: PrFeedbackService;
+  /** Continues agent sessions after transient failures and usage limits. */
+  autoRetry: AutoRetry;
   userHome: string;
 }
 
@@ -322,6 +330,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     store: opts.store,
     settings: () => opts.settings.get(),
     stopSession: (id) => (sessions as SessionService).stop(id),
+    inbox,
     ...opts.worktreeCleanup,
     log: opts.log,
   });
@@ -386,6 +395,23 @@ export function createServices(opts: ServicesOptions): AppServices {
     factory,
     worktreeCleanup,
     unwatchedApprovals,
+    prFeedback: new PrFeedbackService({
+      store: opts.store,
+      repo: sessionRepo,
+      settings: () => opts.settings.get(),
+      send: (id, input) => sessions.send(id, { input, whenBusy: "queue" }, "codeden"),
+      log: opts.log,
+    }),
+    autoRetry: new AutoRetry({
+      db: opts.db,
+      store: opts.store,
+      repo: sessionRepo,
+      inbox,
+      settings: () => opts.settings.get(),
+      send: (id, input) => sessions.send(id, { input, whenBusy: "queue" }, "codeden"),
+      ...opts.autoRetry,
+      log: opts.log,
+    }),
     configFiles: new ConfigFiles({
       projects,
       home: userHome,

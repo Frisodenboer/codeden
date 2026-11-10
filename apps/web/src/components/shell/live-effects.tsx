@@ -20,6 +20,7 @@ const inboxVerb: Record<string, string> = {
   automation_result: "Automation result",
   message: "Message",
   conflict: "Already running",
+  cleanup_failed: "Worktree not removed",
 };
 
 /**

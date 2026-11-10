@@ -8,6 +8,7 @@ import type {
 } from "@codeden/contracts";
 import type { EventStore } from "../../events/store";
 import { badRequest, errorMessage } from "../errors";
+import type { InboxService } from "../inbox-service";
 import type { ProjectService } from "../projects/project-service";
 import { type RunnerPort, runnerErrorCode } from "../runner-port";
 import type { SessionRepo } from "./repo";
@@ -20,6 +21,8 @@ export interface WorktreeCleanupDeps {
   settings: () => Settings;
   /** Stops a session (provider turn, queued messages, open approvals) before it is archived. */
   stopSession: (id: string) => Promise<unknown>;
+  /** Where a removal that keeps failing is reported (`cleanup_failed`). */
+  inbox?: Pick<InboxService, "find" | "put" | "close">;
   now?: () => Date;
   /** How often the inactivity sweep runs (default hourly). */
   intervalMs?: number;
@@ -187,11 +190,13 @@ export class WorktreeCleanup {
         return outcome("kept_changes", "The worktree has uncommitted changes, so it was kept");
       }
       this.deps.log?.(`worktree cleanup: could not remove ${session.worktreePath}: ${message}`);
+      this.reportFailure(session, message);
       return outcome("failed", message);
     }
     this.deps.repo.update(id, (s) => ({ ...s, worktreeRemovedAt: this.now().toISOString() }));
     this.kept.delete(id);
     this.forced.delete(id);
+    this.clearFailure(id);
     this.deps.log?.(`worktree cleanup: removed ${session.worktreePath}`);
     return outcome("removed", discarded ? "Its uncommitted changes were discarded" : null);
   }
@@ -253,7 +258,58 @@ export class WorktreeCleanup {
     }
   }
 
+  /**
+   * Put a failed removal in the inbox (`cleanup_failed`), so it can't go unnoticed while the
+   * sweep keeps retrying. One item per session: updated when the reason changes, reopened
+   * after an earlier one was resolved, and left alone once the user dismissed it.
+   */
+  private reportFailure(session: Session, message: string): void {
+    const inbox = this.deps.inbox;
+    if (!inbox) return;
+    const id = cleanupInboxId(session.id);
+    const existing = inbox.find(id);
+    const body = `${message}\n\nCodeDen tries again every hour; archive the session again to retry now.`;
+    if (
+      existing?.status === "dismissed" ||
+      (existing?.status === "open" && existing.body === body)
+    ) {
+      return;
+    }
+    const now = this.now().toISOString();
+    inbox.put({
+      id,
+      kind: "cleanup_failed",
+      status: "open",
+      priority: "normal",
+      title: `Couldn't remove the worktree: ${session.title ?? session.purpose}`,
+      body,
+      projectId: session.projectId,
+      sessionId: session.id,
+      threadId: session.rootThreadId,
+      itemId: null,
+      requestId: null,
+      issue: session.issue,
+      pr: session.pr,
+      automationRunId: session.automationRunId,
+      createdAt: existing?.status === "open" ? existing.createdAt : now,
+      updatedAt: now,
+      resolvedAt: null,
+      resolution: null,
+    });
+  }
+
+  /** The worktree is gone: resolve its open `cleanup_failed` item. */
+  private clearFailure(sessionId: string): void {
+    const item = this.deps.inbox?.find(cleanupInboxId(sessionId));
+    if (item?.status === "open") this.deps.inbox?.close(item, "resolved", { removed: true });
+  }
+
   private now(): Date {
     return this.deps.now?.() ?? new Date();
   }
+}
+
+/** The inbox item reporting that a session's worktree could not be removed. */
+export function cleanupInboxId(sessionId: string): string {
+  return `inbox:${sessionId}:worktree-cleanup`;
 }

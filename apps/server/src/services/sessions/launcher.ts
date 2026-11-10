@@ -17,6 +17,7 @@ import { type RunnerPort, runnerErrorCode } from "../runner-port";
 import { slugWords } from "./conflicts";
 import { ownBranch } from "./own-branch";
 import type { SessionRepo } from "./repo";
+import { setupFailureNote, withSetupNote } from "./setup-failure";
 
 export interface LauncherDeps {
   repo: SessionRepo;
@@ -41,6 +42,8 @@ interface PreparedWorkspace {
   baseBranch: string | null;
   /** Why the requested workspace could not be used, when CodeDen fell back. */
   fallback: string | null;
+  /** A failed setup command, told to the agent with its first input. */
+  setupNote: string | null;
 }
 
 const PREPARE_TIMEOUT_MS = 10 * 60_000;
@@ -91,7 +94,7 @@ export class SessionLauncher {
             branch: ws.branch,
             baseBranch: ws.baseBranch,
           }),
-          input: opts.input,
+          input: withSetupNote(opts.input, ws.setupNote),
         },
         START_TIMEOUT_MS,
       );
@@ -112,14 +115,14 @@ export class SessionLauncher {
    */
   async resume(session: Session, input?: UserInput): Promise<void> {
     await this.requireRunner();
-    const current = await this.restoreWorktree(session);
+    const { session: current, setupNote } = await this.restoreWorktree(session);
     const result = await this.deps.runner.request(
       {
         name: "session.start",
         sessionId: current.id,
         providerId: current.provider,
         options: this.sessionOptions(current),
-        input,
+        input: withSetupNote(input, setupNote),
       },
       START_TIMEOUT_MS,
     );
@@ -134,8 +137,10 @@ export class SessionLauncher {
    * Recreate a worktree that cleanup removed (§9), at the same path from the session's branch,
    * running the project's setup again. A no-op for sessions that still have their worktree.
    */
-  async restoreWorktree(session: Session): Promise<Session> {
-    if (!session.worktreeRemovedAt || !session.worktreePath || !session.projectId) return session;
+  async restoreWorktree(session: Session): Promise<{ session: Session; setupNote: string | null }> {
+    if (!session.worktreeRemovedAt || !session.worktreePath || !session.projectId) {
+      return { session, setupNote: null };
+    }
     const project = this.deps.projects.get(session.projectId);
     const result = await this.deps.runner.request(
       {
@@ -151,13 +156,14 @@ export class SessionLauncher {
       PREPARE_TIMEOUT_MS,
     );
     this.deps.log?.(`session ${session.id}: recreated worktree ${result.cwd}`);
-    return this.deps.repo.update(session.id, (s) => ({
+    const updated = this.deps.repo.update(session.id, (s) => ({
       ...s,
       cwd: result.cwd,
       worktreePath: result.cwd,
       branch: result.branch ?? s.branch,
       worktreeRemovedAt: null,
     }));
+    return { session: updated, setupNote: setupFailureNote(result.setup) };
   }
 
   /** Mark a session failed with an inbox item explaining why. */
@@ -252,6 +258,10 @@ export class SessionLauncher {
         ? `codeden/${slugWords(session.title ?? session.purpose, 5, 40)}-${session.id.slice(0, 4)}`
         : undefined);
     const baseRef = req.baseRef ?? project.defaultBranch ?? undefined;
+    // A new worktree of a GitHub project starts from the freshly fetched default branch when the
+    // local one is merely behind (§9); the pull request still targets the default branch.
+    const fetch =
+      req.fetch ?? (project.kind === "github" && req.mode === "worktree" && !req.baseRef);
     try {
       const result = await this.deps.runner.request(
         {
@@ -263,7 +273,7 @@ export class SessionLauncher {
           branch,
           baseRef,
           setupCommands: req.setupCommands ?? [],
-          ...(req.fetch ? { fetch: true } : {}),
+          ...(fetch ? { fetch: true } : {}),
         },
         PREPARE_TIMEOUT_MS,
       );
@@ -273,6 +283,7 @@ export class SessionLauncher {
         branch: result.branch,
         baseBranch: baseRef ?? null,
         fallback: null,
+        setupNote: setupFailureNote(result.setup),
       };
     } catch (error) {
       if (runnerErrorCode(error) !== "not_implemented") throw error;
@@ -286,7 +297,14 @@ export class SessionLauncher {
 }
 
 function plain(cwd: string): PreparedWorkspace {
-  return { cwd, worktreePath: null, branch: null, baseBranch: null, fallback: null };
+  return {
+    cwd,
+    worktreePath: null,
+    branch: null,
+    baseBranch: null,
+    fallback: null,
+    setupNote: null,
+  };
 }
 
 function defaultMeta(workspace: WorkspaceRequest) {

@@ -12,6 +12,11 @@ export const InboxItemKind = z.enum([
   "message",
   /** A start request that matched running work (§8.4); resolved with wait/skip/join/force. */
   "conflict",
+  /**
+   * A session's worktree could not be removed (§9), for example because a program outside
+   * CodeDen still uses it. Resolved by CodeDen once a later attempt removes it.
+   */
+  "cleanup_failed",
 ]);
 export type InboxItemKind = z.infer<typeof InboxItemKind>;
 

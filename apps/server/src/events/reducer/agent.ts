@@ -19,6 +19,7 @@ import {
   requestResolution,
   runFailedInbox,
 } from "./items";
+import { awaitsRetryDecision } from "./retry";
 import type { Mutation, ProjectionReader } from "./types";
 import { accumulateUsage, hasTokenCounts, mergeLatestUsage } from "./usage";
 
@@ -148,6 +149,11 @@ function onTurnEnded(
   } else if (event.type === "turn.interrupted") {
     setStatus(d, sessionId, event.reason === "runner_restart" ? "interrupted" : "idle", ts);
   } else {
+    const current = d.getSession(sessionId)?.session;
+    if (current && awaitsRetryDecision(current, event.error)) {
+      setStatus(d, sessionId, "idle", ts);
+      return;
+    }
     setStatus(d, sessionId, "failed", ts);
     const session = d.getSession(sessionId)?.session;
     if (session) {

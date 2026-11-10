@@ -8,11 +8,13 @@
 // FAKE_CODEX_REQUESTS names a JSON file of server requests (`{ method, params }`) to send during
 // every turn, one after the other (`notify: true` ones as notifications); each answer is logged as `{ method: "answer:<method>", params }`
 // and the turn completes once all are answered.
+// FAKE_CODEX_TURN=hang starts turns that never complete and never answers `turn/interrupt`.
 import { appendFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const log = process.env.FAKE_CODEX_LOG;
 const mode = process.env.FAKE_CODEX_MODEL_LIST;
+const turnMode = process.env.FAKE_CODEX_TURN;
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let turns = 0;
 let nextRequestId = 9000;
@@ -95,6 +97,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     case "turn/start": {
       const turn = { id: `turn-${++turns}`, status: "completed", items: [], error: null };
       send({ id: msg.id, result: { turn: { ...turn, status: "inProgress" } } });
+      if (turnMode === "hang") return;
       // Like the real server: the turn completes after the response has been handled.
       setTimeout(async () => {
         for (const [i, r] of scripted.entries()) {
@@ -116,6 +119,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       }, 50);
       return;
     }
+    case "turn/interrupt":
+      if (turnMode === "hang") return;
+      return send({ id: msg.id, result: {} });
     default:
       return send({ id: msg.id, result: {} });
   }

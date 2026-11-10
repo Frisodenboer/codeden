@@ -230,6 +230,20 @@ describe("runner protocol", () => {
       config: { setup: ["pnpm install"], devServer: { command: "pnpm dev", port: 5173 } },
       setup: [{ command: "pnpm install", exitCode: 0, ok: true }],
     });
+    roundTrip(RunnerCommandResults["workspace.prepare"], {
+      cwd: "/wt/demo/s1",
+      branch: "codeden/demo",
+      created: true,
+      setup: [{ command: "pnpm install", exitCode: 1, ok: false, outputTail: "ERR_PNPM_NO_LOCK" }],
+    });
+    expect(
+      RunnerCommandResults["workspace.prepare"].safeParse({
+        cwd: "/wt",
+        branch: null,
+        created: true,
+        setup: [{ command: "x", exitCode: 1, ok: false, outputTail: "x".repeat(2001) }],
+      }).success,
+    ).toBe(false);
     roundTrip(RunnerToServerMessage, {
       type: "event",
       seq: 1,

@@ -22,6 +22,7 @@ describe("session recovery", () => {
         const session = sessions.get(id);
         return session ? { session } : undefined;
       },
+      closeOrphanedTurns: vi.fn(() => 0),
     } as unknown as SessionRepo;
     const continueAfterRestart = vi.fn(async () => undefined);
     const service = {
@@ -43,6 +44,7 @@ describe("session recovery", () => {
     const recovery = new SessionRecovery({ repo, sessions: service, launcher, runner });
     return {
       recovery,
+      repo,
       sessions,
       continueAfterRestart,
       fail,
@@ -70,6 +72,8 @@ describe("session recovery", () => {
     ]);
     await t.recovery.onRunnerReady();
     expect(t.continueAfterRestart).toHaveBeenCalledWith("cut", expect.any(String));
+    // Turns and approvals the dead runner left open are closed before resuming.
+    expect(t.repo.closeOrphanedTurns).toHaveBeenCalledWith("cut");
     expect(t.fail).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@ import {
   CODEDEN_VERSION,
   compareProjects,
   defaultSettings,
+  ErrorInfo,
   EventEnvelope,
   InboxItem,
   Item,
@@ -48,6 +49,15 @@ describe("agent events", () => {
     for (const event of sampleAgentEvents) roundTrip(AgentEvent, event);
     const covered = new Set(sampleAgentEvents.map((e) => e.type));
     expect([...covered].sort()).toEqual([...AGENT_EVENT_TYPES].sort());
+  });
+
+  it("classifies failed turns, and still reads errors stored before the kind existed", () => {
+    expect(ErrorInfo.parse({ message: "boom" })).toEqual({ message: "boom" });
+    expect(ErrorInfo.safeParse({ message: "x", kind: "flaky" }).success).toBe(false);
+    expect(ErrorInfo.safeParse({ message: "x", retryAt: "tomorrow" }).success).toBe(false);
+    for (const kind of ["transient", "usage_limit", "context_full", "auth", "fatal"] as const) {
+      roundTrip(ErrorInfo, { message: "x", kind });
+    }
   });
 
   it("narrows tool calls by toolKind", () => {
@@ -204,6 +214,15 @@ describe("entities", () => {
     roundTrip(Project, { ...sampleProject, kind: "local", github: undefined });
     roundTrip(Session, sampleSession);
     roundTrip(InboxItem, sampleInboxItem);
+    roundTrip(InboxItem, {
+      ...sampleInboxItem,
+      kind: "cleanup_failed",
+      priority: "normal",
+      title: "Couldn't remove the worktree",
+      body: "A file in the worktree is in use",
+      itemId: null,
+      requestId: null,
+    });
     roundTrip(Automation, sampleAutomation);
   });
 

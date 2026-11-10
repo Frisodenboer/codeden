@@ -1,5 +1,6 @@
 import { CODEDEN_VERSION, DesktopHostMessage, type DesktopServerMessage } from "@codeden/contracts";
 import { ensureHome, ensureInstallToken, resolveHome, startServer } from "@codeden/server";
+import { serverLog } from "./log";
 import { IpcDesktopUpdater } from "./update-bridge";
 
 /** How long a server whose app went away gets to close before it exits anyway. */
@@ -30,9 +31,7 @@ export async function serve(opts: { home?: string; port: number; fake: boolean }
       launcherVersion: CODEDEN_VERSION,
       desktop,
     },
-    log: (m) => {
-      if (process.env.CODEDEN_DEBUG) console.log(`[codeden] ${m}`);
-    },
+    log: serverLog(),
   });
 
   const close = (stopRunner: boolean) => {

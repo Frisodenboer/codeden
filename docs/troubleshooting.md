@@ -34,7 +34,7 @@ To fix:
 | What | Where |
 |---|---|
 | Runner output | `~/.codeden/logs/runner.log` |
-| Server log lines | Run with `CODEDEN_DEBUG=1 codeden` to print them in the terminal |
+| Server log lines | Run with `CODEDEN_DEBUG=1 codeden` to print them in the terminal. The desktop app always writes them to `~/.codeden/logs/desktop-server.log` (moved to `desktop-server.log.1` past 5 MB) |
 | Running server | `~/.codeden/server.json` (port and pid) |
 | Running runner | `~/.codeden/runner/runner.json` (port, pid and version) |
 | Database | `~/.codeden/codeden.db` (SQLite, WAL mode) |
@@ -168,7 +168,7 @@ CodeDen is tested on Windows first. Things worth knowing:
 
 - **Long paths.** Worktrees live under short paths (`~/.codeden/wt/<project>/<session>/`) to stay clear of the 260-character limit, but very deep repositories can still hit it. Enable long paths in git with `git config --global core.longpaths true`.
 - **Keychain.** API keys are stored in **Windows Credential Manager** under the service name `codeden`. If the keychain module can't load, CodeDen keeps keys in memory until it stops (start with `CODEDEN_DEBUG=1` to see why).
-- **Files in use.** Antivirus scanners and editors with the worktree open can briefly lock files; if removing a session's worktree fails, close what has it open and try again.
+- **Files in use.** Antivirus scanners and editors with the worktree open can briefly lock files; if removing a session's worktree fails, close what has it open and try again. Programs CodeDen's agents started there (a dev server run through the agent's shell) are ended before the removal, and when the session stops; your own editors and terminals are left alone. A removal that still fails shows up in the inbox under **Worktrees not removed**, with **Try again**.
 
 ## Starting fresh
 

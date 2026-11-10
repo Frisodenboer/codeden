@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AgentEvent, ErrorInfo, Item, Usage } from "@codeden/contracts";
 import { str } from "../util/text";
+import { rejectedResetsAt, resultError, type TurnErrorSignals } from "./errors";
+import { apiRetryNotice, compactedNotice, compactFailedNotice, compactingNotice } from "./notices";
 import { StreamAssembler } from "./stream";
 import { SubagentTracker, type ThreadCtx } from "./subagents";
 import { ToolTracker } from "./tool-tracker";
@@ -48,6 +50,12 @@ export class ClaudeEventMapper {
   private queryTotal: Usage | undefined;
   /** `queryTotal` when the current root turn began. */
   private turnBaseline: Usage | undefined;
+  /** The "compacting" notice that the compaction's outcome replaces. */
+  private compactNoticeId: string | undefined;
+  /** The notice of the current run of API retries. */
+  private retryNoticeId: string | undefined;
+  /** What the current turn said about a failure, for classifying it (`errors.ts`). */
+  private signals: TurnErrorSignals = {};
 
   constructor(opts: MapperOptions) {
     this.rootThreadId = `${opts.sessionId}:thread-root`;
@@ -94,6 +102,7 @@ export class ClaudeEventMapper {
     const turnId = this.newId();
     this.rootTurnId = turnId;
     this.turnBaseline = this.queryTotal;
+    this.signals = {};
     this.emit({ type: "turn.started", threadId: this.rootThreadId, turnId });
     return turnId;
   }
@@ -143,6 +152,8 @@ export class ClaudeEventMapper {
         this.onSystem(msg);
         return;
       case "rate_limit_event": {
+        const resetsAt = rejectedResetsAt(msg);
+        if (resetsAt) this.signals.rejectedResetsAt = resetsAt;
         const usage = usageFromRateLimit(msg);
         if (usage) {
           this.emit({
@@ -222,6 +233,7 @@ export class ClaudeEventMapper {
     }
     const error = str(msg, "error");
     if (error && !msg.aborted) {
+      if (isRoot) this.signals.assistantError = error;
       const text = content
         .map((b) => str(b, "text") ?? "")
         .join("")
@@ -272,15 +284,27 @@ export class ClaudeEventMapper {
     } else if (msg.subtype === "task_notification") {
       this.subagents.onTaskNotification(msg);
     } else if (msg.subtype === "compact_boundary") {
-      this.item(this.rootCtx(), "item.completed", {
-        id: this.newId(),
-        kind: "notice",
-        status: "completed",
-        level: "info",
-        code: "context_compacted",
-        message: "Context compacted",
-      });
+      this.item(this.rootCtx(), "item.completed", compactedNotice(this.takeCompactNoticeId()));
+    } else if (msg.subtype === "api_retry") {
+      // One notice per run of retries, updated in place as the attempts go up.
+      if (msg.attempt === 1 || !this.retryNoticeId) this.retryNoticeId = `retrying-${this.newId()}`;
+      this.item(this.rootCtx(), "item.completed", apiRetryNotice(msg, this.retryNoticeId));
+    } else if (msg.subtype === "status") {
+      if (msg.status === "compacting" && !this.compactNoticeId) {
+        this.compactNoticeId = this.newId();
+        this.item(this.rootCtx(), "item.completed", compactingNotice(this.compactNoticeId));
+      } else if (msg.compact_result === "failed") {
+        const notice = compactFailedNotice(this.takeCompactNoticeId(), msg);
+        this.item(this.rootCtx(), "item.completed", notice);
+      }
     }
+  }
+
+  /** The id of the "compacting" notice to replace, or a fresh one. */
+  private takeCompactNoticeId(): string {
+    const id = this.compactNoticeId ?? this.newId();
+    this.compactNoticeId = undefined;
+    return id;
   }
 
   /** The user pressed stop: the next `result` ends the turn as interrupted. */
@@ -310,13 +334,7 @@ export class ClaudeEventMapper {
       this.endTurn({ type: "completed", stopReason: str(msg, "stop_reason") ?? "end_turn" });
       return;
     }
-    const errors = Array.isArray(msg.errors) ? msg.errors.filter((e) => typeof e === "string") : [];
-    const message =
-      errors.join("\n") || str(msg, "result") || `Claude turn ended with ${subtype ?? "an error"}`;
-    this.endTurn({
-      type: "failed",
-      error: { code: subtype ?? "error", message, retryable: subtype === "error_during_execution" },
-    });
+    this.endTurn({ type: "failed", error: resultError(msg, this.signals) });
   }
 
   /** Close the root turn: finish dangling items and emit the terminal turn event. */

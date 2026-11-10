@@ -55,10 +55,16 @@ export class SessionRecovery {
       return;
     }
     for (const id of candidates) {
+      const found = repo.find(id)?.session;
+      if (!found || hosted.has(id) || sessions.launching.has(id)) continue;
+      if (!(CUT_OFF as readonly string[]).includes(found.status)) continue;
+      // A runner that died without a word left its turns and approvals open: close them
+      // first, so a dead approval can't keep the resumed session waiting.
+      repo.closeOrphanedTurns(id);
       const session = repo.find(id)?.session;
-      if (!session || hosted.has(id) || sessions.launching.has(id)) continue;
-      if (!(CUT_OFF as readonly string[]).includes(session.status)) continue;
-      await this.resume(session);
+      if (session && (CUT_OFF as readonly string[]).includes(session.status)) {
+        await this.resume(session);
+      }
     }
 
     sessions.releaseOutboxes();
