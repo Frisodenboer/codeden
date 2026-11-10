@@ -178,6 +178,19 @@ describe("findExecutable", () => {
     expect(validate).toHaveBeenCalledTimes(2);
   });
 
+  it("lets the quick look-up skip a copy whose --version failed, until it changes", async () => {
+    const silent = fakeTool(path.join(dir, "a"), "claude", "");
+    const good = fakeTool(path.join(dir, "b"), "claude", "2.1.319");
+    const o = opts([path.dirname(silent), path.dirname(good)]);
+    // Before any check, the first plausible copy is all the quick look-up knows.
+    expect(quickLocate("claude", o)?.path).toBe(silent);
+    expect((await findExecutable("claude", o)).command?.path).toBe(good);
+    expect(quickLocate("claude", o)?.path).toBe(good);
+    // A reinstall (a changed file) makes it a candidate again.
+    utimesSync(silent, new Date(), new Date(Date.now() + 60_000));
+    expect(quickLocate("claude", o)?.path).toBe(silent);
+  });
+
   it("does not cache a timeout", async () => {
     const tool = fakeTool(path.join(dir, "bin"), "claude", "2.1.319");
     const validate = vi.fn(

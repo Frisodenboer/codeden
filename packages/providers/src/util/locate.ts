@@ -57,13 +57,18 @@ function candidateFiles(name: string, opts: LocateOptions): string[] {
 
 /**
  * The first copy of `name` that looks runnable, without running anything: PATH first, then
- * known install locations; broken shims and dangling links are skipped. For callers that need
- * an answer synchronously; `findExecutable` also checks that the copy actually runs.
+ * known install locations; broken shims, dangling links and copies whose last `--version`
+ * check failed (until they change) are skipped. For callers that need an answer
+ * synchronously; `findExecutable` also checks that the copy actually runs.
  */
 export function quickLocate(name: string, opts: LocateOptions = {}): ResolvedCommand | undefined {
   const win = (opts.platform ?? process.platform) === "win32";
   for (const file of candidateFiles(name, opts)) {
-    if (inspectFile(file, win).kind === "candidate") return classify(file, win);
+    const seen = inspectFile(file, win);
+    if (seen.kind !== "candidate") continue;
+    const key = cacheKey([file, seen.target]);
+    if (key !== undefined && cache.get(key)?.ok === false) continue;
+    return classify(file, win);
   }
   return undefined;
 }
