@@ -238,9 +238,11 @@ function noticeDetail(n: Notice): string {
       return ` · ${n.data.workKey} · session ${short(n.data.sessionId)}${n.data.summary ? ` · "${clipKeepingEnd(n.data.summary)}"` : ""}`;
     case "session.needs_input":
       return ` · ${n.data.kind}: ${quote(n.data.question, 200)} (${
-        n.data.kind === "question"
-          ? `inbox item ${n.data.inboxItemId}: answer it with answer_question when the brief, the notes or the vision settle it`
-          : "waiting for the user's approval"
+        n.data.kind !== "question"
+          ? "waiting for the user's approval"
+          : n.data.startedBy.kind === "user"
+            ? `inbox item ${n.data.inboxItemId}: the user started this session and answers its questions`
+            : `inbox item ${n.data.inboxItemId}: answer it with answer_question when the brief, the notes or the vision settle it`
       })`;
     case "session.failed":
       return ` · ${n.data.workKey} · ${quote(n.data.error, 200)}`;

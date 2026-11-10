@@ -408,6 +408,20 @@ describe("notices for the PM", () => {
     expect(renderNotices([needsInput("approval")])).toContain("(waiting for the user's approval)");
   });
 
+  it("leaves questions from sessions the user started to the user (answer_question refuses them)", () => {
+    const question = needsInput("question");
+    if (question.type !== "session.needs_input") throw new Error("unreachable");
+    const fromUser: Notice = {
+      ...question,
+      data: { ...question.data, startedBy: { kind: "user" } },
+    };
+    const text = renderNotices([fromUser]);
+    expect(text).toContain(
+      "(inbox item i-question: the user started this session and answers its questions)",
+    );
+    expect(text).not.toContain("answer_question");
+  });
+
   it("keeps the closing question of an agent's final message in a finished notice", () => {
     const summary = `${"Refactored the login flow and added tests. ".repeat(20)}
 
