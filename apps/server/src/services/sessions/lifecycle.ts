@@ -78,7 +78,8 @@ export class SessionLifecycle {
         sessionsChanged = true;
         const { session } = e.payload as { session: Session };
         if (ENDED.has(session.status)) this.deps.tokens.revokeSession(session.id);
-        if (session.status === "idle" && this.deps.sessions.hasOutbox(session.id)) {
+        const settled = session.status === "idle" || session.status === "failed";
+        if (settled && this.deps.sessions.hasOutbox(session.id)) {
           setImmediate(() => void this.deps.sessions.flushOutbox(session.id));
         }
       } else if (

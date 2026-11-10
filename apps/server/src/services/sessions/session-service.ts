@@ -24,6 +24,7 @@ import { type RunnerPort, runnerErrorCode, toServiceError } from "../runner-port
 import { derivePurpose, deriveWorkKey, findConflicts } from "./conflicts";
 import type { SessionLauncher } from "./launcher";
 import type { Outbox } from "./outbox";
+import { isTransientRunnerError, OutboxHolds } from "./outbox-holds";
 import { readOnlyUnsupported } from "./permissions";
 import type { QuestionBroker } from "./questions";
 import { applyPendingConfig, updateSession } from "./reconfigure";
@@ -39,6 +40,8 @@ export interface SessionServiceDeps {
   launcher: SessionLauncher;
   outbox: Outbox;
   questions: QuestionBroker;
+  /** Wait before retrying a queued message the runner could not take (default 30 s). */
+  outboxRetryMs?: number;
 }
 
 /**
@@ -52,6 +55,8 @@ const AUTO_ORDER = ["claude", "codex"];
 
 const BUSY = new Set(["running", "waiting"]);
 const NOT_STARTED = new Set(["created", "queued", "starting"]);
+/** Statuses in which the next queued message is delivered. */
+const FLUSHABLE = new Set(["idle", "interrupted", "failed"]);
 
 /**
  * Agent sessions: start (with the §8.4 conflict check), messages, steering, interrupts,
@@ -63,8 +68,14 @@ export class SessionService {
   readonly launching = new Map<string, Promise<void>>();
   /** Rewrites a turn's input at send time (the orchestration status digest, §8.4). */
   private inputDecorator: InputDecorator | undefined;
+  private readonly holds: OutboxHolds;
 
-  constructor(private readonly deps: SessionServiceDeps) {}
+  constructor(private readonly deps: SessionServiceDeps) {
+    this.holds = new OutboxHolds({
+      retryMs: deps.outboxRetryMs,
+      onRetry: (id) => void this.flushOutbox(id).catch(() => undefined),
+    });
+  }
 
   setInputDecorator(fn: InputDecorator): void {
     this.inputDecorator = fn;
@@ -191,7 +202,18 @@ export class SessionService {
       }
       return this.enqueue(id, req.input, from);
     }
-    await this.sendNow(session, req.input, from);
+    try {
+      await this.sendNow(session, req.input, from);
+    } catch (error) {
+      // CodeDen's own roles never lose a message to a runner restart: it waits in the queue.
+      // The user sees the error instead; a wake (`reject`) is retried by its scheduler.
+      if (from === "user" || req.whenBusy === "reject" || !isTransientRunnerError(error)) {
+        throw error;
+      }
+      this.holds.hold(id, true);
+      return this.enqueue(id, req.input, from);
+    }
+    this.holds.release(id);
     return { status: "sent" };
   }
 
@@ -241,6 +263,7 @@ export class SessionService {
   async stop(id: string): Promise<Session> {
     const session = this.deps.repo.get(id);
     this.deps.outbox.clear(id);
+    this.holds.release(id);
     if (session.status !== "queued" && session.status !== "created") {
       try {
         await this.deps.runner.request({ name: "session.stop", sessionId: id }, 15_000);
@@ -256,18 +279,33 @@ export class SessionService {
     );
   }
 
-  /** Send the next queued message once a session is idle again. */
+  /**
+   * Send the next queued message once no turn is running (idle, or after a failed or
+   * interrupted turn). If delivery fails the message goes back in its place and delivery
+   * pauses (`OutboxHolds`); only an error that is not a runner restart fails the session.
+   */
   async flushOutbox(id: string): Promise<void> {
+    if (this.holds.isHeld(id)) return;
     const next = this.deps.outbox.peek(id);
     if (!next) return;
     const session = this.deps.repo.get(id);
-    if (session.status !== "idle" && session.status !== "interrupted") return;
+    if (!FLUSHABLE.has(session.status)) return;
     this.deps.outbox.remove(next, "sent");
     try {
       await this.sendNow(session, next.input, next.from);
     } catch (error) {
-      this.deps.launcher.fail(id, `send-${Date.now()}`, error);
+      const transient = isTransientRunnerError(error);
+      this.holds.hold(id, transient);
+      this.deps.outbox.restore(next);
+      if (!transient && session.status !== "failed") {
+        this.deps.launcher.fail(id, `send-${Date.now()}`, error);
+      }
     }
+  }
+
+  /** The runner is ready again: retry every paused delivery (§4.2). */
+  releaseOutboxes(): void {
+    this.holds.releaseAll();
   }
 
   /**

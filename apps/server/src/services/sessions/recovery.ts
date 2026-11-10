@@ -61,9 +61,9 @@ export class SessionRecovery {
       await this.resume(session);
     }
 
+    sessions.releaseOutboxes();
     for (const id of sessions.sessionsWithQueuedMessages()) {
-      const session = repo.find(id)?.session;
-      if (session?.status === "idle") await sessions.flushOutbox(id).catch(() => undefined);
+      await sessions.flushOutbox(id).catch(() => undefined);
     }
   }
 
