@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import type {
   CanUseTool,
@@ -22,6 +23,7 @@ import type { ResolvedCommand } from "../util/exec";
 import { explicitModel } from "../util/model";
 import { str, toJson } from "../util/text";
 import { ClaudeEventMapper } from "./mapper";
+import { claudeNotesDirs } from "./notes-dirs";
 import { buildQueryOptions, claudeEffort, toSdkUserMessage } from "./options";
 import { ClaudePolicy, permissionModeFor } from "./permissions";
 import type { ClaudeSdkModule } from "./sdk";
@@ -35,6 +37,17 @@ export interface ClaudeSessionConfig {
   query: ClaudeSdkModule["query"];
   /** How long to wait for the CLI to confirm an interrupt before forcing the turn closed. */
   interruptTimeoutMs?: number;
+  /** Claude's notes folders (plans, auto-memory); found from the user's settings by default. */
+  notesRoots?: readonly string[];
+}
+
+/** Home and Claude config folder for a session (`CLAUDE_CONFIG_DIR` moves the latter). */
+function claudeHomes(env: Record<string, string> | undefined): {
+  home: string;
+  configDir?: string;
+} {
+  const configDir = env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR;
+  return { home: os.homedir(), ...(configDir ? { configDir } : {}) };
 }
 
 /**
@@ -67,7 +80,12 @@ export class ClaudeSession implements ProviderSession {
     this.autonomy = opts.autonomy;
     this.policy = new ClaudePolicy(
       opts.autonomy,
-      { cwd: opts.cwd, extraRoots: opts.additionalDirectories },
+      {
+        cwd: opts.cwd,
+        extraRoots: opts.additionalDirectories,
+        notesRoots:
+          config.notesRoots ?? claudeNotesDirs({ cwd: opts.cwd, ...claudeHomes(opts.env) }),
+      },
       opts.readOnly,
     );
     this.mapper.start(opts.resumeToken);

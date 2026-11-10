@@ -224,7 +224,7 @@ export function classifyWrite(target: string, ctx: RiskContext): RiskAssessment 
   if (!isWritable(target, ctx))
     return risky("outside_worktree", `Writes ${target}, outside the worktree`);
   if (isSecretPath(target) && !isInWorkspace(target, ctx)) {
-    return risky("outside_worktree", `Writes the secrets file ${target} in the temp directory`);
+    return risky("outside_worktree", `Writes the secrets file ${target}, outside the worktree`);
   }
   return SAFE;
 }

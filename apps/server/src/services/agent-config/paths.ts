@@ -1,66 +1,16 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, parse, relative, resolve, sep } from "node:path";
+import { claudeMemoryDir } from "@codeden/providers";
 
-/**
- * Claude Code's folder name for a project under `~/.claude/projects/`: every character that
- * is not an ASCII letter or digit becomes `-` (`C:\Projects\codeden` -> `C--Projects-codeden`,
- * `C:\Users\me\.cfg` -> `C--Users-me--cfg`). Verified against real folder names on Windows.
- */
-export function claudeProjectSlug(projectPath: string): string {
-  return projectPath.replace(/[^a-zA-Z0-9]/g, "-");
-}
+export { claudeProjectSlug, findGitRoot, mainRepoRoot } from "@codeden/providers";
 
 /**
  * The project's Claude auto-memory folder (§12.4): `autoMemoryDirectory` from the user's
  * `~/.claude/settings.json` when set, else `~/.claude/projects/<slug>/memory`. The slug comes
- * from the git repository root, so every worktree of a repo shares one folder. Very long
- * slugs are shortened by Claude Code; an existing folder with the same prefix is used then.
+ * from the git repository root, so every worktree of a repo shares one folder.
  */
 export function claudeAutoMemoryDir(home: string, repoRoot: string): string {
-  const custom = readJson(join(home, ".claude", "settings.json"))?.autoMemoryDirectory;
-  if (typeof custom === "string" && custom.trim()) {
-    const value = custom.trim();
-    return value.startsWith("~/") || value.startsWith("~\\")
-      ? join(home, value.slice(2))
-      : resolve(value);
-  }
-  const projects = join(home, ".claude", "projects");
-  const slug = claudeProjectSlug(repoRoot);
-  const direct = join(projects, slug);
-  if (slug.length > 200 && !existsSync(direct) && existsSync(projects)) {
-    const prefix = slug.slice(0, 200).toLowerCase();
-    const match = readdirSync(projects).find((name) => name.toLowerCase().startsWith(prefix));
-    if (match) return join(projects, match, "memory");
-  }
-  return join(direct, "memory");
-}
-
-/** Nearest ancestor (or `dir` itself) containing `.git` (a folder, or a file in worktrees). */
-export function findGitRoot(dir: string): string | null {
-  let current = resolve(dir);
-  for (;;) {
-    if (existsSync(join(current, ".git"))) return current;
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
-}
-
-/** The main checkout of a worktree (`.git` file -> `gitdir: <main>/.git/worktrees/x`). */
-export function mainRepoRoot(gitRoot: string): string {
-  const marker = join(gitRoot, ".git");
-  try {
-    if (!statSync(marker).isFile()) return gitRoot;
-    const line = readFileSync(marker, "utf8").trim();
-    const gitdir = /^gitdir:\s*(.+)$/m.exec(line)?.[1];
-    if (!gitdir) return gitRoot;
-    const absolute = resolve(gitRoot, gitdir);
-    const at = absolute.split(sep).lastIndexOf("worktrees");
-    if (at < 1) return gitRoot;
-    return dirname(absolute.split(sep).slice(0, at).join(sep));
-  } catch {
-    return gitRoot;
-  }
+  return claudeMemoryDir(join(home, ".claude"), repoRoot, home);
 }
 
 /** `dir` and its ancestors, nearest first, up to the filesystem root. */

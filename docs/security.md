@@ -64,6 +64,8 @@ Automations run unattended, so they use the same permission levels with safer de
 
 **The OS temp directory counts as part of the workspace** under Auto and Full: writing or deleting files in `os.tmpdir()`, `%TEMP%`/`%TMP%`, `$TMPDIR` or `/tmp` (including Git Bash's `/tmp` on Windows) doesn't ask, and Codex's sandbox may write there. Only the temp directories themselves qualify, never a filesystem root or your home directory, even if an environment variable points there. Secrets files written to temp still ask, and Supervised still asks for everything.
 
+**Claude's own notes count the same way.** For Claude sessions under Auto and Full, writing plan files (plan mode, `~/.claude/plans` or your `plansDirectory`) and the project's auto-memory (`~/.claude/projects/<project>/memory` or your `autoMemoryDirectory`) doesn't ask. Only your own Claude settings can move these folders (a repository's settings can't), and a folder that would cover Claude's config folder (its settings and credentials), your home directory or a filesystem root is ignored. Claude's settings and credentials, and secrets files, still ask.
+
 Under **Auto**, edits and ordinary commands inside the worktree run freely, and these go to an approval card (and your inbox):
 
 - writes or deletes **outside the worktree** (and outside the OS temp directory), and changes to global git config (reading it, such as `git config --global user.email`, doesn't ask);

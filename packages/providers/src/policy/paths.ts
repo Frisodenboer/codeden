@@ -15,6 +15,11 @@ export interface PathContext {
   extraRoots?: readonly string[];
   /** The OS temp directories. Defaults to `osTempRoots()` for the running platform. */
   tempRoots?: readonly string[];
+  /**
+   * Folders outside the worktree where the agent keeps its own notes (Claude's plans and
+   * auto-memory). Writable like temp, and like temp a secrets file there still asks.
+   */
+  notesRoots?: readonly string[];
   /** Defaults to `process.platform`; set in tests to exercise both path flavours. */
   platform?: NodeJS.Platform;
   /** Home directory used to expand `~`. Defaults to `process.env.HOME ?? USERPROFILE`. */
@@ -113,9 +118,19 @@ export function isTempRoot(target: string, ctx: PathContext): boolean {
   return tempRootsOf(ctx).some((root) => relative(root, abs, ctx) === "");
 }
 
-/** True when agents may write `target` without asking: the worktree, extra roots or temp. */
+/** True when `target` is inside one of the agent's notes folders. */
+export function isInNotes(target: string, ctx: PathContext): boolean {
+  if (!ctx.notesRoots?.length) return false;
+  const abs = resolveAgainst(target, ctx);
+  return ctx.notesRoots.some((root) => isInside(abs, root, ctx));
+}
+
+/**
+ * True when agents may write `target` without asking: the worktree, extra roots, temp or their
+ * notes folders.
+ */
 export function isWritable(target: string, ctx: PathContext): boolean {
-  return isInWorkspace(target, ctx) || isInTemp(target, ctx);
+  return isInWorkspace(target, ctx) || isInTemp(target, ctx) || isInNotes(target, ctx);
 }
 
 /**
