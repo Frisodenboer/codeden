@@ -1,18 +1,24 @@
 # Runner browser engine
 
-The runner owns one Chromium (DESIGN §12.2). Every CodeDen session gets its own
-`BrowserContext`, so cookies, storage and tabs never cross sessions. Humans watch and
-take over through a CDP screencast; agents drive the same tabs through a small set of
-primitives. All of it goes through CDP, the seam that lets a native browser view replace
-the panel later (§17).
+Each CodeDen session has one browser (DESIGN §12.2), on one of two engines:
+
+- **`runner`**: an isolated `BrowserContext` in the one Chromium the runner launches, so
+  cookies, storage and tabs never cross sessions. People see it through a CDP screencast.
+- **`native`**: the desktop app's own browser views for that session (§17 Phase 2), reached
+  through the app's per-session CDP relay. People see the real view in the desktop panel;
+  phones and browser tabs see a screencast of it.
+
+Agents drive the same tabs through the same small set of primitives on both: everything goes
+through CDP, and `BrowserSession` doesn't care which engine is underneath.
 
 ## Modules
 
 | File | Concern |
 |---|---|
 | `launcher.ts` | Finds and launches installed Edge/Chrome via playwright-core `channel` (Edge first on Windows, Chrome first elsewhere), optional consented fallback to a downloaded Chromium, CDP endpoint on `127.0.0.1:<free port>`, browser pid via `SystemInfo.getProcessInfo` |
-| `manager.ts` | `BrowserManager`: lazy launch, one context per session, `openDevServer(port)`, shutdown that kills the browser process tree |
-| `session.ts` | `BrowserSession`: tabs (`t1`, `t2`, ...; popups are adopted), active tab, navigate/back/forward/reload, viewport emulation on every tab, input forwarding, `browser.tabs` stream updates |
+| `manager.ts` | `BrowserManager`: lazy launch, one browser per session on either engine, `handoff` to the runner's Chromium, reopening tabs when a relay drops, `openDevServer(port)`, shutdown that kills the browser process tree (native sessions only disconnect) |
+| `relay.ts` | `connectRelay`: playwright-core `connectOverCDP` to the desktop app's relay (secret in a header); hand-off cookies for playwright |
+| `session.ts` | `BrowserSession`: tabs (`t1`, `t2`, ...; popups are adopted), active tab, navigate/back/forward/reload, viewport emulation on every tab (runner engine only), input forwarding, `browser.tabs` stream updates with the engine |
 | `viewport.ts` | Viewport policy: clamps (`fitViewport`), frame pixel size (`framePixels`), `Emulation.setDeviceMetricsOverride` parameters |
 | `screencast.ts` | `Page.startScreencast` on the active tab, JPEG frames sized to the viewport's device pixels as `browser.frame` stream data with metadata, throttled by delaying `Page.screencastFrameAck`, paused when the last viewer leaves, follows tab switches, restarts on resize |
 | `input.ts` | Panel mouse/keyboard -> `Input.dispatchMouseEvent` / `dispatchKeyEvent` / `insertText`, coordinates mapped from the displayed frame onto the viewport the frame showed |
@@ -82,6 +88,45 @@ page, also while an agent acts (the panel shows "Agent is acting" from the serve
 `browser_screenshot` captures the current viewport in CSS pixels (`scale: "css"`), so a
 HiDPI viewer doesn't double the image an agent gets. With no viewer, the page keeps its last
 size (default 1280x800).
+
+## Native engine: the desktop app's views (§17 Phase 2)
+
+`browser.open` with a `relay` (`ws://127.0.0.1:<port>/cdp/<sessionId>` plus a secret) backs a
+session that has no browser yet with the desktop app's native views. The server sends one when
+the desktop app is connected, the setting is on, and the desktop window or an agent opens the
+browser.
+
+- **Connection.** `connectOverCDP(url, { headers: { "x-codeden-relay-secret": secret } })`. The
+  relay looks like a browser whose only context holds that session's views, so
+  `browser.contexts()[0]` is the session's context and nothing else is reachable: not other
+  sessions, not the CodeDen window. Tabs the app already has (the runner reconnected) are
+  adopted as tabs.
+- **Tabs** are created and closed by the app: `context.newPage()` and `page.close()` become
+  `Target.createTarget` / `Target.closeTarget`, which the relay turns into new and closed views.
+  `activate` sends `Page.bringToFront`, which shows that view in the panel. Popups opened by a
+  page come in as tabs with their opener.
+- **No viewport emulation.** A native view is exactly as big as the desktop panel. `setViewport`
+  measures it and `browser.viewport` answers with `fixed: true`, so the server tells every
+  viewer to fit the frames instead of claiming the size. Screencast frames are only capped
+  (2560x1600 device pixels), never sized to a viewer.
+- **Everything else is unchanged**: aria snapshots and refs, click/type/press, screenshots,
+  console and network logs, evaluate, waits, the screencast for phones and input from them.
+  Refs in native views may carry a frame prefix (`f1e5`); they work like any other ref.
+- **Closing.** `browser.close` (or the session stopping) closes the views. Stopping the runner
+  only disconnects: the views stay in the app, and the next `browser.open` with the relay
+  adopts them.
+- **Hand-off.** `browser.handoff` (the app is quitting) drops the relay connection without
+  closing the views, creates a runner context, adds the cookies (one at a time, so a cookie
+  Chromium refuses doesn't cost the others; `SameSite=None` without `Secure` falls back to the
+  default) and reopens each tab at its URL, with the active one active. Page state that lived
+  only in the views (unsaved form input, scroll position) is lost.
+- **A relay that just drops** (the app crashed, or quit with no server to hand off to) reopens
+  the tabs it last had in the runner's Chromium, without cookies. Playwright reports a dropped
+  connection as every page closing first, so native tab closes settle for 100 ms before they
+  count; a disconnect in that window keeps the tab list.
+
+Tests: `test/browser-native.test.ts` uses a second Chromium's CDP endpoint as a stand-in for
+the relay (the relay itself is tested in `apps/desktop/test`).
 
 ## Spike: Playwright MCP over CDP vs our own primitives (DESIGN §20, spike 4)
 
