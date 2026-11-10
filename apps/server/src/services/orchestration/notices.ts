@@ -12,6 +12,7 @@ import { and, desc, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { notices } from "../../db/schema-orchestration";
 import type { EventStore } from "../../events/store";
+import { clipKeepingEnd } from "./digest";
 
 /** A notice before it is stored (`deliveredAt` is set by delivery). */
 export type NoticeDraft = Notice extends infer N
@@ -81,7 +82,7 @@ export function deriveNotices(events: RawEventEnvelope[], lookup: NoticeLookup):
           title: `Finished: ${s.title ?? s.purpose}`,
           data: {
             ...workRef(s),
-            summary: s.result?.summary ?? (final ? clip(final) : null),
+            summary: s.result?.summary ?? (final ? clipKeepingEnd(final) : null),
             outcome: s.result?.outcome ?? null,
           },
         },

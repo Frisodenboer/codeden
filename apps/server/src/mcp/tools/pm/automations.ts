@@ -42,7 +42,7 @@ export const listAutomations = defineTool({
 export const runAutomation = defineTool({
   name: "run_automation",
   description:
-    "Run one of this project's automations now (even if it is disabled or paused). If matching work is already running or queued, nothing starts and the result is 'conflict' with the existing work: call again with conflict = {resolution: 'wait'}, {resolution: 'skip'}, {resolution: 'join', sessionId} or {resolution: 'force', reason}.",
+    "Run one of this project's automations now (even if it is disabled or paused). If matching work is already running or queued, nothing starts and the result is 'conflict' with the existing work: choose the resolution yourself and call again with conflict = {resolution: 'wait'}, {resolution: 'skip'}, {resolution: 'join', sessionId} or {resolution: 'force', reason}.",
   roles: ["pm"],
   scope: "project",
   input: z.object({

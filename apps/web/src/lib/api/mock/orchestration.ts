@@ -81,7 +81,12 @@ export function mockOrchestration(world: MockWorld, deps: Deps): OrchestrationPa
       (i) => i.projectId === projectId && i.status === "open",
     );
     return {
-      project: { id: projectId, name: project?.name ?? projectId, kind: project?.kind ?? "local" },
+      project: {
+        id: projectId,
+        name: project?.name ?? projectId,
+        kind: project?.kind ?? "local",
+        mode: project?.autonomyMode ?? "assisted",
+      },
       running: sessions
         .filter((s) => ["starting", "running", "waiting"].includes(s.status))
         .map(summary),

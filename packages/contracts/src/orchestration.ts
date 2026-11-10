@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { GitHubIssueRef, GitHubPrRef, Id, JsonValue, Timestamp } from "./common";
 import { InboxItemKind, InboxItemStatus } from "./entities/inbox";
+import { AutonomyMode } from "./factory";
 import { ConflictDecision, ScheduledRun, StartedBy, WorkKey, WorkSummary } from "./work";
 
 /**
@@ -60,7 +61,7 @@ export const Notice = z.discriminatedUnion("type", [
     type: z.literal("session.finished"),
     data: z.object({
       ...workRef,
-      /** The agent's `finish` summary, else the start of its final message. */
+      /** The agent's `finish` summary, else its final message (start and last paragraph). */
       summary: z.string().nullable(),
       outcome: z.string().nullable(),
     }),
@@ -219,7 +220,16 @@ export type RecentOutcome = z.infer<typeof RecentOutcome>;
 
 /** Everything a PM needs to know about its project, without spending a tool call. */
 export const ProjectStatus = z.object({
-  project: z.object({ id: Id, name: z.string(), kind: z.enum(["github", "local"]) }),
+  project: z.object({
+    id: Id,
+    name: z.string(),
+    kind: z.enum(["github", "local"]),
+    /**
+     * The project's autonomy mode: tells the PM who merges pull requests (the user in manual and
+     * assisted, the factory loop in autopilot and dark factory).
+     */
+    mode: AutonomyMode,
+  }),
   /** Agent sessions and automation runs that are starting, running or waiting. */
   running: z.array(WorkSummary),
   /** Work queued behind other work (§8.4 `wait`). */

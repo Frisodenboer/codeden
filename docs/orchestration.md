@@ -74,7 +74,7 @@ If you don't give a work key, CodeDen derives one: `issue:<n>` when an issue is 
 
 **Conflict check.** Starting a session, running an automation or a scheduled trigger first looks for running or queued work in the same project with the **same work key**, or the **same kind** of work (the part before the colon) with an **overlapping scope** (the same area, or paths where one contains the other). Work scoped to the whole project never counts as overlapping.
 
-When there's a match, nothing starts. Instead you (or the PM) get the existing work's details and four choices:
+When there's a match, nothing starts. Instead the caller gets the existing work's details and four choices:
 
 | Choice | Effect |
 |---|---|
@@ -83,7 +83,7 @@ When there's a match, nothing starts. Instead you (or the PM) get the existing w
 | **Join** | Send the request to the existing session as a follow-up |
 | **Force** | Start anyway; the reason is recorded |
 
-A conflict from something you started appears as a card in place and in the inbox. Example: you ask the orchestrator for a security audit; it asks the PM, which sees `automation:security-audit` already running and replies with its progress and the options. Nothing is duplicated.
+A PM chooses for itself (join when the request adds to the running work, wait when it has to follow it, skip when it's the same work) and tells you in one line what it chose. A conflict from something you started appears as a card in place and in the inbox, and you choose. Example: you ask the orchestrator for a security audit; it asks the PM, which sees `automation:security-audit` already running, skips the duplicate and replies with the audit's progress. Nothing is duplicated.
 
 ## Now / Next
 
@@ -107,6 +107,8 @@ Factory projects add a few more (see [Autonomy and the dark factory](autonomy-an
 
 ### Asking and answering
 
+- **Defaults first.** Agents, PMs and the orchestrator decide routine details themselves (naming, approach, scope, provider and model), say what they assumed so you can override it, and keep going. They ask you only for destructive or irreversible steps, spending money or credentials, outward-facing actions (publishing, releases, deploys, messages to people), protected areas, or a request that can be read two very different ways.
+- **Commits and pull requests.** An agent in its own worktree commits as it goes without asking. It opens a pull request by itself when a PM or an automation started it; in a session you started, it opens one when you ask and otherwise offers it as a suggested follow-up. An agent working in your checkout instead of a worktree doesn't commit unless you ask.
 - **`ask_pm`** (orchestrator → PM) waits up to 3 minutes for the PM's answer; a later answer arrives as a message.
 - **`message_orchestrator`** with `informational: true` never wakes the orchestrator; it shows in its next digest.
 - **`ask_user`** (agent or PM → you) puts a question card in the transcript and the inbox. The tool waits up to 4 minutes; if you haven't answered, the agent is told to finish what it can, and your later answer is sent to the session as a new message. This works the same on every provider.

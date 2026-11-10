@@ -83,7 +83,13 @@ export class SessionLauncher {
           name: "session.start",
           sessionId,
           providerId: session.provider,
-          options: this.sessionOptions({ ...session, cwd: ws.cwd }),
+          options: this.sessionOptions({
+            ...session,
+            cwd: ws.cwd,
+            worktreePath: ws.worktreePath,
+            branch: ws.branch,
+            baseBranch: ws.baseBranch,
+          }),
           input: opts.input,
         },
         START_TIMEOUT_MS,
@@ -196,12 +202,22 @@ export class SessionLauncher {
       effort: session.effort ?? undefined,
       autonomy: session.autonomy,
       resumeToken: session.resumeToken ?? undefined,
-      systemPrompt: codedenSystemPrompt(session.role),
+      systemPrompt: codedenSystemPrompt(session, this.projectOf(session)),
       // The orchestrator and PMs never write project code (§11.2). Agent sessions at the
       // `read_only` level carry it in `autonomy`, so it can change live.
       readOnly: session.role !== "agent",
       mcpServers,
     });
+  }
+
+  /** The session's project for its system prompt; null without one (or once it is gone). */
+  private projectOf(session: Session): Project | null {
+    if (!session.projectId) return null;
+    try {
+      return this.deps.projects.get(session.projectId);
+    } catch {
+      return null;
+    }
   }
 
   private async requireRunner(): Promise<void> {

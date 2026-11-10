@@ -8,6 +8,7 @@ import {
   Notice,
   NoticeBatchData,
   Overview,
+  ProjectStatus,
   ProviderCapabilities,
   RoleMessageRequest,
   RunnerCommand,
@@ -157,6 +158,20 @@ describe("orchestration contracts (§8)", () => {
     expect(
       StartWorkResult.parse({ status: "conflict", existing: [work], conflictId: "conflict:1" }),
     ).toMatchObject({ conflictId: "conflict:1" });
+  });
+
+  it("round-trips a project status with its autonomy mode", () => {
+    const status: ProjectStatus = {
+      project: { id: "p1", name: "Shop", kind: "github", mode: "assisted" },
+      running: [work],
+      queued: [],
+      scheduled: [],
+      inbox: { open: 0, items: [] },
+      recent: [],
+    };
+    expect(ProjectStatus.parse(status)).toEqual(status);
+    const { mode: _mode, ...noMode } = status.project;
+    expect(ProjectStatus.safeParse({ ...status, project: noMode }).success).toBe(false);
   });
 
   it("defaults role sessions in the snapshot and validates the HTTP shapes", () => {
