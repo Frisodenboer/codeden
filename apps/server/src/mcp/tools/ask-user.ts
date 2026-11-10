@@ -45,7 +45,10 @@ export const askUser = defineTool({
       },
       signal,
     );
-    if (outcome.status === "answered") return `The user answered:\n${outcome.text}`;
+    if (outcome.status === "answered") {
+      const who = outcome.by === "pm" ? "Your project manager" : "The user";
+      return `${who} answered:\n${outcome.text}`;
+    }
     if (outcome.status === "dismissed") return "The user dismissed the question without answering.";
     return "pending: the question is waiting in the user's inbox. Do not wait for it. Finish what you can without the answer, then end your turn; the answer will arrive as your next message.";
   },

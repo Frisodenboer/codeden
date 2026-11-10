@@ -63,6 +63,7 @@ function expectFullSchema(file: string): void {
     expect(columns(database.client, "github_prs")).toEqual(
       expect.arrayContaining(["review_decision", "linked_issues", "merged_at"]),
     );
+    expect(columns(database.client, "notices")).toContain("not_before");
     const applied = (
       database.client.prepare("SELECT name FROM __drizzle_migrations").all() as { name: string }[]
     ).map((m) => m.name);
@@ -93,10 +94,17 @@ describe("migrations", { timeout: 30_000 }, () => {
     expectFullSchema(join(tempDir(), "fresh.db"));
   });
 
+  /**
+   * Builds with only one of the GitHub sync, orchestration and usage ledger migrations existed
+   * only while those three were separate branches, before any later migration (some of which
+   * change their tables).
+   */
+  const trio = (n: string) => n.slice(0, 14) <= "20261107120509";
+
   it.each([
-    ["orchestration only", (n: string) => !/_(github_sync|usage_ledger)$/.test(n)],
-    ["GitHub sync only", (n: string) => !/_(orchestration|usage_ledger)$/.test(n)],
-    ["usage ledger only", (n: string) => !/_(github_sync|orchestration)$/.test(n)],
+    ["orchestration only", (n: string) => trio(n) && !/_(github_sync|usage_ledger)$/.test(n)],
+    ["GitHub sync only", (n: string) => trio(n) && !/_(orchestration|usage_ledger)$/.test(n)],
+    ["usage ledger only", (n: string) => trio(n) && !/_(github_sync|orchestration)$/.test(n)],
     [
       "everything before the usage ledger",
       (n: string) => !/_(usage_ledger|factory_loop|automations)$/.test(n),

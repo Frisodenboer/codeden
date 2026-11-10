@@ -59,6 +59,15 @@ describe("situational awareness (§8.4)", () => {
     expect(Session.safeParse({ ...sampleSession, status: "queued" }).success).toBe(true);
   });
 
+  it("records who hears about work a PM started for the orchestrator", () => {
+    const startedBy = { kind: "pm", id: "pm-1", reportTo: "orchestrator" };
+    const parsed = Session.parse({ ...sampleSession, startedBy });
+    expect(parsed.startedBy).toEqual(startedBy);
+    expect(Session.parse(parsed)).toEqual(parsed);
+    const other = { ...startedBy, reportTo: "user" };
+    expect(Session.safeParse({ ...sampleSession, startedBy: other }).success).toBe(false);
+  });
+
   it("round-trips start results", () => {
     const started = StartWorkResult.parse({ status: "started", sessionId: "s1" });
     expect(started.status).toBe("started");

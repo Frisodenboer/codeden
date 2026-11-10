@@ -125,6 +125,16 @@ describe("QuestionCard", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it("says when the project manager answered", () => {
+    renderWithClient(
+      <QuestionCard
+        item={{ ...answered([retry], { a: ["Backoff"] }), decidedBy: "pm" }}
+        sessionId="s1"
+      />,
+    );
+    expect(screen.getByText("Answered by the project manager")).toBeTruthy();
+  });
+
   it("wraps a long free-text answer instead of squeezing the question", () => {
     const { container } = renderWithClient(
       <QuestionCard item={answered([retry], { a: [LONG_ANSWER] })} sessionId="s1" />,

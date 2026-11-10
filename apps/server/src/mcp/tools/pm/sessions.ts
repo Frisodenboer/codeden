@@ -66,6 +66,12 @@ export const startSession = defineTool({
     model: z.string().min(1).optional(),
     effort: ReasoningEffort.optional(),
     conflict: ConflictDecision.optional(),
+    reportTo: z
+      .enum(["orchestrator"])
+      .optional()
+      .describe(
+        "'orchestrator' when the orchestrator passed this work on: its finish or failure also reaches the orchestrator, so it can tell the user",
+      ),
   }),
   handler: async (input, { services, projectId, sessionId }) => {
     const project = projectFor(services, projectId);
@@ -87,7 +93,7 @@ export const startSession = defineTool({
       scope: input.scope,
       title: input.title,
       issue,
-      startedBy: { kind: "pm", id: sessionId ?? undefined },
+      startedBy: { kind: "pm", id: sessionId ?? undefined, reportTo: input.reportTo },
       parentSessionId: sessionId ?? undefined,
       input: { text: input.prompt },
       conflict: input.conflict,
@@ -131,9 +137,9 @@ export const messageSession = defineTool({
     whenBusy: z.enum(["queue", "steer"]).optional(),
   }),
   handler: async ({ sessionId, text, whenBusy }, { services, projectId }) => {
-    agentSessionOf(services, sessionId, projectId);
+    const session = agentSessionOf(services, sessionId, projectId);
     const res = await services.sessions.send(
-      sessionId,
+      session.id,
       {
         input: messageFrom("pm", text),
         whenBusy: whenBusy ?? "queue",
@@ -156,8 +162,8 @@ export const stopSession = defineTool({
   handler: async ({ sessionId }, { services, projectId }) => {
     const session = agentSessionOf(services, sessionId, projectId);
     if (ENDED.has(session.status))
-      throw new ToolError(`Session ${sessionId} already ${session.status}`);
-    const stopped = await services.sessions.stop(sessionId);
-    return { status: stopped.status, sessionId };
+      throw new ToolError(`Session ${session.id} already ${session.status}`);
+    const stopped = await services.sessions.stop(session.id);
+    return { status: stopped.status, sessionId: session.id };
   },
 });

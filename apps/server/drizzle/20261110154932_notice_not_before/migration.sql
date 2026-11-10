@@ -1,0 +1,1 @@
+ALTER TABLE `notices` ADD `not_before` text;

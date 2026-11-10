@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { messageFrom } from "@codeden/contracts";
 import { createImageEngineRegistry, type ImageEngineRegistry } from "@codeden/providers";
 import type { Db } from "../db/client";
 import type { EventStore } from "../events/store";
@@ -180,8 +181,9 @@ export function createServices(opts: ServicesOptions): AppServices {
     db: opts.db,
     store: opts.store,
     waitMs: opts.askUserWaitMs,
-    sendMessage: () => async (sessionId, text) => {
-      await sessions?.send(sessionId, { input: { text, attachments: [] }, whenBusy: "queue" });
+    sendMessage: () => async (sessionId, text, by) => {
+      const input = by === "pm" ? messageFrom("pm", text) : { text, attachments: [] };
+      await sessions?.send(sessionId, { input, whenBusy: "queue" }, by);
     },
   });
   let sessions: SessionService | undefined;

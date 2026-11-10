@@ -28,6 +28,7 @@ describe("session recovery", () => {
       launching: new Map<string, Promise<void>>(),
       continueAfterRestart,
       sessionsWithQueuedMessages: () => [],
+      releaseOutboxes: () => undefined,
     } as unknown as SessionService;
     const fail = vi.fn();
     const launcher = { fail } as unknown as SessionLauncher;

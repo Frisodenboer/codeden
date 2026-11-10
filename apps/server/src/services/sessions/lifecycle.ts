@@ -28,8 +28,13 @@ export interface LifecycleDeps {
   log?: (message: string) => void;
 }
 
-/** Session statuses after which its MCP tokens are revoked (§8.3). */
-const ENDED = new Set(["stopped", "completed", "failed"]);
+/**
+ * Session statuses after which its MCP tokens are revoked (§8.3). Not `failed`: a failed turn
+ * leaves the provider process running with its token, and the next message reaches that same
+ * process; a session whose process is gone is resumed with a freshly minted token, which
+ * revokes the old one.
+ */
+const ENDED = new Set(["stopped", "completed"]);
 
 /**
  * Reacts to committed events: starts queued sessions whose blockers finished (§8.4 `wait`),
@@ -73,7 +78,8 @@ export class SessionLifecycle {
         sessionsChanged = true;
         const { session } = e.payload as { session: Session };
         if (ENDED.has(session.status)) this.deps.tokens.revokeSession(session.id);
-        if (session.status === "idle" && this.deps.sessions.hasOutbox(session.id)) {
+        const settled = session.status === "idle" || session.status === "failed";
+        if (settled && this.deps.sessions.hasOutbox(session.id)) {
           setImmediate(() => void this.deps.sessions.flushOutbox(session.id));
         }
       } else if (

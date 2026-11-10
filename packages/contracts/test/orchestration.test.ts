@@ -69,7 +69,28 @@ describe("orchestration contracts (§8)", () => {
       payload: { noticeIds: ["n1"], at: ts },
     };
     expect(EventEnvelope.parse(delivered)).toEqual(delivered);
+    const returned = { ...delivered, seq: 3, type: "notice.returned" };
+    expect(EventEnvelope.parse(returned)).toEqual(returned);
+    expect(Notice.parse({ ...notice, wake: false })).toEqual({ ...notice, wake: false });
     expect(() => Notice.parse({ ...notice, type: "session.failed" })).toThrow();
+  });
+
+  it("round-trips a scheduled wake-up (§8.2)", () => {
+    const reminder: Notice = {
+      id: "reminder:1",
+      type: "reminder",
+      projectId: "p1",
+      target: "pm",
+      sessionId: null,
+      title: "Wake-up you scheduled",
+      createdAt: ts,
+      deliveredAt: null,
+      wake: true,
+      notBefore: "2026-11-10T12:00:00.000Z",
+      data: { note: "Check whether the audit finished", requestedBy: "pm-1" },
+    };
+    expect(Notice.parse(reminder)).toEqual(reminder);
+    expect(() => Notice.parse({ ...reminder, notBefore: "tomorrow" })).toThrow();
   });
 
   it("round-trips the GitHub notices (§8.2, §9)", () => {

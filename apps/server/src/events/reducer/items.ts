@@ -106,7 +106,11 @@ export function requestResolution(item: RequestItem): JsonValue {
       ...(item.decidedBy ? { decidedBy: item.decidedBy } : {}),
     };
   }
-  return { status: item.status, ...(item.answers ? { answers: item.answers } : {}) };
+  return {
+    status: item.status,
+    ...(item.answers ? { answers: item.answers } : {}),
+    ...(item.decidedBy ? { decidedBy: item.decidedBy } : {}),
+  };
 }
 
 /** Close an open inbox item; `completed`/`declined` resolve it, anything else dismisses it. */

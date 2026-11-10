@@ -21,10 +21,10 @@ import type { SessionService } from "../sessions/session-service";
 import { type AskOutcome, askMarker, finalAssistantMessage, PmAsks } from "./asks";
 import { NoticeCards } from "./cards";
 import { ConflictService } from "./conflicts";
+import { NoticeDelivery } from "./delivery";
 import {
   buildProjectStatus,
   dayAgo,
-  renderNotices,
   renderOverviewDigest,
   renderProjectDigest,
   sharedWork,
@@ -39,6 +39,7 @@ import {
   UnavailableAutomationPort,
   UnavailableGithubPort,
 } from "./ports";
+import { Reminders } from "./reminders";
 import { type OrchestrationRole, RoleSessions } from "./role-sessions";
 import { type WakeResult, WakeScheduler, type WakeSchedulerOptions } from "./wake-scheduler";
 
@@ -46,6 +47,10 @@ export interface OrchestrationOptions {
   wake?: WakeSchedulerOptions;
   /** Default `ask_pm` wait (3 minutes). */
   askTimeoutMs?: number;
+  /** Waits before waking a role session again after a failed turn (`NoticeDelivery`). */
+  failedTurnRetryMs?: number[];
+  /** Shortest `schedule_wakeup` wait (default 1 minute). */
+  wakeupMinDelayMs?: number;
 }
 
 export interface OrchestrationDeps {
@@ -81,7 +86,9 @@ export class OrchestrationService {
   readonly automation: AutomationPort;
   readonly wakes: WakeScheduler;
   readonly loops: LoopGuard;
+  readonly reminders: Reminders;
   private readonly cards: NoticeCards;
+  private readonly delivery: NoticeDelivery;
   private unsubscribe: (() => void) | undefined;
 
   constructor(private readonly deps: OrchestrationDeps) {
@@ -97,12 +104,14 @@ export class OrchestrationService {
     });
     this.asks = new PmAsks({
       db: deps.db,
+      session: (id) => deps.repo.find(id)?.session,
       onLateReply: (reply) =>
         this.postToOrchestrator(
           reply.projectId,
           reply.pmSessionId,
           `Answer to your earlier ask_pm question:\n${reply.text}`,
           false,
+          `pm.message:ask:${reply.askId}`,
         ),
     });
     this.wakes = new WakeScheduler((key) => this.fire(key), {
@@ -123,20 +132,39 @@ export class OrchestrationService {
       options: deps.options?.wake,
       log: deps.log,
     });
+    this.delivery = new NoticeDelivery({
+      db: deps.db,
+      notices: this.notices,
+      cards: this.cards,
+      wakes: this.wakes,
+      digestFor: (session) => this.digestFor(session),
+      projectName: (id) => this.projectName(id),
+      session: (id) => deps.repo.find(id)?.session,
+      projectIds: () => deps.projects.list().flatMap((p) => (p.archivedAt ? [] : [p.id])),
+      retryDelaysMs: deps.options?.failedTurnRetryMs,
+      log: deps.log,
+    });
+    const minDelayMs = deps.options?.wakeupMinDelayMs;
+    this.reminders = new Reminders({ notices: this.notices, wakes: this.wakes, minDelayMs });
   }
 
   start(): void {
     this.unsubscribe = this.deps.store.subscribe((events) => this.onEvents(events));
     this.deps.sessions.setInputDecorator((session, input, from) => {
       this.loops.turnStarted(session, from);
-      return this.decorate(session, input);
+      // The status digest and undelivered notices, fresh at send time (§8.4, `NoticeDelivery`).
+      return this.delivery.decorate(session, input);
     });
+    this.delivery.rearm();
+    this.reminders.start();
   }
 
   stop(): void {
     this.unsubscribe?.();
     this.wakes.dispose();
     this.loops.dispose();
+    this.delivery.dispose();
+    this.reminders.dispose();
   }
 
   // ---------------------------------------------------------------- digest
@@ -178,32 +206,6 @@ export class OrchestrationService {
       return renderProjectDigest(this.projectStatus(session.projectId));
     }
     return renderOverviewDigest({ ...this.overview(), pmMessages: [] });
-  }
-
-  /**
-   * Prepend the status digest and any undelivered notices to a role session's input (§8.4).
-   * Runs at send time, so queued messages get a fresh digest too.
-   */
-  decorate(session: Session, input: UserInput): UserInput {
-    if (session.role === "agent") return input;
-    try {
-      const parts = [this.digestFor(session)];
-      const target = session.role === "pm" ? "pm" : "orchestrator";
-      const pending = this.notices.undelivered(
-        target,
-        session.role === "pm" ? session.projectId : null,
-      );
-      if (pending.length > 0) {
-        parts.push(renderNotices(pending, (id) => this.projectName(id)));
-        this.notices.markDelivered(pending.map((n) => n.id));
-        this.cards.add(session.id, pending);
-      }
-      parts.push(input.text);
-      return { ...input, text: parts.join("\n\n") };
-    } catch (error) {
-      this.deps.log?.(`orchestration digest: ${errorMessage(error)}`);
-      return input;
-    }
   }
 
   // ---------------------------------------------------------------- messaging
@@ -295,7 +297,7 @@ export class OrchestrationService {
 
   /** Record a notice (other services: GitHub checks, automations); wakes its target when asked. */
   notify(draft: NoticeDraft, wake = true): Notice | undefined {
-    const created = this.notices.create(draft);
+    const created = this.notices.create({ ...draft, wake });
     if (created && wake) this.wakes.request(wakeKey(created.target, created.projectId));
     return created;
   }
@@ -307,11 +309,12 @@ export class OrchestrationService {
     fromSessionId: string,
     text: string,
     informational: boolean,
+    id = `pm.message:${randomUUID()}`,
   ): void {
     const name = projectId ? this.projectName(projectId) : "a project";
     this.notify(
       {
-        id: `pm.message:${randomUUID()}`,
+        id,
         type: "pm.message",
         projectId,
         target: "orchestrator",
@@ -347,6 +350,7 @@ export class OrchestrationService {
     const relevant = events.some(
       (e) =>
         e.type === "agent.turn.completed" ||
+        e.type === "agent.turn.failed" ||
         e.type === "agent.turn.started" ||
         e.type === "inbox.created" ||
         e.type === "session.updated" ||
@@ -357,6 +361,7 @@ export class OrchestrationService {
     setImmediate(() => {
       try {
         this.cards.attach(events);
+        this.delivery.onEvents(events);
         const session = (id: string) => this.deps.repo.find(id)?.session;
         const derived = [
           ...deriveNotices(events, {
