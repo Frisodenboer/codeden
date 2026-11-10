@@ -35,9 +35,16 @@ function tempRootsOf(ctx: PathContext): readonly string[] {
   return ctx.tempRoots ?? osTempRoots(ctx.platform);
 }
 
+/** Home variables. Matched in any case: PowerShell's `$home` is the home directory too. */
 const HOME_VARS = /^(\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=$|[\\/])/i;
-const TEMP_VARS =
-  /^(\$TMPDIR|\$\{TMPDIR\}|\$TEMP|\$TMP|\$env:TEMP|\$env:TMP|%TEMP%|%TMP%)(?=$|[\\/])/i;
+/**
+ * Temp variables. Shell names are case-sensitive, so `$tmp` (a common name for what `mktemp`
+ * printed) is not the temp directory; PowerShell's and cmd's names are not.
+ */
+const TEMP_VARS = [
+  /^(\$TMPDIR|\$\{TMPDIR\}|\$TEMP|\$\{TEMP\}|\$TMP|\$\{TMP\})(?=$|[\\/])/,
+  /^(\$env:TEMP|\$env:TMP|%TEMP%|%TMP%)(?=$|[\\/])/i,
+];
 
 /**
  * Git Bash paths on Windows: `/c/Users/x` is `C:\Users\x`, and `/tmp` is the user's temp
@@ -64,7 +71,7 @@ export function resolveAgainst(target: string, ctx: PathContext): string {
   }
   value = value.replace(HOME_VARS, home);
   const temp = tempRootsOf(ctx)[0];
-  if (temp) value = value.replace(TEMP_VARS, temp);
+  if (temp) for (const vars of TEMP_VARS) value = value.replace(vars, temp);
   let base = ctx.dir ?? ctx.cwd;
   if (isWin(ctx)) {
     value = fromGitBash(value, temp);
@@ -98,6 +105,12 @@ export function isInTemp(target: string, ctx: PathContext): boolean {
     const rel = relative(root, abs, ctx);
     return rel !== "" && isInside(abs, root, ctx);
   });
+}
+
+/** True when `target` is one of the OS temp directories itself. */
+export function isTempRoot(target: string, ctx: PathContext): boolean {
+  const abs = resolveAgainst(target, ctx);
+  return tempRootsOf(ctx).some((root) => relative(root, abs, ctx) === "");
 }
 
 /** True when agents may write `target` without asking: the worktree, extra roots or temp. */

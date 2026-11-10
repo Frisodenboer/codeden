@@ -324,6 +324,53 @@ describe("the OS temp directory", () => {
     expect(action("echo x > /tmp/x", { ...posix, tempRoots: [] })).toBe("outside_worktree");
   });
 
+  it("lets agents copy files into a temp directory itself, but not secrets", () => {
+    for (const cmd of [
+      "cp a.png /tmp/",
+      'cp a.png "$TMPDIR"',
+      "mv out.log /tmp",
+      "cp -r dist/ /tmp",
+    ]) {
+      expect(action(cmd), cmd).toBeNull();
+    }
+    for (const cmd of [
+      "cp a.png $TEMP",
+      "Copy-Item a.png $env:TEMP",
+      "Copy-Item -Path a.png -Destination %TMP%",
+      "cp a.png /tmp/",
+    ]) {
+      expect(action(cmd, win), cmd).toBeNull();
+    }
+    expect(action("cp .env.production /tmp/")).toBe("outside_worktree");
+    expect(action("cp build/id_rsa /tmp")).toBe("outside_worktree");
+    expect(action("rm -rf /tmp")).toBe("outside_worktree");
+    expect(action("rm -rf $TMPDIR")).toBe("outside_worktree");
+    // `/etc` is a path for cp and mv, not a cmd switch.
+    expect(action("cp hosts /etc")).toBe("outside_worktree");
+    expect(action("mv app /opt")).toBe("outside_worktree");
+    expect(action("robocopy dist C:\\Users\\me\\out /E /R:1", win)).toBe("outside_worktree");
+    expect(action("xcopy dist build /E /I", win)).toBeNull();
+  });
+
+  it("reads $tmp and $temp as the agent's own variables, not the temp directory", () => {
+    expect(action('tmp=$(mktemp -d) && cp -r src "$tmp" && rm -rf "$tmp"')).toBeNull();
+    expect(action('temp=$(mktemp) && echo x > "$temp" && rm -f "$temp"')).toBeNull();
+    expect(action('cp -r src "$tmp"', win)).toBeNull();
+    expect(action("echo x > $TMP/x.txt", win)).toBeNull();
+    expect(action(`echo x > $\{TMPDIR}/x.txt`)).toBeNull();
+    // PowerShell's $home is the home directory in any case.
+    expect(action("Remove-Item -Recurse $home\\Documents", win)).toBe("outside_worktree");
+  });
+
+  it("empties the current directory only where it may write", () => {
+    expect(action("cd dist && rm -rf *")).toBeNull();
+    expect(action("rm -rf *")).toBeNull();
+    expect(action("cd /tmp/scratch && rm -rf *")).toBeNull();
+    expect(action("cd /tmp && rm -rf *")).toBe("outside_worktree");
+    expect(action("cd ~ && rm -rf *")).toBe("outside_worktree");
+    expect(action("cd .. && rm -rf *")).toBe("outside_worktree");
+  });
+
   it("maps Git Bash paths on Windows", () => {
     expect(action("cd /c/work/repo/apps && cp a ../b", win)).toBeNull();
     expect(action("echo x > /c/Users/me/scratch/x.log", win)).toBe("outside_worktree");
