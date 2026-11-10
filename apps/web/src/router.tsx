@@ -24,15 +24,18 @@ import { SettingsPage } from "@/routes/settings";
 import { SetupPage } from "@/routes/setup";
 import { VisionPage } from "@/routes/vision";
 import { useConnectionStore } from "@/stores/connection";
+import { useUiStore } from "@/stores/ui";
 
 function Root() {
   const auth = useConnectionStore((s) => s.auth);
+  // A native browser view paints over the page, toasts included: keep them on the other side.
+  const nativeShown = useUiStore((s) => s.nativeBrowserShown);
   if (auth === "unauthorized") return <UnauthorizedScreen />;
   if (auth === "signin") return <SignInScreen />;
   return (
     <>
       <Outlet />
-      <Toaster position="bottom-right" />
+      <Toaster position={nativeShown ? "bottom-left" : "bottom-right"} />
     </>
   );
 }

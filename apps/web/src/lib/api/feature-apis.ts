@@ -69,6 +69,12 @@ export type BrowserConnection = "connecting" | "open" | "closed";
 export interface BrowserChannelOptions extends BrowserScreencastSettings {
   /** Open the session's browser if it is not open yet. */
   open?: boolean;
+  /**
+   * This viewer is the desktop window, which shows native views itself (§17 Phase 2): opens
+   * prefer native views and no frames come until `watch` (for a browser on the runner's
+   * Chromium).
+   */
+  native?: boolean;
 }
 
 /** One live viewer of a session's browser (`/ws/browser`). */
@@ -91,7 +97,8 @@ export interface BrowserChannel {
 
 export interface BrowserApi {
   openChannel(sessionId: string, opts?: BrowserChannelOptions): BrowserChannel;
-  open(sessionId: string, url?: string): Promise<BrowserOpenResponse>;
+  /** `native`: the desktop window asks (prefer native views for a browser not open yet). */
+  open(sessionId: string, url?: string, native?: boolean): Promise<BrowserOpenResponse>;
   close(sessionId: string): Promise<void>;
   tabs(sessionId: string): Promise<BrowserTabsResponse>;
   newTab(sessionId: string, url?: string): Promise<BrowserTabResponse>;

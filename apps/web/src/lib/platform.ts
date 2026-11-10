@@ -1,4 +1,4 @@
-import type { CodedenDesktopApi } from "@codeden/contracts";
+import type { CodedenDesktopApi, CodedenDesktopBrowserApi } from "@codeden/contracts";
 import { createDesktopPlatform } from "./platform-desktop";
 
 /**
@@ -16,7 +16,11 @@ export interface PlatformBridge {
     folderPicker: boolean;
     /** OS integration settings: launch at login, close to tray, keep awake (Settings > App). */
     osIntegration: boolean;
+    /** Session browsers can show as native views over the panel (`nativeBrowser`). */
+    nativeBrowser: boolean;
   };
+  /** Places the desktop app's native browser views (§17 Phase 2); null elsewhere. */
+  readonly nativeBrowser: CodedenDesktopBrowserApi | null;
   notificationPermission(): NotificationPermission | "unsupported";
   requestNotificationPermission(): Promise<NotificationPermission | "unsupported">;
   notify(title: string, opts?: { body?: string; tag?: string; onClick?: () => void }): void;
@@ -54,7 +58,9 @@ export function createWebPlatform(): PlatformBridge {
       // Browsers can't return real paths; the server-side picker is used instead (§13).
       folderPicker: false,
       osIntegration: false,
+      nativeBrowser: false,
     },
+    nativeBrowser: null,
     notificationPermission: () => (hasNotifications ? Notification.permission : "unsupported"),
     async requestNotificationPermission() {
       if (!hasNotifications) return "unsupported";

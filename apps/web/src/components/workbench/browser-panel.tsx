@@ -1,27 +1,39 @@
 import type { BrowserInput } from "@codeden/contracts";
 import { Globe, Loader2, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
 import { useClient } from "@/lib/api";
+import { platform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { BrowserCanvas } from "./browser/browser-canvas";
 import { BrowserToolbar, DevServerMenu } from "./browser/browser-toolbar";
+import { NativeBrowserView } from "./browser/native-browser-view";
 import { usePanelViewport, type ViewportMode } from "./browser/use-panel-viewport";
 import { type SessionBrowser, useSessionBrowser } from "./browser/use-session-browser";
 
 /**
- * The browser the agents drive (§12.2), streamed as screencast frames edge to edge. The page
- * is laid out at the panel's own size, and clicks, keys and scrolling always go to it.
+ * The browser the agents drive (§12.2). In the desktop app it is a real browser view laid over
+ * the panel (§17 Phase 2); elsewhere, and for a browser on the runner's Chromium, it is the
+ * screencast, edge to edge. Either way the page is laid out at the panel's own size, and clicks,
+ * keys and scrolling go straight to it.
  */
 export function BrowserPanel({ sessionId }: { sessionId: string }) {
-  const browser = useSessionBrowser(sessionId);
+  const nativeCapable = platform.capabilities.nativeBrowser;
+  const browser = useSessionBrowser(sessionId, nativeCapable);
+  const native = nativeCapable && browser.engine === "native";
   const [mode, setMode] = useState<ViewportMode>("fit");
   const channel = browser.channel;
   const onInput = useCallback((input: BrowserInput) => channel?.input(input), [channel]);
   // Re-registering as a viewer makes the runner send its current picture.
   const onStall = useCallback(() => channel?.watch(), [channel]);
-  const measure = usePanelViewport(channel, mode, browser.viewport?.mine);
+  // A native view has the panel's size already; only the screencast reports one.
+  const measure = usePanelViewport(native ? null : channel, mode, browser.viewport?.mine);
+  // The desktop window starts without frames; a browser on the runner's Chromium needs them.
+  const needsFrames = nativeCapable && browser.open === true && browser.engine === "runner";
+  useEffect(() => {
+    if (needsFrames) channel?.watch();
+  }, [needsFrames, channel]);
 
   if (browser.open === false) return <ClosedState sessionId={sessionId} browser={browser} />;
   if (browser.open === null) {
@@ -40,6 +52,7 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
       <BrowserToolbar
         sessionId={sessionId}
         browser={browser}
+        native={native}
         viewportMode={mode}
         onViewportMode={setMode}
       />
@@ -47,6 +60,7 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
       <div
         ref={measure}
         data-testid="browser-viewport"
+        data-engine={browser.engine ?? undefined}
         data-viewport={
           browser.viewport
             ? `${browser.viewport.width}x${browser.viewport.height}@${browser.viewport.deviceScaleFactor}`
@@ -54,15 +68,22 @@ export function BrowserPanel({ sessionId }: { sessionId: string }) {
         }
         className="relative min-h-0 flex-1 overflow-hidden bg-background"
       >
-        <BrowserCanvas
-          onFrame={browser.onFrame}
-          onInput={onInput}
-          onStall={onStall}
-          // Fill only when the page follows this panel; a preset or another viewer's size is
-          // fitted inside instead of stretched.
-          fit={mode === "fit" && browser.viewport?.mine ? "fill" : "contain"}
-          title={browser.activeTab?.title || "Session browser"}
-        />
+        {native ? (
+          <NativeBrowserView
+            sessionId={sessionId}
+            title={browser.activeTab?.title || "Session browser"}
+          />
+        ) : (
+          <BrowserCanvas
+            onFrame={browser.onFrame}
+            onInput={onInput}
+            onStall={onStall}
+            // Fill only when the page follows this panel; a preset or another viewer's size is
+            // fitted inside instead of stretched.
+            fit={mode === "fit" && browser.viewport?.mine ? "fill" : "contain"}
+            title={browser.activeTab?.title || "Session browser"}
+          />
+        )}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ const RECONNECT_MS = [500, 1_000, 2_000, 4_000];
 export function browserSocketQuery(sessionId: string, opts: BrowserChannelOptions = {}): string {
   const params = new URLSearchParams({ sessionId });
   if (opts.open) params.set("open", "1");
+  if (opts.native) params.set("native", "1");
   for (const key of ["quality", "maxWidth", "maxHeight", "maxFps"] as const) {
     const value = opts[key];
     if (value !== undefined) params.set(key, String(Math.round(value)));
