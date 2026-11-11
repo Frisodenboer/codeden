@@ -42,7 +42,7 @@ function FollowupChips({
   return (
     <ul
       aria-label="Suggested follow-ups"
-      className="mr-auto flex w-full max-w-[46rem] flex-col gap-1 px-3 pb-3 sm:-mt-2 sm:px-6 sm:pb-4"
+      className="mr-auto flex max-h-[30vh] w-full max-w-[46rem] shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-3 scroll-thin sm:-mt-2 sm:px-6 sm:pb-4"
     >
       {visible.map((s) => (
         <li
