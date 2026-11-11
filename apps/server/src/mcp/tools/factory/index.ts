@@ -66,7 +66,7 @@ export const factoryReportCandidates = defineTool({
 export const factorySubmitReview = defineTool({
   name: "factory_submit_review",
   description:
-    "Submit your review verdict for the factory pull request you were asked to review: `approve`, `request_changes` or `reject`, a specific summary, one entry per acceptance criterion (met or not), whether it fits the vision, whether its tests are adequate (or none are needed), and any security concerns. CodeDen merges automatically only on `approve` with every other merge check green.",
+    "Submit your review verdict for the factory pull request you were asked to review: `approve`, `request_changes` or `reject`, a specific summary, one entry per acceptance criterion (met or not), whether it fits the vision, whether its tests are adequate (or none are needed), and any security concerns. CodeBench merges automatically only on `approve` with every other merge check green.",
   roles: ["agent"],
   scope: "session",
   alwaysLoad: true,
@@ -120,7 +120,7 @@ export const factoryStatus = defineTool({
 export const factoryTriage = defineTool({
   name: "factory_triage",
   description:
-    "Decide on a factory candidate after scoring it against the vision. `accept` with a score (0..1) and, if needed, sharper acceptance criteria: CodeDen creates the GitHub issue and builds it within the limits. `reject` with the reason (outside the vision, too big, touches protected areas, duplicate). Work over the size limit that can't be split (an initial scaffold, a stack migration): accept with `largeChange` and the reason.",
+    "Decide on a factory candidate after scoring it against the vision. `accept` with a score (0..1) and, if needed, sharper acceptance criteria: CodeBench creates the GitHub issue and builds it within the limits. `reject` with the reason (outside the vision, too big, touches protected areas, duplicate). Work over the size limit that can't be split (an initial scaffold, a stack migration): accept with `largeChange` and the reason.",
   roles: ["pm"],
   scope: "project",
   alwaysLoad: true,

@@ -18,7 +18,7 @@ function available(services: AppServices, caller?: ToolAvailabilityContext): boo
 export const createPullRequestTool = defineTool({
   name: "create_pull_request",
   description:
-    "Push your branch and open a pull request for your work (or update the title/body of the one already open for your branch). The body gets `Fixes #<issue>` for your session's issue (or `issue`) and a link to this CodeDen session. Commit your changes first, or pass `commitMessage` to commit everything that is uncommitted. Use `draft: true` for work that is not ready for review. Only for GitHub projects.",
+    "Push your branch and open a pull request for your work (or update the title/body of the one already open for your branch). The body gets `Fixes #<issue>` for your session's issue (or `issue`) and a link to this CodeBench session. Commit your changes first, or pass `commitMessage` to commit everything that is uncommitted. Use `draft: true` for work that is not ready for review. Only for GitHub projects.",
   roles: ["agent"],
   scope: "session",
   isAvailable: available,

@@ -11,9 +11,9 @@ import { git, gitText } from "./exec";
 export const CHECKPOINT_ROOT = "refs/codeden/checkpoints";
 
 const IDENTITY = {
-  GIT_AUTHOR_NAME: "CodeDen",
+  GIT_AUTHOR_NAME: "CodeBench",
   GIT_AUTHOR_EMAIL: "codeden@localhost",
-  GIT_COMMITTER_NAME: "CodeDen",
+  GIT_COMMITTER_NAME: "CodeBench",
   GIT_COMMITTER_EMAIL: "codeden@localhost",
 };
 
@@ -132,7 +132,7 @@ export async function createCheckpoint(
     (index > 0 ? await resolveCommit(cwd, checkpointRef(sessionId, index - 1)) : undefined) ??
     (await resolveCommit(cwd, "HEAD"));
   const message = [
-    `CodeDen checkpoint ${index}`,
+    `CodeBench checkpoint ${index}`,
     "",
     `Session: ${sessionId}`,
     ...(turnId ? [`Turn: ${turnId}`] : []),

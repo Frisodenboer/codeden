@@ -5,7 +5,7 @@
  */
 
 export const APP_TITLE = "CodeBench";
-export const WAITING_TITLE = "⏳ Waiting on you · CodeDen";
+export const WAITING_TITLE = "⏳ Waiting on you · CodeBench";
 export const TITLE_FLASH_MS = 1500;
 
 /** "(3) CodeDen", or the bare title with nothing open. */

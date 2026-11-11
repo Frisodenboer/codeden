@@ -32,7 +32,7 @@ export async function startAppServer(
     else opts.signal.addEventListener("abort", () => void rpc.close(), { once: true });
   }
   const params: InitializeParams = {
-    clientInfo: { name: "codeden", title: "CodeDen", version: CODEDEN_VERSION },
+    clientInfo: { name: "codeden", title: "CodeBench", version: CODEDEN_VERSION },
     capabilities: {
       experimentalApi: false,
       requestAttestation: false,

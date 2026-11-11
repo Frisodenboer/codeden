@@ -57,7 +57,7 @@ export const runAutomation = defineTool({
 export const reportTriage = defineTool({
   name: "report_triage",
   description:
-    "After classifying a new issue and applying labels/comment with triage_issue, report the decision. For 'ready' issues CodeDen then either starts an agent session (when the project's triage policy allows it) or asks the user 'Should I take this on?' in the inbox. Do not call start_session for triaged issues yourself.",
+    "After classifying a new issue and applying labels/comment with triage_issue, report the decision. For 'ready' issues CodeBench then either starts an agent session (when the project's triage policy allows it) or asks the user 'Should I take this on?' in the inbox. Do not call start_session for triaged issues yourself.",
   roles: ["pm"],
   scope: "project",
   isAvailable: inGithubProject,

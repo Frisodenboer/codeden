@@ -104,7 +104,7 @@ export const SOURCE_LABEL: Record<Automation["source"], string> = {
   builtin: "Built in",
   global_file: "From file",
   project_file: "From file",
-  database: "CodeDen",
+  database: "CodeBench",
 };
 
 export const RUN_STATUS: Record<AutomationRunStatus, { label: string; tone: Tone }> = {

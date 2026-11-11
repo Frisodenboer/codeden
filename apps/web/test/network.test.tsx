@@ -77,7 +77,7 @@ describe("Settings › Network access", () => {
       network: { ...client.network, status: async () => ({ ...status, remote: true }) },
     };
     renderWithClient(<NetworkSettings />, remote);
-    expect(await screen.findByText(/computer running CodeDen/)).toBeTruthy();
+    expect(await screen.findByText(/computer running CodeBench/)).toBeTruthy();
     expect(isDisabled(screen.getByTestId("network-toggle"))).toBe(true);
     expect(screen.queryByTestId("network-password-input")).toBeNull();
   });

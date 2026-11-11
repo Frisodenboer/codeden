@@ -183,7 +183,7 @@ export function ConfigFileEditor({
             <AlertDialogDescription>
               {file.kind === "skill" ? "The whole skill folder is removed" : "The file is removed"}{" "}
               from <code className="font-mono text-2xs">{file.absolutePath}</code>. A backup copy is
-              kept in CodeDen's backups folder.
+              kept in CodeBench's backups folder.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

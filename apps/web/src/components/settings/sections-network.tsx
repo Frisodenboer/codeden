@@ -153,7 +153,7 @@ export function NetworkSettings() {
     return (
       <SettingsSection title="Network access">
         <p className="p-4 text-[13px] text-muted-foreground">
-          This CodeDen server doesn't offer network access yet. Update CodeDen to use it.
+          This CodeBench server doesn't offer network access yet. Update CodeBench to use it.
         </p>
       </SettingsSection>
     );
@@ -166,17 +166,17 @@ export function NetworkSettings() {
     <div data-testid="network-settings">
       <SettingsSection
         title="Network access"
-        description="Open CodeDen from your phone or tablet on the same Wi-Fi, or from anywhere over your own VPN such as Tailscale. Off by default."
+        description="Open CodeBench from your phone or tablet on the same Wi-Fi, or from anywhere over your own VPN such as Tailscale. Off by default."
       >
         <SettingRow
           label="Allow network access"
           help={
             remote
-              ? "Change this on the computer running CodeDen."
+              ? "Change this on the computer running CodeBench."
               : status.enabled
                 ? "Devices on your network can open CodeBench after signing in with the password."
                 : status.passwordSet
-                  ? "CodeDen only answers on this computer (127.0.0.1)."
+                  ? "CodeBench only answers on this computer (127.0.0.1)."
                   : "Set a password below first."
           }
         >
@@ -208,7 +208,7 @@ export function NetworkSettings() {
         description={
           status.enabled
             ? "Scan a code with your phone's camera, or type the address into its browser."
-            : "Where CodeDen will answer once network access is on."
+            : "Where CodeBench will answer once network access is on."
         }
       >
         {addresses.map((a) => (
@@ -222,7 +222,7 @@ export function NetworkSettings() {
         <p className="px-4 py-3 text-2xs leading-relaxed text-muted-foreground">
           Away from home, use your own VPN (Tailscale, WireGuard): its address shows up here and
           needs nothing else. These are plain http addresses, so phones won't allow notifications or
-          the microphone on them. Tip: open CodeDen on your phone and use Add to Home Screen.
+          the microphone on them. Tip: open CodeBench on your phone and use Add to Home Screen.
         </p>
       </SettingsSection>
 

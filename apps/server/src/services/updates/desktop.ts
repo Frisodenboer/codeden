@@ -127,7 +127,7 @@ export class DesktopUpdateService {
       progress,
       installError: state === "failed" ? (d.error ?? "The update could not be downloaded") : null,
       canRestart: d.unsupported === null,
-      restartCommand: "Quit CodeDen from the tray and open it again",
+      restartCommand: "Quit CodeBench from the tray and open it again",
       installed: [],
       rollbackTo: null,
       canRollback: false,

@@ -126,8 +126,8 @@ export async function attachEvidence(
     summary: input.summary,
     testOutput: input.testOutput,
     sessionLabel: session.title
-      ? `CodeDen session ${session.title} (\`${session.id}\`)`
-      : `CodeDen session \`${session.id}\``,
+      ? `CodeBench session ${session.title} (\`${session.id}\`)`
+      : `CodeBench session \`${session.id}\``,
   });
   const comment = await commentOnIssue({ client }, repo, target.number, body);
   return {

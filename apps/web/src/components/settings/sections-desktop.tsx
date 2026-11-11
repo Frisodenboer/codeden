@@ -21,7 +21,7 @@ export function DesktopSettings() {
         label="Open at login"
         help={
           loginSupported
-            ? "Start CodeDen in the tray when you log in, so agents and automations are ready."
+            ? "Start CodeBench in the tray when you log in, so agents and automations are ready."
             : "Not available for this kind of install."
         }
       >
@@ -34,7 +34,7 @@ export function DesktopSettings() {
       </SettingRow>
       <SettingRow
         label="Keep running in the tray"
-        help="Closing the window leaves CodeDen in the tray (menu bar on macOS). Quit from its menu."
+        help="Closing the window leaves CodeBench in the tray (menu bar on macOS). Quit from its menu."
       >
         <Switch
           checked={desktop.closeToTray}

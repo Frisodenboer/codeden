@@ -95,7 +95,7 @@ export async function assertRemovable(
   if (info.containsOther) throw leftAlone("contains the repository or another worktree");
   if (info.state === "foreign") throw leftAlone("is not a worktree of this repository");
   if (info.state === "orphan" && !isManagedWorktreePath(home, path)) {
-    throw leftAlone("is no longer a git worktree and is outside CodeDen's worktree folder");
+    throw leftAlone("is no longer a git worktree and is outside CodeBench's worktree folder");
   }
   if (info.state !== "registered" || cmd.force) return info;
   if (info.locked) {

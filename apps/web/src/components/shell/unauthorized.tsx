@@ -15,11 +15,11 @@ export function UnauthorizedScreen() {
       <div className="relative w-full max-w-md text-center" data-testid="unauthorized">
         <Logo className="mx-auto mb-5 size-12" />
         <h1 className="text-xl font-semibold tracking-tight">
-          Open CodeDen from the terminal link
+          Open CodeBench from the terminal link
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          This browser isn't signed in to your local CodeDen server. For your safety the UI only
-          unlocks through the private link CodeDen prints when it starts.
+          This browser isn't signed in to your local CodeBench server. For your safety the UI only
+          unlocks through the private link CodeBench prints when it starts.
         </p>
         <div className="mt-6 space-y-2 rounded-xl border border-border bg-card p-4 text-left text-[13px]">
           <div className="flex items-start gap-2.5">

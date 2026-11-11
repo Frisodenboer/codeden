@@ -240,7 +240,7 @@ describe("AutoRetry", () => {
     await wait(100);
     expect(sent).toHaveLength(0);
     expect(notice(id, turnId)?.message).toMatch(
-      /^Usage limit reached\. CodeDen continues the session/,
+      /^Usage limit reached\. CodeBench continues the session/,
     );
     await until(() => sent.length === 1);
     expect(sent[0]?.input.text).toBe(

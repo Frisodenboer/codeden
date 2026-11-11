@@ -69,7 +69,7 @@ export class ClaudePolicy {
     if (!this.isReadOnly) return undefined;
     if (EDIT_TOOLS.has(toolName)) {
       return this.readOnly
-        ? "This session is read-only: it cannot edit files. Act through CodeDen tools instead."
+        ? "This session is read-only: it cannot edit files. Act through CodeBench tools instead."
         : "This session has read-only permissions: it cannot edit files, commit or push. Report what you found instead.";
     }
     if (COMMAND_TOOLS.has(toolName)) {

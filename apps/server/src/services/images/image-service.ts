@@ -309,7 +309,7 @@ export class ImageService {
       .map((p) => realpathSync(p));
     if (!roots.some((r) => isInside(r, real))) {
       throw badRequest(
-        "Reference images must be inside your working directory, the temp folder or CodeDen's artifacts",
+        "Reference images must be inside your working directory, the temp folder or CodeBench's artifacts",
         "reference_outside",
       );
     }

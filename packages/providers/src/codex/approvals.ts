@@ -193,6 +193,6 @@ export async function handleServerRequest(
       // Legacy v1 approvals; v2 clients never receive them, but never leave the agent hanging.
       return { decision: { denied: { rejection: "Unsupported approval request" } } };
     default:
-      throw new CodexRpcError(-32601, `CodeDen does not handle ${req.method}`);
+      throw new CodexRpcError(-32601, `CodeBench does not handle ${req.method}`);
   }
 }

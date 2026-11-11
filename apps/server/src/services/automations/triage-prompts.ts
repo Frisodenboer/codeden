@@ -39,8 +39,8 @@ export function triageRequestText(opts: {
       : "   Do not close the issue.",
     "4. Then call report_triage with the issue number, the decision and a two-sentence summary.",
     opts.canStart
-      ? "   For ready issues CodeDen starts an agent session automatically; do not call start_session yourself."
-      : "   For ready issues CodeDen asks the user whether to take it on; do not call start_session yourself.",
+      ? "   For ready issues CodeBench starts an agent session automatically; do not call start_session yourself."
+      : "   For ready issues CodeBench asks the user whether to take it on; do not call start_session yourself.",
     "Decide the classification yourself and don't call ask_user: nobody answers during a triage run, and a run that waits never reports. When you can't tell, choose needs_info or unsafe and say why in the summary.",
     automation.action.type === "triage" && automation.action.instructions
       ? `\nProject guidance:\n${automation.action.instructions}`

@@ -211,7 +211,7 @@ export function SetupChecklist() {
       </div>
       <div className="mt-2 flex items-start gap-3">
         <p className="flex-1 text-2xs text-muted-foreground">
-          CodeDen reuses your existing logins and never stores provider or GitHub credentials. At
+          CodeBench reuses your existing logins and never stores provider or GitHub credentials. At
           least one agent provider is required; GitHub is recommended.
         </p>
         <Button

@@ -35,8 +35,8 @@ function GeneratedPassword({ value, onDone }: { value: string; onDone: () => voi
         </Button>
       </div>
       <p className="mt-2 text-2xs text-muted-foreground">
-        Save it in your password manager now: CodeDen keeps only a scrambled copy and can't show it
-        again.{" "}
+        Save it in your password manager now: CodeBench keeps only a scrambled copy and can't show
+        it again.{" "}
         <button type="button" className="underline underline-offset-2" onClick={onDone}>
           I've saved it
         </button>

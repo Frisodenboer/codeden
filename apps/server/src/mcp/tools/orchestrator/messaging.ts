@@ -77,9 +77,9 @@ export const messagePm = defineTool({
 export function heldNote(projectName: string, until: number, now = Date.now()): string {
   const when = until - now <= 60_000 ? "within a minute" : `at about ${clock(until)} (local time)`;
   return [
-    `Queued: CodeDen delivers this to the PM of ${projectName} automatically ${when}, or sooner if the PM wakes up for something else.`,
+    `Queued: CodeBench delivers this to the PM of ${projectName} automatically ${when}, or sooner if the PM wakes up for something else.`,
     "Nothing else to do: do not send it again or plan a retry.",
-    "(CodeDen paces automatic back-and-forth between you and a PM while the user has not stepped in.)",
+    "(CodeBench paces automatic back-and-forth between you and a PM while the user has not stepped in.)",
   ].join(" ");
 }
 

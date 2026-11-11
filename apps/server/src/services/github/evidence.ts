@@ -172,7 +172,7 @@ export function evidenceComment(opts: {
   testOutput?: string;
   sessionLabel: string;
 }): string {
-  const parts: string[] = ["### Evidence from CodeDen", ""];
+  const parts: string[] = ["### Evidence from CodeBench", ""];
   if (opts.summary) parts.push(opts.summary.trim(), "");
   for (const file of opts.files) {
     if (file.isImage) {

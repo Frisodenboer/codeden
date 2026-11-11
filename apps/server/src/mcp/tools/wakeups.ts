@@ -19,7 +19,7 @@ function ownerOf(ctx: {
 export const scheduleWakeup = defineTool({
   name: "schedule_wakeup",
   description:
-    "Schedule a wake-up for yourself: at that time CodeDen wakes you with your note (and the usual status digest), so you can follow up later (check on running work, retry something, report back) without waiting for the user. Give inMinutes (1 to 10080) or an ISO 8601 time in at, no more than 7 days ahead. At most 20 pending at once.",
+    "Schedule a wake-up for yourself: at that time CodeBench wakes you with your note (and the usual status digest), so you can follow up later (check on running work, retry something, report back) without waiting for the user. Give inMinutes (1 to 10080) or an ISO 8601 time in at, no more than 7 days ahead. At most 20 pending at once.",
   roles: ["orchestrator", "pm"],
   scope: "session",
   alwaysLoad: true,

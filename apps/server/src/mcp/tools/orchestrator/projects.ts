@@ -21,7 +21,7 @@ function compactProject(p: Project) {
 export const listProjects = defineTool({
   name: "list_projects",
   description:
-    "List every CodeDen project with its id, name, kind (github or local), path and defaults. Use the ids with ask_pm, message_pm and update_project.",
+    "List every CodeBench project with its id, name, kind (github or local), path and defaults. Use the ids with ask_pm, message_pm and update_project.",
   roles: ["orchestrator"],
   scope: "global",
   alwaysLoad: true,

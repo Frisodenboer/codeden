@@ -161,7 +161,7 @@ describe("one-click self-update (§16)", () => {
     expect(s.snapshot().installError).toContain("E404");
     expect(readPointer(home)).toBeNull();
     const dev = new UpdateService({ home, mode: () => "notify", registry: REGISTRY });
-    expect(() => dev.install({ version: "0.2.0" })).toThrow(/running CodeDen from source/);
+    expect(() => dev.install({ version: "0.2.0" })).toThrow(/running CodeBench from source/);
   });
 
   it("auto mode installs in the background for the next launch", async () => {

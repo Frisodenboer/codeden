@@ -112,7 +112,7 @@ export class UpdateService {
     if (last && !last.ok) {
       this.state = "failed";
       this.target = last.to;
-      this.installError = last.error ?? `CodeDen ${last.to} did not start`;
+      this.installError = last.error ?? `CodeBench ${last.to} did not start`;
     }
   }
 
@@ -199,7 +199,7 @@ export class UpdateService {
   install(opts: { version?: string; restart?: boolean } = {}): UpdateStatus {
     if (this.host.source !== "packaged") {
       throw conflict(
-        "You're running CodeDen from source: pull and rebuild to update.",
+        "You're running CodeBench from source: pull and rebuild to update.",
         "running_from_source",
       );
     }

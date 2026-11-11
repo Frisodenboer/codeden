@@ -57,7 +57,7 @@ export function AttentionToast(props: AttentionToastProps) {
         <div className="mt-3 flex items-center gap-2 border-t border-border pt-2.5">
           <BellRing className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="flex-1 text-xs text-muted-foreground">
-            Get notified when CodeDen is in the background
+            Get notified when CodeBench is in the background
           </span>
           <Button
             size="xs"

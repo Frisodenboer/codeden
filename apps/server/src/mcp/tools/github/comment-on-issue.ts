@@ -19,7 +19,9 @@ export const commentOnIssueTool = defineTool({
     const number = input.number ?? session?.issue?.number ?? session?.pr?.number;
     if (!number) throw new ToolError("Pass the issue or PR number");
     const footer =
-      session && session.role === "agent" ? `\n\n<sub>CodeDen session \`${session.id}\`</sub>` : "";
+      session && session.role === "agent"
+        ? `\n\n<sub>CodeBench session \`${session.id}\`</sub>`
+        : "";
     const comment = await services.github.commentOnIssue(
       projectId,
       number,

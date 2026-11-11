@@ -216,7 +216,7 @@ export class GithubFactoryPort implements FactoryGithub {
       const commit = await o.rest.git.createCommit({
         owner,
         repo: name,
-        message: "docs: update the project vision\n\nSaved from the CodeDen vision editor.",
+        message: "docs: update the project vision\n\nSaved from the CodeBench vision editor.",
         tree: tree.data.sha,
         parents: [parent],
       });
@@ -247,7 +247,7 @@ export class GithubFactoryPort implements FactoryGithub {
         head: VISION_BRANCH,
         base: defaultBranch,
         title: "Update the project vision",
-        body: `Commits \`${path}\`, saved from the CodeDen vision editor. The factory reads the vision from the local checkout right away; merging this shares it with agent worktrees, which start from \`${defaultBranch}\`.`,
+        body: `Commits \`${path}\`, saved from the CodeBench vision editor. The factory reads the vision from the local checkout right away; merging this shares it with agent worktrees, which start from \`${defaultBranch}\`.`,
       });
       return ref(pr.data);
     });
@@ -271,7 +271,7 @@ export class GithubFactoryPort implements FactoryGithub {
       const revert = await o.rest.git.createCommit({
         owner,
         repo: name,
-        message: `Revert "${merge.title}" (#${merge.prNumber})\n\nAutomatic revert by the CodeDen factory: CI on ${defaultBranch} failed after the merge.`,
+        message: `Revert "${merge.title}" (#${merge.prNumber})\n\nAutomatic revert by the CodeBench factory: CI on ${defaultBranch} failed after the merge.`,
         tree: parentTree,
         parents: [merge.sha],
       });
@@ -288,7 +288,7 @@ export class GithubFactoryPort implements FactoryGithub {
         head: branch,
         base: defaultBranch,
         title: `Revert "${merge.title}"`,
-        body: `Reverts #${merge.prNumber} (${merge.sha}).\n\nCI on \`${defaultBranch}\` failed after the merge, so the CodeDen factory opened this revert and paused its loop. It goes through the same merge checks.`,
+        body: `Reverts #${merge.prNumber} (${merge.sha}).\n\nCI on \`${defaultBranch}\` failed after the merge, so the CodeBench factory opened this revert and paused its loop. It goes through the same merge checks.`,
       });
       this.github.sync.soon(projectId);
       return {

@@ -14,7 +14,7 @@ import { PatchDialog } from "./patch-dialog";
 
 const scopeChip =
   "rounded-full border border-border px-1.5 py-px text-3xs capitalize text-muted-foreground";
-const providerLabel = { claude: "Claude Code", codex: "Codex", codeden: "CodeDen" };
+const providerLabel = { claude: "Claude Code", codex: "Codex", codeden: "CodeBench" };
 
 const entryKey = (s: McpServerEntry) => `${s.provider}:${s.scope}:${s.projectId ?? ""}:${s.name}`;
 

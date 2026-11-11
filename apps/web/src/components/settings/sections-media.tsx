@@ -13,7 +13,7 @@ export function NotificationSettings() {
   return (
     <SettingsSection
       title="Notifications"
-      description="How CodeDen tells you something is waiting."
+      description="How CodeBench tells you something is waiting."
     >
       <SettingRow label="Toasts" help="In-app toasts for new inbox items and failures.">
         <Switch
@@ -51,8 +51,8 @@ export function NotificationSettings() {
           permission === "denied"
             ? "Blocked in your browser settings."
             : platform.capabilities.osIntegration
-              ? "Shown when the CodeDen window isn't focused."
-              : "Shown when the CodeDen tab isn't focused."
+              ? "Shown when the CodeBench window isn't focused."
+              : "Shown when the CodeBench tab isn't focused."
         }
       >
         <div className="flex items-center gap-2">

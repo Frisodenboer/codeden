@@ -96,7 +96,7 @@ export function instantiateFixture(
 export function parseFixture(value: unknown): ReplayFixture {
   const f = value as ReplayFixture;
   if (f?.version !== 1 || !Array.isArray(f.turns) || !Array.isArray(f.preamble)) {
-    throw new Error("Not a CodeDen replay fixture (version 1)");
+    throw new Error("Not a CodeBench replay fixture (version 1)");
   }
   ProviderCapabilities.parse(f.capabilities);
   for (const event of f.preamble) AgentEvent.parse(event);

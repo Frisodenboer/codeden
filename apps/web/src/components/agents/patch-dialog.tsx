@@ -98,7 +98,7 @@ export function PatchDialog({
             <ShieldCheck className="size-3.5 text-status-done" />
             {diff?.exists === false
               ? "Creates the file in place."
-              : "The current file is backed up to CodeDen's backups folder first."}
+              : "The current file is backed up to CodeBench's backups folder first."}
           </span>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>

@@ -97,9 +97,9 @@ export function VoiceSettings() {
                 </span>
               )
             ) : v.dictation.engine === "local" ? (
-              "Runs Whisper on this machine through the CodeDen server; audio never leaves it."
+              "Runs Whisper on this machine through the CodeBench server; audio never leaves it."
             ) : has(dictationKey) ? (
-              "Records while you hold or toggle, then transcribes through the CodeDen server."
+              "Records while you hold or toggle, then transcribes through the CodeBench server."
             ) : (
               `Add the ${v.dictation.engine === "openai" ? "OpenAI" : "ElevenLabs"} key below to use this engine.`
             )

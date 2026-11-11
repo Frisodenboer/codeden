@@ -72,7 +72,7 @@ export function httpAuthApi(origin: string): AuthApi {
           body: JSON.stringify({ password }),
         });
       } catch {
-        throw new SignInFailure("network", "Can't reach CodeDen. Is the computer awake?", null);
+        throw new SignInFailure("network", "Can't reach CodeBench. Is the computer awake?", null);
       }
       if (res.ok) return;
       const body = SignInError.safeParse(await res.json().catch(() => null));

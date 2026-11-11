@@ -69,7 +69,7 @@ export function builderPrompt(item: FactoryItem, vision: string): string {
     "- Commit, then open the pull request with `create_pull_request` (it links the issue with `Fixes #N`).",
     "- If you changed anything visible in a UI, start the dev server, take browser screenshots of the change and attach them with `attach_evidence`.",
     "- Call `finish` with the outcome, a summary, the tests you ran and the changed files.",
-    "An independent reviewer on another provider checks your pull request against the criteria and the vision before CodeDen merges it automatically.",
+    "An independent reviewer on another provider checks your pull request against the criteria and the vision before CodeBench merges it automatically.",
   ].join("\n");
 }
 
@@ -86,7 +86,7 @@ export function reviewerPrompt(
     ? `You are in the author's worktree, on the PR branch. Read the change locally and offline: \`git diff ${localBase}...HEAD\`, \`git log --oneline ${localBase}..HEAD\`, and the code around it; run the tests if useful. Do not use the network (no \`gh\`, no fetch). Do not modify files, commit or push.`
     : `Read the change (for example \`gh pr diff ${item.pr?.number ?? ""}\` and \`gh pr view ${item.pr?.number ?? ""}\`), and the code around it. Do not modify files, commit, push or comment on GitHub.`;
   return [
-    `You are the independent reviewer of pull request ${pr}: **${item.title}**. Another agent wrote it; CodeDen merges it automatically only if you approve and every other merge check passes.`,
+    `You are the independent reviewer of pull request ${pr}: **${item.title}**. Another agent wrote it; CodeBench merges it automatically only if you approve and every other merge check passes.`,
     note ? `Note: ${note}` : "",
     "",
     "Acceptance criteria:",

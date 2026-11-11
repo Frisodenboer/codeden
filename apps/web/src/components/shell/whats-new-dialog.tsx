@@ -38,7 +38,7 @@ export function WhatsNewDialog({
       <DialogContent className="sm:max-w-xl" data-testid="whats-new">
         <DialogHeader>
           <DialogTitle>What's new in CodeBench {version}</DialogTitle>
-          <DialogDescription>Release notes from the CodeDen repository.</DialogDescription>
+          <DialogDescription>Release notes from the CodeBench repository.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[50vh] overflow-y-auto text-sm">
           {notes.isPending ? (

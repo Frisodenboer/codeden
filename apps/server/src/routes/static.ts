@@ -27,7 +27,7 @@ export function mountWeb(app: Hono, webDir: string | undefined): void {
 }
 
 const NOT_BUILT =
-  "<!doctype html><title>CodeDen</title><p>The web UI is not built. Run <code>pnpm dev</code> or <code>pnpm build</code>.</p>";
+  "<!doctype html><title>CodeBench</title><p>The web UI is not built. Run <code>pnpm dev</code> or <code>pnpm build</code>.</p>";
 
 /**
  * Reads `index.html` again whenever it changes on disk (a rebuild while the server runs points

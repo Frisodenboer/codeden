@@ -159,8 +159,8 @@ export function FactoryPanel({ project }: { project: Project }) {
           </div>
           <div className="text-2xs text-muted-foreground">
             {f.mode === "dark_factory"
-              ? "Finders and issues feed the backlog; CodeDen merges when every check passes."
-              : "New issues feed the backlog; CodeDen merges when every check passes."}
+              ? "Finders and issues feed the backlog; CodeBench merges when every check passes."
+              : "New issues feed the backlog; CodeBench merges when every check passes."}
           </div>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1">

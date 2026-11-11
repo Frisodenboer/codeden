@@ -65,7 +65,7 @@ function issueBody(item: FactoryItem, criteria: string[]): string {
     "## Acceptance criteria",
     ...criteria.map((c) => `- [ ] ${c}`),
     "",
-    `_Accepted by the CodeDen factory (${item.source}${item.area ? `, ${item.area}` : ""}). It will be built and merged automatically once every merge check passes._`,
+    `_Accepted by the CodeBench factory (${item.source}${item.area ? `, ${item.area}` : ""}). It will be built and merged automatically once every merge check passes._`,
     `<!-- codeden:factory item=${item.id} -->`,
   ].join("\n");
 }
@@ -97,7 +97,7 @@ export async function triage(
         .comment(
           projectId,
           item.issue.number,
-          `The CodeDen factory is not taking this on: ${req.reason}`,
+          `The CodeBench factory is not taking this on: ${req.reason}`,
         )
         .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
     }
@@ -114,7 +114,7 @@ export async function triage(
       .comment(
         projectId,
         issue.number,
-        `Accepted by the CodeDen factory. Acceptance criteria:\n${criteria.map((c) => `- [ ] ${c}`).join("\n")}`,
+        `Accepted by the CodeBench factory. Acceptance criteria:\n${criteria.map((c) => `- [ ] ${c}`).join("\n")}`,
       )
       .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
   } else {

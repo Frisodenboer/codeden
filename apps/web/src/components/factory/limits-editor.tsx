@@ -181,7 +181,7 @@ export function LimitsEditor({
           <div>
             <p className="text-[13px] font-medium">Merge checks</p>
             <p className="text-3xs text-muted-foreground">
-              What a pull request must meet before CodeDen merges it on its own.
+              What a pull request must meet before CodeBench merges it on its own.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">

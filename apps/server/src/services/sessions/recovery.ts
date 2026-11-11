@@ -7,7 +7,7 @@ import type { SessionService } from "./session-service";
 
 /** The message sent to an agent whose turn was cut off by a restart (§4.2). */
 export const RESTART_CONTINUE_MESSAGE =
-  "You were interrupted by a CodeDen restart; continue where you left off.";
+  "You were interrupted by a CodeBench restart; continue where you left off.";
 
 export interface RecoveryDeps {
   repo: SessionRepo;

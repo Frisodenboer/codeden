@@ -32,7 +32,7 @@ const SENDERS: Record<QueueSender, string | null> = {
   orchestrator: "From the orchestrator",
   pm: "From the PM",
   automation: "From an automation",
-  codeden: "From CodeDen",
+  codeden: "From CodeBench",
 };
 
 /** Who queued a message, for its label; `null` for the user's own messages. */

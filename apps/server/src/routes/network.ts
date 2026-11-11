@@ -32,7 +32,7 @@ function remoteSessionId(c: Context, ctx: NetworkRouteContext): string | null {
 /** Changing network access is for this machine only (and the CLI). */
 function requireLocal(c: Context): void {
   if (isRemoteRequest(c)) {
-    throw forbidden("Network access can only be changed on the computer running CodeDen.");
+    throw forbidden("Network access can only be changed on the computer running CodeBench.");
   }
 }
 

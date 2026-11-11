@@ -144,7 +144,7 @@ export async function advanceVerifying(
       .comment(
         project.id,
         current.issue.number,
-        `Merged automatically by the CodeDen factory in #${pr.ref.number} after every merge check passed (${passed}).`,
+        `Merged automatically by the CodeBench factory in #${pr.ref.number} after every merge check passed (${passed}).`,
       )
       .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
   }
@@ -300,7 +300,7 @@ async function handleFailure(
       .comment(
         project.id,
         item.pr.number,
-        `The CodeDen factory's merge checks failed, so this PR is left for a human:\n\n${failed.map((c) => `- **${c.name}**: ${c.detail ?? "failed"}`).join("\n")}`,
+        `The CodeBench factory's merge checks failed, so this PR is left for a human:\n\n${failed.map((c) => `- **${c.name}**: ${c.detail ?? "failed"}`).join("\n")}`,
       )
       .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
   }
@@ -336,7 +336,7 @@ async function tooLarge(
       .comment(
         project.id,
         item.pr.number,
-        `This PR is larger than the CodeDen factory's size limit (${size?.detail ?? "over the limit"}), so it isn't merged automatically yet. The project manager will split the work into smaller issues or allow it as one change.`,
+        `This PR is larger than the CodeBench factory's size limit (${size?.detail ?? "over the limit"}), so it isn't merged automatically yet. The project manager will split the work into smaller issues or allow it as one change.`,
       )
       .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
   }

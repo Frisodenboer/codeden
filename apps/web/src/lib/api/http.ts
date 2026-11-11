@@ -43,7 +43,7 @@ export function createFetcher(origin: string, onUnauthorized: (code: string) => 
     try {
       res = await fetch(`${base}${path}`, { method, credentials: "include", headers, body });
     } catch {
-      throw new ApiRequestError(0, "network", "Can't reach the CodeDen server");
+      throw new ApiRequestError(0, "network", "Can't reach the CodeBench server");
     }
     if (!res.ok) {
       const payload = (await res.json().catch(() => null)) as {

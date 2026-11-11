@@ -57,7 +57,7 @@ export function mockTerminal(opts: OpenTerminalOptions): TerminalChannel {
 
   timers.push(
     setTimeout(() => {
-      emit(`${c.dim}CodeDen terminal · PowerShell 7.5 · runner-local${c.reset}\r\n`);
+      emit(`${c.dim}CodeBench terminal · PowerShell 7.5 · runner-local${c.reset}\r\n`);
       if (opts.command) {
         emit(`${prompt}${opts.command}\r\n`);
         run(opts.command);

@@ -17,9 +17,9 @@ export type PromptProject = Pick<Project, "kind"> | null;
 const USER_DECISIONS =
   "destructive or irreversible steps (deleting data or someone else's work, force-pushing, rewriting shared history), spending money or creating accounts or credentials, outward-facing actions your brief didn't ask for (publishing, releases, deploys, messages or comments to other people), protected areas, or a request with two readings that lead to substantially different work";
 
-const TOOLS = `## CodeDen tools
+const TOOLS = `## CodeBench tools
 
-CodeDen tools are on the \`${MCP_SERVER_NAME}\` MCP server:
+CodeBench tools are on the \`${MCP_SERVER_NAME}\` MCP server:
 
 - \`report_progress\`: one line about what you are doing now, at the start of each phase.
 - \`ask_user\`: only for a decision that is the user's to make (see above). If it returns "pending", finish what you can and end your turn; the answer arrives as your next message.
@@ -100,9 +100,9 @@ export function agentPrompt(session: PromptSession, project: PromptProject): str
     '- End each turn with what you did and what you assumed, not with a question. Put optional next steps in `suggest_followups` instead of asking "Want me to ...?".',
   ].filter((l): l is string => l !== null);
   return [
-    "# Working inside CodeDen",
+    "# Working inside CodeBench",
     "",
-    `You are an agent session in CodeDen, a local harness that shows your work to the user live. ${workspaceLine(session)}`,
+    `You are an agent session in CodeBench, a local harness that shows your work to the user live. ${workspaceLine(session)}`,
     "",
     "## How to work",
     "",

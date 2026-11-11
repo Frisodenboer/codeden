@@ -28,7 +28,7 @@ function tabLine(tabs: BrowserTab[]): string {
 export const browserNavigate = defineTool({
   name: "browser_navigate",
   description:
-    "Open a URL in your session's browser (the same browser the user sees in CodeDen's browser panel). Opens the browser on first use. Bare host:port gets http://. Follow with browser_snapshot to read the page.",
+    "Open a URL in your session's browser (the same browser the user sees in CodeBench's browser panel). Opens the browser on first use. Bare host:port gets http://. Follow with browser_snapshot to read the page.",
   roles: ["agent"],
   scope: "session",
   input: z.object({ url: z.string().min(1).max(8_000), tabId }),
@@ -191,7 +191,7 @@ export const browserEvaluate = defineTool({
 export const browserOpenDevServer = defineTool({
   name: "browser_open_dev_server",
   description:
-    "Open a local dev server (http://localhost:<port>) in a new tab of your browser. Without a port, CodeDen looks for dev servers you started and opens the only one, or lists them.",
+    "Open a local dev server (http://localhost:<port>) in a new tab of your browser. Without a port, CodeBench looks for dev servers you started and opens the only one, or lists them.",
   roles: ["agent"],
   scope: "session",
   input: z.object({

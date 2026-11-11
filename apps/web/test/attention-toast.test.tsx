@@ -45,7 +45,7 @@ describe("AttentionToast", () => {
       />,
     );
     expect(screen.getByText("Question from an agent")).toBeTruthy();
-    expect(screen.getByText("Get notified when CodeDen is in the background")).toBeTruthy();
+    expect(screen.getByText("Get notified when CodeBench is in the background")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
     expect(await screen.findByText("Desktop notifications are on.")).toBeTruthy();
     expect(h.onEnableNotifications).toHaveBeenCalledTimes(1);

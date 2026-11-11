@@ -72,7 +72,7 @@ async function fetchModels(exe: ResolvedCommand, signal: AbortSignal): Promise<M
     {
       onNotification: () => {},
       onRequest: async () => {
-        throw new Error("CodeDen's model discovery answers no requests");
+        throw new Error("CodeBench's model discovery answers no requests");
       },
       onExit: () => {},
     },

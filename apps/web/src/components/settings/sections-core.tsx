@@ -73,7 +73,7 @@ export function GeneralSettings() {
       </SettingsSection>
       <SettingsSection
         title="Agent sessions"
-        description="What CodeDen does by itself to keep agent sessions going."
+        description="What CodeBench does by itself to keep agent sessions going."
       >
         <SettingRow
           label="Pass on pull request feedback"

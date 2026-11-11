@@ -104,7 +104,7 @@ export function RemoteWarningBanner({ project }: { project: Project }) {
               This folder has no GitHub <code className="font-mono">origin</code> any more
             </>
           )}
-          , so CodeDen still uses {owner}/{repo} for issues and pull requests. Restore the remote
+          , so CodeBench still uses {owner}/{repo} for issues and pull requests. Restore the remote
           and check again, or make the project local-only (synced issues and PRs are kept).
         </p>
         <div className="flex flex-wrap items-center gap-2 pt-1">

@@ -62,7 +62,7 @@ export const webhooksTranscript = buildTranscript(
               question: "What should happen once retries are exhausted?",
               options: [
                 { label: "Dead-letter table", description: "Keep the payload for manual replay" },
-                { label: "Inbox alert", description: "Raise a CodeDen inbox item" },
+                { label: "Inbox alert", description: "Raise a CodeBench inbox item" },
                 { label: "Email on-call" },
               ],
               multiSelect: true,

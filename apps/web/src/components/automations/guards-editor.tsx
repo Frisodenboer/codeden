@@ -124,7 +124,7 @@ export function GuardsEditor({
         <span>
           Catch up a missed run
           <span className="block text-3xs text-muted-foreground">
-            When CodeDen was off or asleep at the scheduled time, run once when it is back.
+            When CodeBench was off or asleep at the scheduled time, run once when it is back.
           </span>
         </span>
       </div>

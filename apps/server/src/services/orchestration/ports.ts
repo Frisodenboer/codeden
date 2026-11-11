@@ -44,7 +44,7 @@ export interface AutomationPort {
 }
 
 const unavailable = (what: string, code: string) =>
-  new ServiceError(503, code, `${what} is not available in this CodeDen build yet.`);
+  new ServiceError(503, code, `${what} is not available in this CodeBench build yet.`);
 
 /** GitHub stub: every call fails with `github_unavailable`. */
 export class UnavailableGithubPort implements GithubPort {

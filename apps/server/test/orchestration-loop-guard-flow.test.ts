@@ -116,7 +116,7 @@ describe("orchestration loop guard (§8.2) with a real runner", () => {
     // A third automatic message in the window is held back, not refused.
     const held = await pmMessage("And add a changelog entry");
     expect(held.isError).toBe(false);
-    expect(held.text).toContain("Queued: CodeDen delivers this to the PM");
+    expect(held.text).toContain("Queued: CodeBench delivers this to the PM");
     expect(held.text).toContain("do not send it again");
     expect(held.text).not.toMatch(/ask the user|wait a few minutes|try again later/i);
     // So is a question, which then returns at once instead of waiting for the PM.

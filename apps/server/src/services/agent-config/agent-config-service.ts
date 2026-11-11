@@ -115,7 +115,7 @@ export class AgentConfigService {
         scope: "user",
         name: "codeden",
         spec: { type: "http", url: proxy },
-        file: "CodeDen",
+        file: "CodeBench",
         projectId: session.projectId,
       });
     }

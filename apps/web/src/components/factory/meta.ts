@@ -36,9 +36,9 @@ export const MODES: {
     id: "autopilot",
     label: "Autopilot",
     summary:
-      "The factory loop takes in new issues and builds them; CodeDen merges a PR only when every merge check passes.",
+      "The factory loop takes in new issues and builds them; CodeBench merges a PR only when every merge check passes.",
     finds: "Issues and failed checks",
-    merges: "CodeDen, after all checks",
+    merges: "CodeBench, after all checks",
     experimental: true,
   },
   {
@@ -47,7 +47,7 @@ export const MODES: {
     summary:
       "Like autopilot, and improvement finders also look for work continuously, scored against the vision.",
     finds: "Issues, checks and finders",
-    merges: "CodeDen, after all checks",
+    merges: "CodeBench, after all checks",
     experimental: true,
   },
 ];

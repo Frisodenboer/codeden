@@ -15,7 +15,7 @@ export function LocalWhisperRows() {
         help={
           local.error
             ? `Couldn't read the local engine: ${local.error.message}`
-            : `Models are downloaded once into ${local.data?.location ?? "the CodeDen folder"} and run on this machine.`
+            : `Models are downloaded once into ${local.data?.location ?? "the CodeBench folder"} and run on this machine.`
         }
         stacked
       >

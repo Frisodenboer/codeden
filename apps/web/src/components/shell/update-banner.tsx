@@ -90,7 +90,7 @@ export function UpdateBanner() {
     case "updated":
       return (
         <Bar tone="done" state="updated" onClose={() => setHidden(view.key)}>
-          <span className="font-medium">CodeDen updated to {view.version}.</span>{" "}
+          <span className="font-medium">CodeBench updated to {view.version}.</span>{" "}
           <span className="text-muted-foreground">
             Running sessions carry on where they left off.
           </span>
@@ -99,19 +99,19 @@ export function UpdateBanner() {
     case "handover":
       return (
         <Bar tone="busy" state="restarting">
-          Updating CodeDen to {view.version}... restarting. This page reloads when it is back.
+          Updating CodeBench to {view.version}... restarting. This page reloads when it is back.
         </Bar>
       );
     case "timeout":
       return (
         <Bar tone="warn" state="timeout" onClose={() => setHidden(view.key)}>
-          Update installed. Restart CodeDen to finish: <Code>{data.restartCommand}</Code>
+          Update installed. Restart CodeBench to finish: <Code>{data.restartCommand}</Code>
         </Bar>
       );
     case "installing":
       return (
         <Bar tone="busy" state="installing">
-          <span className="font-medium">Installing CodeDen {view.version}...</span>{" "}
+          <span className="font-medium">Installing CodeBench {view.version}...</span>{" "}
           <span className="truncate text-muted-foreground" data-testid="update-progress">
             {data.progress}
           </span>
@@ -146,11 +146,11 @@ export function UpdateBanner() {
             </Button>
           }
         >
-          CodeDen {view.version} is installed and starts the next time you open CodeDen.
+          CodeBench {view.version} is installed and starts the next time you open CodeBench.
         </Bar>
       ) : (
         <Bar tone="done" state="installed" onClose={() => setHidden(view.key)}>
-          Update installed. Restart CodeDen to finish: <Code>{data.restartCommand}</Code>
+          Update installed. Restart CodeBench to finish: <Code>{data.restartCommand}</Code>
         </Bar>
       );
     case "available":
@@ -176,11 +176,11 @@ export function UpdateBanner() {
               </>
             }
           >
-            <span className="font-medium">CodeDen {view.version} is available.</span>{" "}
+            <span className="font-medium">CodeBench {view.version} is available.</span>{" "}
             <span className="text-muted-foreground">
               {data.source === "source"
                 ? "You're running from source: pull and rebuild to update."
-                : `You're on ${data.current}. Updating takes a moment and restarts CodeDen.`}
+                : `You're on ${data.current}. Updating takes a moment and restarts CodeBench.`}
             </span>
             {requestError && (
               <span className="ml-1 text-status-failed">{requestError.message}</span>

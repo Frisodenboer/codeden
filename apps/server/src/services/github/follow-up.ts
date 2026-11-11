@@ -89,7 +89,7 @@ export class PrFollowUp {
         { client: this.deps.client },
         repo,
         number,
-        `Resolved by #${pr.number}, merged${pr.mergedAt ? ` at ${pr.mergedAt}` : ""}.\n\n<sub>CodeDen session ${label}</sub>`,
+        `Resolved by #${pr.number}, merged${pr.mergedAt ? ` at ${pr.mergedAt}` : ""}.\n\n<sub>CodeBench session ${label}</sub>`,
       );
     }
   }

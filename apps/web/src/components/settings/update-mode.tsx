@@ -13,14 +13,14 @@ const NPM_HELP: Record<UpdateMode, string> = {
   off: "Never asks the npm registry for new versions.",
   notify:
     "Asks the npm registry for the latest version on start and every 6 hours (nothing else is sent) and offers a one-click update.",
-  auto: "Also downloads new versions in the background; they start the next time you open CodeDen.",
+  auto: "Also downloads new versions in the background; they start the next time you open CodeBench.",
 };
 
 const DESKTOP_HELP: Record<UpdateMode, string> = {
   off: "Never asks GitHub Releases for new versions.",
   notify:
     "Asks GitHub Releases for the latest version on start and every 6 hours (nothing else is sent) and offers a one-click update.",
-  auto: "Also downloads new versions in the background; they install when you quit CodeDen.",
+  auto: "Also downloads new versions in the background; they install when you quit CodeBench.",
 };
 
 /** Help text for where this install gets its updates from. */

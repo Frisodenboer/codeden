@@ -56,7 +56,7 @@ export function pullRequestBody(text: string, issue: number | null, session: Ses
   }
   const label = session.title ? `${session.title} (\`${session.id}\`)` : `\`${session.id}\``;
   parts.push(
-    `---\n<sub>Opened by CodeDen session ${label}</sub>\n${SESSION_MARKER}${session.id} -->`,
+    `---\n<sub>Opened by CodeBench session ${label}</sub>\n${SESSION_MARKER}${session.id} -->`,
   );
   return parts.filter(Boolean).join("\n\n");
 }

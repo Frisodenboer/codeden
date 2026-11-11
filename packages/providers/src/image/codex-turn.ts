@@ -39,7 +39,7 @@ export interface CodexImageTurnResult {
 
 /** Kept short so the turn spends few tokens; the model only needs to call one tool. */
 export const CODEX_IMAGE_INSTRUCTIONS =
-  "You generate images for CodeDen. Use only your built-in image generation tool. Never run " +
+  "You generate images for CodeBench. Use only your built-in image generation tool. Never run " +
   "shell commands, read or edit files, browse, or call any other tool. Follow the requested " +
   "shape and count exactly. When the images are done, reply with the single word: done.";
 

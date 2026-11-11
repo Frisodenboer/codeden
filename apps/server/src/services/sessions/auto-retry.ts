@@ -210,7 +210,7 @@ export class AutoRetry {
     this.notice(sessionId, plan.turn, {
       message:
         plan.error.kind === "usage_limit"
-          ? `Usage limit reached. CodeDen continues the session ${inAbout(wait)}, a minute after it resets.`
+          ? `Usage limit reached. CodeBench continues the session ${inAbout(wait)}, a minute after it resets.`
           : `Retrying automatically ${inAbout(wait)} (attempt ${plan.attempt} of ${max}).`,
       data: { attempt: plan.attempt, maxAttempts: max, retryAt: new Date(plan.at).toISOString() },
     });

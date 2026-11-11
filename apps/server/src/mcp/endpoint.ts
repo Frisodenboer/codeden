@@ -33,7 +33,7 @@ export function createMcpHandler(deps: McpEndpointDeps): (request: Request) => P
   return async (request) => {
     const claims = deps.tokens.verify(bearerOf(request));
     if (!claims) {
-      return jsonRpcError(401, "Missing or invalid CodeDen session token", {
+      return jsonRpcError(401, "Missing or invalid CodeBench session token", {
         "www-authenticate": 'Bearer realm="codeden"',
       });
     }
@@ -46,7 +46,7 @@ export function createMcpHandler(deps: McpEndpointDeps): (request: Request) => P
       {
         capabilities: { tools: { listChanged: false } },
         instructions:
-          "CodeDen tools: report progress, ask the user, share images, drive the session browser, generate images, suggest follow-ups and finish.",
+          "CodeBench tools: report progress, ask the user, share images, drive the session browser, generate images, suggest follow-ups and finish.",
       },
     );
     server.setRequestHandler(ListToolsRequestSchema, async () => ({

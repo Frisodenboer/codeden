@@ -101,7 +101,7 @@ describe("loop guard (§8.2): only agent-to-agent loops are paced", () => {
 
   it("tells the orchestrator a held message is queued, with nothing to retry or ask", () => {
     const soon = heldNote("codeden", 30_000, 0);
-    expect(soon).toContain("Queued: CodeDen delivers this to the PM of codeden automatically");
+    expect(soon).toContain("Queued: CodeBench delivers this to the PM of codeden automatically");
     expect(soon).toContain("within a minute");
     const later = heldNote("codeden", 5 * 60_000, 0);
     expect(later).toMatch(/at about \d\d:\d\d \(local time\)/);

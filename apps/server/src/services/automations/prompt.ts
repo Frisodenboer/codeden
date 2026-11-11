@@ -85,7 +85,7 @@ export function renderWorkKey(automation: Automation, vars: TemplateVars): strin
 /** A short header so the agent knows the work is an automation run, not a person asking. */
 export function runHeader(automation: Automation, runId: string, trigger: string): string {
   return [
-    `This session was started by the CodeDen automation "${automation.name}" (${trigger}, run ${runId}).`,
+    `This session was started by the CodeBench automation "${automation.name}" (${trigger}, run ${runId}).`,
     "Nobody is watching live: work autonomously, keep changes focused, and use report_progress, create_pull_request, attach_evidence and finish as described below. Follow the project's own conventions for issues and pull requests.",
   ].join(" ");
 }

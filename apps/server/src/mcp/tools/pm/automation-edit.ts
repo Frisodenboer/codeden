@@ -57,7 +57,7 @@ export const createAutomation = defineTool({
 export const updateAutomation = defineTool({
   name: "update_automation",
   description:
-    "Change an automation of this project that lives in CodeDen (not a .md file): any of name, description, trigger, action, guards or work key. Validated like automation files. Does not switch it on or off. File-based automations are edited in their file.",
+    "Change an automation of this project that lives in CodeBench (not a .md file): any of name, description, trigger, action, guards or work key. Validated like automation files. Does not switch it on or off. File-based automations are edited in their file.",
   roles: ["pm"],
   scope: "project",
   input: z.object({

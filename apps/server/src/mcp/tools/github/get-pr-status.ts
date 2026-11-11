@@ -6,7 +6,7 @@ import { inGithubProject } from "./available";
 export const getPrStatusTool = defineTool({
   name: "get_pr_status",
   description:
-    "Get a pull request's live status: state, CI checks (with failing checks and their links), review decision and latest reviews, mergeability, linked issues and the owning CodeDen session. `number` defaults to your session's PR.",
+    "Get a pull request's live status: state, CI checks (with failing checks and their links), review decision and latest reviews, mergeability, linked issues and the owning CodeBench session. `number` defaults to your session's PR.",
   roles: ["agent", "pm"],
   scope: "project",
   isAvailable: inGithubProject,

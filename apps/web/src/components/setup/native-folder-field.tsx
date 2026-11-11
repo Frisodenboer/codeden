@@ -58,7 +58,7 @@ export function NativeFolderField({
         </Button>
       </div>
       <Button variant="link" size="xs" className="px-0" onClick={() => setBrowse(true)}>
-        Browse folders in CodeDen instead
+        Browse folders in CodeBench instead
       </Button>
     </div>
   );

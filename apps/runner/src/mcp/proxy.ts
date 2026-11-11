@@ -80,11 +80,11 @@ export async function handleMcpRequest(
   if (!/^Bearer\s+\S+/i.test(request.headers.get("authorization") ?? "")) {
     return jsonRpcError(401, "Missing session token");
   }
-  if (!upstream) return jsonRpcError(503, "CodeDen MCP endpoint is not configured");
+  if (!upstream) return jsonRpcError(503, "CodeBench MCP endpoint is not configured");
   try {
     return await upstream.forward(request);
   } catch (error) {
     if (request.signal.aborted) return new Response(null, { status: 499 });
-    return jsonRpcError(502, `CodeDen server unreachable: ${(error as Error).message}`);
+    return jsonRpcError(502, `CodeBench server unreachable: ${(error as Error).message}`);
   }
 }

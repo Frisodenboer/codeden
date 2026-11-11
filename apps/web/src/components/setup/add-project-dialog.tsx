@@ -70,7 +70,7 @@ export function ProjectSourcePicker({
               "clone",
               GitBranch,
               "Clone from GitHub",
-              "Paste a repository URL and CodeDen clones it.",
+              "Paste a repository URL and CodeBench clones it.",
             ],
           ] as const
         ).map(([id, Icon, title, desc]) => (

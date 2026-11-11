@@ -49,7 +49,7 @@ function About() {
         <Logo className="size-12" />
         <div>
           <div className="text-[15px] font-semibold">
-            CodeDen{" "}
+            CodeBench{" "}
             <span className="font-mono text-xs font-normal text-muted-foreground">v{version}</span>
           </div>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
