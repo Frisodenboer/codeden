@@ -42,7 +42,7 @@ export const useThemeStore = create<ThemeState>()(
       setPreference: (preference) => set({ preference }),
       toggle: () =>
         set({ preference: resolveTheme(get().preference) === "dark" ? "light" : "dark" }),
-      fontStyle: "default",
+      fontStyle: "terminal",
       setFontStyle: (fontStyle) => set({ fontStyle }),
     }),
     { name: "codeden.theme" },
