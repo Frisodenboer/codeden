@@ -89,7 +89,7 @@ export function Sidebar({ width, onClose }: { width: number | string; onClose?: 
     >
       <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
         <Logo className="size-[22px]" />
-        <span className="text-[15px] font-semibold tracking-tight">CodeDen</span>
+        <span className="text-[15px] font-semibold tracking-tight">CodeBench</span>
         {onClose ? (
           <Button
             variant="ghost"

@@ -40,7 +40,7 @@ export class MainWindow {
       minWidth: 900,
       minHeight: 600,
       show: false,
-      title: "CodeDen",
+      title: "CodeBench",
       icon: opts.icon,
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#0b0d10" : "#ffffff",
       autoHideMenuBar: process.platform !== "darwin",

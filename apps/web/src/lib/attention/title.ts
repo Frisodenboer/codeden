@@ -4,7 +4,7 @@
  * unread count stays in both. When flashing stops the usual title comes back.
  */
 
-export const APP_TITLE = "CodeDen";
+export const APP_TITLE = "CodeBench";
 export const WAITING_TITLE = "⏳ Waiting on you · CodeDen";
 export const TITLE_FLASH_MS = 1500;
 

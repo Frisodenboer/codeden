@@ -235,7 +235,7 @@ describe("favicon badge", () => {
 describe("title flasher", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    document.title = "(2) CodeDen";
+    document.title = "(2) CodeBench";
   });
   afterEach(() => vi.useRealTimers());
 
@@ -244,7 +244,7 @@ describe("title flasher", () => {
     flasher.update({ count: 2, flashing: true });
     expect(document.title).toBe(`(2) ${WAITING_TITLE}`);
     vi.advanceTimersByTime(1500);
-    expect(document.title).toBe("(2) CodeDen");
+    expect(document.title).toBe("(2) CodeBench");
     vi.advanceTimersByTime(1500);
     expect(document.title).toBe(`(2) ${WAITING_TITLE}`);
     flasher.update({ count: 3, flashing: true });
@@ -255,23 +255,23 @@ describe("title flasher", () => {
     const flasher = createTitleFlasher({ intervalMs: 1500 });
     flasher.update({ count: 1, flashing: true });
     flasher.update({ count: 1, flashing: false });
-    expect(document.title).toBe("(1) CodeDen");
+    expect(document.title).toBe("(1) CodeBench");
     vi.advanceTimersByTime(6000);
-    expect(document.title).toBe("(1) CodeDen");
+    expect(document.title).toBe("(1) CodeBench");
   });
 
   it("leaves the title alone when it never flashed", () => {
-    document.title = "(4) CodeDen";
+    document.title = "(4) CodeBench";
     const flasher = createTitleFlasher();
     flasher.update({ count: 4, flashing: false });
     flasher.stop();
-    expect(document.title).toBe("(4) CodeDen");
+    expect(document.title).toBe("(4) CodeBench");
   });
 
   it("drops the count when nothing is open", () => {
-    expect(countedTitle(0)).toBe("CodeDen");
+    expect(countedTitle(0)).toBe("CodeBench");
     expect(countedTitle(0, WAITING_TITLE)).toBe(WAITING_TITLE);
-    expect(countedTitle(5)).toBe("(5) CodeDen");
+    expect(countedTitle(5)).toBe("(5) CodeBench");
   });
 });
 

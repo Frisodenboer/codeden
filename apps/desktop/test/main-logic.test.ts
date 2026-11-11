@@ -211,7 +211,7 @@ describe("app menu", () => {
   });
 
   it("puts About, Settings and Quit in the app menu on macOS only", () => {
-    expect(appMenuTemplate("darwin", actions)[0]?.label).toBe("CodeDen");
+    expect(appMenuTemplate("darwin", actions)[0]?.label).toBe("CodeBench");
     expect(appMenuTemplate("win32", actions)[0]?.label).toBe("File");
   });
 });

@@ -38,7 +38,7 @@ export interface PlatformBridge {
   launchAtLoginSupported(): Promise<boolean>;
 }
 
-const baseTitle = typeof document !== "undefined" ? document.title : "CodeDen";
+const baseTitle = typeof document !== "undefined" ? document.title : "CodeBench";
 
 type BadgeNavigator = Navigator & {
   setAppBadge?: (n: number) => Promise<void>;

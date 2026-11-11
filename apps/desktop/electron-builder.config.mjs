@@ -79,7 +79,7 @@ const notarize = Boolean(
 /** @type {import("electron-builder").Configuration} */
 export default {
   appId: "dev.codeden.app",
-  productName: "CodeDen",
+  productName: "CodeBench",
   copyright: "Copyright © 2026 Leon van Zyl",
   directories: { app: ".stage/app", output: "release", buildResources: "build" },
   // The runner and server are started from files on disk with the app's binary as Node.js;
@@ -90,7 +90,7 @@ export default {
   files: ["**/*", "!**/*.map", "!**/*.d.ts"],
   afterPack: prepareNativeModules,
   protocols: [{ name: "CodeDen", schemes: ["codeden"] }],
-  publish: [{ provider: "github", owner: "leonvanzyl", repo: "codeden", releaseType: "release" }],
+  publish: [{ provider: "github", owner: "Frisodenboer", repo: "codeden", releaseType: "release" }],
   electronFuses: {
     // The server and runner run on the app's binary as Node.js (ELECTRON_RUN_AS_NODE).
     runAsNode: true,
@@ -100,7 +100,7 @@ export default {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
-    executableName: "CodeDen",
+    executableName: "CodeBench",
   },
   nsis: {
     // Per-user install: no admin prompt, installs to %LOCALAPPDATA%\Programs\CodeDen.
@@ -108,9 +108,9 @@ export default {
     perMachine: false,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
-    shortcutName: "CodeDen",
+    shortcutName: "CodeBench",
     deleteAppDataOnUninstall: false,
-    artifactName: "CodeDen-Setup-${version}.${ext}",
+    artifactName: "CodeBench-Setup-${version}.${ext}",
   },
   mac: {
     target: [

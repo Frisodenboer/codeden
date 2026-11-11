@@ -55,7 +55,7 @@ export function LiveEffects() {
           });
         }
         if (snap.settings.notifications.browser && !platform.isFocused()) {
-          platform.notify(inboxVerb[item.kind] ?? "CodeDen", {
+          platform.notify(inboxVerb[item.kind] ?? "CodeBench", {
             body: item.title,
             tag: item.id,
             onClick: () => void navigate(blocking ? attentionTarget(item) : { to: "/inbox" }),

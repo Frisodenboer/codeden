@@ -23,7 +23,7 @@ export class AppTray {
     const image = nativeImage.createFromPath(icon);
     if (process.platform === "darwin") image.setTemplateImage(true);
     this.tray = new Tray(image);
-    this.tray.setToolTip("CodeDen");
+    this.tray.setToolTip("CodeBench");
     // A click opens the window on Windows and Linux; macOS shows the menu (the convention).
     if (process.platform !== "darwin") this.tray.on("click", () => actions.open());
     this.render();

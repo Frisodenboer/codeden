@@ -63,7 +63,7 @@ export function appMenuTemplate(
   const template: MenuItemConstructorOptions[] = [];
   if (mac) {
     template.push({
-      label: "CodeDen",
+      label: "CodeBench",
       submenu: [
         { role: "about" },
         updates,

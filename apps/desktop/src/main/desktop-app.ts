@@ -270,7 +270,7 @@ export class DesktopApp {
     }
     const { response } = await dialog.showMessageBox({
       type: "error",
-      title: "CodeDen",
+      title: "CodeBench",
       message: "The CodeDen server stopped unexpectedly.",
       detail: `Agents keep running in the runner. See ${homeFiles(this.args.home).logs}.`,
       buttons: ["Restart", "Quit"],
