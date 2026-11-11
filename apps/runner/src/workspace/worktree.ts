@@ -9,6 +9,7 @@ import { git, gitOk, isWorkTree } from "../git/exec";
 import { currentBranch, defaultBranch } from "../git/ops";
 import type { ProcessSupervisor } from "../process/supervisor";
 import { endProcessesInside } from "../process/worktree-processes";
+import { copyLocalFiles } from "./local-files";
 import { readProjectConfig } from "./project-config";
 import { pruneWorktrees, worktreeState } from "./removal";
 import { runSetup, type SetupStep } from "./setup";
@@ -175,6 +176,20 @@ export async function prepareWorkspace(
     }
     case "worktree":
       target = await createWorktree(cmd, ctx);
+      if (target.created) {
+        // A fresh checkout lacks the project's git-ignored local config (Claude settings
+        // override with its provider key, .env files): bring it over from the main checkout.
+        const copied = copyLocalFiles(await topLevel(cmd.repoPath), target.cwd);
+        if (copied.length > 0) {
+          ctx.emit({
+            kind: "workspace.setup",
+            sessionId: cmd.sessionId,
+            status: "succeeded",
+            command: "Copy local config from the project folder",
+            output: copied.join("\n"),
+          });
+        }
+      }
       break;
   }
 
