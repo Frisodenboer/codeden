@@ -10,6 +10,7 @@ import {
   InboxItem,
   LoginCommandResponse,
   Project,
+  ProjectFileOpResponse,
   RefreshModelsResponse,
   RefreshProjectResponse,
   ReorderProjectsResponse,
@@ -158,6 +159,13 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
       get(`/sessions/${enc(id)}/files/content?path=${enc(path)}`, (v) =>
         SessionFileContent.parse(v),
       ),
+    listProjectFiles: (id) => get(`/projects/${enc(id)}/files`, (v) => SessionFileList.parse(v)),
+    readProjectFile: (id, path) =>
+      get(`/projects/${enc(id)}/files/content?path=${enc(path)}`, (v) =>
+        SessionFileContent.parse(v),
+      ),
+    projectFileOp: (id, op) =>
+      post(`/projects/${enc(id)}/files/ops`, op, (v) => ProjectFileOpResponse.parse(v)),
     async searchMentions(id, query) {
       const cached = fileCache.get(id);
       const list =

@@ -25,6 +25,7 @@ import { imageRoutes } from "./images";
 import { inboxRoutes } from "./inbox";
 import { authRoutes, type NetworkRouteContext, networkRoutes } from "./network";
 import { conflictRoutes, orchestrationRoutes } from "./orchestration";
+import { projectFileRoutes } from "./project-files";
 import { projectRoutes } from "./projects";
 import { sessionFileRoutes } from "./session-files";
 import { sessionRoutes } from "./sessions";
@@ -84,6 +85,7 @@ export function createApi(ctx: ApiContext) {
     .route("/", speechRoutes(s))
     .route("/sessions", sessionAgentConfigRoutes(s))
     .route("/sessions", sessionFileRoutes(s))
+    .route("/projects", projectFileRoutes(s))
     .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))
     .route("/orchestration", orchestrationRoutes(s))

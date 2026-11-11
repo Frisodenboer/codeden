@@ -51,6 +51,9 @@ type WorkbenchApi = Pick<
   | "speechSummary"
   | "listFiles"
   | "readFile"
+  | "listProjectFiles"
+  | "readProjectFile"
+  | "projectFileOp"
   | "searchMentions"
   | "listSlashCommands"
   | "openTerminal"
@@ -197,6 +200,17 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
         `// ${path}\n// (mock) File contents are loaded from the session worktree.\n\nexport {};\n`;
       return delay({ path, content, sizeBytes: content.length, binary: false, truncated: false });
     },
+    listProjectFiles: () =>
+      delay({ root: "~/projects/storefront", entries: allPaths(fileTree), truncated: false }),
+    readProjectFile: (_projectId, path) => {
+      const content =
+        fileContents[path] ??
+        `// ${path}
+`;
+      return delay({ path, content, sizeBytes: content.length, binary: false, truncated: false });
+    },
+    projectFileOp: (_projectId, op) =>
+      delay({ ok: true as const, path: op.op === "rename" ? op.to : op.path }),
     searchMentions: (_sessionId, query) => {
       const q = query.toLowerCase();
       const hits = allPaths()

@@ -18,6 +18,7 @@ import { HomePage } from "@/routes/home";
 import { InboxPage } from "@/routes/inbox";
 import { PmPage } from "@/routes/pm";
 import { ProjectPage, type ProjectTab } from "@/routes/project";
+import { ProjectFilesPage } from "@/routes/project-files";
 import { ReportsPage } from "@/routes/reports";
 import { SessionPage } from "@/routes/session";
 import { SettingsPage } from "@/routes/settings";
@@ -139,6 +140,15 @@ const factoryItemRoute = createRoute({
   },
 });
 
+const projectFilesRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/files",
+  component: function ProjectFiles() {
+    const { projectId } = projectFilesRoute.useParams();
+    return <ProjectFilesPage key={projectId} projectId={projectId} />;
+  },
+});
+
 const visionRoute = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId/vision",
@@ -195,6 +205,7 @@ const routeTree = rootRoute.addChildren([
     automationRoute,
     factoryItemRoute,
     visionRoute,
+    projectFilesRoute,
     createRoute({
       getParentRoute: () => shell,
       path: "/settings",

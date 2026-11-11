@@ -17,6 +17,8 @@ import type {
   InboxItem,
   LoginCommandResponse,
   Project,
+  ProjectFileOp,
+  ProjectFileOpResponse,
   RefreshModelsResponse,
   RefreshProjectResponse,
   ResolveConflictResponse,
@@ -175,6 +177,9 @@ export interface CodeDenClient {
   gitPush(sessionId: string, req: GitPushRequest): Promise<GitPushResponse>;
   listFiles(sessionId: string): Promise<SessionFileList>;
   readFile(sessionId: string, path: string): Promise<SessionFileContent>;
+  listProjectFiles(projectId: string): Promise<SessionFileList>;
+  readProjectFile(projectId: string, path: string): Promise<SessionFileContent>;
+  projectFileOp(projectId: string, op: ProjectFileOp): Promise<ProjectFileOpResponse>;
   searchMentions(sessionId: string, query: string): Promise<MentionCandidate[]>;
   listSlashCommands(sessionId: string): Promise<SlashCommand[]>;
   openTerminal(opts: OpenTerminalOptions): TerminalChannel;
