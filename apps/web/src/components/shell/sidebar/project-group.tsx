@@ -189,8 +189,6 @@ export function ProjectGroup({
             </span>
             {pm && <StatusDot status={pm.status} />}
           </NavRow>
-          <ProjectAutomations projectId={project.id} />
-          <FilesRow projectId={project.id} />
           {visible.map((s) => (
             <SessionRow key={s.id} session={s} />
           ))}
@@ -203,6 +201,8 @@ export function ProjectGroup({
               {showAll ? "Show less" : `Show ${agents.length - LIMIT} more`}
             </button>
           )}
+          <ProjectAutomations projectId={project.id} />
+          <FilesRow projectId={project.id} />
           {archived > 0 && (
             <Link
               to="/projects/$projectId"
