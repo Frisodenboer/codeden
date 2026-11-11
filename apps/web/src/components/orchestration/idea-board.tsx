@@ -48,11 +48,19 @@ function writeCollapsed(value: boolean) {
  * or drag one into the orchestrator's composer (or use → Orchestrator) to start on it; a used
  * idea moves to Sent.
  */
-export function IdeaBoard({ className }: { className?: string }) {
+export function IdeaBoard({
+  className,
+  projectId = null,
+}: {
+  className?: string;
+  /** On a PM screen: the PM whose prompt box ideas go to; null for the orchestrator. */
+  projectId?: string | null;
+}) {
   const planner = usePlanner();
   const { createIdea, updateIdea, deleteIdea } = usePlannerActions();
-  const orchestrator = useRoleSession("orchestrator", null);
-  const draftKey = orchestrator?.id ?? roleDraftKey("orchestrator", null);
+  const role = projectId ? "pm" : "orchestrator";
+  const target = useRoleSession(role, projectId);
+  const draftKey = target?.id ?? roleDraftKey(role, projectId);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [title, setTitle] = useState("");
   const [over, setOver] = useState<IdeaColumn | null>(null);
@@ -204,8 +212,12 @@ export function IdeaBoard({ className }: { className?: string }) {
                         <span className="min-w-0 flex-1 truncate text-xs">{idea.title}</span>
                         <button
                           type="button"
-                          title="Put it in the orchestrator's prompt box"
-                          aria-label={`Send ${idea.title} to the orchestrator`}
+                          title={
+                            projectId
+                              ? "Put it in the PM's prompt box"
+                              : "Put it in the orchestrator's prompt box"
+                          }
+                          aria-label={`Send ${idea.title} to the ${projectId ? "PM" : "orchestrator"}`}
                           onClick={() => sendToOrchestrator(idea)}
                           className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-primary focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                         >
