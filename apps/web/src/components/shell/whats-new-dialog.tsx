@@ -37,7 +37,7 @@ export function WhatsNewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl" data-testid="whats-new">
         <DialogHeader>
-          <DialogTitle>What's new in CodeDen {version}</DialogTitle>
+          <DialogTitle>What's new in CodeBench {version}</DialogTitle>
           <DialogDescription>Release notes from the CodeDen repository.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[50vh] overflow-y-auto text-sm">

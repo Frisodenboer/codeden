@@ -67,7 +67,7 @@ test.describe("network access", () => {
       await phone.goto(`${remote}/?token=${server.token}`);
       const form = phone.getByTestId("sign-in");
       await expect(form).toBeVisible();
-      await expect(phone.getByRole("heading", { name: "Sign in to CodeDen" })).toBeVisible();
+      await expect(phone.getByRole("heading", { name: "Sign in to CodeBench" })).toBeVisible();
 
       await phone.getByLabel("Password", { exact: true }).fill("not the password at all");
       await phone.getByRole("button", { name: "Sign in" }).click();

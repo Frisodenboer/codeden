@@ -40,7 +40,7 @@ test("banner -> What's new -> Update now -> reconnects to the new version", asyn
   await test.step("What's new shows the release notes", async () => {
     await banner.getByRole("button", { name: "What's new" }).click();
     const dialog = page.getByTestId("whats-new");
-    await expect(dialog).toContainText(`What's new in CodeDen ${NEXT_VERSION}`);
+    await expect(dialog).toContainText(`What's new in CodeBench ${NEXT_VERSION}`);
     await expect(dialog).toContainText("One-click updates.");
     await page.keyboard.press("Escape");
   });

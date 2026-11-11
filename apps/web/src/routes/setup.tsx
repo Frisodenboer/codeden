@@ -150,7 +150,7 @@ export function SetupPage() {
       <div className="relative w-full max-w-2xl">
         <div className="mb-8 flex flex-col items-center text-center">
           <Logo className="mb-4 size-12" />
-          <h1 className="text-2xl font-semibold tracking-tight">Welcome to CodeDen</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Welcome to CodeBench</h1>
           <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
             We'll reuse what's already set up on this machine. Nothing to type if you're already
             signed in.

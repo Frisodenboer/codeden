@@ -16,7 +16,7 @@ export function DesktopSettings() {
   });
   const desktop = settings.desktop;
   return (
-    <SettingsSection title="App" description="How CodeDen behaves as an app on this computer.">
+    <SettingsSection title="App" description="How CodeBench behaves as an app on this computer.">
       <SettingRow
         label="Open at login"
         help={

@@ -174,7 +174,7 @@ export function NetworkSettings() {
             remote
               ? "Change this on the computer running CodeDen."
               : status.enabled
-                ? "Devices on your network can open CodeDen after signing in with the password."
+                ? "Devices on your network can open CodeBench after signing in with the password."
                 : status.passwordSet
                   ? "CodeDen only answers on this computer (127.0.0.1)."
                   : "Set a password below first."
@@ -195,7 +195,7 @@ export function NetworkSettings() {
             help={
               status.passwordSetAt
                 ? `Set ${ago(status.passwordSetAt)}. Phones and tablets sign in with it once.`
-                : "Phones and tablets sign in with it once. CodeDen stores only a scrambled copy."
+                : "Phones and tablets sign in with it once. CodeBench stores only a scrambled copy."
             }
           >
             <NetworkPassword passwordSet={status.passwordSet} />

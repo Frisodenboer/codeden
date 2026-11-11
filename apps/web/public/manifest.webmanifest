@@ -1,6 +1,6 @@
 {
-  "name": "CodeDen",
-  "short_name": "CodeDen",
+  "name": "CodeBench",
+  "short_name": "CodeBench",
   "description": "A local-first harness for coding agents.",
   "id": "/",
   "start_url": "/",

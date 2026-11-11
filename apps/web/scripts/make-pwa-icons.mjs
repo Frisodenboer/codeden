@@ -1,4 +1,4 @@
-// Renders the CodeDen mark (public/favicon.svg) into the web app manifest icons:
+// Renders the CodeBench mark (public/favicon.svg) into the web app manifest icons:
 //   public/icons/icon-192.png, icon-512.png          rounded tile ("any")
 //   public/icons/maskable-192.png, maskable-512.png  full-bleed, mark inside the safe zone
 //   public/apple-touch-icon.png                      180px, full-bleed (iOS rounds it)
@@ -11,11 +11,11 @@ import { chromium } from "@playwright/test";
 const root = resolve(import.meta.dirname, "..");
 /** The dark theme's `--background` token (oklch(0.165 0.008 264)). */
 const BG = "#0d0e12";
-const AMBER = "#f59e0b";
+const BLUE = "#1F9CF0";
 
 const mark = `
-  <path d="M9 21V11l7-4 7 4v10l-7 4z" fill="none" stroke="${AMBER}" stroke-width="2.2" stroke-linejoin="round"/>
-  <circle cx="16" cy="16" r="2.6" fill="${AMBER}"/>`;
+  <path d="M9 21V11l7-4 7 4v10l-7 4z" fill="none" stroke="${BLUE}" stroke-width="2.2" stroke-linejoin="round"/>
+  <circle cx="16" cy="16" r="2.6" fill="${BLUE}"/>`;
 
 /** The mark on its rounded tile with transparent corners. */
 const tile = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
