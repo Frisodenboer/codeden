@@ -101,6 +101,8 @@ export function ToolRow({
   const Icon = entryIcon(entry);
   const { verb, target, meta } = entryLabel(entry);
   const running = entry.status === "in_progress";
+  // Claude's own orange for its thinking indicator.
+  const thinking = running && entry.kind === "reasoning";
   const failed = entry.status === "failed" || entry.status === "declined";
   const ms = entry.kind === "tool_call" ? entry.durationMs : undefined;
   const showDetails =
@@ -119,7 +121,7 @@ export function ToolRow({
       >
         <span className="col-start-1 flex size-4 items-center justify-center text-muted-foreground">
           {running ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className={cn("size-3.5 animate-spin", thinking && "text-claude")} />
           ) : failed ? (
             <CircleX className="size-3.5 text-status-failed" />
           ) : (
@@ -127,7 +129,11 @@ export function ToolRow({
           )}
         </span>
         <span
-          className={cn("col-start-2 ml-2 truncate text-muted-foreground", running && "text-shine")}
+          className={cn(
+            "col-start-2 ml-2 truncate text-muted-foreground",
+            running && "text-shine",
+            thinking && "text-claude",
+          )}
         >
           {verb}
         </span>

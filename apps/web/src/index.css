@@ -54,6 +54,8 @@
   --color-status-running: var(--status-running);
   --color-status-waiting: var(--status-waiting);
   --color-status-done: var(--status-done);
+  /* Claude's brand orange, for Claude's own thinking indicator. */
+  --color-claude: #d97757;
   --color-status-failed: var(--status-failed);
   --color-status-idle: var(--status-idle);
   --color-panel: var(--panel);
