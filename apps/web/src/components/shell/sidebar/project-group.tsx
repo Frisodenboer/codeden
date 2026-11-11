@@ -3,6 +3,7 @@ import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Archive, Bot, ChevronRight, Files, GripVertical, House, Plus } from "lucide-react";
 import { type CSSProperties, useState } from "react";
+import { ModelMark } from "@/components/common/model-mark";
 import { StatusDot } from "@/components/common/status-dot";
 import { statusTone } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -180,6 +181,7 @@ export function ProjectGroup({
           >
             <Bot className="size-3.5 shrink-0 text-primary/80" />
             <span className="flex-1 truncate">Project manager</span>
+            <ModelMark session={pm} />
             <span className="rounded-full bg-primary/10 px-1.5 text-3xs font-medium text-primary">
               PM
             </span>

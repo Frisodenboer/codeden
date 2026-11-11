@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Hotkey, SectionLabel } from "@/components/common/bits";
+import { ModelMark } from "@/components/common/model-mark";
 import { StatusDot } from "@/components/common/status-dot";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -137,6 +138,7 @@ export function Sidebar({ width, onClose }: { width: number | string; onClose?: 
             <Bot className="size-3" />
           </span>
           <span className="flex-1 font-medium">Orchestrator</span>
+          <ModelMark session={orchestrator} />
           {orchestrator && <StatusDot status={orchestrator.status} />}
         </NavRow>
         <NavRow href="/inbox" link={{ to: "/inbox" }}>

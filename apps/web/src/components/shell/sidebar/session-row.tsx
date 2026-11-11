@@ -2,6 +2,7 @@ import type { Session } from "@codeden/contracts";
 import { Archive, ArchiveRestore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IssueBadge, PrBadge } from "@/components/common/bits";
+import { ModelMark } from "@/components/common/model-mark";
 import { StatusDot } from "@/components/common/status-dot";
 import { ageShort, statusTone } from "@/lib/format";
 import { useSessionActions } from "@/lib/session-actions";
@@ -92,6 +93,7 @@ export function SessionRow({ session }: { session: Session }) {
             >
               {title}
             </span>
+            <ModelMark session={session} />
             {session.pr ? (
               <PrBadge pr={session.pr} />
             ) : session.issue ? (
