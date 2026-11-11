@@ -79,10 +79,10 @@ describe("update check", () => {
     expect(AppPointer.safeParse({ version: "" }).success).toBe(false);
   });
 
-  it("defaults to notify and reads the old check switch", () => {
-    expect(defaultSettings().updates).toEqual({ mode: "notify" });
+  it("defaults to off and reads the old check switch", () => {
+    expect(defaultSettings().updates).toEqual({ mode: "off" });
     expect(Settings.parse({ updates: { check: false } }).updates).toEqual({ mode: "off" });
-    expect(Settings.parse({ updates: { check: true } }).updates).toEqual({ mode: "notify" });
+    expect(Settings.parse({ updates: { check: true } }).updates).toEqual({ mode: "off" });
     expect(Settings.parse({ updates: { mode: "auto" } }).updates).toEqual({ mode: "auto" });
     expect(Settings.safeParse({ updates: { mode: "sometimes" } }).success).toBe(false);
   });

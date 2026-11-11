@@ -278,7 +278,7 @@ export const Settings = z.object({
         : value,
     z
       .object({
-        mode: UpdateMode.default("notify"),
+        mode: UpdateMode.default("off"),
       })
       .prefault({}),
   ),
