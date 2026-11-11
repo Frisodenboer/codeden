@@ -36,6 +36,7 @@ import { useSessionActions } from "@/lib/session-actions";
 import { cn } from "@/lib/utils";
 import { useViewport } from "@/lib/viewport";
 import { useLayoutStore } from "@/stores/layout";
+import { OpenInCli } from "./cli-dialog";
 import { SessionGithubBadges } from "./session-github-badges";
 
 function Chip({
@@ -152,6 +153,7 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <OpenInCli session={session} running={running} />
         {running && (
           <Button
             size="xs"
