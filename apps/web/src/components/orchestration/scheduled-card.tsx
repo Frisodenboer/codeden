@@ -1,10 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { AlarmClock, CalendarClock, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  AlarmClock,
+  CalendarClock,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  GitBranch,
+  MapPin,
+  NotebookPen,
+} from "lucide-react";
 import { useState } from "react";
 import { useClient } from "@/lib/api";
 import { formatAt } from "@/lib/cron";
 import { until } from "@/lib/format";
+import { occurrences, usePlanner } from "@/lib/planner";
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +54,24 @@ export function ScheduledCard({ className }: { className?: string }) {
   const nameOf = (id: string | null) =>
     id ? (projects.find((p) => p.id === id)?.name ?? "Project") : "Orchestrator";
 
-  const items = [
+  const planner = usePlanner();
+  const now = new Date();
+  const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const all = [
+    ...occurrences(planner.data?.events ?? [], now, weekAhead).map((o) => ({
+      key: `event-${o.event.id}-${o.start.toISOString()}`,
+      at: o.start.toISOString(),
+      icon: CalendarDays,
+      title: o.event.title,
+      where: o.event.projectId ? nameOf(o.event.projectId) : "Your event",
+    })),
+    ...(data.data?.planned ?? []).map((p) => ({
+      key: p.id,
+      at: p.at,
+      icon: p.source === "gbp" ? MapPin : p.source === "workflow" ? GitBranch : NotebookPen,
+      title: p.title,
+      where: nameOf(p.projectId),
+    })),
     ...(data.data?.runs ?? [])
       .filter((r) => !r.skipped)
       .map((r) => ({
@@ -61,11 +88,9 @@ export function ScheduledCard({ className }: { className?: string }) {
       title: w.note,
       where: w.target === "pm" ? `PM of ${nameOf(w.projectId)}` : "Orchestrator",
     })),
-  ]
-    .sort((a, b) => a.at.localeCompare(b.at))
-    .slice(0, MAX_ITEMS);
-  const total =
-    (data.data?.runs.filter((r) => !r.skipped).length ?? 0) + (data.data?.wakeups.length ?? 0);
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const items = all.slice(0, MAX_ITEMS);
+  const total = all.length;
 
   return (
     <aside

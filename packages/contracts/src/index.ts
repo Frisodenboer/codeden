@@ -25,6 +25,7 @@ export * from "./items";
 export * from "./network";
 export * from "./orchestration";
 export * from "./orchestration-api";
+export * from "./planner";
 export * from "./project-config";
 export * from "./project-files";
 export * from "./projects-api";

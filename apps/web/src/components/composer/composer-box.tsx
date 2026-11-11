@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { IDEA_DRAG_TYPE, IDEA_DROPPED_EVENT } from "@/lib/planner";
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { type Draft, getDraft, useComposerStore } from "@/stores/composer";
@@ -95,6 +96,15 @@ export function ComposerBox({
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setDragging(false);
+    // An idea card from the idea board: add its text to the draft and tell the board it was used.
+    const ideaId = e.dataTransfer.getData(IDEA_DRAG_TYPE);
+    if (ideaId) {
+      const text = e.dataTransfer.getData("text/plain");
+      setText(draftKey, draft.text.trim() ? `${draft.text}\n\n${text}` : text);
+      useComposerStore.getState().focus();
+      window.dispatchEvent(new CustomEvent(IDEA_DROPPED_EVENT, { detail: ideaId }));
+      return;
+    }
     void attach(Array.from(e.dataTransfer.files));
   };
 

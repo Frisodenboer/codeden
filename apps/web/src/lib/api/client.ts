@@ -1,5 +1,7 @@
 import type {
   ArchiveSessionResponse,
+  CalendarEvent,
+  CalendarEventInput,
   ClaudeSdkStatus,
   ConflictDecision,
   ConflictRecord,
@@ -14,8 +16,12 @@ import type {
   GitPushRequest,
   GitPushResponse,
   GitStatusResponse,
+  Idea,
+  IdeaInput,
+  IdeaPatch,
   InboxItem,
   LoginCommandResponse,
+  Planner,
   Project,
   ProjectFileOp,
   ProjectFileOpResponse,
@@ -183,6 +189,13 @@ export interface CodeDenClient {
   projectFileOp(projectId: string, op: ProjectFileOp): Promise<ProjectFileOpResponse>;
   getScheduled(): Promise<ScheduledOverview>;
   cancelWakeup(id: string, target: "orchestrator" | "pm", projectId: string | null): Promise<void>;
+  getPlanner(): Promise<Planner>;
+  createEvent(input: CalendarEventInput): Promise<CalendarEvent>;
+  updateEvent(id: string, input: CalendarEventInput): Promise<CalendarEvent>;
+  deleteEvent(id: string): Promise<void>;
+  createIdea(input: IdeaInput): Promise<Idea>;
+  updateIdea(id: string, patch: IdeaPatch): Promise<Idea>;
+  deleteIdea(id: string): Promise<void>;
   searchMentions(sessionId: string, query: string): Promise<MentionCandidate[]>;
   listSlashCommands(sessionId: string): Promise<SlashCommand[]>;
   openTerminal(opts: OpenTerminalOptions): TerminalChannel;

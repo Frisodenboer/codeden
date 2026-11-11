@@ -1,4 +1,5 @@
 import {
+  CalendarEvent,
   ClaudeSdkStatus,
   CreateProjectResponse,
   DiffResult,
@@ -7,8 +8,10 @@ import {
   GitCommitResponse,
   GitPushResponse,
   GitStatusResponse,
+  Idea,
   InboxItem,
   LoginCommandResponse,
+  Planner,
   Project,
   ProjectFileOpResponse,
   RefreshModelsResponse,
@@ -171,6 +174,19 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     async cancelWakeup(id, target, projectId) {
       const qs = `?target=${target}${projectId ? `&projectId=${enc(projectId)}` : ""}`;
       await call("DELETE", `/scheduled/wakeups/${enc(id)}${qs}`);
+    },
+    getPlanner: () => get("/planner", (v) => Planner.parse(v)),
+    createEvent: (input) => post("/planner/events", input, (v) => CalendarEvent.parse(v)),
+    updateEvent: (id, input) =>
+      call("PUT", `/planner/events/${enc(id)}`, input, (v) => CalendarEvent.parse(v)),
+    async deleteEvent(id) {
+      await call("DELETE", `/planner/events/${enc(id)}`);
+    },
+    createIdea: (input) => post("/planner/ideas", input, (v) => Idea.parse(v)),
+    updateIdea: (id, patch) =>
+      call("PATCH", `/planner/ideas/${enc(id)}`, patch, (v) => Idea.parse(v)),
+    async deleteIdea(id) {
+      await call("DELETE", `/planner/ideas/${enc(id)}`);
     },
     async searchMentions(id, query) {
       const cached = fileCache.get(id);

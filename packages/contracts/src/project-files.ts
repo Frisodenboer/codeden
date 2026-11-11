@@ -44,11 +44,28 @@ export const ScheduledWakeup = z.object({
 });
 export type ScheduledWakeup = z.infer<typeof ScheduledWakeup>;
 
+/**
+ * Something planned inside a project folder rather than in CodeBench: a scheduled GitHub
+ * Actions workflow, a queued Google Business Profile post (`scripts/gbp-posts.json`), or an
+ * item from the project's `.codebench/plan.json`.
+ */
+export const PlannedItem = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  at: z.string(),
+  source: z.enum(["workflow", "gbp", "plan"]),
+  title: z.string(),
+  detail: z.string().nullable(),
+});
+export type PlannedItem = z.infer<typeof PlannedItem>;
+
 export const ScheduledOverview = z.object({
   /** Upcoming automation runs, soonest first. */
   runs: z.array(ScheduledRun),
   /** Pending wake-ups, soonest first. */
   wakeups: z.array(ScheduledWakeup),
+  /** Plans found in the project folders, soonest first. */
+  planned: z.array(PlannedItem).default([]),
 });
 export type ScheduledOverview = z.infer<typeof ScheduledOverview>;
 

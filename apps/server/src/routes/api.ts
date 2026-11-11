@@ -25,6 +25,7 @@ import { imageRoutes } from "./images";
 import { inboxRoutes } from "./inbox";
 import { authRoutes, type NetworkRouteContext, networkRoutes } from "./network";
 import { conflictRoutes, orchestrationRoutes } from "./orchestration";
+import { plannerRoutes } from "./planner";
 import { projectFileRoutes } from "./project-files";
 import { projectRoutes } from "./projects";
 import { scheduledRoutes } from "./scheduled";
@@ -88,6 +89,7 @@ export function createApi(ctx: ApiContext) {
     .route("/sessions", sessionFileRoutes(s))
     .route("/projects", projectFileRoutes(s))
     .route("/scheduled", scheduledRoutes(s))
+    .route("/planner", plannerRoutes(s))
     .route("/utility", utilityRoutes(s))
     .route("/inbox", inboxRoutes(s))
     .route("/orchestration", orchestrationRoutes(s))

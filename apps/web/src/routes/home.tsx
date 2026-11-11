@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Bot, FolderPlus, GitPullRequest, ListChecks, ShieldAlert, Sparkles } from "lucide-react";
+import { IdeaBoard } from "@/components/orchestration/idea-board";
 import { RoleChat } from "@/components/orchestration/role-chat";
 import { ScheduledCard } from "@/components/orchestration/scheduled-card";
 import { ProjectTile } from "@/components/shell/sidebar/project-group";
@@ -101,7 +102,10 @@ export function HomePage() {
         empty={(draftKey) => <OrchestratorEmpty draftKey={draftKey} />}
       />
       {/* Top right, below the header; only where the left-aligned chat leaves room. */}
-      <ScheduledCard className="absolute top-14 right-4 z-10 hidden 2xl:block" />
+      <div className="absolute top-14 right-4 bottom-4 z-10 hidden w-72 flex-col gap-3 overflow-y-auto scroll-thin 2xl:flex">
+        <ScheduledCard className="shrink-0" />
+        <IdeaBoard className="shrink-0" />
+      </div>
     </div>
   );
 }

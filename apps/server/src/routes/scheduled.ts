@@ -2,6 +2,7 @@ import { CancelWakeupQuery, type ScheduledWakeup } from "@codeden/contracts";
 import { Hono } from "hono";
 import type { AppServices } from "../services/container";
 import { notFound } from "../services/errors";
+import { collectProjectPlans } from "../services/scheduled/project-plans";
 import { queryOf } from "./validate";
 
 /** `/api/scheduled`: upcoming automation runs and pending wake-ups across every project. */
@@ -32,7 +33,11 @@ export function scheduledRoutes(s: AppServices) {
         ),
       );
       wakeups.sort((a, b) => a.at.localeCompare(b.at));
-      return c.json({ runs: s.automations.listScheduledRuns(null, 100), wakeups });
+      const projects = s.projects.list({ includeArchived: false });
+      const planned = collectProjectPlans(
+        projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
+      );
+      return c.json({ runs: s.automations.listScheduledRuns(null, 100), wakeups, planned });
     })
     .delete("/wakeups/:id", queryOf(CancelWakeupQuery), (c) => {
       const q = c.req.valid("query");

@@ -56,6 +56,13 @@ type WorkbenchApi = Pick<
   | "projectFileOp"
   | "getScheduled"
   | "cancelWakeup"
+  | "getPlanner"
+  | "createEvent"
+  | "updateEvent"
+  | "deleteEvent"
+  | "createIdea"
+  | "updateIdea"
+  | "deleteIdea"
   | "searchMentions"
   | "listSlashCommands"
   | "openTerminal"
@@ -213,8 +220,61 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
     },
     projectFileOp: (_projectId, op) =>
       delay({ ok: true as const, path: op.op === "rename" ? op.to : op.path }),
-    getScheduled: () => delay({ runs: [], wakeups: [] }),
+    getScheduled: () => delay({ runs: [], wakeups: [], planned: [] }),
     cancelWakeup: async () => {},
+    getPlanner: () => delay({ events: [], ideas: [] }),
+    createEvent: (input) =>
+      delay({
+        id: "mock-event",
+        title: input.title,
+        at: input.at,
+        endAt: input.endAt ?? null,
+        allDay: input.allDay ?? false,
+        repeat: input.repeat ?? "none",
+        projectId: input.projectId ?? null,
+        notes: input.notes ?? "",
+        createdAt: new Date().toISOString(),
+      }),
+    updateEvent: (id, input) =>
+      delay({
+        id,
+        title: input.title,
+        at: input.at,
+        endAt: input.endAt ?? null,
+        allDay: input.allDay ?? false,
+        repeat: input.repeat ?? "none",
+        projectId: input.projectId ?? null,
+        notes: input.notes ?? "",
+        createdAt: new Date().toISOString(),
+      }),
+    deleteEvent: async () => {},
+    createIdea: (input) => {
+      const now = new Date().toISOString();
+      return delay({
+        id: "mock-idea",
+        title: input.title,
+        notes: input.notes ?? "",
+        column: input.column ?? "ideas",
+        order: 0,
+        projectId: input.projectId ?? null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    },
+    updateIdea: (id, patch) => {
+      const now = new Date().toISOString();
+      return delay({
+        id,
+        title: patch.title ?? "Idea",
+        notes: patch.notes ?? "",
+        column: patch.column ?? "ideas",
+        order: patch.order ?? 0,
+        projectId: patch.projectId ?? null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    },
+    deleteIdea: async () => {},
     searchMentions: (_sessionId, query) => {
       const q = query.toLowerCase();
       const hits = allPaths()
