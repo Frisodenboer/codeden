@@ -125,6 +125,16 @@ describe("notice delivery (§8.2)", () => {
     expect(notices.undelivered("pm", "p1")).toEqual([]);
   });
 
+  it("sends a slash command as typed, keeping the notices for the next message", () => {
+    notices.create(finished("n1"));
+    const { d } = delivery();
+    const cmd = d.decorate(pm, { text: "/context", attachments: [] });
+    expect(cmd.input.text).toBe("/context");
+    expect(ids(notices.undelivered("pm", "p1"))).toEqual(["n1"]);
+    const next = d.decorate(pm, { text: "hello", attachments: [] });
+    expect(next.input.text).toContain("Summary of n1");
+  });
+
   it("re-arms wakes on start for notices that should wake their target", () => {
     notices.create({ ...finished("n1"), wake: true });
     notices.create({ ...finished("n2", { projectId: "p2" }), wake: false });

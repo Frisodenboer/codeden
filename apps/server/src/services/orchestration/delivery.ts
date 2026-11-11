@@ -65,6 +65,9 @@ export class NoticeDelivery {
   /** Prepend the status digest and the undelivered notices to a role session's input (§8.4). */
   decorate(session: Session, input: UserInput): DecoratedInput {
     if (session.role === "agent") return { input };
+    // A slash command (/context, /compact, a skill) must reach Claude Code as typed, or it is
+    // read as plain text. The digest and notices wait for the next ordinary message.
+    if (input.text.trimStart().startsWith("/")) return { input };
     try {
       const parts = [this.deps.digestFor(session)];
       const pending = this.deps.notices
