@@ -38,10 +38,13 @@ export function entryIcon(e: WorkEntry): LucideIcon {
 }
 
 /** Short verb phrase, a monospace target and a one-line note for a work entry's row. */
-export function entryLabel(e: WorkEntry): { verb: string; target?: string; meta?: string } {
-  if (e.kind === "reasoning")
-    return { verb: e.status === "in_progress" ? "Thinking" : "Thought", target: e.summary };
-  const running = e.status === "in_progress";
+export function entryLabel(
+  e: WorkEntry,
+  /** False once the turn ended: an unfinished step then reads as done, not running. */
+  live = true,
+): { verb: string; target?: string; meta?: string } {
+  const running = live && e.status === "in_progress";
+  if (e.kind === "reasoning") return { verb: running ? "Thinking" : "Thought", target: e.summary };
   switch (e.toolKind) {
     case "command":
       return { verb: running ? "Running" : "Ran", target: e.command };

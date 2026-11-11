@@ -47,7 +47,7 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
   if (entries.length === 1 && entries[0]) {
     return (
       <div>
-        <ToolRow entry={entries[0]} />
+        <ToolRow entry={entries[0]} live={live} />
         <GeneratedImages entries={entries} />
       </div>
     );
@@ -92,7 +92,7 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
       {open ? (
         <div className="relative mt-0.5 ml-[13px] border-l border-border pl-2.5">
           {entries.map((e) => (
-            <ToolRow key={e.id} entry={e} />
+            <ToolRow key={e.id} entry={e} live={live} />
           ))}
         </div>
       ) : (

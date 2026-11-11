@@ -93,14 +93,17 @@ const ROW_COLUMNS = "grid-cols-[auto_minmax(0,auto)_minmax(0,auto)_minmax(0,auto
 export function ToolRow({
   entry,
   defaultOpen = false,
+  live = true,
 }: {
   entry: WorkEntry;
   defaultOpen?: boolean;
+  /** False once the turn ended (finished or interrupted): nothing in it is still running. */
+  live?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const Icon = entryIcon(entry);
-  const { verb, target, meta } = entryLabel(entry);
-  const running = entry.status === "in_progress";
+  const { verb, target, meta } = entryLabel(entry, live);
+  const running = live && entry.status === "in_progress";
   // Claude's own orange for its thinking indicator.
   const thinking = running && entry.kind === "reasoning";
   const failed = entry.status === "failed" || entry.status === "declined";
