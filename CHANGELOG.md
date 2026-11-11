@@ -4,6 +4,10 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-11
+
+Maintenance release.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added
