@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AUTONOMY, supportsReadOnly } from "@/components/thread/autonomy";
 import { useClient } from "@/lib/api";
 import { snapshotKey, useSnapshotData } from "@/lib/queries";
+import { ContextMeter } from "./context-meter";
 import { ModelPicker } from "./model-picker/model-picker";
 import { AutonomyPicker } from "./pickers";
 
@@ -75,6 +76,7 @@ export function SessionOptions({ session, running }: { session: Session; running
           if (patch.model !== undefined || patch.effort !== undefined) save(patch);
         }}
       />
+      <ContextMeter sessionId={session.id} />
       {session.role === "agent" && (
         <AutonomyPicker
           value={session.autonomy}
