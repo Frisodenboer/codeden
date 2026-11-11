@@ -1,7 +1,7 @@
 import type { FollowupSuggestion } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
-import { Sparkles } from "lucide-react";
-import { useMemo } from "react";
+import { Sparkles, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/common/bits";
 import { Composer } from "@/components/composer/composer";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +14,7 @@ import { QueuedMessages } from "./queued-messages";
 import { ThreadHeader } from "./thread-header";
 import { Transcript } from "./transcript";
 
-/** Follow-up chips above the composer after a turn completes (§7.5). */
+/** Follow-up suggestions as a list below the composer after a turn completes (§7.5); each can be dismissed. */
 function FollowupChips({
   sessionId,
   suggestions,
@@ -29,29 +29,58 @@ function FollowupChips({
   const send = useMutation({
     mutationFn: (prompt: string) => client.sendMessage(sessionId, { text: prompt }, "send"),
   });
+  const [dismissed, setDismissed] = useState(
+    () => dismissedFollowups.get(sessionId) ?? new Set<string>(),
+  );
+  const dismiss = (prompt: string) => {
+    const next = new Set(dismissed).add(prompt);
+    dismissedFollowups.set(sessionId, next);
+    setDismissed(next);
+  };
+  const visible = suggestions.filter((s) => !dismissed.has(s.prompt));
+  if (visible.length === 0) return null;
   return (
-    <div className="mr-auto flex w-full max-w-[46rem] flex-wrap items-center gap-1.5 px-3 pb-3 sm:-mt-2 sm:px-6 sm:pb-4">
-      <Sparkles className="mr-0.5 size-3.5 text-primary/70" />
-      {suggestions.map((s) => (
-        <button
+    <ul
+      aria-label="Suggested follow-ups"
+      className="mr-auto flex w-full max-w-[46rem] flex-col gap-1 px-3 pb-3 sm:-mt-2 sm:px-6 sm:pb-4"
+    >
+      {visible.map((s) => (
+        <li
           key={s.prompt}
-          type="button"
-          title={s.prompt}
-          onClick={() => {
-            if (sendOnClick) send.mutate(s.prompt);
-            else {
-              setText(sessionId, s.prompt);
-              focus();
-            }
-          }}
-          className="h-7 max-w-64 truncate rounded-full border border-border bg-card/70 px-3 text-xs text-muted-foreground shadow-xs transition-colors hover:border-primary/40 hover:bg-primary/[0.06] hover:text-foreground"
+          className="group flex items-center rounded-md border border-border bg-card/70 shadow-xs transition-colors hover:border-primary/40 hover:bg-primary/[0.06]"
         >
-          {s.label ?? s.prompt}
-        </button>
+          <button
+            type="button"
+            title={s.prompt}
+            onClick={() => {
+              if (sendOnClick) send.mutate(s.prompt);
+              else {
+                setText(sessionId, s.prompt);
+                focus();
+              }
+            }}
+            className="flex min-h-8 min-w-0 flex-1 items-center gap-2 px-3 py-1 text-left text-xs text-muted-foreground group-hover:text-foreground"
+          >
+            <Sparkles className="size-3.5 shrink-0 text-primary/70" />
+            <span className="truncate">{s.label ?? s.prompt}</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss suggestion"
+            title="Dismiss"
+            onClick={() => dismiss(s.prompt)}
+            className="mr-1 flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
+
+/** Suggestions dismissed per session, kept while the app runs so they stay hidden when you switch sessions. */
+const dismissedFollowups = new Map<string, Set<string>>();
 
 function TranscriptSkeleton() {
   return (
