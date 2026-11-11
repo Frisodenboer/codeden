@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { PlannedItem } from "@codeden/contracts";
+import type { DoneItem, PlannedItem } from "@codeden/contracts";
 import { parse as parseYaml } from "yaml";
 import { nextOccurrences } from "../automations/cron";
 
@@ -22,6 +22,12 @@ interface Workflow {
   name: string;
   crons: string[];
   text: string;
+}
+
+/** "Google post · kennisbank/some-article" for a queued page path like `/kennisbank/some-article/`. */
+function postTitle(page: string): string {
+  const trimmed = page.split("/").filter(Boolean).join("/");
+  return `Google post · ${trimmed || "home"}`;
 }
 
 function readJson(path: string): unknown {
@@ -97,7 +103,7 @@ function gbpPlans(project: PlanProject, workflows: Workflow[], now: Date): Plann
         projectId: project.id,
         at: at.toISOString(),
         source: "gbp" as const,
-        title: `Google Business post: ${page}`,
+        title: postTitle(page),
         detail: typeof e.summary === "string" ? e.summary : null,
       },
     ];
@@ -151,4 +157,60 @@ export function collectProjectPlans(projects: PlanProject[], now = new Date()): 
     items.push(...gbp, ...planFile(project, now));
   }
   return items.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** How far back finished items are shown (until the user removes them). */
+const DONE_DAYS = 30;
+
+/**
+ * Planned items in the project folders that already happened: published (or failed) Google
+ * Business posts and past `.codebench/plan.json` items, newest first.
+ */
+export function collectProjectDone(projects: PlanProject[], now = new Date()): DoneItem[] {
+  const since = now.getTime() - DONE_DAYS * 24 * 60 * 60 * 1000;
+  const items: DoneItem[] = [];
+  for (const project of projects) {
+    if (!existsSync(project.path)) continue;
+    const queue = readJson(join(project.path, "scripts", "gbp-posts.json")) as {
+      entries?: {
+        id?: unknown;
+        path?: unknown;
+        status?: unknown;
+        publishedAt?: unknown;
+        queuedAt?: unknown;
+      }[];
+    } | null;
+    for (const e of Array.isArray(queue?.entries) ? queue.entries : []) {
+      if (!e || (e.status !== "published" && e.status !== "failed")) continue;
+      const when = typeof e.publishedAt === "string" ? e.publishedAt : e.queuedAt;
+      const at = typeof when === "string" ? Date.parse(when) : Number.NaN;
+      if (Number.isNaN(at) || at < since) continue;
+      const page = typeof e.path === "string" ? e.path : String(e.id ?? "post");
+      items.push({
+        id: `gbp:${project.id}:${String(e.id ?? page)}`,
+        projectId: project.id,
+        at: new Date(at).toISOString(),
+        source: "gbp",
+        title: postTitle(page),
+        ok: e.status === "published",
+      });
+    }
+    const plan = readJson(join(project.path, ".codebench", "plan.json")) as {
+      items?: { title?: unknown; at?: unknown }[];
+    } | null;
+    (Array.isArray(plan?.items) ? plan.items : []).slice(0, MAX_PLAN).forEach((it, i) => {
+      if (!it || typeof it.title !== "string" || typeof it.at !== "string") return;
+      const at = Date.parse(it.at);
+      if (Number.isNaN(at) || at >= now.getTime() || at < since) return;
+      items.push({
+        id: `plan:${project.id}:${i}`,
+        projectId: project.id,
+        at: new Date(at).toISOString(),
+        source: "plan",
+        title: it.title,
+        ok: true,
+      });
+    });
+  }
+  return items.sort((a, b) => b.at.localeCompare(a.at));
 }

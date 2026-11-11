@@ -68,6 +68,19 @@ export function usePlannerActions() {
       onSettled: done,
       onError: fail("Couldn't update the idea"),
     }),
+    dismiss: useMutation({
+      mutationFn: (id: string) => client.dismissAgendaItem(id),
+      onMutate: async (id) => {
+        // Hide it right away; the server answer confirms it.
+        await queryClient.cancelQueries({ queryKey: plannerKey });
+        queryClient.setQueryData<{ events: CalendarEvent[]; ideas: Idea[]; dismissed: string[] }>(
+          plannerKey,
+          (old) => (old ? { ...old, dismissed: [...old.dismissed, id] } : old),
+        );
+      },
+      onSettled: done,
+      onError: fail("Couldn't remove the item"),
+    }),
     deleteIdea: useMutation({
       mutationFn: (id: string) => client.deleteIdea(id),
       onSuccess: done,
@@ -109,3 +122,40 @@ export function occurrences(events: CalendarEvent[], from: Date, to: Date): Occu
   }
   return out.sort((a, b) => a.start.getTime() - b.start.getTime());
 }
+
+/** Kinds of agenda items, from every source. */
+export type AgendaKind = "event" | "run" | "wakeup" | "workflow" | "gbp" | "plan";
+
+/** One colour per kind, so the agenda reads at a glance (icon, chip and left bar). */
+export const AGENDA_COLORS: Record<AgendaKind, { text: string; chip: string; bar: string }> = {
+  event: {
+    text: "text-sky-600 dark:text-sky-400",
+    chip: "bg-sky-500/15 text-sky-800 dark:text-sky-200",
+    bar: "bg-sky-500",
+  },
+  gbp: {
+    text: "text-amber-600 dark:text-amber-400",
+    chip: "bg-amber-500/15 text-amber-800 dark:text-amber-200",
+    bar: "bg-amber-500",
+  },
+  run: {
+    text: "text-violet-600 dark:text-violet-400",
+    chip: "bg-violet-500/15 text-violet-800 dark:text-violet-200",
+    bar: "bg-violet-500",
+  },
+  wakeup: {
+    text: "text-teal-600 dark:text-teal-400",
+    chip: "bg-teal-500/15 text-teal-800 dark:text-teal-200",
+    bar: "bg-teal-500",
+  },
+  workflow: {
+    text: "text-slate-500 dark:text-slate-400",
+    chip: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+    bar: "bg-slate-400",
+  },
+  plan: {
+    text: "text-rose-600 dark:text-rose-400",
+    chip: "bg-rose-500/15 text-rose-800 dark:text-rose-200",
+    bar: "bg-rose-500",
+  },
+};

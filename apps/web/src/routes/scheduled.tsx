@@ -5,6 +5,7 @@ import {
   AlarmClock,
   CalendarClock,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   GitBranch,
@@ -25,14 +26,20 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClient } from "@/lib/api";
 import { automationKeys } from "@/lib/automations";
-import { occurrences, usePlanner } from "@/lib/planner";
+import {
+  AGENDA_COLORS,
+  type AgendaKind,
+  occurrences,
+  usePlanner,
+  usePlannerActions,
+} from "@/lib/planner";
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "./page-header";
 
 export const scheduledKey = ["scheduled"];
 
-type Kind = "event" | "run" | "wakeup" | "workflow" | "gbp" | "plan";
+type Kind = AgendaKind;
 
 /** One thing on the calendar, whatever its source. */
 interface Item {
@@ -46,19 +53,17 @@ interface Item {
   event?: CalendarEvent;
   run?: ScheduledRun;
   wakeup?: ScheduledWakeup;
+  /** Set on finished items: true = done (green tick), false = failed. */
+  ok?: boolean;
 }
 
-const KIND: Record<Kind, { label: string; icon: typeof CalendarClock; chip: string }> = {
-  event: { label: "Your event", icon: CalendarDays, chip: "bg-primary/15 text-primary" },
-  run: { label: "Automation", icon: CalendarClock, chip: "bg-chart-2/15 text-foreground" },
-  wakeup: { label: "Agent wake-up", icon: AlarmClock, chip: "bg-muted text-foreground" },
-  workflow: { label: "GitHub workflow", icon: GitBranch, chip: "bg-muted text-muted-foreground" },
-  gbp: {
-    label: "Google Business post",
-    icon: MapPin,
-    chip: "bg-status-waiting/15 text-foreground",
-  },
-  plan: { label: "Project plan", icon: NotebookPen, chip: "bg-accent text-foreground" },
+const KIND: Record<Kind, { label: string; icon: typeof CalendarClock }> = {
+  event: { label: "Your event", icon: CalendarDays },
+  run: { label: "Automation", icon: CalendarClock },
+  wakeup: { label: "Agent wake-up", icon: AlarmClock },
+  workflow: { label: "GitHub workflow", icon: GitBranch },
+  gbp: { label: "Google Business post", icon: MapPin },
+  plan: { label: "Project plan", icon: NotebookPen },
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -82,9 +87,15 @@ function useItems(from: Date, to: Date) {
       id ? (projects.find((p) => p.id === id)?.name ?? "Project") : "";
     const out: Item[] = [];
     const inRange = (d: Date) => d >= from && d < to;
+    const dismissed = new Set(planner.data?.dismissed ?? []);
+    const now = Date.now();
     for (const o of occurrences(planner.data?.events ?? [], from, to)) {
+      const key = `event:${o.event.id}:${o.start.toISOString()}`;
+      const past = o.start.getTime() < now;
+      if (past && dismissed.has(key)) continue;
       out.push({
-        key: `event-${o.event.id}-${o.start.toISOString()}`,
+        key,
+        ...(past ? { ok: true } : {}),
         at: o.start,
         kind: "event",
         title: o.event.title,
@@ -129,6 +140,18 @@ function useItems(from: Date, to: Date) {
           where: nameOf(p.projectId),
           detail: p.detail,
         });
+    }
+    for (const d of scheduled.data?.done ?? []) {
+      const at = new Date(d.at);
+      if (!inRange(at) || dismissed.has(d.id)) continue;
+      out.push({
+        key: d.id,
+        at,
+        kind: d.source,
+        title: d.title,
+        where: nameOf(d.projectId),
+        ok: d.ok,
+      });
     }
     return out.sort((a, b) => a.at.getTime() - b.at.getTime());
   }, [planner.data, scheduled.data, from, to, projects]);
@@ -184,6 +207,22 @@ function WakeupActions({ wakeup }: { wakeup: ScheduledWakeup }) {
   );
 }
 
+/** Remove a finished item from the agenda (it stays until you do). */
+function RemoveButton({ id }: { id: string }) {
+  const { dismiss } = usePlannerActions();
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={() => dismiss.mutate(id)}
+      title="Remove from the agenda"
+    >
+      <X />
+      <span className="hidden sm:inline">Remove</span>
+    </Button>
+  );
+}
+
 function ItemRow({ item, onEdit }: { item: Item; onEdit: (e: CalendarEvent) => void }) {
   const k = KIND[item.kind];
   const title = item.run?.projectId ? (
@@ -208,12 +247,22 @@ function ItemRow({ item, onEdit }: { item: Item; onEdit: (e: CalendarEvent) => v
   return (
     <li
       className={cn(
-        "flex items-center gap-3 rounded-lg border border-border bg-card/60 px-3 py-2",
+        "relative flex items-center gap-3 overflow-hidden rounded-lg border border-border bg-card/60 py-2 pr-3 pl-4",
         item.run?.skipped && "opacity-60",
       )}
       title={item.detail ?? undefined}
     >
-      <k.icon className="size-4 shrink-0 text-primary/80" />
+      <span
+        aria-hidden
+        className={cn("absolute inset-y-0 left-0 w-1", AGENDA_COLORS[item.kind].bar)}
+      />
+      {item.ok === true ? (
+        <Check className="size-4 shrink-0 text-status-done" aria-label="Done" />
+      ) : item.ok === false ? (
+        <X className="size-4 shrink-0 text-status-failed" aria-label="Failed" />
+      ) : (
+        <k.icon className={cn("size-4 shrink-0", AGENDA_COLORS[item.kind].text)} />
+      )}
       <span className="w-14 shrink-0 text-xs tabular-nums text-muted-foreground">
         {item.allDay ? "All day" : timeOf(item.at)}
       </span>
@@ -222,10 +271,13 @@ function ItemRow({ item, onEdit }: { item: Item; onEdit: (e: CalendarEvent) => v
         <span className="truncate text-xs text-muted-foreground">
           {k.label}
           {item.where ? ` · ${item.where}` : ""}
+          {item.ok === true && " · done"}
+          {item.ok === false && " · failed"}
         </span>
       </div>
       {item.run && <RunActions run={item.run} />}
       {item.wakeup && <WakeupActions wakeup={item.wakeup} />}
+      {item.ok !== undefined && <RemoveButton id={item.key} />}
     </li>
   );
 }
@@ -304,12 +356,18 @@ function MonthView({
                         title={`${k.label}${it.where ? ` · ${it.where}` : ""}\n${label}${it.detail ? `\n\n${it.detail}` : ""}`}
                         className={cn(
                           "flex w-full items-center gap-1 truncate rounded px-1 py-px text-left text-2xs",
-                          k.chip,
+                          AGENDA_COLORS[it.kind].chip,
                           !it.event && "cursor-default",
                           it.run?.skipped && "line-through opacity-60",
                         )}
                       >
-                        <k.icon className="size-2.5 shrink-0" />
+                        {it.ok === true ? (
+                          <Check className="size-2.5 shrink-0 text-status-done" />
+                        ) : it.ok === false ? (
+                          <X className="size-2.5 shrink-0 text-status-failed" />
+                        ) : (
+                          <k.icon className="size-2.5 shrink-0" />
+                        )}
                         <span className="truncate">{label}</span>
                       </button>
                     </li>
@@ -488,7 +546,12 @@ export function ScheduledPage() {
               const K = KIND[k];
               return (
                 <span key={k} className="flex items-center gap-1">
-                  <span className={cn("flex size-3.5 items-center justify-center rounded", K.chip)}>
+                  <span
+                    className={cn(
+                      "flex size-3.5 items-center justify-center rounded",
+                      AGENDA_COLORS[k].chip,
+                    )}
+                  >
                     <K.icon className="size-2.5" />
                   </span>
                   {K.label}

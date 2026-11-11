@@ -102,7 +102,7 @@ export function HomePage() {
         empty={(draftKey) => <OrchestratorEmpty draftKey={draftKey} />}
       />
       {/* Top right, below the header; only where the left-aligned chat leaves room. */}
-      <div className="absolute top-14 right-4 bottom-4 z-10 hidden w-72 flex-col gap-3 overflow-y-auto scroll-thin 2xl:flex">
+      <div className="absolute top-14 right-4 bottom-4 z-10 hidden w-[24rem] flex-col gap-3 overflow-y-auto scroll-thin min-[1600px]:flex">
         <ScheduledCard className="shrink-0" />
         <IdeaBoard className="shrink-0" />
       </div>

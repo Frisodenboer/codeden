@@ -63,6 +63,7 @@ type WorkbenchApi = Pick<
   | "createIdea"
   | "updateIdea"
   | "deleteIdea"
+  | "dismissAgendaItem"
   | "searchMentions"
   | "listSlashCommands"
   | "openTerminal"
@@ -220,9 +221,10 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
     },
     projectFileOp: (_projectId, op) =>
       delay({ ok: true as const, path: op.op === "rename" ? op.to : op.path }),
-    getScheduled: () => delay({ runs: [], wakeups: [], planned: [] }),
+    getScheduled: () => delay({ runs: [], wakeups: [], planned: [], done: [] }),
     cancelWakeup: async () => {},
-    getPlanner: () => delay({ events: [], ideas: [] }),
+    getPlanner: () => delay({ events: [], ideas: [], dismissed: [] }),
+    dismissAgendaItem: async () => {},
     createEvent: (input) =>
       delay({
         id: "mock-event",

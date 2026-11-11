@@ -71,5 +71,11 @@ export type IdeaPatch = z.infer<typeof IdeaPatch>;
 export const Planner = z.object({
   events: z.array(CalendarEvent),
   ideas: z.array(Idea),
+  /** Ids of done agenda items the user removed (see `DoneItem`, and `event:<id>:<start>`). */
+  dismissed: z.array(z.string()).default([]),
 });
 export type Planner = z.infer<typeof Planner>;
+
+/** `POST /api/planner/dismiss`: remove a done item from the agenda. */
+export const DismissAgendaItem = z.object({ id: z.string().min(1).max(500) });
+export type DismissAgendaItem = z.infer<typeof DismissAgendaItem>;

@@ -59,7 +59,21 @@ export const PlannedItem = z.object({
 });
 export type PlannedItem = z.infer<typeof PlannedItem>;
 
+/** Something planned that already happened: shown with a tick (or a cross) until removed. */
+export const DoneItem = z.object({
+  id: z.string(),
+  projectId: z.string().nullable(),
+  at: z.string(),
+  source: z.enum(["gbp", "run", "plan"]),
+  title: z.string(),
+  /** False when it failed. */
+  ok: z.boolean(),
+});
+export type DoneItem = z.infer<typeof DoneItem>;
+
 export const ScheduledOverview = z.object({
+  /** Recently finished items, newest first. */
+  done: z.array(DoneItem).default([]),
   /** Upcoming automation runs, soonest first. */
   runs: z.array(ScheduledRun),
   /** Pending wake-ups, soonest first. */

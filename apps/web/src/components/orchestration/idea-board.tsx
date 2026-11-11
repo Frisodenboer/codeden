@@ -97,7 +97,7 @@ export function IdeaBoard({ className }: { className?: string }) {
     <aside
       aria-label="Idea board"
       className={cn(
-        "w-72 rounded-xl border border-border bg-card/90 shadow-sm backdrop-blur",
+        "w-full rounded-xl border border-border bg-card/90 shadow-sm backdrop-blur",
         className,
       )}
     >

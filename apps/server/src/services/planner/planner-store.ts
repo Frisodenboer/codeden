@@ -19,13 +19,13 @@ export class PlannerStore {
   constructor(private readonly file: string) {}
 
   read(): Planner {
-    if (!existsSync(this.file)) return { events: [], ideas: [] };
+    if (!existsSync(this.file)) return { events: [], ideas: [], dismissed: [] };
     try {
       return Planner.parse(JSON.parse(readFileSync(this.file, "utf8")));
     } catch {
       // Keep a broken file aside instead of overwriting it with an empty planner.
       renameSync(this.file, `${this.file}.broken-${Date.now()}`);
-      return { events: [], ideas: [] };
+      return { events: [], ideas: [], dismissed: [] };
     }
   }
 
@@ -90,6 +90,13 @@ export class PlannerStore {
     planner.ideas[i] = idea;
     this.write(planner);
     return idea;
+  }
+
+  /** Remember that the user removed a done agenda item (keeps the newest 2000). */
+  dismiss(id: string): void {
+    const planner = this.read();
+    if (planner.dismissed.includes(id)) return;
+    this.write({ ...planner, dismissed: [...planner.dismissed, id].slice(-2000) });
   }
 
   deleteIdea(id: string): void {

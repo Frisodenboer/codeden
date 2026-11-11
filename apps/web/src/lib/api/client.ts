@@ -196,6 +196,7 @@ export interface CodeDenClient {
   createIdea(input: IdeaInput): Promise<Idea>;
   updateIdea(id: string, patch: IdeaPatch): Promise<Idea>;
   deleteIdea(id: string): Promise<void>;
+  dismissAgendaItem(id: string): Promise<void>;
   searchMentions(sessionId: string, query: string): Promise<MentionCandidate[]>;
   listSlashCommands(sessionId: string): Promise<SlashCommand[]>;
   openTerminal(opts: OpenTerminalOptions): TerminalChannel;

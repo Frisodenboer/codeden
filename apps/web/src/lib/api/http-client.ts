@@ -188,6 +188,9 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     async deleteIdea(id) {
       await call("DELETE", `/planner/ideas/${enc(id)}`);
     },
+    async dismissAgendaItem(id) {
+      await post("/planner/dismiss", { id });
+    },
     async searchMentions(id, query) {
       const cached = fileCache.get(id);
       const list =

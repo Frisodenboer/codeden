@@ -4,21 +4,30 @@ import {
   AlarmClock,
   CalendarClock,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronRight,
   GitBranch,
   MapPin,
   NotebookPen,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { useClient } from "@/lib/api";
 import { formatAt } from "@/lib/cron";
 import { until } from "@/lib/format";
-import { occurrences, usePlanner } from "@/lib/planner";
+import {
+  AGENDA_COLORS,
+  type AgendaKind,
+  occurrences,
+  usePlanner,
+  usePlannerActions,
+} from "@/lib/planner";
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
-const MAX_ITEMS = 6;
+const MAX_UPCOMING = 6;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const COLLAPSED_KEY = "codebench.scheduledCard.collapsed";
 
 function readCollapsed(): boolean {
@@ -37,10 +46,24 @@ function writeCollapsed(value: boolean) {
   }
 }
 
+interface Row {
+  key: string;
+  kind: AgendaKind;
+  at: string;
+  icon: typeof CalendarClock;
+  title: string;
+  where: string;
+  /** Set on finished items: true = done (green tick), false = failed. */
+  ok?: boolean;
+}
+
+const sourceIcon = (s: string) =>
+  s === "gbp" ? MapPin : s === "workflow" ? GitBranch : s === "run" ? CalendarClock : NotebookPen;
+
 /**
- * A compact "what runs next" card for the top right of the orchestrator screen: the next
- * automation runs and agent wake-ups across all projects, linking to the Scheduled window.
- * Shown on wide screens only, where the left-aligned chat leaves room for it.
+ * A compact agenda for the top right of the orchestrator screen: what finished recently (with a
+ * green tick, kept until you remove it) and what runs next, across all projects and your own
+ * events. Links to the Scheduled window.
  */
 export function ScheduledCard({ className }: { className?: string }) {
   const client = useClient();
@@ -51,24 +74,48 @@ export function ScheduledCard({ className }: { className?: string }) {
     queryFn: () => client.getScheduled(),
     refetchInterval: 60_000,
   });
+  const planner = usePlanner();
+  const { dismiss } = usePlannerActions();
   const nameOf = (id: string | null) =>
     id ? (projects.find((p) => p.id === id)?.name ?? "Project") : "Orchestrator";
 
-  const planner = usePlanner();
   const now = new Date();
-  const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const all = [
-    ...occurrences(planner.data?.events ?? [], now, weekAhead).map((o) => ({
-      key: `event-${o.event.id}-${o.start.toISOString()}`,
-      at: o.start.toISOString(),
-      icon: CalendarDays,
-      title: o.event.title,
-      where: o.event.projectId ? nameOf(o.event.projectId) : "Your event",
+  const dismissed = new Set(planner.data?.dismissed ?? []);
+  const events = planner.data?.events ?? [];
+  const eventRow = (o: ReturnType<typeof occurrences>[number], ok?: boolean): Row => ({
+    key: `event:${o.event.id}:${o.start.toISOString()}`,
+    at: o.start.toISOString(),
+    kind: "event",
+    icon: CalendarDays,
+    title: o.event.title,
+    where: o.event.projectId ? nameOf(o.event.projectId) : "Your event",
+    ...(ok === undefined ? {} : { ok }),
+  });
+
+  const done: Row[] = [
+    ...occurrences(events, new Date(now.getTime() - 30 * DAY_MS), now).map((o) =>
+      eventRow(o, true),
+    ),
+    ...(data.data?.done ?? []).map((d) => ({
+      key: d.id,
+      at: d.at,
+      kind: d.source,
+      icon: sourceIcon(d.source),
+      title: d.title,
+      where: nameOf(d.projectId),
+      ok: d.ok,
     })),
+  ]
+    .filter((r) => !dismissed.has(r.key))
+    .sort((a, b) => b.at.localeCompare(a.at));
+
+  const upcoming: Row[] = [
+    ...occurrences(events, now, new Date(now.getTime() + 7 * DAY_MS)).map((o) => eventRow(o)),
     ...(data.data?.planned ?? []).map((p) => ({
       key: p.id,
       at: p.at,
-      icon: p.source === "gbp" ? MapPin : p.source === "workflow" ? GitBranch : NotebookPen,
+      kind: p.source,
+      icon: sourceIcon(p.source),
       title: p.title,
       where: nameOf(p.projectId),
     })),
@@ -77,6 +124,7 @@ export function ScheduledCard({ className }: { className?: string }) {
       .map((r) => ({
         key: `run-${r.automationId}-${r.projectId}-${r.at}`,
         at: r.at,
+        kind: "run" as const,
         icon: CalendarClock,
         title: r.name,
         where: nameOf(r.projectId),
@@ -84,19 +132,55 @@ export function ScheduledCard({ className }: { className?: string }) {
     ...(data.data?.wakeups ?? []).map((w) => ({
       key: `wake-${w.id}`,
       at: w.at,
+      kind: "wakeup" as const,
       icon: AlarmClock,
       title: w.note,
       where: w.target === "pm" ? `PM of ${nameOf(w.projectId)}` : "Orchestrator",
     })),
   ].sort((a, b) => a.at.localeCompare(b.at));
-  const items = all.slice(0, MAX_ITEMS);
-  const total = all.length;
+
+  const row = (r: Row) => (
+    <li
+      key={r.key}
+      className="group flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-accent/60"
+    >
+      {r.ok === true ? (
+        <Check className="mt-0.5 size-3.5 shrink-0 text-status-done" aria-label="Done" />
+      ) : r.ok === false ? (
+        <X className="mt-0.5 size-3.5 shrink-0 text-status-failed" aria-label="Failed" />
+      ) : (
+        <r.icon className={cn("mt-0.5 size-3.5 shrink-0", AGENDA_COLORS[r.kind].text)} />
+      )}
+      <Link to="/scheduled" className="min-w-0 flex-1" title={`${r.title} · ${formatAt(r.at)}`}>
+        <span
+          className={cn("block truncate text-xs", r.ok !== undefined && "text-muted-foreground")}
+        >
+          {r.title}
+        </span>
+        <span className="block truncate text-2xs text-muted-foreground">
+          {r.ok === undefined ? until(r.at) : formatAt(r.at)} · {r.where}
+          {r.ok === false && " · failed"}
+        </span>
+      </Link>
+      {r.ok !== undefined && (
+        <button
+          type="button"
+          title="Remove from the agenda"
+          aria-label={`Remove ${r.title}`}
+          onClick={() => dismiss.mutate(r.key)}
+          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground hover:opacity-100"
+        >
+          <X className="size-3" />
+        </button>
+      )}
+    </li>
+  );
 
   return (
     <aside
       aria-label="Scheduled"
       className={cn(
-        "w-72 rounded-xl border border-border bg-card/90 shadow-sm backdrop-blur",
+        "w-full rounded-xl border border-border bg-card/90 shadow-sm backdrop-blur",
         className,
       )}
     >
@@ -119,9 +203,15 @@ export function ScheduledCard({ className }: { className?: string }) {
           )}
           <CalendarClock className="size-3.5 text-primary" />
           Scheduled
-          {total > 0 && (
+          {upcoming.length > 0 && (
             <span className="rounded-full bg-primary/10 px-1.5 text-3xs font-medium text-primary">
-              {total}
+              {upcoming.length}
+            </span>
+          )}
+          {done.length > 0 && (
+            <span className="flex items-center gap-0.5 rounded-full bg-status-done/15 px-1.5 text-3xs font-medium text-status-done">
+              <Check className="size-2.5" />
+              {done.length}
             </span>
           )}
         </button>
@@ -130,33 +220,42 @@ export function ScheduledCard({ className }: { className?: string }) {
         </Link>
       </div>
       {!collapsed && (
-        <div className="border-t border-border px-1.5 py-1.5">
+        <div className="space-y-1.5 border-t border-border px-1.5 py-1.5">
           {data.error ? (
             <p className="px-1.5 py-1 text-xs text-status-failed">{data.error.message}</p>
           ) : data.isLoading ? (
             <p className="px-1.5 py-1 text-xs text-muted-foreground">Loading…</p>
-          ) : items.length === 0 ? (
-            <p className="px-1.5 py-1 text-xs text-muted-foreground">Nothing scheduled.</p>
           ) : (
-            <ul className="space-y-0.5">
-              {items.map((it) => (
-                <li key={it.key}>
+            <>
+              {done.length > 0 && (
+                <div>
+                  <p className="px-1.5 pt-0.5 text-3xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Done
+                  </p>
+                  <ul className="space-y-0.5">{done.map(row)}</ul>
+                </div>
+              )}
+              <div>
+                {done.length > 0 && (
+                  <p className="px-1.5 pt-0.5 text-3xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Next
+                  </p>
+                )}
+                {upcoming.length === 0 ? (
+                  <p className="px-1.5 py-1 text-xs text-muted-foreground">Nothing scheduled.</p>
+                ) : (
+                  <ul className="space-y-0.5">{upcoming.slice(0, MAX_UPCOMING).map(row)}</ul>
+                )}
+                {upcoming.length > MAX_UPCOMING && (
                   <Link
                     to="/scheduled"
-                    className="flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-accent/60"
-                    title={`${it.title} · ${formatAt(it.at)}`}
+                    className="block px-1.5 pt-0.5 text-2xs text-muted-foreground hover:text-foreground"
                   >
-                    <it.icon className="mt-0.5 size-3.5 shrink-0 text-primary/70" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs">{it.title}</span>
-                      <span className="block truncate text-2xs text-muted-foreground">
-                        {until(it.at)} · {it.where}
-                      </span>
-                    </span>
+                    +{upcoming.length - MAX_UPCOMING} more
                   </Link>
-                </li>
-              ))}
-            </ul>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

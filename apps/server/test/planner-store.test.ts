@@ -17,7 +17,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe("planner store", () => {
   it("starts empty and keeps events across reads", () => {
     const store = new PlannerStore(file);
-    expect(store.read()).toEqual({ events: [], ideas: [] });
+    expect(store.read()).toEqual({ events: [], ideas: [], dismissed: [] });
     const e = store.createEvent({ title: "Dentist", at: "2026-11-20T09:00:00.000Z" });
     expect(e).toMatchObject({ allDay: false, repeat: "none", endAt: null, notes: "" });
     expect(new PlannerStore(file).read().events).toHaveLength(1);
@@ -51,7 +51,7 @@ describe("planner store", () => {
   it("sets a broken file aside instead of overwriting it", () => {
     writeFileSync(file, "{ not json");
     const store = new PlannerStore(file);
-    expect(store.read()).toEqual({ events: [], ideas: [] });
+    expect(store.read()).toEqual({ events: [], ideas: [], dismissed: [] });
     expect(existsSync(file)).toBe(false);
     expect(readdirSync(dir).some((f) => f.startsWith("planner.json.broken-"))).toBe(true);
   });
