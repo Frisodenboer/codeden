@@ -31,7 +31,7 @@ Off by default. When you turn it on:
 
 - Each agent session gets its own **MCP token** for CodeDen's internal MCP server, minted when the session starts or resumes, **stored only as a SHA-256 hash**, and **revoked** when the session stops, completes or fails. The install token is not accepted on the MCP endpoint, and MCP tokens are not accepted by the UI API.
 - Tokens are **role-scoped**: the orchestrator, PMs and agents see only the tools for their role; others aren't even listed. Browser tools always act on the caller's own session, and no tool takes another session's id.
-- Agents reach CodeDen through a **local MCP proxy in the runner** on `127.0.0.1`. The token is passed to Codex over stdin, never on a command line.
+- Agents reach CodeDen through a **local MCP proxy in the runner** on `127.0.0.1`. The token is passed to Codex over stdin, never on a command line, and to opencode over its local HTTP API (registered per session for the session's folder, never in a config file).
 - **Agent environments** inherit your environment minus CodeDen's own secrets: `CODEDEN_*` variables whose names contain `TOKEN`, `SECRET`, `KEY` or `PASSWORD` never reach agents, terminals or setup scripts. (Your other environment variables are passed through, as they would be in your own terminal.)
 - Tokens are never logged or written into transcripts.
 
@@ -43,22 +43,25 @@ They always run read-only, whatever their level: Claude gets no edit tools and a
 
 Each agent session and each automation runs at a **permission level**, from Read-only to Full. The default comes from **Settings → Autonomy**; change it per session in the composer's **Permissions** picker or the new-session dialog, and per automation in its editor. Each level maps onto the provider's **native** enforcement:
 
-| Level | Claude Code | Codex |
-|---|---|---|
-| **Read-only**: can read and run checks, but never edits files, commits or pushes | Default permission mode; a PreToolUse hook denies the edit tools and every shell command that is not on the read-only allowlist | `never` approvals, **read-only sandbox**, network off: writes fail instead of asking |
-| **Supervised**: asks before edits and commands | Default permission mode, and every edit or command is routed to an approval | `untrusted` approvals, workspace-write sandbox |
-| **Auto**: works freely in its worktree and asks only for risky actions (default) | `acceptEdits`, plus CodeDen's risk classifier on every tool call | `on-request` approvals, workspace-write sandbox, network off; what Codex asks to run outside its sandbox goes through CodeDen's risk classifier, and only risky actions reach you |
-| **Full**: never asks | `bypassPermissions`; only writes outside the worktree ask | `on-request` approvals, workspace-write sandbox, network on; CodeDen approves Codex's requests unless they write outside the worktree |
+| Level | Claude Code | Codex | opencode |
+|---|---|---|---|
+| **Read-only**: can read and run checks, but never edits files, commits or pushes | Default permission mode; a PreToolUse hook denies the edit tools and every shell command that is not on the read-only allowlist | `never` approvals, **read-only sandbox**, network off: writes fail instead of asking | Every edit is refused and every command is checked against the read-only allowlist (the orchestrator and PMs also get opencode's own `edit: deny`) |
+| **Supervised**: asks before edits and commands | Default permission mode, and every edit or command is routed to an approval | `untrusted` approvals, workspace-write sandbox | Every edit, command, fetch and access outside the worktree becomes an approval |
+| **Auto**: works freely in its worktree and asks only for risky actions (default) | `acceptEdits`, plus CodeDen's risk classifier on every tool call | `on-request` approvals, workspace-write sandbox, network off; what Codex asks to run outside its sandbox goes through CodeDen's risk classifier, and only risky actions reach you | CodeDen's risk classifier decides every request; only risky ones reach you |
+| **Full**: never asks | `bypassPermissions`; only writes outside the worktree ask | `on-request` approvals, workspace-write sandbox, network on; CodeDen approves Codex's requests unless they write outside the worktree | CodeDen approves every request except writes outside the worktree |
 
 **How Codex's requests are decided.** Codex's workspace-write sandbox keeps `.git` read-only, and under Auto it keeps the network off, so Codex asks to step outside it for ordinary work such as `git commit`, `pnpm install` or `git push`. Under Auto and Full, CodeDen judges each request with the same risk classifier as Claude's tool calls: commands by their text, patches and extra folder permissions by their paths. What your level allows is approved at once and shows in the transcript as approved by policy; only the rest becomes an approval card. A command approved this way runs outside Codex's sandbox, just as Claude's commands run outside any sandbox. Under Supervised and Read-only nothing is approved by policy.
 
-Read-only is offered only on providers that report the `readOnly` capability (Claude Code and Codex both do); the server refuses it elsewhere. Under Read-only:
+**How opencode's requests are decided.** CodeDen starts opencode sessions with `ask` rules for `edit`, `bash`, `webfetch`, `websearch` and `external_directory`, so opencode stops before each of them and asks CodeDen. CodeDen answers by the session's level, with the same classifier and read-only allowlist as for Claude: decisions it makes itself show in the transcript as approved (or refused) by policy, the rest become approval cards. CodeDen's own MCP tools are allowed without asking; tools of other MCP servers ask. opencode runs no sandbox: like Claude's, an approved command runs with your user's rights. The opencode server CodeDen starts listens on `127.0.0.1` only and requires a random password per run, so other local programs cannot drive it.
+
+Read-only is offered only on providers that report the `readOnly` capability (Claude Code, Codex and opencode do); the server refuses it elsewhere. Under Read-only:
 
 - **Claude** may run commands that only read (`ls`, `cat`, `rg`, `cd`, `sed` scripts that only print such as `sed -n 1,40p`, `git status`/`log`/`diff`/`show`/`stash list` including `git -C <dir> …`, `gh ... view`/`list`/`checks`, `gh search`, `gh api` GET requests, and their PowerShell equivalents) and the project's **checks**: `npm`/`pnpm`/`yarn`/`bun` `test`, `lint`, `typecheck` or `check`, `tsc`, `vitest`, `jest`, `eslint`, `biome check`, `ruff check`, `pytest`, `mypy`, `cargo test`/`check`/`clippy` and `go test`/`vet`. Fix, write, snapshot-update and watch flags (`--fix`, `--write`, `-u`, `--watch`, ...), output redirection and command substitution are refused, as are installs, builds, commits and pushes. Checks run the project's own scripts, so a test that writes files (coverage, caches) can still write them; the agent itself cannot.
 - **Codex** runs every command in its read-only sandbox, so checks run but any write fails.
+- **opencode** gets the same allowlist as Claude, enforced on every permission request; its edits are refused.
 - **CodeDen's `create_pull_request`** is hidden from read-only sessions and refused if called. Commenting on issues and attaching screenshots as evidence still work, so the agent can report what it found.
 
-Changing the level while a session runs is saved on the session and sent to the running agent. Claude follows it from its next tool call, into and out of Read-only too; Codex from its next turn (the composer tells you which). Approvals that are already waiting stay waiting.
+Changing the level while a session runs is saved on the session and sent to the running agent. Claude and opencode follow it from their next tool call, into and out of Read-only too; Codex from its next turn (the composer tells you which). Approvals that are already waiting stay waiting.
 
 ## Automations
 
@@ -83,7 +86,7 @@ When you approve, you can approve once or for the rest of the session.
 
 ## Credentials
 
-- **Provider logins** (Claude Code, Codex) stay with their CLIs. CodeDen runs your installed `claude` and `codex`, which use their own logins; it never implements a login and never sees your password.
+- **Provider logins** (Claude Code, Codex, opencode) stay with their CLIs. CodeDen runs your installed `claude`, `codex` and `opencode`, which use their own logins; it never implements a login and never sees your password. For opencode it reads only the names of your logins (`opencode auth list`), never the keys in opencode's auth store.
 - **GitHub** is read from `gh auth token` at runtime and kept in memory only.
 - **Optional API keys** (ElevenLabs, OpenAI, Gemini, a fallback GitHub token) go into the **OS keychain** (Windows Credential Manager, macOS Keychain, Secret Service on Linux) through `@napi-rs/keyring`. They're never written to files or returned by the API, and cloud voice keys never reach the browser. If no keychain is usable, keys are kept in memory for the current run only.
 - `settings.json` and `usage-settings.json` hold no secrets.

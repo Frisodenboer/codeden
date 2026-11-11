@@ -1,4 +1,4 @@
-import { listClaudeCommands } from "@codeden/providers";
+import { listClaudeCommands, listOpencodeCommands } from "@codeden/providers";
 import { Hono } from "hono";
 import type { AppServices } from "../services/container";
 import { workdir } from "../services/workbench/workbench-service";
@@ -14,11 +14,16 @@ interface SlashCommandRow {
 /**
  * `GET /api/sessions/:id/commands`: the slash commands the session's provider accepts, for the
  * composer's `/` menu. Claude sessions ask Claude Code in the session's folder (its own
- * commands plus user, project and plugin commands and skills); Codex has none.
+ * commands plus user, project and plugin commands and skills); opencode sessions ask opencode
+ * (its config's commands, MCP prompts and skills); Codex has none.
  */
 export function sessionCommandRoutes(s: AppServices) {
   return new Hono().get("/:id/commands", async (c) => {
     const session = s.sessionRepo.get(c.req.param("id"));
+    if (session.provider === "opencode") {
+      const list = await listOpencodeCommands(workdir(session));
+      return c.json(list.map((cmd): SlashCommandRow => ({ ...cmd, provider: "opencode" })));
+    }
     if (session.provider !== "claude") return c.json([] as SlashCommandRow[]);
     const commands = await listClaudeCommands(workdir(session));
     const rows: SlashCommandRow[] = commands.map((cmd) => ({

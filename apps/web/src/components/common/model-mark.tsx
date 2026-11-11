@@ -2,8 +2,13 @@ import type { Session } from "@codeden/contracts";
 import { cn } from "@/lib/utils";
 import { providerLogo } from "./provider-logos";
 
-/** Models served through Claude Code but by another vendor (e.g. GLM via Z.AI). */
-function otherVendor(model: string | null): { label: string; className: string } | null {
+/**
+ * Models by another vendor than the provider's own (e.g. GLM via Z.AI, through Claude Code or
+ * opencode). opencode ids carry their provider (`zai-coding-plan/glm-5.3`): the model is the
+ * part after the last slash.
+ */
+function otherVendor(full: string | null): { label: string; className: string } | null {
+  const model = full?.split("/").pop();
   if (!model) return null;
   if (/^glm/i.test(model))
     return { label: "GLM", className: "bg-indigo-500/20 text-indigo-700 dark:text-indigo-300" };

@@ -45,7 +45,7 @@ Prefer an app? **[Download the desktop app](https://github.com/leonvanzyl/codede
 |---|---|
 | **Node.js 24+** | `node --version` |
 | **git** | with `user.name` and `user.email` set |
-| **An agent CLI, signed in** | [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) and/or [Codex CLI](https://developers.openai.com/codex/cli) (`codex`). At least one is required |
+| **An agent CLI, signed in** | [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`), [Codex CLI](https://developers.openai.com/codex/cli) (`codex`) and/or [opencode](https://opencode.ai) (`opencode` 1.18+, for GLM and other models; sign in with `opencode auth login`). At least one is required |
 | **GitHub CLI** *(optional)* | `gh auth login` unlocks issues, pull requests, evidence and the factory. Local-only folders work without it |
 | **Edge or Chrome** *(optional)* | for the browser panel and the agents' browser tools |
 
@@ -57,7 +57,7 @@ npx codeden            # or: npm i -g codeden && codeden
 
 Or install the **desktop app** from the [latest release](https://github.com/leonvanzyl/codeden/releases/latest) (`CodeDen-Setup-<version>.exe` on Windows, a `.dmg` on macOS, an AppImage or `.deb` on Linux). It needs no Node.js, uses the same data as `npx codeden` (`~/.codeden`), lives in the tray and updates itself. Builds without a publisher signature show a warning the first time you open them: on Windows choose **More info › Run anyway**; on macOS open CodeDen once, then choose **Open Anyway** under **System Settings › Privacy & Security**. If macOS says the app is "damaged", see [Unsigned builds](docs/desktop.md#unsigned-builds).
 
-1. The **setup checklist** detects Claude Code, Codex, GitHub, your git identity and a browser, and only asks about what's missing. Each failed check has one fix: an install command, or a **Sign in** button that runs the tool's own login in an embedded terminal.
+1. The **setup checklist** detects Claude Code, Codex, opencode, GitHub, your git identity and a browser, and only asks about what's missing. Each failed check has one fix: an install command, or a **Sign in** button that runs the tool's own login in an embedded terminal.
 2. **Add a project:** pick a local folder (a server-side folder picker) or paste a GitHub URL to clone.
 3. **Start a session.** The agent works in its own git worktree and branch, so your checkout is never touched.
 
@@ -158,7 +158,7 @@ When an agent finishes, CodeDen suggests two to four next prompts as one-click c
 ```
 
 - **Two processes.** The **server** owns the database, orchestration, the inbox, automations and GitHub sync, and serves the UI. The **runner** hosts the agent processes, terminals, the browser and git. If the server restarts (an update, a crash), running agents keep going; the runner journals their events until the server is back.
-- **Real SDKs and protocols.** Claude Code runs through the Claude Agent SDK using your installed `claude` binary; Codex runs through `codex app-server` over JSON-RPC. No scraped terminal output.
+- **Real SDKs and protocols.** Claude Code runs through the Claude Agent SDK using your installed `claude` binary; Codex runs through `codex app-server` over JSON-RPC; opencode runs through one `opencode serve` per runner over its HTTP API and event stream. No scraped terminal output.
 - **Everything is an event.** Agent activity is an append-only event log in SQLite, so every action can be seen, replayed and traced to an issue, branch or PR.
 - **Agents reach CodeDen through MCP.** Each session gets a role-scoped token for CodeDen's internal MCP server (`report_progress`, `ask_user`, `create_pull_request`, `attach_evidence`, the browser tools, `generate_image`, ...). Tools outside a role are never listed.
 

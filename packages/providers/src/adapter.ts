@@ -41,6 +41,11 @@ export interface ProviderAdapter {
   openSession(opts: SessionOptions): Promise<ProviderSession>;
   /** One-shot, tool-less model calls for side jobs (§7.4), when the provider supports them. */
   utilityModel?(): UtilityModel;
+  /**
+   * Release what the adapter keeps running between sessions (a shared server process).
+   * Optional; called when the runner stops. Must not throw.
+   */
+  dispose?(): Promise<void>;
 }
 
 /** Options for `ProviderAdapter.refreshModels`. */

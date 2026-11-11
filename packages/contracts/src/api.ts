@@ -296,7 +296,7 @@ export type InboxCounts = z.infer<typeof InboxCounts>;
 
 // ---------------------------------------------------------------- first-run setup
 
-export const SetupToolId = z.enum(["claude", "codex", "gh", "git", "browser", "node"]);
+export const SetupToolId = z.enum(["claude", "codex", "opencode", "gh", "git", "browser", "node"]);
 export type SetupToolId = z.infer<typeof SetupToolId>;
 
 /** A command the UI runs in its embedded terminal to fix a check (§14 step 3). */
@@ -386,7 +386,7 @@ export type RefreshModelsResponse = z.infer<typeof RefreshModelsResponse>;
 
 /** `POST /api/setup/login/:tool` response: what to run in a terminal. */
 export const LoginCommandResponse = z.object({
-  tool: z.enum(["claude", "codex", "gh"]),
+  tool: z.enum(["claude", "codex", "opencode", "gh"]),
   command: z.string(),
   args: z.array(z.string()),
 });

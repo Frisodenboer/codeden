@@ -41,8 +41,8 @@ export interface SetupServiceDeps {
   onChecked?: (status: SetupStatus) => void;
 }
 
-const ORDER: SetupToolId[] = ["claude", "codex", "gh", "git", "browser", "node"];
-const PROVIDERS: SetupToolId[] = ["claude", "codex"];
+const ORDER: SetupToolId[] = ["claude", "codex", "opencode", "gh", "git", "browser", "node"];
+const PROVIDERS: SetupToolId[] = ["claude", "codex", "opencode"];
 
 /**
  * First-run setup and re-checks on launch (§14). Runs every detection in parallel with a

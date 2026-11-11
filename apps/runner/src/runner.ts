@@ -253,6 +253,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
       removeLock();
       stopProviderUpdates();
       await host.closeAll();
+      await Promise.all(registry.list().map((a) => a.dispose?.().catch(() => undefined)));
       await terminals.closeAll();
       await browserManager.shutdown().catch((error: unknown) => log(`browser: ${String(error)}`));
       await supervisor.killAll(opts.sweepDescendants ?? false);

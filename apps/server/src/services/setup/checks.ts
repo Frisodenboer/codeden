@@ -1,5 +1,5 @@
 import type { SetupCheck, SetupCommand, SetupToolId } from "@codeden/contracts";
-import { isElectronRuntime } from "@codeden/providers";
+import { isElectronRuntime, parseOpencodeAuthList } from "@codeden/providers";
 import type { Exec } from "../exec";
 import { type BrowserProbe, detectBrowser } from "./browsers";
 import {
@@ -22,6 +22,7 @@ export const MIN_NODE_MAJOR = 24;
 const LABELS: Record<SetupToolId, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  opencode: "opencode",
   gh: "GitHub CLI",
   git: "git",
   browser: "Browser",
@@ -34,6 +35,8 @@ function installFix(id: SetupToolId, platform: NodeJS.Platform): SetupCommand {
       return { kind: "install", command: "npm install -g @anthropic-ai/claude-code" };
     case "codex":
       return { kind: "install", command: "npm install -g @openai/codex" };
+    case "opencode":
+      return { kind: "install", command: "npm install -g opencode-ai" };
     case "gh":
       return {
         kind: "install",
@@ -191,6 +194,59 @@ ${status.stderr}`,
   };
 }
 
+/**
+ * opencode: installed, and at least one stored login (`opencode auth list`, names only; the keys
+ * stay in opencode's own store). opencode also reads keys from environment variables, so no
+ * stored login is a warning rather than a hard stop.
+ */
+export async function checkOpencode({
+  exec,
+  locate,
+  shell,
+  platform,
+}: CheckEnv): Promise<CheckResult> {
+  const tool = await lookupTool(locate, "opencode", base("opencode"), {
+    message: "opencode is not installed (optional, for GLM and other models)",
+    fix: installFix("opencode", platform),
+  });
+  if (!tool.found) return tool.result;
+  const installed = {
+    ...base("opencode"),
+    ...tool.extra,
+    installed: true,
+    version: tool.version,
+    executablePath: tool.path,
+  };
+  const list = await exec(tool.path, ["auth", "list"], { timeoutMs: 15_000 });
+  if (list.code !== 0) {
+    return {
+      ...installed,
+      loggedIn: null,
+      state: "warning",
+      message: "Could not read opencode's logins",
+      detail: runDetail("opencode auth list", list),
+    };
+  }
+  const logins = parseOpencodeAuthList(`${list.stdout}\n${list.stderr}`);
+  if (logins.length === 0) {
+    return {
+      ...installed,
+      loggedIn: false,
+      state: "warning",
+      message: "opencode has no stored logins (add one, e.g. Z.AI Coding Plan for GLM)",
+      fix: loginFix("opencode", shell, tool.path),
+    };
+  }
+  return {
+    ...installed,
+    loggedIn: true,
+    authMethod: "api_key",
+    account: logins.join(", "),
+    state: "ok",
+    message: `Signed in (${logins.join(", ")})`,
+  };
+}
+
 export async function checkGh({ exec, locate, shell, platform }: CheckEnv): Promise<CheckResult> {
   const tool = await lookupTool(locate, "gh", base("gh"), {
     message: "GitHub CLI is not installed (optional)",
@@ -320,6 +376,7 @@ export async function checkNode({ nodeVersion, platform }: CheckEnv): Promise<Ch
 export const CHECKS: Record<SetupToolId, (env: CheckEnv) => Promise<CheckResult>> = {
   claude: checkClaude,
   codex: checkCodex,
+  opencode: checkOpencode,
   gh: checkGh,
   git: checkGit,
   browser: checkBrowser,

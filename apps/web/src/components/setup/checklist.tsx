@@ -34,12 +34,13 @@ type RowState = SetupCheck["state"] | "checking";
 const PENDING: { id: string; label: string }[] = [
   { id: "claude", label: "Claude Code" },
   { id: "codex", label: "Codex" },
+  { id: "opencode", label: "opencode" },
   { id: "gh", label: "GitHub CLI" },
   { id: "git", label: "git identity" },
   { id: "browser", label: "Browser for agents" },
 ];
 
-const PROVIDERS = new Set(["claude", "codex"]);
+const PROVIDERS = new Set(["claude", "codex", "opencode"]);
 
 const fixLabel: Record<NonNullable<SetupCheck["fix"]>["kind"], string> = {
   install: "Install",

@@ -1,6 +1,6 @@
 # Plan: opencode as a CodeBench provider (GLM without workarounds)
 
-Status: **planned** · Written 2026-11-11 · Owner: CodeBench fork (`Frisodenboer/codeden`)
+Status: **phases 1–4 done** (branch `feature/opencode-provider`); project pushes pending · Written 2026-11-11 · Owner: CodeBench fork (`Frisodenboer/codeden`)
 
 ## Why
 

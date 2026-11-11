@@ -22,6 +22,7 @@ export function execLocate(exec: Exec): Locate {
 export const LOGIN_COMMANDS = {
   claude: ["claude", "auth", "login"],
   codex: ["codex", "login"],
+  opencode: ["opencode", "auth", "login"],
   gh: ["gh", "auth", "login", "--web", "--git-protocol", "https"],
 } as const satisfies Record<string, readonly string[]>;
 
