@@ -29,6 +29,7 @@ import { plannerRoutes } from "./planner";
 import { projectFileRoutes } from "./project-files";
 import { projectRoutes } from "./projects";
 import { scheduledRoutes } from "./scheduled";
+import { sessionCommandRoutes } from "./session-commands";
 import { sessionFileRoutes } from "./session-files";
 import { sessionRoutes } from "./sessions";
 import { artifactRoutes, fileRoutes, providerRoutes, secretRoutes, setupRoutes } from "./system";
@@ -87,6 +88,7 @@ export function createApi(ctx: ApiContext) {
     .route("/", speechRoutes(s))
     .route("/sessions", sessionAgentConfigRoutes(s))
     .route("/sessions", sessionFileRoutes(s))
+    .route("/sessions", sessionCommandRoutes(s))
     .route("/projects", projectFileRoutes(s))
     .route("/scheduled", scheduledRoutes(s))
     .route("/planner", plannerRoutes(s))

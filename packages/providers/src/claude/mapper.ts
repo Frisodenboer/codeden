@@ -283,6 +283,18 @@ export class ClaudeEventMapper {
       this.subagents.onTaskStarted(msg);
     } else if (msg.subtype === "task_notification") {
       this.subagents.onTaskNotification(msg);
+    } else if (msg.subtype === "local_command_output") {
+      // Output of a slash command Claude Code runs itself (/context, /usage, ...): show it as a
+      // reply, the way the terminal does.
+      const text = str(msg, "content") ?? "";
+      if (text.trim()) {
+        this.item(this.rootCtx(), "item.completed", {
+          id: `local-command-${this.newId()}`,
+          kind: "assistant_message",
+          status: "completed",
+          text,
+        });
+      }
     } else if (msg.subtype === "compact_boundary") {
       this.item(this.rootCtx(), "item.completed", compactedNotice(this.takeCompactNoticeId()));
     } else if (msg.subtype === "api_retry") {

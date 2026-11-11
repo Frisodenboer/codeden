@@ -376,3 +376,19 @@ describe("ClaudeEventMapper", () => {
     });
   });
 });
+
+describe("slash command output", () => {
+  it("shows a local command's output (/context, /usage) as a reply", () => {
+    const { mapper, events } = setup();
+    mapper.handle({
+      type: "system",
+      subtype: "local_command_output",
+      content: "Context: 42k / 200k",
+    });
+    const items = events.filter(
+      (e) => e.type === "item.completed" && "item" in e && e.item.kind === "assistant_message",
+    );
+    expect(items).toHaveLength(1);
+    expect(JSON.stringify(items[0])).toContain("Context: 42k / 200k");
+  });
+});
