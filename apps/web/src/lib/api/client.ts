@@ -10,6 +10,8 @@ import type {
   DiffResult,
   DiffScope,
   DisconnectGithubResponse,
+  FollowUp,
+  FollowUpInput,
   FsListResponse,
   GitCommitRequest,
   GitCommitResponse,
@@ -197,6 +199,9 @@ export interface CodeDenClient {
   updateIdea(id: string, patch: IdeaPatch): Promise<Idea>;
   deleteIdea(id: string): Promise<void>;
   dismissAgendaItem(id: string): Promise<void>;
+  addFollowUp(input: FollowUpInput): Promise<FollowUp>;
+  setFollowUpDone(id: string, done: boolean): Promise<FollowUp>;
+  deleteFollowUp(id: string): Promise<void>;
   searchMentions(sessionId: string, query: string): Promise<MentionCandidate[]>;
   listSlashCommands(sessionId: string): Promise<SlashCommand[]>;
   openTerminal(opts: OpenTerminalOptions): TerminalChannel;

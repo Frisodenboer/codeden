@@ -4,6 +4,7 @@ import {
   CreateProjectResponse,
   DiffResult,
   DisconnectGithubResponse,
+  FollowUp,
   FsListResponse,
   GitCommitResponse,
   GitPushResponse,
@@ -190,6 +191,12 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     },
     async dismissAgendaItem(id) {
       await post("/planner/dismiss", { id });
+    },
+    addFollowUp: (input) => post("/planner/follow-ups", input, (v) => FollowUp.parse(v)),
+    setFollowUpDone: (id, done) =>
+      call("PATCH", `/planner/follow-ups/${enc(id)}`, { done }, (v) => FollowUp.parse(v)),
+    async deleteFollowUp(id) {
+      await call("DELETE", `/planner/follow-ups/${enc(id)}`);
     },
     async searchMentions(id, query) {
       const cached = fileCache.get(id);

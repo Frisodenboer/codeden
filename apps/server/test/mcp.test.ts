@@ -85,6 +85,7 @@ describe("CodeDen MCP endpoint", () => {
       "browser_wait",
       "browser_evaluate",
       "browser_open_dev_server",
+      "add_follow_up",
     ]);
     expect(tools[0]?._meta).toEqual({ "anthropic/alwaysLoad": true });
     await client.close();
@@ -121,6 +122,7 @@ describe("CodeDen MCP endpoint", () => {
       "schedule_wakeup",
       "list_wakeups",
       "cancel_wakeup",
+      "add_follow_up",
     ]);
     await pm.close();
   });

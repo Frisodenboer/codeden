@@ -14,6 +14,7 @@ import {
 import { browserScreenshot } from "./browser-screenshot";
 import { factoryTools } from "./factory";
 import { finish } from "./finish";
+import { followUpTools } from "./follow-ups";
 import { generateImage } from "./generate-image";
 import { githubTools } from "./github";
 import { orchestratorTools } from "./orchestrator";
@@ -44,6 +45,7 @@ export const allTools: AnyServerTool[] = [
   ...orchestratorTools,
   ...pmTools,
   ...wakeupTools,
+  ...followUpTools,
   ...githubTools,
   ...factoryTools,
 ];

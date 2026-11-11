@@ -17,7 +17,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe("planner store", () => {
   it("starts empty and keeps events across reads", () => {
     const store = new PlannerStore(file);
-    expect(store.read()).toEqual({ events: [], ideas: [], dismissed: [] });
+    expect(store.read()).toEqual({ events: [], ideas: [], followUps: [], dismissed: [] });
     const e = store.createEvent({ title: "Dentist", at: "2026-11-20T09:00:00.000Z" });
     expect(e).toMatchObject({ allDay: false, repeat: "none", endAt: null, notes: "" });
     expect(new PlannerStore(file).read().events).toHaveLength(1);
@@ -51,8 +51,26 @@ describe("planner store", () => {
   it("sets a broken file aside instead of overwriting it", () => {
     writeFileSync(file, "{ not json");
     const store = new PlannerStore(file);
-    expect(store.read()).toEqual({ events: [], ideas: [], dismissed: [] });
+    expect(store.read()).toEqual({ events: [], ideas: [], followUps: [], dismissed: [] });
     expect(existsSync(file)).toBe(false);
     expect(readdirSync(dir).some((f) => f.startsWith("planner.json.broken-"))).toBe(true);
+  });
+});
+
+describe("follow-ups", () => {
+  it("adds once per open title, ticks off and removes", () => {
+    const store = new PlannerStore(file);
+    const from = { addedBy: "pm" as const, sessionId: "s1" };
+    const a = store.addFollowUp({ title: "Switch on the GBP automation", projectId: "p1" }, from);
+    const again = store.addFollowUp(
+      { title: "switch on the gbp automation", projectId: "p1" },
+      from,
+    );
+    expect(again.id).toBe(a.id);
+    expect(store.read().followUps).toHaveLength(1);
+    expect(store.setFollowUpDone(a.id, true).doneAt).not.toBeNull();
+    expect(store.setFollowUpDone(a.id, false).doneAt).toBeNull();
+    store.deleteFollowUp(a.id);
+    expect(store.read().followUps).toEqual([]);
   });
 });

@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 import {
   type CalendarEvent,
   CalendarEventInput,
+  type FollowUp,
+  FollowUpInput,
   type Idea,
   IdeaInput,
   type IdeaPatch,
@@ -19,13 +21,13 @@ export class PlannerStore {
   constructor(private readonly file: string) {}
 
   read(): Planner {
-    if (!existsSync(this.file)) return { events: [], ideas: [], dismissed: [] };
+    if (!existsSync(this.file)) return { events: [], ideas: [], followUps: [], dismissed: [] };
     try {
       return Planner.parse(JSON.parse(readFileSync(this.file, "utf8")));
     } catch {
       // Keep a broken file aside instead of overwriting it with an empty planner.
       renameSync(this.file, `${this.file}.broken-${Date.now()}`);
-      return { events: [], ideas: [], dismissed: [] };
+      return { events: [], ideas: [], followUps: [], dismissed: [] };
     }
   }
 
@@ -90,6 +92,49 @@ export class PlannerStore {
     planner.ideas[i] = idea;
     this.write(planner);
     return idea;
+  }
+
+  /** Add a follow-up (from an agent's `add_follow_up`, or the user). Same open title twice is one. */
+  addFollowUp(
+    input: unknown,
+    from: { addedBy: FollowUp["addedBy"]; sessionId: string | null },
+  ): FollowUp {
+    const v = FollowUpInput.parse(input);
+    const planner = this.read();
+    const same = planner.followUps.find(
+      (f) =>
+        !f.doneAt && f.projectId === v.projectId && f.title.toLowerCase() === v.title.toLowerCase(),
+    );
+    if (same) return same;
+    const item: FollowUp = {
+      id: randomUUID(),
+      ...v,
+      ...from,
+      createdAt: new Date().toISOString(),
+      doneAt: null,
+    };
+    // Keep the newest 500.
+    this.write({ ...planner, followUps: [...planner.followUps, item].slice(-500) });
+    return item;
+  }
+
+  setFollowUpDone(id: string, done: boolean): FollowUp {
+    const planner = this.read();
+    const i = planner.followUps.findIndex((f) => f.id === id);
+    const current = planner.followUps[i];
+    if (!current) throw notFound("No such follow-up", "follow_up_not_found");
+    const item = { ...current, doneAt: done ? (current.doneAt ?? new Date().toISOString()) : null };
+    planner.followUps[i] = item;
+    this.write(planner);
+    return item;
+  }
+
+  deleteFollowUp(id: string): void {
+    const planner = this.read();
+    const next = planner.followUps.filter((f) => f.id !== id);
+    if (next.length === planner.followUps.length)
+      throw notFound("No such follow-up", "follow_up_not_found");
+    this.write({ ...planner, followUps: next });
   }
 
   /** Remember that the user removed a done agenda item (keeps the newest 2000). */

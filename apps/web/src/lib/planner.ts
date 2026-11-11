@@ -4,6 +4,7 @@ import type {
   Idea,
   IdeaInput,
   IdeaPatch,
+  Planner,
 } from "@codeden/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -80,6 +81,37 @@ export function usePlannerActions() {
       },
       onSettled: done,
       onError: fail("Couldn't remove the item"),
+    }),
+    addFollowUp: useMutation({
+      mutationFn: (input: { title: string; projectId?: string | null }) =>
+        client.addFollowUp(input),
+      onSuccess: done,
+      onError: fail("Couldn't add the follow-up"),
+    }),
+    setFollowUpDone: useMutation({
+      mutationFn: ({ id, done: isDone }: { id: string; done: boolean }) =>
+        client.setFollowUpDone(id, isDone),
+      onMutate: async ({ id, done: isDone }) => {
+        // Tick it right away; the server answer confirms it.
+        await queryClient.cancelQueries({ queryKey: plannerKey });
+        queryClient.setQueryData<Planner>(plannerKey, (old) =>
+          old
+            ? {
+                ...old,
+                followUps: old.followUps.map((f) =>
+                  f.id === id ? { ...f, doneAt: isDone ? new Date().toISOString() : null } : f,
+                ),
+              }
+            : old,
+        );
+      },
+      onSettled: done,
+      onError: fail("Couldn't update the follow-up"),
+    }),
+    deleteFollowUp: useMutation({
+      mutationFn: (id: string) => client.deleteFollowUp(id),
+      onSuccess: done,
+      onError: fail("Couldn't remove the follow-up"),
     }),
     deleteIdea: useMutation({
       mutationFn: (id: string) => client.deleteIdea(id),

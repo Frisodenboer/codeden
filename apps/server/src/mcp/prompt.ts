@@ -28,7 +28,8 @@ CodeBench tools are on the \`${MCP_SERVER_NAME}\` MCP server:
 - \`generate_image\` (when listed): create images into your worktree, e.g. \`public/hero.png\`.
 - GitHub projects: \`create_pull_request\` pushes your branch and opens the PR (linked to your issue and this session); \`attach_evidence\` posts screenshots, files and test output on it; \`comment_on_issue\` and \`get_pr_status\` (checks, reviews, mergeability).
 - \`finish\`: record the outcome and a short summary once your assigned task is done.
-- \`suggest_followups\`: 2 to 4 short next prompts the user might send, including optional next steps you would otherwise ask about. Call it as the last action of every turn.`;
+- \`suggest_followups\`: 2 to 4 short next prompts the user might send, including optional next steps you would otherwise ask about. Call it as the last action of every turn.
+- \`add_follow_up\`: when you tell the user to do something themselves (approve, merge, sign in, switch something on, check a page), add it to their Follow-ups list in the same turn.`;
 
 /** Where the agent works: its own worktree, or a folder it shares with the user. */
 function workspaceLine(session: PromptSession): string {

@@ -68,9 +68,39 @@ export const IdeaPatch = z.object({
 });
 export type IdeaPatch = z.infer<typeof IdeaPatch>;
 
+/**
+ * A follow-up: something still to be done, usually for the user (switch an automation on,
+ * approve something, log in). Agents add these with `add_follow_up` when they ask the user to
+ * act; the user ticks them off and removes them.
+ */
+export const FollowUp = z.object({
+  id: z.string(),
+  title: z.string().min(1).max(300),
+  detail: z.string().max(2000),
+  projectId: z.string().nullable(),
+  /** The session that added it (null when the user added it). */
+  sessionId: z.string().nullable(),
+  /** Who added it, for the label: "orchestrator", "pm", "agent" or "you". */
+  addedBy: z.enum(["orchestrator", "pm", "agent", "you"]),
+  createdAt: z.string(),
+  doneAt: z.string().nullable(),
+});
+export type FollowUp = z.infer<typeof FollowUp>;
+
+export const FollowUpInput = z.object({
+  title: z.string().trim().min(1).max(300),
+  detail: z.string().max(2000).default(""),
+  projectId: z.string().nullable().default(null),
+});
+export type FollowUpInput = z.input<typeof FollowUpInput>;
+
+export const FollowUpPatch = z.object({ done: z.boolean() });
+export type FollowUpPatch = z.infer<typeof FollowUpPatch>;
+
 export const Planner = z.object({
   events: z.array(CalendarEvent),
   ideas: z.array(Idea),
+  followUps: z.array(FollowUp).default([]),
   /** Ids of done agenda items the user removed (see `DoneItem`, and `event:<id>:<start>`). */
   dismissed: z.array(z.string()).default([]),
 });

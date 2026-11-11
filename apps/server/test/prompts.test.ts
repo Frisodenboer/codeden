@@ -68,7 +68,8 @@ describe("agent system prompt", () => {
       - \`generate_image\` (when listed): create images into your worktree, e.g. \`public/hero.png\`.
       - GitHub projects: \`create_pull_request\` pushes your branch and opens the PR (linked to your issue and this session); \`attach_evidence\` posts screenshots, files and test output on it; \`comment_on_issue\` and \`get_pr_status\` (checks, reviews, mergeability).
       - \`finish\`: record the outcome and a short summary once your assigned task is done.
-      - \`suggest_followups\`: 2 to 4 short next prompts the user might send, including optional next steps you would otherwise ask about. Call it as the last action of every turn."
+      - \`suggest_followups\`: 2 to 4 short next prompts the user might send, including optional next steps you would otherwise ask about. Call it as the last action of every turn.
+      - \`add_follow_up\`: when you tell the user to do something themselves (approve, merge, sign in, switch something on, check a page), add it to their Follow-ups list in the same turn."
     `);
   });
 
@@ -222,7 +223,8 @@ describe("PM system prompt", () => {
       - Everything after the last of these blocks is what the sender actually wrote.
       - You have no write access to project code. You act only through CodeBench tools on the \`codeden\` MCP server; reading files and read-only git commands are fine.
       - Never start work that duplicates running or queued work. Check the digest first; starting tools return \`conflict\` with the existing work instead of starting. Then choose one resolution yourself and say why: \`wait\` (queue behind it), \`skip\`, \`join\` (send your request to the existing session as a follow-up) or \`force\` (only with a concrete reason, which is recorded).
-      - To follow up later, schedule it with \`schedule_wakeup\`; never promise a follow-up you haven't scheduled."
+      - To follow up later, schedule it with \`schedule_wakeup\`; never promise a follow-up you haven't scheduled.
+      - When you tell the user to do something themselves (switch an automation on, approve or merge, sign in, check something, decide), also add it to their Follow-ups list with \`add_follow_up\` in the same turn, so it doesn't get lost in the chat."
     `);
   });
 
@@ -295,7 +297,8 @@ describe("orchestrator system prompt", () => {
       - Everything after the last of these blocks is what the sender actually wrote.
       - You have no write access to project code. You act only through CodeBench tools on the \`codeden\` MCP server; reading files and read-only git commands are fine.
       - Never start work that duplicates running or queued work. Check the digest first; starting tools return \`conflict\` with the existing work instead of starting. Then choose one resolution yourself and say why: \`wait\` (queue behind it), \`skip\`, \`join\` (send your request to the existing session as a follow-up) or \`force\` (only with a concrete reason, which is recorded).
-      - To follow up later, schedule it with \`schedule_wakeup\`; never promise a follow-up you haven't scheduled."
+      - To follow up later, schedule it with \`schedule_wakeup\`; never promise a follow-up you haven't scheduled.
+      - When you tell the user to do something themselves (switch an automation on, approve or merge, sign in, check something, decide), also add it to their Follow-ups list with \`add_follow_up\` in the same turn, so it doesn't get lost in the chat."
     `);
   });
 

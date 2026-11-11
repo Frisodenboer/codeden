@@ -1,5 +1,12 @@
 import { join } from "node:path";
-import { CalendarEventInput, DismissAgendaItem, IdeaInput, IdeaPatch } from "@codeden/contracts";
+import {
+  CalendarEventInput,
+  DismissAgendaItem,
+  FollowUpInput,
+  FollowUpPatch,
+  IdeaInput,
+  IdeaPatch,
+} from "@codeden/contracts";
 import { Hono } from "hono";
 import type { AppServices } from "../services/container";
 import { PlannerStore } from "../services/planner/planner-store";
@@ -24,6 +31,16 @@ export function plannerRoutes(s: AppServices) {
     .patch("/ideas/:id", jsonBody(IdeaPatch), (c) =>
       c.json(store.updateIdea(c.req.param("id"), c.req.valid("json"))),
     )
+    .post("/follow-ups", jsonBody(FollowUpInput), (c) =>
+      c.json(store.addFollowUp(c.req.valid("json"), { addedBy: "you", sessionId: null }), 201),
+    )
+    .patch("/follow-ups/:id", jsonBody(FollowUpPatch), (c) =>
+      c.json(store.setFollowUpDone(c.req.param("id"), c.req.valid("json").done)),
+    )
+    .delete("/follow-ups/:id", (c) => {
+      store.deleteFollowUp(c.req.param("id"));
+      return c.json({ ok: true });
+    })
     .post("/dismiss", jsonBody(DismissAgendaItem), (c) => {
       store.dismiss(c.req.valid("json").id);
       return c.json({ ok: true });

@@ -64,6 +64,9 @@ type WorkbenchApi = Pick<
   | "updateIdea"
   | "deleteIdea"
   | "dismissAgendaItem"
+  | "addFollowUp"
+  | "setFollowUpDone"
+  | "deleteFollowUp"
   | "searchMentions"
   | "listSlashCommands"
   | "openTerminal"
@@ -223,7 +226,30 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
       delay({ ok: true as const, path: op.op === "rename" ? op.to : op.path }),
     getScheduled: () => delay({ runs: [], wakeups: [], planned: [], done: [] }),
     cancelWakeup: async () => {},
-    getPlanner: () => delay({ events: [], ideas: [], dismissed: [] }),
+    getPlanner: () => delay({ events: [], ideas: [], followUps: [], dismissed: [] }),
+    addFollowUp: (input) =>
+      delay({
+        id: "mock-follow-up",
+        title: input.title,
+        detail: input.detail ?? "",
+        projectId: input.projectId ?? null,
+        sessionId: null,
+        addedBy: "you" as const,
+        createdAt: new Date().toISOString(),
+        doneAt: null,
+      }),
+    setFollowUpDone: (id, done) =>
+      delay({
+        id,
+        title: "Follow-up",
+        detail: "",
+        projectId: null,
+        sessionId: null,
+        addedBy: "you" as const,
+        createdAt: new Date().toISOString(),
+        doneAt: done ? new Date().toISOString() : null,
+      }),
+    deleteFollowUp: async () => {},
     dismissAgendaItem: async () => {},
     createEvent: (input) =>
       delay({

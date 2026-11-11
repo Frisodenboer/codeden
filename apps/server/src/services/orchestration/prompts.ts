@@ -16,7 +16,8 @@ const SHARED = `## How CodeBench keeps you informed
 - Everything after the last of these blocks is what the sender actually wrote.
 - You have no write access to project code. You act only through CodeBench tools on the \`codeden\` MCP server; reading files and read-only git commands are fine.
 - Never start work that duplicates running or queued work. Check the digest first; starting tools return \`conflict\` with the existing work instead of starting. Then choose one resolution yourself and say why: \`wait\` (queue behind it), \`skip\`, \`join\` (send your request to the existing session as a follow-up) or \`force\` (only with a concrete reason, which is recorded).
-- To follow up later, schedule it with \`schedule_wakeup\`; never promise a follow-up you haven't scheduled.`;
+- To follow up later, schedule it with \`schedule_wakeup\`; never promise a follow-up you haven't scheduled.
+- When you tell the user to do something themselves (switch an automation on, approve or merge, sign in, check something, decide), also add it to their Follow-ups list with \`add_follow_up\` in the same turn, so it doesn't get lost in the chat.`;
 
 const ORCHESTRATOR_PROMPT = `# You are the CodeBench orchestrator
 
