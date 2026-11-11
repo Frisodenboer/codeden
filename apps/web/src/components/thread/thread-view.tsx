@@ -30,7 +30,7 @@ function FollowupChips({
     mutationFn: (prompt: string) => client.sendMessage(sessionId, { text: prompt }, "send"),
   });
   return (
-    <div className="mx-auto flex w-full max-w-[46rem] flex-wrap items-center gap-1.5 px-6 pb-2">
+    <div className="mr-auto flex w-full max-w-[46rem] flex-wrap items-center gap-1.5 px-3 pb-3 sm:-mt-2 sm:px-6 sm:pb-4">
       <Sparkles className="mr-0.5 size-3.5 text-primary/70" />
       {suggestions.map((s) => (
         <button
@@ -55,7 +55,7 @@ function FollowupChips({
 
 function TranscriptSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-[46rem] space-y-5 px-6 pt-8">
+    <div className="mr-auto w-full max-w-[46rem] space-y-5 px-6 pt-8">
       <Skeleton className="ml-auto h-10 w-2/3 rounded-2xl" />
       <Skeleton className="h-4 w-1/2" />
       <Skeleton className="h-4 w-5/6" />
@@ -102,9 +102,9 @@ export function ThreadView({ sessionId, empty }: { sessionId: string; empty?: Re
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">{empty}</div>
       )}
-      {followups && !running && <FollowupChips sessionId={sessionId} suggestions={followups} />}
       <QueuedMessages session={session} running={running} />
       <Composer session={session} running={running} />
+      {followups && !running && <FollowupChips sessionId={sessionId} suggestions={followups} />}
     </div>
   );
 }

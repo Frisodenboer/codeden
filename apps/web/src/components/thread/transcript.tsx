@@ -85,7 +85,7 @@ export function Transcript({
         {/* Safety net: long words wrap, and nothing that still overflows can scroll sideways. */}
         <div
           className={cn(
-            "mx-auto w-full max-w-[46rem] overflow-x-clip px-6 pt-6 pb-4 wrap-break-word",
+            "mr-auto w-full max-w-[46rem] overflow-x-clip px-6 pt-6 pb-4 wrap-break-word",
             contentClassName,
           )}
         >

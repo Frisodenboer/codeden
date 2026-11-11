@@ -99,7 +99,7 @@ export function ComposerBox({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[46rem] px-3 pb-3 sm:px-6 sm:pb-5">
+    <div className="mr-auto w-full max-w-[46rem] px-3 pb-3 sm:px-6 sm:pb-5">
       <div className="relative">
         {menu}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for files; the textarea and attach button stay keyboard accessible. */}

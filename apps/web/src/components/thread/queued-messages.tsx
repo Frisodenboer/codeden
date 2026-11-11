@@ -217,7 +217,7 @@ export function QueuedMessages({ session, running }: { session: Session; running
     <section
       aria-label="Queued messages"
       data-testid="queued-messages"
-      className="mx-auto w-full max-w-[46rem] px-6 pb-2"
+      className="mr-auto w-full max-w-[46rem] px-6 pb-2"
     >
       <div className="overflow-hidden rounded-xl border border-border bg-card/70 shadow-xs animate-rise">
         <div className="flex items-center gap-1.5 border-b border-border/70 px-3 py-1.5 text-3xs text-muted-foreground">
