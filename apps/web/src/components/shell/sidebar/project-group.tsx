@@ -1,7 +1,7 @@
 import type { Project, Session } from "@codeden/contracts";
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
-import { Link } from "@tanstack/react-router";
-import { Archive, Bot, ChevronRight, GripVertical, House, Plus } from "lucide-react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Archive, Bot, ChevronRight, Files, GripVertical, House, Plus } from "lucide-react";
 import { type CSSProperties, useState } from "react";
 import { StatusDot } from "@/components/common/status-dot";
 import { statusTone } from "@/lib/format";
@@ -69,6 +69,11 @@ export function ProjectGroup({
 }) {
   const open = useLayoutStore((s) => s.expandedProjects[project.id] ?? false);
   const toggle = useLayoutStore((s) => s.toggleProject);
+  const navigate = useNavigate();
+  // On a project's Files page, clicking another project switches the file manager to it.
+  const onFilesPage = useRouterState({
+    select: (s) => /^\/projects\/[^/]+\/files$/.test(s.location.pathname),
+  });
   const [showAll, setShowAll] = useState(false);
   const homeActive = useIsActive(`/projects/${project.id}`, false);
   const menu = useRowMenu();
@@ -110,7 +115,15 @@ export function ProjectGroup({
           </button>
           <button
             type="button"
-            onClick={() => toggle(project.id)}
+            onClick={() => {
+              if (onFilesPage) {
+                void navigate({
+                  to: "/projects/$projectId/files",
+                  params: { projectId: project.id },
+                });
+                if (!open) toggle(project.id);
+              } else toggle(project.id);
+            }}
             className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none"
             aria-expanded={open}
           >
@@ -171,6 +184,14 @@ export function ProjectGroup({
               PM
             </span>
             {pm && <StatusDot status={pm.status} />}
+          </NavRow>
+          <NavRow
+            href={`/projects/${project.id}/files`}
+            link={{ to: "/projects/$projectId/files", params: { projectId: project.id } }}
+            className={childRow}
+          >
+            <Files className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="flex-1 truncate">Files</span>
           </NavRow>
           {visible.map((s) => (
             <SessionRow key={s.id} session={s} />

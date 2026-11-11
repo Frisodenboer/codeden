@@ -20,6 +20,7 @@ import { PmPage } from "@/routes/pm";
 import { ProjectPage, type ProjectTab } from "@/routes/project";
 import { ProjectFilesPage } from "@/routes/project-files";
 import { ReportsPage } from "@/routes/reports";
+import { ScheduledPage } from "@/routes/scheduled";
 import { SessionPage } from "@/routes/session";
 import { SettingsPage } from "@/routes/settings";
 import { SetupPage } from "@/routes/setup";
@@ -196,6 +197,7 @@ const routeTree = rootRoute.addChildren([
   shell.addChildren([
     createRoute({ getParentRoute: () => shell, path: "/", component: HomePage }),
     createRoute({ getParentRoute: () => shell, path: "/inbox", component: InboxPage }),
+    createRoute({ getParentRoute: () => shell, path: "/scheduled", component: ScheduledPage }),
     reportsRoute,
     sessionRoute,
     projectRoute,

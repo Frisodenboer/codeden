@@ -2,6 +2,7 @@ import type { Session } from "@codeden/contracts";
 import { Link } from "@tanstack/react-router";
 import {
   Bot,
+  CalendarClock,
   ChartColumnBig,
   FolderPlus,
   Inbox,
@@ -153,6 +154,10 @@ export function Sidebar({ width, onClose }: { width: number | string; onClose?: 
               {inbox.length}
             </span>
           )}
+        </NavRow>
+        <NavRow href="/scheduled" link={{ to: "/scheduled" }}>
+          <CalendarClock className="size-4 text-muted-foreground" />
+          <span className="flex-1">Scheduled</span>
         </NavRow>
         <NavRow href="/reports" link={{ to: "/reports" }}>
           <ChartColumnBig className="size-4 text-muted-foreground" />

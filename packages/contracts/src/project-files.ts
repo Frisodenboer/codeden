@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ScheduledRun } from "./work";
 
 /**
  * The project file manager: browse and manage the files of a project's main checkout
@@ -28,3 +29,32 @@ export const ProjectFileOpResponse = z.object({
   path: z.string(),
 });
 export type ProjectFileOpResponse = z.infer<typeof ProjectFileOpResponse>;
+
+/**
+ * `GET /api/scheduled`: everything set to run later, across all projects — upcoming automation
+ * runs and the pending wake-ups the orchestrator and PMs scheduled for themselves.
+ */
+export const ScheduledWakeup = z.object({
+  id: z.string(),
+  /** Who it wakes: the orchestrator, or a project's PM. */
+  target: z.enum(["orchestrator", "pm"]),
+  projectId: z.string().nullable(),
+  at: z.string(),
+  note: z.string(),
+});
+export type ScheduledWakeup = z.infer<typeof ScheduledWakeup>;
+
+export const ScheduledOverview = z.object({
+  /** Upcoming automation runs, soonest first. */
+  runs: z.array(ScheduledRun),
+  /** Pending wake-ups, soonest first. */
+  wakeups: z.array(ScheduledWakeup),
+});
+export type ScheduledOverview = z.infer<typeof ScheduledOverview>;
+
+/** `DELETE /api/scheduled/wakeups/:id` query: whose wake-up it is. */
+export const CancelWakeupQuery = z.object({
+  target: z.enum(["orchestrator", "pm"]),
+  projectId: z.string().optional(),
+});
+export type CancelWakeupQuery = z.infer<typeof CancelWakeupQuery>;

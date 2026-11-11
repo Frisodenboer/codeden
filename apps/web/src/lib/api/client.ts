@@ -25,6 +25,7 @@ import type {
   RestoreFilesRequest,
   RestoreFilesResponse,
   RuntimeResponse,
+  ScheduledOverview,
   Session,
   SessionDetail,
   SessionFileContent,
@@ -180,6 +181,8 @@ export interface CodeDenClient {
   listProjectFiles(projectId: string): Promise<SessionFileList>;
   readProjectFile(projectId: string, path: string): Promise<SessionFileContent>;
   projectFileOp(projectId: string, op: ProjectFileOp): Promise<ProjectFileOpResponse>;
+  getScheduled(): Promise<ScheduledOverview>;
+  cancelWakeup(id: string, target: "orchestrator" | "pm", projectId: string | null): Promise<void>;
   searchMentions(sessionId: string, query: string): Promise<MentionCandidate[]>;
   listSlashCommands(sessionId: string): Promise<SlashCommand[]>;
   openTerminal(opts: OpenTerminalOptions): TerminalChannel;

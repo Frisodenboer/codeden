@@ -54,6 +54,8 @@ type WorkbenchApi = Pick<
   | "listProjectFiles"
   | "readProjectFile"
   | "projectFileOp"
+  | "getScheduled"
+  | "cancelWakeup"
   | "searchMentions"
   | "listSlashCommands"
   | "openTerminal"
@@ -211,6 +213,8 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
     },
     projectFileOp: (_projectId, op) =>
       delay({ ok: true as const, path: op.op === "rename" ? op.to : op.path }),
+    getScheduled: () => delay({ runs: [], wakeups: [] }),
+    cancelWakeup: async () => {},
     searchMentions: (_sessionId, query) => {
       const q = query.toLowerCase();
       const hits = allPaths()

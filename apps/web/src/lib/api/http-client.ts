@@ -15,6 +15,7 @@ import {
   RefreshProjectResponse,
   ReorderProjectsResponse,
   RestoreFilesResponse,
+  ScheduledOverview,
   type SendMessageRequestInit,
   SessionDetail,
   SessionFileContent,
@@ -166,6 +167,11 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
       ),
     projectFileOp: (id, op) =>
       post(`/projects/${enc(id)}/files/ops`, op, (v) => ProjectFileOpResponse.parse(v)),
+    getScheduled: () => get("/scheduled", (v) => ScheduledOverview.parse(v)),
+    async cancelWakeup(id, target, projectId) {
+      const qs = `?target=${target}${projectId ? `&projectId=${enc(projectId)}` : ""}`;
+      await call("DELETE", `/scheduled/wakeups/${enc(id)}${qs}`);
+    },
     async searchMentions(id, query) {
       const cached = fileCache.get(id);
       const list =
