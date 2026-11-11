@@ -7,7 +7,7 @@ import { ApiRequestError, ClientProvider, createClient } from "@/lib/api";
 import { platform } from "@/lib/platform";
 import { startRealtime } from "@/lib/realtime";
 import { router } from "@/router";
-import { applyTheme, useThemeStore } from "@/stores/theme";
+import { applyFontStyle, applyTheme, useThemeStore } from "@/stores/theme";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -25,7 +25,11 @@ const queryClient = new QueryClient({
 const client = createClient();
 
 applyTheme(useThemeStore.getState().preference);
-useThemeStore.subscribe((s) => applyTheme(s.preference));
+applyFontStyle(useThemeStore.getState().fontStyle);
+useThemeStore.subscribe((s) => {
+  applyTheme(s.preference);
+  applyFontStyle(s.fontStyle);
+});
 startRealtime(client, queryClient);
 // `codeden://` links opened while the desktop app runs (§17).
 platform.onNavigate((path) => router.history.push(path));

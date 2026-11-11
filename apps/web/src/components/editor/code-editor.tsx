@@ -38,7 +38,7 @@ const theme = EditorView.theme({
     color: "var(--foreground)",
   },
   ".cm-scroller": {
-    fontFamily: '"Geist Mono Variable", ui-monospace, monospace',
+    fontFamily: "var(--font-mono)",
     lineHeight: "1.65",
   },
   ".cm-content": { padding: "14px 0", caretColor: "var(--primary)" },

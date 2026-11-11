@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { type ThemePreference, useThemeStore } from "@/stores/theme";
+import { type FontStyle, type ThemePreference, useThemeStore } from "@/stores/theme";
 import { CustomModelSettings } from "./custom-models";
 import { ModelVisibilitySettings } from "./model-visibility";
 import { Segmented, SettingRow, SettingsSection, useSettings } from "./settings-ui";
@@ -18,6 +18,8 @@ export function GeneralSettings() {
   const { settings, update } = useSettings();
   const preference = useThemeStore((s) => s.preference);
   const setPreference = useThemeStore((s) => s.setPreference);
+  const fontStyle = useThemeStore((s) => s.fontStyle);
+  const setFontStyle = useThemeStore((s) => s.setFontStyle);
   return (
     <>
       <SettingsSection title="Appearance">
@@ -32,6 +34,19 @@ export function GeneralSettings() {
               { value: "dark", label: "Dark" },
               { value: "light", label: "Light" },
               { value: "system", label: "System" },
+            ]}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Font style"
+          help="Terminal uses the monospace font across the whole interface."
+        >
+          <Segmented<FontStyle>
+            value={fontStyle}
+            onChange={setFontStyle}
+            options={[
+              { value: "default", label: "Default" },
+              { value: "terminal", label: "Terminal" },
             ]}
           />
         </SettingRow>

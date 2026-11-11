@@ -183,6 +183,12 @@
     @apply font-sans antialiased;
     color-scheme: light;
   }
+  /* "Terminal" font style (Settings > Appearance): monospace everywhere. */
+  html.font-terminal,
+  html.font-terminal .font-sans,
+  html.font-terminal .font-heading {
+    font-family: "Geist Mono Variable", ui-monospace, monospace;
+  }
   html.dark {
     color-scheme: dark;
   }
