@@ -6,6 +6,7 @@ import {
   FollowUpPatch,
   IdeaInput,
   IdeaPatch,
+  UserInput,
 } from "@codeden/contracts";
 import { Hono } from "hono";
 import type { AppServices } from "../services/container";
@@ -31,12 +32,22 @@ export function plannerRoutes(s: AppServices) {
     .patch("/ideas/:id", jsonBody(IdeaPatch), (c) =>
       c.json(store.updateIdea(c.req.param("id"), c.req.valid("json"))),
     )
-    .post("/follow-ups", jsonBody(FollowUpInput), (c) =>
-      c.json(store.addFollowUp(c.req.valid("json"), { addedBy: "you", sessionId: null }), 201),
-    )
-    .patch("/follow-ups/:id", jsonBody(FollowUpPatch), (c) =>
-      c.json(store.setFollowUpDone(c.req.param("id"), c.req.valid("json").done)),
-    )
+    .post("/follow-ups", jsonBody(FollowUpInput), (c) => {
+      const v = c.req.valid("json");
+      return c.json(store.addFollowUp(v, { addedBy: "you", sessionId: v.sessionId }), 201);
+    })
+    .patch("/follow-ups/:id", jsonBody(FollowUpPatch), async (c) => {
+      const { done, notify } = c.req.valid("json");
+      const before = store.read().followUps.find((f) => f.id === c.req.param("id"));
+      const item = store.setFollowUpDone(c.req.param("id"), done);
+      // Ticked off an item that came from a chat: tell that chat, so it can carry on.
+      if (done && notify && item.sessionId && !before?.doneAt) {
+        await tellChatDone(s, item.sessionId, item.title).catch((error) =>
+          console.warn(`follow-up ${item.id}: couldn't tell the chat it's done: ${String(error)}`),
+        );
+      }
+      return c.json(item);
+    })
     .delete("/follow-ups/:id", (c) => {
       store.deleteFollowUp(c.req.param("id"));
       return c.json({ ok: true });
@@ -49,4 +60,17 @@ export function plannerRoutes(s: AppServices) {
       store.deleteIdea(c.req.param("id"));
       return c.json({ ok: true });
     });
+}
+
+/** Send "Done: …" to the chat a follow-up came from (queued if it is busy). */
+async function tellChatDone(s: AppServices, sessionId: string, title: string): Promise<void> {
+  const session = s.sessionRepo.get(sessionId);
+  const input = UserInput.parse({ text: `Done: ${title}` });
+  if (session.role === "orchestrator") {
+    await s.orchestration.sendToRole("orchestrator", null, input, "queue");
+  } else if (session.role === "pm" && session.projectId) {
+    await s.orchestration.sendToRole("pm", session.projectId, input, "queue");
+  } else {
+    await s.sessions.send(sessionId, { input, whenBusy: "queue" });
+  }
 }

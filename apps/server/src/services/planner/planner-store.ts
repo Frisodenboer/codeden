@@ -109,7 +109,8 @@ export class PlannerStore {
     const item: FollowUp = {
       id: randomUUID(),
       ...v,
-      ...from,
+      addedBy: from.addedBy,
+      sessionId: from.sessionId ?? v.sessionId,
       createdAt: new Date().toISOString(),
       doneAt: null,
     };

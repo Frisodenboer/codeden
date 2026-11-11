@@ -1,6 +1,7 @@
 import type {
   CalendarEvent,
   CalendarEventInput,
+  FollowUpInput,
   Idea,
   IdeaInput,
   IdeaPatch,
@@ -83,8 +84,7 @@ export function usePlannerActions() {
       onError: fail("Couldn't remove the item"),
     }),
     addFollowUp: useMutation({
-      mutationFn: (input: { title: string; projectId?: string | null }) =>
-        client.addFollowUp(input),
+      mutationFn: (input: FollowUpInput) => client.addFollowUp(input),
       onSuccess: done,
       onError: fail("Couldn't add the follow-up"),
     }),

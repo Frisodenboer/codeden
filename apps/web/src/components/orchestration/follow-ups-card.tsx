@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlarmClock, Check, ChevronDown, ChevronRight, ListTodo, Plus, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { toast } from "sonner";
 import { useClient } from "@/lib/api";
 import { ageShort, until } from "@/lib/format";
 import { usePlanner, usePlannerActions } from "@/lib/planner";
@@ -123,7 +124,17 @@ export function FollowUpsCard({ className }: { className?: string }) {
                         aria-label={
                           done ? `Mark ${f.title} as not done` : `Mark ${f.title} as done`
                         }
-                        onClick={() => setFollowUpDone.mutate({ id: f.id, done: !done })}
+                        onClick={() =>
+                          setFollowUpDone.mutate(
+                            { id: f.id, done: !done },
+                            {
+                              onSuccess: () => {
+                                if (!done && f.sessionId)
+                                  toast.success("Done, and the chat was told");
+                              },
+                            },
+                          )
+                        }
                         className={cn(
                           "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
                           done

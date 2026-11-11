@@ -91,10 +91,16 @@ export const FollowUpInput = z.object({
   title: z.string().trim().min(1).max(300),
   detail: z.string().max(2000).default(""),
   projectId: z.string().nullable().default(null),
+  /** The chat it came from (the user's "Add to follow-ups" on a message). */
+  sessionId: z.string().nullable().default(null),
 });
 export type FollowUpInput = z.input<typeof FollowUpInput>;
 
-export const FollowUpPatch = z.object({ done: z.boolean() });
+export const FollowUpPatch = z.object({
+  done: z.boolean(),
+  /** When ticking off an item from a chat, tell that chat it's done (default). */
+  notify: z.boolean().default(true),
+});
 export type FollowUpPatch = z.infer<typeof FollowUpPatch>;
 
 export const Planner = z.object({

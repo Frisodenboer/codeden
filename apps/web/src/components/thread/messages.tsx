@@ -1,12 +1,14 @@
 import { type Attachment, type ItemOf, splitSender } from "@codeden/contracts";
-import { Copy, FileText } from "lucide-react";
+import { Copy, FileText, ListPlus } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { ImageGallery, ImageThumbnail } from "@/components/common/image-viewer";
 import { useClient } from "@/lib/api";
 import { attachmentGallery } from "@/lib/attachments";
 import { foldDigest } from "@/lib/orchestration";
+import { usePlannerActions } from "@/lib/planner";
 import { platform } from "@/lib/platform";
+import { useSnapshotData } from "@/lib/queries";
 import { DigestDisclosure, WakeLine } from "./digest-fold";
 import { Markdown } from "./markdown";
 import { SenderMessage } from "./sender-message";
@@ -111,27 +113,69 @@ export function UserMessage({ item }: { item: ItemOf<"user_message"> }) {
 }
 
 /** Assistant message: plain markdown, no bubble, with a hover copy action. */
+/** A short follow-up title from a reply: its first sentence or line, plain text, ~120 chars. */
+export function followUpTitle(text: string): string {
+  const plain = text
+    .replace(/[*_`#>]/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .trim();
+  const first = plain.split(/\n|(?<=[.!?])\s/)[0]?.trim() || plain;
+  return first.length > 120 ? `${first.slice(0, 117).trimEnd()}…` : first;
+}
+
 export function AssistantMessage({
   item,
   streaming,
+  sessionId,
 }: {
   item: ItemOf<"assistant_message">;
   streaming: boolean;
+  /** The chat this reply is in; enables "Add to follow-ups". */
+  sessionId?: string;
 }) {
+  const { addFollowUp } = usePlannerActions();
+  const projectId = useSnapshotData(
+    (s) => s.sessions.find((x) => x.id === sessionId)?.projectId ?? null,
+    null,
+  );
+  const action =
+    "flex items-center gap-1 text-3xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground touch:opacity-100";
   return (
     <div className="group relative">
       <Markdown streaming={streaming}>{item.text}</Markdown>
       {!streaming && item.text && (
-        <button
-          type="button"
-          className="absolute -bottom-5 left-0 flex items-center gap-1 text-3xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground touch:opacity-100"
-          onClick={() => {
-            void platform.writeClipboard(item.text);
-            toast.success("Copied message");
-          }}
-        >
-          <Copy className="size-3" /> Copy
-        </button>
+        <div className="absolute -bottom-5 left-0 flex items-center gap-3">
+          <button
+            type="button"
+            className={action}
+            onClick={() => {
+              void platform.writeClipboard(item.text);
+              toast.success("Copied message");
+            }}
+          >
+            <Copy className="size-3" /> Copy
+          </button>
+          {sessionId && (
+            <button
+              type="button"
+              className={action}
+              title="Put this on your Follow-ups list; ticking it off tells this chat it's done"
+              onClick={() =>
+                addFollowUp.mutate(
+                  {
+                    title: followUpTitle(item.text),
+                    detail: item.text.slice(0, 2000),
+                    projectId,
+                    sessionId,
+                  },
+                  { onSuccess: () => toast.success("Added to your follow-ups") },
+                )
+              }
+            >
+              <ListPlus className="size-3" /> Follow-up
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

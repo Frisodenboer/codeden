@@ -1,4 +1,5 @@
 import type { Session } from "@codeden/contracts";
+import { Archive, ArchiveRestore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IssueBadge, PrBadge } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
@@ -6,7 +7,7 @@ import { ageShort, statusTone } from "@/lib/format";
 import { useSessionActions } from "@/lib/session-actions";
 import { cn } from "@/lib/utils";
 import { childRow, NavRow, rowBase } from "./nav-row";
-import { RowMenu, RowMenuButton, useRowMenu } from "./row-menu";
+import { RowMenu, useRowMenu } from "./row-menu";
 import { sessionMenuEntries } from "./session-menu";
 
 /**
@@ -49,8 +50,8 @@ function RenameField({
 }
 
 /**
- * A session in a project group. Right-click, the ⋯ button (on hover or focus) or Shift+F10
- * open its menu; the ⋯ takes the age's place while it shows.
+ * A session in a project group. The button on hover archives it in one click; right-click or Shift+F10
+ * open its full menu. The button takes the age's place while it shows.
  */
 export function SessionRow({ session }: { session: Session }) {
   const actions = useSessionActions(session);
@@ -107,12 +108,20 @@ export function SessionRow({ session }: { session: Session }) {
           </NavRow>
         )}
         {!renaming && (
-          <RowMenuButton
-            menu={menu}
-            entries={entries}
-            label={`${title} actions`}
-            className="absolute top-1/2 right-1 size-6 -translate-y-1/2 opacity-0 transition-opacity group-focus-within/session:opacity-100 group-hover/session:opacity-100 data-[state=open]:opacity-100 touch:size-9 touch:opacity-100"
-          />
+          // One-click archive (or unarchive); the full menu stays on right-click and Shift+F10.
+          <button
+            type="button"
+            title={actions.archived ? "Unarchive" : "Archive"}
+            aria-label={`${actions.archived ? "Unarchive" : "Archive"} ${title}`}
+            onClick={actions.archived ? actions.unarchive : actions.archive}
+            className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-focus-within/session:opacity-100 group-hover/session:opacity-100 hover:bg-sidebar-border hover:text-foreground touch:size-9 touch:opacity-100"
+          >
+            {actions.archived ? (
+              <ArchiveRestore className="size-3.5" />
+            ) : (
+              <Archive className="size-3.5" />
+            )}
+          </button>
         )}
       </div>
     </RowMenu>
