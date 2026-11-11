@@ -42,7 +42,7 @@ function FollowupChips({
   return (
     <ul
       aria-label="Suggested follow-ups"
-      className="mr-auto flex max-h-[30vh] w-full max-w-[46rem] shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-3 scroll-thin sm:-mt-2 sm:px-6 sm:pb-4"
+      className="mr-auto flex max-h-[24vh] w-full max-w-[46rem] shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-3 scroll-thin sm:-mt-2 sm:px-6 sm:pb-4"
     >
       {visible.map((s) => (
         <li
@@ -134,6 +134,8 @@ export function ThreadView({ sessionId, empty }: { sessionId: string; empty?: Re
       <QueuedMessages session={session} running={running} />
       <Composer session={session} running={running} />
       {followups && !running && <FollowupChips sessionId={sessionId} suggestions={followups} />}
+      {/* Breathing room below the prompt box, so it sits higher on wide screens (not on phones). */}
+      <div aria-hidden className="hidden h-[20vh] shrink-0 md:block" />
     </div>
   );
 }
