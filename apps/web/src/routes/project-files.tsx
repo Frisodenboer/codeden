@@ -2,22 +2,15 @@ import type { ProjectFileOp } from "@codeden/contracts";
 import { File as FileView } from "@pierre/diffs/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  ChevronLeft,
-  ChevronRight,
-  File,
-  FilePlus,
-  Files,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  Pencil,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { ChevronLeft, FilePlus, Files, FolderPlus, PanelLeft, RefreshCw } from "lucide-react";
+import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/bits";
+import {
+  ProjectFileTree,
+  projectFilesKey,
+  useProjectFiles,
+} from "@/components/files/project-file-tree";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,135 +33,45 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClient } from "@/lib/api";
-import type { FileNode } from "@/lib/api/types";
-import { buildFileTree } from "@/lib/file-tree";
 import { useProject } from "@/lib/queries";
 import { cn } from "@/lib/utils";
+import { parentOf, useFileExplorer } from "@/stores/file-explorer";
+import { useLayoutStore } from "@/stores/layout";
 import { useResolvedTheme } from "@/stores/theme";
 import { PageHeader } from "./page-header";
 
-type Selection = { path: string; kind: "file" | "dir" } | null;
-type NameDialog =
-  | { mode: "createFile" | "createDir"; folder: string }
-  | { mode: "rename"; path: string; kind: "file" | "dir" };
-
-const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const join = (folder: string, name: string) => (folder ? `${folder}/${name}` : name);
 
-function TreeRow({
-  node,
-  depth,
-  selected,
-  expanded,
-  onToggle,
-  onSelect,
-  onRename,
-  onDelete,
-}: {
-  node: FileNode;
-  depth: number;
-  selected: Selection;
-  expanded: Set<string>;
-  onToggle: (path: string) => void;
-  onSelect: (s: NonNullable<Selection>) => void;
-  onRename: (node: FileNode) => void;
-  onDelete: (node: FileNode) => void;
-}) {
-  const isDir = node.kind === "dir";
-  const open = expanded.has(node.path);
-  return (
-    <>
-      <div
-        className={cn(
-          "group flex h-[28px] items-center rounded-md pr-1 hover:bg-accent/60",
-          selected?.path === node.path && "bg-accent",
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            if (isDir) onToggle(node.path);
-            onSelect({ path: node.path, kind: node.kind });
-          }}
-          style={{ paddingLeft: 8 + depth * 14 }}
-          className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left text-[12.5px] text-foreground/85"
-        >
-          {isDir ? (
-            <ChevronRight
-              className={cn(
-                "size-3 shrink-0 text-muted-foreground transition-transform",
-                open && "rotate-90",
-              )}
-            />
-          ) : (
-            <span className="w-3 shrink-0" />
-          )}
-          {isDir ? (
-            open ? (
-              <FolderOpen className="size-3.5 shrink-0 text-primary/70" />
-            ) : (
-              <Folder className="size-3.5 shrink-0 text-primary/70" />
-            )
-          ) : (
-            <File className="size-3.5 shrink-0 text-muted-foreground" />
-          )}
-          <span className="truncate">{node.name}</span>
-        </button>
-        <span className="flex shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-          <button
-            type="button"
-            title="Rename or move"
-            aria-label={`Rename ${node.name}`}
-            onClick={() => onRename(node)}
-            className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Pencil className="size-3" />
-          </button>
-          <button
-            type="button"
-            title="Delete"
-            aria-label={`Delete ${node.name}`}
-            onClick={() => onDelete(node)}
-            className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-status-failed"
-          >
-            <Trash2 className="size-3" />
-          </button>
-        </span>
-      </div>
-      {isDir &&
-        open &&
-        node.children?.map((c) => (
-          <TreeRow
-            key={c.path}
-            node={c}
-            depth={depth + 1}
-            selected={selected}
-            expanded={expanded}
-            onToggle={onToggle}
-            onSelect={onSelect}
-            onRename={onRename}
-            onDelete={onDelete}
-          />
-        ))}
-    </>
-  );
-}
-
-/** Project file manager: browse, view, create, rename/move and delete files in the main checkout. */
+/**
+ * Project file manager on the main checkout. The folder tree lives in the sidebar under the
+ * project's Files row (like VS Code's explorer); this page shows the open file and the dialogs.
+ * When the sidebar tree is closed (or the sidebar is collapsed), the page shows the tree itself.
+ */
 export function ProjectFilesPage({ projectId }: { projectId: string }) {
   const client = useClient();
   const queryClient = useQueryClient();
   const theme = useResolvedTheme();
   const project = useProject(projectId);
-  const [selected, setSelected] = useState<Selection>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [nameDialog, setNameDialog] = useState<NameDialog | null>(null);
+  const list = useProjectFiles(projectId);
+  const selected = useFileExplorer((s) => s.selected[projectId] ?? null);
+  const treeInSidebar = useFileExplorer((s) => s.treeOpen[projectId] ?? false);
+  const sidebarCollapsed = useLayoutStore((s) => s.sidebarCollapsed ?? false);
+  const dialog = useFileExplorer((s) => (s.dialog?.projectId === projectId ? s.dialog : null));
+  const { select, reveal, setTreeOpen, openDialog, closeDialog } = useFileExplorer.getState();
   const [name, setName] = useState("");
-  const [toDelete, setToDelete] = useState<FileNode | null>(null);
+  const showPageTree = !treeInSidebar || sidebarCollapsed;
 
-  const listKey = ["project-files", projectId];
-  const list = useQuery({ queryKey: listKey, queryFn: () => client.listProjectFiles(projectId) });
-  const tree = useMemo(() => (list.data ? buildFileTree(list.data.entries) : []), [list.data]);
+  // Opening Files shows the tree in the sidebar, like VS Code's explorer.
+  useEffect(() => {
+    useFileExplorer.getState().setTreeOpen(projectId, true);
+  }, [projectId]);
+
+  // Fill the name field when a dialog opens.
+  useEffect(() => {
+    if (dialog?.mode === "rename") setName(dialog.path);
+    else if (dialog?.mode === "createFile" || dialog?.mode === "createDir") setName("");
+  }, [dialog]);
+
   const openFile = selected?.kind === "file" ? selected.path : null;
   const file = useQuery({
     queryKey: ["project-file", projectId, openFile],
@@ -180,7 +83,7 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
   const op = useMutation({
     mutationFn: (o: ProjectFileOp) => client.projectFileOp(projectId, o),
     onSuccess: (res, o) => {
-      queryClient.invalidateQueries({ queryKey: listKey });
+      void queryClient.invalidateQueries({ queryKey: projectFilesKey(projectId) });
       const done = {
         createFile: "File created",
         createDir: "Folder created",
@@ -190,21 +93,12 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
       toast.success(`${done}: ${res.path}`);
       if (o.op === "delete") {
         if (selected && (selected.path === o.path || selected.path.startsWith(`${o.path}/`)))
-          setSelected(null);
+          select(projectId, null);
       } else {
-        // Show the result: open its parent folders and select it.
-        setExpanded((prev) => {
-          const next = new Set(prev);
-          let p = parentOf(res.path);
-          while (p) {
-            next.add(p);
-            p = parentOf(p);
-          }
-          return next;
-        });
+        reveal(projectId, res.path);
         const kind =
           o.op === "createDir" ? "dir" : o.op === "rename" ? (selected?.kind ?? "file") : "file";
-        setSelected({ path: res.path, kind });
+        select(projectId, { path: res.path, kind });
       }
     },
     onError: (error) => toast.error(error.message),
@@ -217,42 +111,29 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
       ? selected.path
       : parentOf(selected.path);
 
-  const startCreate = (mode: "createFile" | "createDir") => {
-    setName("");
-    setNameDialog({ mode, folder: targetFolder });
-  };
-  const startRename = (node: FileNode) => {
-    setName(node.path);
-    setNameDialog({ mode: "rename", path: node.path, kind: node.kind });
-  };
   const submitName = (e: FormEvent) => {
     e.preventDefault();
     const value = name
       .trim()
       .replace(/\\/g, "/")
       .replace(/^\/+|\/+$/g, "");
-    if (!value || !nameDialog) return;
-    if (nameDialog.mode === "rename") {
-      if (value !== nameDialog.path) op.mutate({ op: "rename", from: nameDialog.path, to: value });
+    if (!value || !dialog || dialog.mode === "delete") return;
+    if (dialog.mode === "rename") {
+      if (value !== dialog.path) op.mutate({ op: "rename", from: dialog.path, to: value });
     } else {
-      op.mutate({ op: nameDialog.mode, path: join(nameDialog.folder, value) });
+      op.mutate({ op: dialog.mode, path: join(dialog.folder, value) });
     }
-    setNameDialog(null);
+    closeDialog();
   };
 
-  const toggle = (path: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
+  const nameDialog = dialog && dialog.mode !== "delete" ? dialog : null;
+  const toDelete = dialog?.mode === "delete" ? dialog : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         icon={<Files />}
-        title={`${project?.name ?? "Project"} files`}
+        title={openFile ?? `${project?.name ?? "Project"} files`}
         meta={<code className="font-mono">{list.data?.root ?? project?.path}</code>}
         actions={
           <>
@@ -261,62 +142,59 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
                 <ChevronLeft /> Project
               </Link>
             </Button>
+            {!sidebarCollapsed && (
+              <Button
+                size="sm"
+                variant="ghost"
+                title={
+                  treeInSidebar ? "Show the tree on this page" : "Show the tree in the sidebar"
+                }
+                onClick={() => setTreeOpen(projectId, !treeInSidebar)}
+              >
+                <PanelLeft />
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
               title="Refresh"
-              onClick={() => queryClient.invalidateQueries({ queryKey: listKey })}
+              onClick={() =>
+                queryClient.invalidateQueries({ queryKey: projectFilesKey(projectId) })
+              }
             >
               <RefreshCw className={cn(list.isFetching && "animate-spin")} />
             </Button>
-            <Button size="sm" variant="outline" onClick={() => startCreate("createDir")}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openDialog({ projectId, mode: "createDir", folder: targetFolder })}
+            >
               <FolderPlus /> New folder
             </Button>
-            <Button size="sm" onClick={() => startCreate("createFile")}>
+            <Button
+              size="sm"
+              onClick={() => openDialog({ projectId, mode: "createFile", folder: targetFolder })}
+            >
               <FilePlus /> New file
             </Button>
           </>
         }
       />
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="max-h-[45%] shrink-0 overflow-y-auto border-b border-border p-1.5 scroll-thin md:max-h-none md:w-80 md:border-r md:border-b-0">
-          {list.error ? (
-            <div className="p-2 text-xs text-status-failed">{list.error.message}</div>
-          ) : list.isLoading ? (
-            <div className="space-y-1.5 p-2">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-4 w-3/4" />
-              ))}
-            </div>
-          ) : tree.length === 0 ? (
-            <div className="p-3 text-xs text-muted-foreground">This folder is empty.</div>
-          ) : (
-            <>
-              {tree.map((n) => (
-                <TreeRow
-                  key={n.path}
-                  node={n}
-                  depth={0}
-                  selected={selected}
-                  expanded={expanded}
-                  onToggle={toggle}
-                  onSelect={setSelected}
-                  onRename={startRename}
-                  onDelete={setToDelete}
-                />
-              ))}
-              {list.data?.truncated && (
-                <div className="p-2 text-2xs text-muted-foreground">
-                  Showing the first 5000 entries.
-                </div>
-              )}
-            </>
+        <ProjectFileTree
+          projectId={projectId}
+          className={cn(
+            "max-h-[45%] shrink-0 overflow-y-auto border-b border-border p-1.5 scroll-thin md:max-h-none md:w-80 md:border-r md:border-b-0",
+            // On wide screens the tree is in the sidebar; phones always show it here.
+            !showPageTree && "md:hidden",
           )}
-        </div>
+        />
         <div className="min-h-0 min-w-0 flex-1 overflow-auto scroll-thin">
           {!openFile ? (
             <EmptyState icon={<Files />} title="Pick a file" className="h-full">
-              Browse the project folder. .git and node_modules are hidden.
+              {showPageTree
+                ? "Browse the project folder. .git and node_modules are hidden."
+                : "Pick a file in the tree on the left, under Files."}
             </EmptyState>
           ) : file.error ? (
             <EmptyState icon={<Files />} title="Can't show this file" className="h-full">
@@ -346,7 +224,7 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <Dialog open={nameDialog !== null} onOpenChange={(o) => !o && setNameDialog(null)}>
+      <Dialog open={nameDialog !== null} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent>
           <form onSubmit={submitName} className="space-y-4">
             <DialogHeader>
@@ -371,7 +249,7 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
               aria-label="Name"
             />
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setNameDialog(null)}>
+              <Button type="button" variant="ghost" onClick={closeDialog}>
                 Cancel
               </Button>
               <Button type="submit" disabled={!name.trim()}>
@@ -382,7 +260,7 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={toDelete !== null} onOpenChange={(o) => !o && setToDelete(null)}>
+      <AlertDialog open={toDelete !== null} onOpenChange={(o) => !o && closeDialog()}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {toDelete?.name}?</AlertDialogTitle>
@@ -399,7 +277,7 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
             <AlertDialogAction
               onClick={() => {
                 if (toDelete) op.mutate({ op: "delete", path: toDelete.path });
-                setToDelete(null);
+                closeDialog();
               }}
             >
               Delete

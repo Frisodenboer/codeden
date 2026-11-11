@@ -5,8 +5,10 @@ import { Archive, Bot, ChevronRight, Files, GripVertical, House, Plus } from "lu
 import { type CSSProperties, useState } from "react";
 import { ModelMark } from "@/components/common/model-mark";
 import { StatusDot } from "@/components/common/status-dot";
+import { ProjectFileTree } from "@/components/files/project-file-tree";
 import { statusTone } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useFileExplorer } from "@/stores/file-explorer";
 import { useLayoutStore } from "@/stores/layout";
 import { childGroup, childRow, NavRow, rowBase, useIsActive } from "./nav-row";
 import { ProjectAutomations } from "./project-automations";
@@ -110,7 +112,7 @@ export function ProjectGroup({
             ref={drag.setActivatorNodeRef}
             {...drag.attributes}
             aria-label={`Reorder ${project.name}`}
-            className="absolute top-1/2 -left-3 flex h-5 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground/70 opacity-0 outline-none transition-opacity group-hover/head:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring active:cursor-grabbing"
+            className="absolute top-1/2 -left-3 flex h-5 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground/70 opacity-30 outline-none transition-opacity group-hover/head:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring active:cursor-grabbing"
           >
             <GripVertical className="size-3" />
           </button>
@@ -187,14 +189,8 @@ export function ProjectGroup({
             </span>
             {pm && <StatusDot status={pm.status} />}
           </NavRow>
-          <NavRow
-            href={`/projects/${project.id}/files`}
-            link={{ to: "/projects/$projectId/files", params: { projectId: project.id } }}
-            className={childRow}
-          >
-            <Files className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="flex-1 truncate">Files</span>
-          </NavRow>
+          <ProjectAutomations projectId={project.id} />
+          <FilesRow projectId={project.id} />
           {visible.map((s) => (
             <SessionRow key={s.id} session={s} />
           ))}
@@ -207,7 +203,6 @@ export function ProjectGroup({
               {showAll ? "Show less" : `Show ${agents.length - LIMIT} more`}
             </button>
           )}
-          <ProjectAutomations projectId={project.id} />
           {archived > 0 && (
             <Link
               to="/projects/$projectId"
@@ -222,5 +217,44 @@ export function ProjectGroup({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The project's Files row with its folder tree underneath, like VS Code's explorer: the arrow
+ * folds the tree, the name opens the Files page; picking a file shows it in the main pane.
+ */
+function FilesRow({ projectId }: { projectId: string }) {
+  const open = useFileExplorer((s) => s.treeOpen[projectId] ?? false);
+  const setTreeOpen = useFileExplorer((s) => s.setTreeOpen);
+  return (
+    <>
+      <div className="relative">
+        <NavRow
+          href={`/projects/${projectId}/files`}
+          link={{ to: "/projects/$projectId/files", params: { projectId } }}
+          className={cn(childRow, "pl-6")}
+        >
+          <Files className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="flex-1 truncate">Files</span>
+        </NavRow>
+        <button
+          type="button"
+          aria-label={open ? "Hide the file tree" : "Show the file tree"}
+          aria-expanded={open}
+          onClick={() => setTreeOpen(projectId, !open)}
+          className="absolute top-1/2 left-1 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-border hover:text-foreground"
+        >
+          <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
+        </button>
+      </div>
+      {open && (
+        <ProjectFileTree
+          projectId={projectId}
+          dense
+          className="ml-3 max-h-[50vh] overflow-y-auto border-l border-sidebar-border pl-1 scroll-thin"
+        />
+      )}
+    </>
   );
 }
