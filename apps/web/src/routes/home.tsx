@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Bot, FolderPlus, GitPullRequest, ListChecks, ShieldAlert, Sparkles } from "lucide-react";
 import { RoleChat } from "@/components/orchestration/role-chat";
+import { ScheduledCard } from "@/components/orchestration/scheduled-card";
 import { ProjectTile } from "@/components/shell/sidebar/project-group";
 import { useSnapshotData } from "@/lib/queries";
 import { useComposerStore } from "@/stores/composer";
@@ -93,10 +94,14 @@ function OrchestratorEmpty({ draftKey }: { draftKey: string }) {
 /** The orchestrator chat, pinned at the top of the sidebar (§8.1). */
 export function HomePage() {
   return (
-    <RoleChat
-      kind="orchestrator"
-      projectId={null}
-      empty={(draftKey) => <OrchestratorEmpty draftKey={draftKey} />}
-    />
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <RoleChat
+        kind="orchestrator"
+        projectId={null}
+        empty={(draftKey) => <OrchestratorEmpty draftKey={draftKey} />}
+      />
+      {/* Top right, below the header; only where the left-aligned chat leaves room. */}
+      <ScheduledCard className="absolute top-14 right-4 z-10 hidden 2xl:block" />
+    </div>
   );
 }
