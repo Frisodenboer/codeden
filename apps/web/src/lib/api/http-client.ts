@@ -110,6 +110,9 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
       post(`/inbox/${enc(id)}/resolve`, resolution, (v) => InboxItem.parse(v)),
 
     createProject: (input) => post("/projects", input, (v) => CreateProjectResponse.parse(v)),
+    async removeProject(id) {
+      await call("DELETE", `/projects/${enc(id)}`);
+    },
     updateProject: (id, patch) =>
       call("PATCH", `/projects/${enc(id)}`, patch, (v) => Project.parse(v)),
     reorderProjects: (projectIds) =>

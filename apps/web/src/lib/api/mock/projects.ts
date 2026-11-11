@@ -7,7 +7,12 @@ import type { MockWorld } from "./world";
 
 type MockProjectApi = Pick<
   CodeDenClient,
-  "createProject" | "updateProject" | "reorderProjects" | "refreshProject" | "disconnectGithub"
+  | "createProject"
+  | "updateProject"
+  | "reorderProjects"
+  | "refreshProject"
+  | "disconnectGithub"
+  | "removeProject"
 >;
 
 const later = <T>(value: T, ms: number): Promise<T> =>
@@ -119,6 +124,7 @@ export function mockProjectApi(world: MockWorld): MockProjectApi {
       return later({ project, outcome, changed: false, message, detected: null }, 300);
     },
 
+    async removeProject() {},
     async disconnectGithub(id) {
       const current = find(id);
       if (current.kind !== "github") {

@@ -146,6 +146,8 @@ export interface CodeDenClient {
    * a GitHub `origin` becomes a GitHub project. The project change also arrives as an event.
    */
   refreshProject(projectId: string): Promise<RefreshProjectResponse>;
+  /** Hide a project from the list (archive). Nothing is deleted; adding its folder again restores it. */
+  removeProject(projectId: string): Promise<void>;
   /** Make a GitHub project local-only, once its folder no longer has a GitHub `origin`. */
   disconnectGithub(projectId: string): Promise<DisconnectGithubResponse>;
   readonly automations: AutomationsApi;

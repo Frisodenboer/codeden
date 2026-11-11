@@ -54,6 +54,39 @@ export function useProjectActions() {
           () => client.updateProject(project.id, { pinned }),
           pinned ? `Couldn't pin ${project.name}` : `Couldn't unpin ${project.name}`,
         ),
+      /**
+       * Remove a project from the list. Nothing is deleted: the project is archived (hidden,
+       * automations paused) and comes back with its history when its folder is added again,
+       * which is what Undo does.
+       */
+      remove: async (project: Project) => {
+        const before = projects();
+        setProjects((list) => list.filter((p) => p.id !== project.id));
+        try {
+          await client.removeProject(project.id);
+        } catch (error) {
+          setProjects(() => before);
+          toast.error(`Couldn't remove ${project.name}`, { description: message(error) });
+          return;
+        }
+        toast.success(`${project.name} removed from the list`, {
+          description: "Nothing was deleted. Add its folder again to bring it back.",
+          action: {
+            label: "Undo",
+            onClick: () => {
+              void client
+                .createProject({ source: { type: "local", path: project.path } })
+                .then(() => queryClient.invalidateQueries({ queryKey: snapshotKey }))
+                .catch((error) =>
+                  toast.error(`Couldn't bring ${project.name} back`, {
+                    description: message(error),
+                  }),
+                );
+            },
+          },
+        });
+        void queryClient.invalidateQueries({ queryKey: snapshotKey });
+      },
       reorder,
       /** Move a project to position `to` within its group (pinned or not). */
       moveTo: async (projectId: string, to: number) => {
