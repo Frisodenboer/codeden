@@ -92,7 +92,7 @@ describe("choosing which processes to end", () => {
   ];
 
   it("ends only what CodeDen's agents started inside the worktree", () => {
-    const allowed = startedByAgents(rows, RUNNER, 1500);
+    const allowed = startedByAgents(rows, RUNNER, 1500, true);
     expect([...allowed].sort((a, b) => a - b)).toEqual([30, 31, 40, 41, 60, 70]);
     const ended = processesToEnd({
       dir: WT,
@@ -141,7 +141,7 @@ describe("choosing which processes to end", () => {
       later(84, { exe: `${WT}\\node_modules\\electron\\dist\\electron.exe` }),
       later(85, { commandLine: `node ${WT}\\node_modules\\vite\\bin\\vite.js` }),
     ];
-    const allowed = startedByAgents(apps, RUNNER, 1500);
+    const allowed = startedByAgents(apps, RUNNER, 1500, true);
     expect([...allowed].sort((a, b) => a - b)).toEqual([80, 81, 82, 83, 84, 85]);
     const ended = processesToEnd({
       dir: WT,
@@ -151,6 +151,31 @@ describe("choosing which processes to end", () => {
       allowed,
     });
     expect(ended.sort((a, b) => a - b)).toEqual([84, 85]);
+  });
+
+  it("never ends what runs in a person's app, looking no further up than CodeDen (#109)", () => {
+    // An agent opened an editor on the worktree, and a person runs a dev server in its terminal.
+    const tree = (runner: Partial<ProcessRow>, app: string, dir: string): ProcessRow[] => [
+      row(5, 1, { exe: app }), // CodeDen was started from a terminal
+      row(RUNNER, 5, runner),
+      row(30, RUNNER, { commandLine: script, cwd: dir }), // an agent's dev server
+      row(40, RUNNER, { cwd: dir }), // the agent's shell that opened the editor
+      row(41, 40, { exe: "C:\\Code\\Code.exe", cwd: dir }),
+      row(42, 41, { commandLine: "pwsh.exe", cwd: dir }),
+      row(43, 42, { commandLine: script, cwd: dir }),
+    ];
+    const ended = (rows: ProcessRow[], dir: string, windows: boolean) => {
+      const allowed = new Set(rows.map((r) => r.pid));
+      const chosen = processesToEnd({ dir, rows, windows, protect: [RUNNER], allowed });
+      return [...withDescendants(chosen, rows)].sort((a, b) => a - b);
+    };
+    const terminal = "C:\\Program Files\\WindowsApps\\WindowsTerminal.exe";
+    expect(ended(tree({}, terminal, WT), WT, true)).toEqual([30]);
+    // The desktop app on macOS: the runner itself runs from an app bundle.
+    const mac = "/Users/me/.codeden/wt/demo/abcd1234";
+    const helper = "/Applications/CodeDen.app/Contents/Frameworks/CodeDen Helper.app";
+    const runner = { commandLine: `${helper}/Contents/MacOS/CodeDen Helper runner.js` };
+    expect(ended(tree(runner, "/usr/bin/xterm", mac), mac, false)).toEqual([30]);
   });
 });
 
