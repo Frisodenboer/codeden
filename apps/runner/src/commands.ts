@@ -1,5 +1,5 @@
 import type { RunnerCommand, RunnerCommandResult, RunnerEvent } from "@codeden/contracts";
-import { type ProviderRegistry, refreshProcessPath } from "@codeden/providers";
+import { FORK_POINT_MISSING, type ProviderRegistry, refreshProcessPath } from "@codeden/providers";
 import type { BrowserCommandHandlers } from "./browser";
 import { CommandError } from "./errors";
 import {
@@ -104,10 +104,16 @@ export async function executeCommand(core: RunnerCore, command: RunnerCommand): 
       try {
         const resumeToken = await adapter.forkConversation(command.resumeToken, {
           cwd: command.cwd,
+          ...(command.upTo ? { upTo: command.upTo } : {}),
         });
         return { resumeToken };
       } catch (error) {
-        throw new CommandError("fork_failed", (error as Error).message);
+        // The conversation no longer holds the fork point: say so, apart from other failures.
+        const missing = (error as { code?: unknown }).code === FORK_POINT_MISSING;
+        throw new CommandError(
+          missing ? FORK_POINT_MISSING : "fork_failed",
+          (error as Error).message,
+        );
       }
     }
 
