@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSnapshotData } from "@/lib/queries";
+import { useComposerBounds } from "@/lib/toast-placement";
 import { cn } from "@/lib/utils";
 import { type Draft, getDraft, useComposerStore } from "@/stores/composer";
 import { AttachmentStrip, filesToAttachments } from "./attachments";
@@ -73,7 +74,10 @@ export function ComposerBox({
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const ref = textareaRef ?? ownRef;
   const fileInput = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  // Toasts are lifted clear of the box (its Send, Stop and pickers) wherever they would cover it.
+  useComposerBounds(box);
 
   useEffect(() => {
     if (focusToken > 0) {
@@ -104,6 +108,7 @@ export function ComposerBox({
         {menu}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for files; the textarea and attach button stay keyboard accessible. */}
         <div
+          ref={box}
           onDragOver={(e) => {
             e.preventDefault();
             setDragging(true);
