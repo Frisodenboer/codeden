@@ -18,6 +18,7 @@ import { type FactoryOptions, FactoryService } from "./factory/factory-service";
 import { type FactoryGithub, GithubFactoryPort } from "./factory/github-port";
 import { ConfigFiles } from "./files/config-files";
 import { GithubService, type GithubServiceDeps } from "./github/github-service";
+import { projectTrustedAuthors } from "./github/review-trust";
 import { ImageService } from "./images/image-service";
 import { InboxService } from "./inbox-service";
 import { GithubServicePort } from "./orchestration/github-port";
@@ -250,6 +251,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     ...opts.github,
     log: opts.log,
   });
+  const trustedAuthors = projectTrustedAuthors(projects);
   const redetector = new ProjectRedetector({
     projects,
     store: opts.store,
@@ -303,6 +305,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     projects,
     inbox,
     github: opts.orchestration?.github ?? new GithubServicePort(github),
+    trustedAuthors,
     automation: opts.orchestration?.automation ?? automations,
     options: opts.orchestration,
     log: opts.log,
@@ -402,6 +405,7 @@ export function createServices(opts: ServicesOptions): AppServices {
       repo: sessionRepo,
       settings: () => opts.settings.get(),
       send: (id, input) => sessions.send(id, { input, whenBusy: "queue" }, "codeden"),
+      trustedAuthors,
       log: opts.log,
     }),
     autoRetry: new AutoRetry({
