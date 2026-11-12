@@ -1,14 +1,8 @@
 import { randomUUID } from "node:crypto";
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type RunnerEvent, RunnerEventMessage } from "@codeden/contracts";
+import { replaceFileSync } from "./util/replace-file";
 
 interface JournalState {
   runnerId: string;
@@ -31,7 +25,11 @@ export class Journal {
   private state: JournalState;
   private entries: RunnerEventMessage[] = [];
 
-  constructor(dir: string) {
+  constructor(
+    dir: string,
+    /** Told when compacting after an ack fails; the runner keeps going (see `ack`). */
+    private readonly onError: (error: unknown) => void = () => {},
+  ) {
     mkdirSync(dir, { recursive: true });
     this.file = join(dir, "journal.jsonl");
     this.stateFile = join(dir, "state.json");
@@ -67,12 +65,21 @@ export class Journal {
     return msg;
   }
 
-  /** Drop everything with `seq <= seq` (cumulative ack). */
+  /**
+   * Drop everything with `seq <= seq` (cumulative ack). Compacting the files is best effort: if
+   * Windows keeps them locked, the acked events stay on disk until the next ack compacts them
+   * (after a restart they are replayed, and the server ignores seqs it already has), and the
+   * runner keeps running instead of crashing every session with it.
+   */
   ack(seq: number): void {
     if (seq <= this.state.ackedSeq) return;
     this.state.ackedSeq = Math.min(seq, this.state.lastSeq);
     this.entries = this.entries.filter((e) => e.seq > seq);
-    this.rewrite();
+    try {
+      this.rewrite();
+    } catch (error) {
+      this.onError(error);
+    }
   }
 
   /** Unacked events after `seq`, oldest first (for replay on resume). */
@@ -108,14 +115,14 @@ export class Journal {
   private rewrite(): void {
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, this.entries.map((e) => `${JSON.stringify(e)}\n`).join(""));
-    renameSync(tmp, this.file);
+    replaceFileSync(tmp, this.file);
     this.writeState(this.state);
   }
 
   private writeState(state: JournalState): void {
     const tmp = `${this.stateFile}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`);
-    renameSync(tmp, this.stateFile);
+    replaceFileSync(tmp, this.stateFile);
   }
 }
 

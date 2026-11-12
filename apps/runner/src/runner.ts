@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import {
@@ -30,6 +30,7 @@ import { HttpMcpUpstream, handleMcpRequest, type McpUpstream } from "./mcp/proxy
 import { ProcessSupervisor } from "./process/supervisor";
 import { TerminalHost } from "./pty/terminal-host";
 import { SessionHost } from "./session-host";
+import { replaceFileSync } from "./util/replace-file";
 import { emptyTrash } from "./workspace/trash";
 
 export interface StartRunnerOptions {
@@ -90,7 +91,9 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   await assertSingleInstance(lockFile);
 
   const token = randomBytes(32).toString("hex");
-  const journal = new Journal(dir);
+  const journal = new Journal(dir, (error) =>
+    log(`journal: could not compact after an ack (will retry on the next one): ${String(error)}`),
+  );
   // Claude Code support is installed on demand into `<home>/deps` in the published package.
   configureClaudeSdk({
     depsDir: join(opts.home, "deps"),
@@ -236,7 +239,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   };
   const tmp = `${lockFile}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, lockFile);
+  replaceFileSync(tmp, lockFile);
   log(`runner ${journal.runnerId} listening on 127.0.0.1:${port}`);
   // Ask providers for their models now, so pickers are right before the first session.
   // Spawns provider CLIs, so it runs in the background; it never throws.

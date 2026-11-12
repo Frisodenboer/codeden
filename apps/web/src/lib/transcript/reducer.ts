@@ -89,8 +89,9 @@ export function transcriptFromSnapshot(snap: SessionSnapshot): TranscriptState {
   }
   const records = [...snap.items].sort((a, b) => a.position - b.position);
   for (const r of records) {
+    const turnStatus = state.turns[r.turnId]?.status;
     state.items[r.item.id] = {
-      item: r.item,
+      item: turnStatus && turnStatus !== "running" ? settle(r.item) : r.item,
       turnId: r.turnId,
       threadId: r.threadId,
       position: r.position,
@@ -101,6 +102,14 @@ export function transcriptFromSnapshot(snap: SessionSnapshot): TranscriptState {
     state.rootThreadId = Object.values(state.threads).find((t) => !t.parentThreadId)?.id ?? null;
   }
   return state;
+}
+
+/**
+ * An item still "in progress" when its turn has ended (a restart cut the turn off before the
+ * tool reported back) is shown as cancelled, not as a command that runs forever.
+ */
+function settle(item: Item): Item {
+  return item.status === "in_progress" ? ({ ...item, status: "cancelled" } as Item) : item;
 }
 
 function ensureThread(state: TranscriptState, id: string): ThreadState {
@@ -228,6 +237,11 @@ export function applyAgentEvent(
         completedAt: ts,
         error: event.type === "turn.failed" ? event.error : (turn?.error ?? null),
       };
+      for (const [id, entry] of Object.entries(state.items)) {
+        if (entry.turnId === event.turnId && entry.item.status === "in_progress") {
+          state.items[id] = { ...entry, item: settle(entry.item) };
+        }
+      }
       break;
     }
     case "item.started":

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -47,6 +47,21 @@ describe("Journal", () => {
     reloaded.ack(3);
     expect(new Journal(dir).unacked).toBe(0);
     expect(new Journal(dir).append({ kind: "runner.draining", reason: "d" }).seq).toBe(4);
+  });
+
+  it("keeps running when the files cannot be compacted after an ack", () => {
+    const dir = join(home, "runner-locked");
+    const errors: unknown[] = [];
+    const journal = new Journal(dir, (e) => errors.push(e));
+    journal.append({ kind: "runner.draining", reason: "a" });
+    journal.append({ kind: "runner.draining", reason: "b" });
+    // A folder where the temp file goes makes every rewrite fail.
+    mkdirSync(join(dir, "journal.jsonl.tmp"));
+    expect(() => journal.ack(1)).not.toThrow();
+    expect(errors).toHaveLength(1);
+    expect(journal.after(0).map((e) => e.seq)).toEqual([2]);
+    // Unacked events are still on disk for a restart (the server ignores replayed seqs).
+    expect(new Journal(dir).after(0).map((e) => e.seq)).toEqual([1, 2]);
   });
 });
 
