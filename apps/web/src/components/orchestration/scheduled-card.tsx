@@ -53,6 +53,10 @@ interface Row {
   icon: typeof CalendarClock;
   title: string;
   where: string;
+  /** Text before `where`, e.g. "PM of ". */
+  wherePrefix?: string;
+  /** `where` names a project: shown bold and coloured so it stands out. */
+  isProject?: boolean;
   /** Set on finished items: true = done (green tick), false = failed. */
   ok?: boolean;
 }
@@ -89,6 +93,7 @@ export function ScheduledCard({ className }: { className?: string }) {
     icon: CalendarDays,
     title: o.event.title,
     where: o.event.projectId ? nameOf(o.event.projectId) : "Your event",
+    isProject: !!o.event.projectId,
     ...(ok === undefined ? {} : { ok }),
   });
 
@@ -103,6 +108,7 @@ export function ScheduledCard({ className }: { className?: string }) {
       icon: sourceIcon(d.source),
       title: d.title,
       where: nameOf(d.projectId),
+      isProject: !!d.projectId,
       ok: d.ok,
     })),
   ]
@@ -118,6 +124,7 @@ export function ScheduledCard({ className }: { className?: string }) {
       icon: sourceIcon(p.source),
       title: p.title,
       where: nameOf(p.projectId),
+      isProject: !!p.projectId,
     })),
     ...(data.data?.runs ?? [])
       .filter((r) => !r.skipped)
@@ -128,6 +135,7 @@ export function ScheduledCard({ className }: { className?: string }) {
         icon: CalendarClock,
         title: r.name,
         where: nameOf(r.projectId),
+        isProject: !!r.projectId,
       })),
     ...(data.data?.wakeups ?? []).map((w) => ({
       key: `wake-${w.id}`,
@@ -135,7 +143,9 @@ export function ScheduledCard({ className }: { className?: string }) {
       kind: "wakeup" as const,
       icon: AlarmClock,
       title: w.note,
-      where: w.target === "pm" ? `PM of ${nameOf(w.projectId)}` : "Orchestrator",
+      ...(w.target === "pm"
+        ? { wherePrefix: "PM of ", where: nameOf(w.projectId), isProject: true }
+        : { where: "Orchestrator" }),
     })),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
@@ -158,7 +168,8 @@ export function ScheduledCard({ className }: { className?: string }) {
           {r.title}
         </span>
         <span className="block truncate text-2xs text-muted-foreground">
-          {r.ok === undefined ? until(r.at) : formatAt(r.at)} · {r.where}
+          {r.ok === undefined ? until(r.at) : formatAt(r.at)} · {r.wherePrefix}
+          <span className={cn(r.isProject && "font-semibold text-primary")}>{r.where}</span>
           {r.ok === false && " · failed"}
         </span>
       </Link>

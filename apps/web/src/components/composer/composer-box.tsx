@@ -142,7 +142,7 @@ export function ComposerBox({
             onPaste={onPaste}
             placeholder={placeholder}
             aria-label="Message"
-            className="block max-h-64 min-h-[56px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground/70"
+            className="block max-h-[28rem] min-h-[112px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground/70"
           />
           <div className="flex flex-wrap items-center gap-0.5 gap-y-1 px-2 pb-2">
             <input

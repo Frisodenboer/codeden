@@ -161,8 +161,7 @@ export function Composer({ session, running }: { session: Session; running: bool
       {running && !canSend ? (
         <Button
           size="icon-sm"
-          variant="secondary"
-          className="rounded-full"
+          className={cn("rounded-full", WORKING)}
           onClick={() => stop.mutate()}
           aria-label="Stop"
         >
@@ -171,7 +170,7 @@ export function Composer({ session, running }: { session: Session; running: bool
       ) : (
         <Button
           size="icon-sm"
-          className="rounded-full transition-transform hover:scale-105"
+          className={cn("rounded-full transition-transform hover:scale-105", running && WORKING)}
           onClick={() => submit()}
           disabled={!canSend || send.isPending}
           aria-label={running ? (canSteer ? `${mode} message` : "Queue message") : "Send"}
@@ -182,3 +181,6 @@ export function Composer({ session, running }: { session: Session; running: bool
     </ComposerBox>
   );
 }
+
+/** The send/stop button while the agent is working: green. */
+const WORKING = "bg-status-done text-white hover:bg-status-done/90";
