@@ -124,7 +124,7 @@ function PreviewRow({
               )}
             </span>
             {text && (
-              <span className="line-clamp-3 block font-mono text-3xs leading-relaxed whitespace-pre-wrap text-muted-foreground/90">
+              <span className="line-clamp-3 font-mono text-3xs leading-relaxed whitespace-pre-wrap text-muted-foreground/90">
                 {text.split("\n").slice(0, 3).join("\n")}
               </span>
             )}

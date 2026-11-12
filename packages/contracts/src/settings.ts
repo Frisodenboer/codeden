@@ -256,6 +256,13 @@ export const Settings = z.object({
        * a usage limit (a minute after it resets). Off: such a turn fails the session as before.
        */
       autoRetry: z.boolean().default(true),
+      /**
+       * Archive an agent session once its work is done: it reported its result and has been
+       * idle for 10 minutes after a success, or a day after any other outcome. Sessions with an
+       * open pull request, queued messages or uncommitted changes stay. A message brings an
+       * archived session back.
+       */
+      autoArchive: z.boolean().default(true),
     })
     .prefault({}),
   /** Master switch; individual automations are still off by default (§10). */

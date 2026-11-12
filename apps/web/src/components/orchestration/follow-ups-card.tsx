@@ -46,6 +46,14 @@ export function FollowUpsCard({ className }: { className?: string }) {
   });
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [title, setTitle] = useState("");
+  /** Follow-ups whose full description is shown; others show two lines. */
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleOpen = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const nameOf = (id: string | null) =>
     id ? (projects.find((p) => p.id === id)?.name ?? "Project") : null;
 
@@ -108,7 +116,7 @@ export function FollowUpsCard({ className }: { className?: string }) {
                 Nothing to do. When an agent asks you to do something, it lands here.
               </p>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-1.5">
                 {items.map((f) => {
                   const done = Boolean(f.doneAt);
                   const where = nameOf(f.projectId);
@@ -116,7 +124,6 @@ export function FollowUpsCard({ className }: { className?: string }) {
                     <li
                       key={f.id}
                       className="group flex items-start gap-2 rounded-md px-1 py-1 hover:bg-accent/60"
-                      title={f.detail || f.title}
                     >
                       <button
                         type="button"
@@ -147,18 +154,26 @@ export function FollowUpsCard({ className }: { className?: string }) {
                       <div className="min-w-0 flex-1">
                         <span
                           className={cn(
-                            "block text-xs",
-                            done && "text-muted-foreground line-through",
+                            "line-clamp-2 text-xs font-medium",
+                            done && "font-normal text-muted-foreground line-through",
                           )}
                         >
                           {f.title}
                         </span>
                         {f.detail && !done && (
-                          <span className="line-clamp-2 block text-2xs text-muted-foreground">
+                          <button
+                            type="button"
+                            onClick={() => toggleOpen(f.id)}
+                            aria-expanded={expanded.has(f.id)}
+                            className={cn(
+                              "mt-0.5 w-full cursor-pointer text-left text-2xs text-muted-foreground hover:text-foreground/80",
+                              !expanded.has(f.id) && "line-clamp-2",
+                            )}
+                          >
                             {f.detail}
-                          </span>
+                          </button>
                         )}
-                        <span className="block truncate text-2xs text-muted-foreground/80">
+                        <span className="mt-0.5 block truncate text-3xs text-muted-foreground/60">
                           {ADDED_BY[f.addedBy]}
                           {where ? ` · ${where}` : ""} · {ageShort(f.doneAt ?? f.createdAt)}
                           {f.sessionId && !done && (
@@ -217,7 +232,7 @@ export function FollowUpsCard({ className }: { className?: string }) {
                   <li key={w.id} className="flex items-start gap-2 px-1 py-1" title={w.note}>
                     <AlarmClock className="mt-0.5 size-3.5 shrink-0 text-teal-500" />
                     <div className="min-w-0 flex-1">
-                      <span className="line-clamp-2 block text-xs">{w.note}</span>
+                      <span className="line-clamp-2 text-xs">{w.note}</span>
                       <span className="block truncate text-2xs text-muted-foreground">
                         {until(w.at)} ·{" "}
                         {w.target === "pm"

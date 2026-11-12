@@ -30,6 +30,7 @@ import { ProjectService } from "./projects/project-service";
 import { ProjectRedetector } from "./projects/redetector";
 import { type RunnerPort, redetectProviders } from "./runner-port";
 import type { SecretStore } from "./secrets";
+import { AutoArchive, type AutoArchiveDeps } from "./sessions/auto-archive";
 import { AutoRetry, type AutoRetryDeps } from "./sessions/auto-retry";
 import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
@@ -101,6 +102,7 @@ export interface ServicesOptions {
   unwatchedApprovals?: Pick<UnwatchedApprovalsDeps, "waitMs" | "now">;
   /** Shorter retry waits (tests). */
   autoRetry?: Pick<AutoRetryDeps, "delaysMs" | "usageMarginMs">;
+  autoArchive?: Pick<AutoArchiveDeps, "now" | "intervalMs" | "successAfterMs" | "otherAfterMs">;
   log?: (message: string) => void;
 }
 
@@ -163,6 +165,7 @@ export interface AppServices {
   prFeedback: PrFeedbackService;
   /** Continues agent sessions after transient failures and usage limits. */
   autoRetry: AutoRetry;
+  autoArchive: AutoArchive;
   userHome: string;
 }
 
@@ -410,6 +413,15 @@ export function createServices(opts: ServicesOptions): AppServices {
       settings: () => opts.settings.get(),
       send: (id, input) => sessions.send(id, { input, whenBusy: "queue" }, "codeden"),
       ...opts.autoRetry,
+      log: opts.log,
+    }),
+    autoArchive: new AutoArchive({
+      repo: sessionRepo,
+      settings: () => opts.settings.get(),
+      archive: (id) => worktreeCleanup.archive(id),
+      unarchive: (id) => worktreeCleanup.unarchive(id),
+      hasQueued: (id) => sessions.hasOutbox(id),
+      ...opts.autoArchive,
       log: opts.log,
     }),
     configFiles: new ConfigFiles({

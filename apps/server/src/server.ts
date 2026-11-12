@@ -127,6 +127,7 @@ export interface StartServerOptions {
   worktreeCleanup?: ServicesOptions["worktreeCleanup"];
   /** Automatic retry waits (tests). */
   autoRetry?: ServicesOptions["autoRetry"];
+  autoArchive?: ServicesOptions["autoArchive"];
   /** Network interfaces for the address list (tests). */
   networkInterfaces?: () => InterfaceMap;
   log?: (message: string) => void;
@@ -207,6 +208,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
     updates: opts.updates,
     worktreeCleanup: opts.worktreeCleanup,
     autoRetry: opts.autoRetry,
+    autoArchive: opts.autoArchive,
     log,
   });
   // Find out early whether `generate_image` can be offered to agents.
@@ -223,6 +225,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
   services.unwatchedApprovals.start();
   services.prFeedback.start();
   services.autoRetry.start();
+  services.autoArchive.start();
   const stopUpdateEvents = services.updates.onChange((status) => hub.broadcastUpdate(status));
   services.updates.start();
 
@@ -372,6 +375,7 @@ export async function startServer(opts: StartServerOptions): Promise<RunningServ
       services.unwatchedApprovals.stop();
       services.prFeedback.stop();
       services.autoRetry.stop();
+      services.autoArchive.stop();
       services.updates.stop();
       await services.localStt.stop();
       stopUpdateEvents();

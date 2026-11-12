@@ -93,6 +93,15 @@ export function GeneralSettings() {
             onCheckedChange={(v) => update({ sessions: { autoRetry: v } })}
           />
         </SettingRow>
+        <SettingRow
+          label="Archive finished agents"
+          help="Once an agent has reported its result, archive it: it leaves the sidebar, its process stops and its worktree is removed. After 10 minutes for a success, after a day for a partial, blocked or failed result. Agents with an open pull request, queued messages or uncommitted changes stay. Send an archived agent a message to bring it back."
+        >
+          <Switch
+            checked={settings.sessions.autoArchive}
+            onCheckedChange={(v) => update({ sessions: { autoArchive: v } })}
+          />
+        </SettingRow>
       </SettingsSection>
       <SettingsSection title="Background work">
         <SettingRow

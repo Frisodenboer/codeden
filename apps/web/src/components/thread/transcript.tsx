@@ -62,6 +62,18 @@ export function Transcript({
     return () => clearTimeout(t);
   }, [threadId]);
 
+  // The view gets shorter when the prompt box below grows (typing, attachments): stay pinned.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: observe the scroll box once.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stick.current) scrollToEnd();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // Follow new content while pinned.
   const total = virtualizer.getTotalSize();
   // biome-ignore lint/correctness/useExhaustiveDependencies: follow size changes only.
@@ -74,7 +86,7 @@ export function Transcript({
       <div
         ref={scrollRef}
         data-testid="transcript-scroll"
-        className="h-full overflow-y-auto scroll-thin [scrollbar-gutter:stable]"
+        className="h-full overflow-y-auto scroll-thin [scrollbar-gutter:stable] [mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]"
         onScroll={(e) => {
           const el = e.currentTarget;
           const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
@@ -85,7 +97,7 @@ export function Transcript({
         {/* Safety net: long words wrap, and nothing that still overflows can scroll sideways. */}
         <div
           className={cn(
-            "mr-auto w-full max-w-[46rem] overflow-x-clip px-6 pt-6 pb-4 wrap-break-word",
+            "mr-auto w-full max-w-[46rem] overflow-x-clip px-6 pt-6 pb-12 wrap-break-word",
             contentClassName,
           )}
         >
@@ -116,7 +128,7 @@ export function Transcript({
         <Button
           size="xs"
           variant="secondary"
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border shadow-md"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-border shadow-md"
           onClick={() => {
             stick.current = true;
             scrollToEnd(true);
