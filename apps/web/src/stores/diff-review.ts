@@ -1,14 +1,20 @@
 import { create } from "zustand";
-import { formatReviewMessage, type ReviewRange } from "@/lib/diff-review";
+import { formatReviewMessage, type ReviewRange, sameRange } from "@/lib/diff-review";
 
 /** A line comment drafted in the Diff panel, waiting to be sent to the agent. */
 export interface ReviewComment {
   id: string;
   path: string;
-  /** The diff view it was written in (`diffScopeKey`); it shows inline only there. */
+  /** The diff view it was written in (`diffScopeKey`); it shows only there. */
   scopeKey: string;
+  /** The covered lines as numbered when the comment was started. Never changes. */
   range: ReviewRange;
-  /** The covered diff rows, captured when the comment was started. */
+  /**
+   * Where the quoted lines are now, set while the diff has moved them away from `range`
+   * (`place`). Cleared when they're back, or gone and the comment is outdated.
+   */
+  moved?: ReviewRange;
+  /** The covered diff rows, captured when the comment was started. Never changes. */
   quote: string[];
   /** The saved text; empty until the comment is first saved. */
   body: string;
@@ -41,10 +47,19 @@ interface DiffReviewState {
   cancel: (sessionId: string, id: string) => void;
   edit: (sessionId: string, id: string) => void;
   remove: (sessionId: string, ids: string[]) => void;
+  /**
+   * Record where a view's comments are in its diff now (`anchorComments`): a comment whose
+   * lines moved gets `moved`, and one back where it was written, or outdated, loses it.
+   */
+  place: (
+    sessionId: string,
+    anchors: { ranges: ReadonlyMap<string, ReviewRange>; outdated: string[] },
+  ) => void;
   /** Discard every comment that isn't on its way to the agent. */
   clear: (sessionId: string) => void;
   /**
-   * Send the saved comments as one review through `deliver`. One review per session is in
+   * Send the saved comments as one review through `deliver`, each with its `currentRange`
+   * and the rows it quoted when started. One review per session is in
    * flight at a time, and its comments are locked until it settles. When it lands, the sent
    * comments and the editors that were empty are cleared; anything written since stays. When
    * it fails, everything stays and the error is thrown.
@@ -67,14 +82,27 @@ export function sessionComments(
   return state.comments[sessionId] ?? none;
 }
 
+/**
+ * The lines a comment is labelled and sent with: where they are now when the diff moved them,
+ * else (and always once it's outdated) where it was written.
+ */
+export function currentRange(c: ReviewComment): ReviewRange {
+  return c.moved ?? c.range;
+}
+
 /** Saved comments: the ones that count and get sent. */
 export function savedComments(comments: ReviewComment[]): ReviewComment[] {
   return comments.filter((c) => c.body.trim() !== "");
 }
 
+/** Whether a comment's editor is open with text that differs from what is saved. */
+export function isUnsavedEdit(c: ReviewComment): boolean {
+  return c.draft !== undefined && c.draft.trim() !== c.body.trim();
+}
+
 /** An open editor whose text differs from what is saved: sending would leave it behind. */
 export function hasUnsavedEdit(comments: ReviewComment[]): boolean {
-  return comments.some((c) => c.draft !== undefined && c.draft.trim() !== c.body.trim());
+  return comments.some(isUnsavedEdit);
 }
 
 /** Whether a comment is part of the review in flight, and so can't be changed. */
@@ -139,6 +167,27 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => {
       const free = ids.filter((id) => !isSending(get(), sessionId, id));
       change(sessionId, (list) => list.filter((c) => !free.includes(c.id)));
     },
+    place: (sessionId, { ranges, outdated }) => {
+      // The comment's `moved` after this: comments the view didn't place keep theirs.
+      const next = (c: ReviewComment): ReviewRange | undefined => {
+        const now = ranges.get(c.id);
+        if (now) return sameRange(now, c.range) ? undefined : now;
+        return outdated.includes(c.id) ? undefined : c.moved;
+      };
+      const changed = (c: ReviewComment) => {
+        const now = next(c);
+        return now && c.moved ? !sameRange(now, c.moved) : now !== c.moved;
+      };
+      if (!sessionComments(get(), sessionId).some(changed)) return;
+      change(sessionId, (list) =>
+        list.map((c) => {
+          if (!changed(c)) return c;
+          const { moved: _, ...rest } = c;
+          const now = next(c);
+          return now ? { ...rest, moved: now } : rest;
+        }),
+      );
+    },
     clear: (sessionId) =>
       change(sessionId, (list) => list.filter((c) => isSending(get(), sessionId, c.id))),
     sendReview: async (sessionId, deliver) => {
@@ -154,7 +203,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => {
       };
       set((s) => ({ sending: { ...s.sending, [sessionId]: review } }));
       try {
-        await deliver(formatReviewMessage(saved));
+        await deliver(formatReviewMessage(saved.map((c) => ({ ...c, range: currentRange(c) }))));
       } catch (error) {
         set((s) => ({ sending: without(s.sending, sessionId) }));
         throw error;
