@@ -2,7 +2,7 @@ import type { FollowUp } from "@codeden/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlarmClock, Check, ChevronDown, ChevronRight, ListTodo, Pin, Plus, X } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { useClient } from "@/lib/api";
@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 
 const COLLAPSED_KEY = "codebench.followUps.collapsed";
 const PINNED_KEY = "codebench.followUps.pinned";
+/** A ticked-off follow-up stays in the list this long (time to undo), then moves to Archived. */
+const ARCHIVE_AFTER_MS = 5_000;
 
 function readPinned(): string | null {
   try {
@@ -81,6 +83,21 @@ export function FollowUpsCard({ className }: { className?: string }) {
     return (b.doneAt ?? b.createdAt).localeCompare(a.doneAt ?? a.createdAt);
   });
   const open = items.filter((f) => !f.doneAt).length;
+  // Done items archive themselves a few seconds after being ticked off.
+  const [now, setNow] = useState(Date.now);
+  const archiveAt = (f: FollowUp) => (f.doneAt ? Date.parse(f.doneAt) + ARCHIVE_AFTER_MS : null);
+  const archived = items.filter((f) => {
+    const at = archiveAt(f);
+    return at !== null && at <= now;
+  });
+  const active = items.filter((f) => !archived.includes(f));
+  const nextArchive = Math.min(...active.map((f) => archiveAt(f) ?? Number.POSITIVE_INFINITY));
+  useEffect(() => {
+    if (!Number.isFinite(nextArchive)) return;
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, nextArchive - Date.now()) + 50);
+    return () => clearTimeout(t);
+  }, [nextArchive]);
+  const [showArchived, setShowArchived] = useState(false);
   const pinned = items.find((f) => f.id === pinnedId) ?? null;
   const toggleDone = (f: FollowUp) => {
     const done = Boolean(f.doneAt);
@@ -94,6 +111,83 @@ export function FollowUpsCard({ className }: { className?: string }) {
     );
   };
   const wakeups = scheduled.data?.wakeups ?? [];
+  const renderItem = (f: FollowUp) => {
+    const done = Boolean(f.doneAt);
+    const where = nameOf(f.projectId);
+    return (
+      <li
+        key={f.id}
+        className="group flex items-start gap-2 rounded-md px-1 py-1 hover:bg-accent/60"
+      >
+        <button
+          type="button"
+          aria-pressed={done}
+          aria-label={done ? `Mark ${f.title} as not done` : `Mark ${f.title} as done`}
+          onClick={() => toggleDone(f)}
+          className={cn(
+            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+            done
+              ? "border-status-done bg-status-done text-white"
+              : "border-border hover:border-primary",
+          )}
+        >
+          {done && <Check className="size-3" />}
+        </button>
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => pin(pinnedId === f.id ? null : f.id)}
+            aria-pressed={pinnedId === f.id}
+            title="Open as a sticky note at the top right"
+            className="block w-full cursor-pointer text-left"
+          >
+            <span
+              className={cn(
+                "line-clamp-2 text-xs font-medium",
+                done && "font-normal text-muted-foreground line-through",
+                pinnedId === f.id && "text-primary",
+              )}
+            >
+              {f.title}
+            </span>
+            {f.detail && !done && (
+              <span className="mt-0.5 line-clamp-2 text-2xs text-muted-foreground hover:text-foreground/80">
+                {f.detail}
+              </span>
+            )}
+          </button>
+          <span className="mt-0.5 block truncate text-3xs text-muted-foreground/60">
+            {ADDED_BY[f.addedBy]}
+            {where ? ` · ${where}` : ""} · {ageShort(f.doneAt ?? f.createdAt)}
+            {f.sessionId && !done && (
+              <>
+                {" · "}
+                <Link
+                  to="/sessions/$sessionId"
+                  params={{ sessionId: f.sessionId }}
+                  className="hover:text-foreground hover:underline"
+                >
+                  open chat
+                </Link>
+              </>
+            )}
+          </span>
+        </div>
+        <button
+          type="button"
+          title="Remove"
+          aria-label={`Remove ${f.title}`}
+          onClick={() => {
+            if (pinnedId === f.id) pin(null);
+            deleteFollowUp.mutate(f.id);
+          }}
+          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground hover:opacity-100"
+        >
+          <X className="size-3" />
+        </button>
+      </li>
+    );
+  };
 
   const add = (e: FormEvent) => {
     e.preventDefault();
@@ -152,92 +246,30 @@ export function FollowUpsCard({ className }: { className?: string }) {
               <p className="px-1 pb-1 text-3xs font-medium tracking-wide text-muted-foreground uppercase">
                 For you
               </p>
-              {items.length === 0 ? (
+              {active.length === 0 ? (
                 <p className="px-1 py-1 text-xs text-muted-foreground">
                   Nothing to do. When an agent asks you to do something, it lands here.
                 </p>
               ) : (
-                <ul className="space-y-1.5">
-                  {items.map((f) => {
-                    const done = Boolean(f.doneAt);
-                    const where = nameOf(f.projectId);
-                    return (
-                      <li
-                        key={f.id}
-                        className="group flex items-start gap-2 rounded-md px-1 py-1 hover:bg-accent/60"
-                      >
-                        <button
-                          type="button"
-                          aria-pressed={done}
-                          aria-label={
-                            done ? `Mark ${f.title} as not done` : `Mark ${f.title} as done`
-                          }
-                          onClick={() => toggleDone(f)}
-                          className={cn(
-                            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
-                            done
-                              ? "border-status-done bg-status-done text-white"
-                              : "border-border hover:border-primary",
-                          )}
-                        >
-                          {done && <Check className="size-3" />}
-                        </button>
-                        <div className="min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() => pin(pinnedId === f.id ? null : f.id)}
-                            aria-pressed={pinnedId === f.id}
-                            title="Open as a sticky note at the top right"
-                            className="block w-full cursor-pointer text-left"
-                          >
-                            <span
-                              className={cn(
-                                "line-clamp-2 text-xs font-medium",
-                                done && "font-normal text-muted-foreground line-through",
-                                pinnedId === f.id && "text-primary",
-                              )}
-                            >
-                              {f.title}
-                            </span>
-                            {f.detail && !done && (
-                              <span className="mt-0.5 line-clamp-2 text-2xs text-muted-foreground hover:text-foreground/80">
-                                {f.detail}
-                              </span>
-                            )}
-                          </button>
-                          <span className="mt-0.5 block truncate text-3xs text-muted-foreground/60">
-                            {ADDED_BY[f.addedBy]}
-                            {where ? ` · ${where}` : ""} · {ageShort(f.doneAt ?? f.createdAt)}
-                            {f.sessionId && !done && (
-                              <>
-                                {" · "}
-                                <Link
-                                  to="/sessions/$sessionId"
-                                  params={{ sessionId: f.sessionId }}
-                                  className="hover:text-foreground hover:underline"
-                                >
-                                  open chat
-                                </Link>
-                              </>
-                            )}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          title="Remove"
-                          aria-label={`Remove ${f.title}`}
-                          onClick={() => {
-                            if (pinnedId === f.id) pin(null);
-                            deleteFollowUp.mutate(f.id);
-                          }}
-                          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground hover:opacity-100"
-                        >
-                          <X className="size-3" />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <ul className="space-y-1.5">{active.map(renderItem)}</ul>
+              )}
+              {archived.length > 0 && (
+                <div className="mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowArchived((v) => !v)}
+                    aria-expanded={showArchived}
+                    className="flex items-center gap-1 px-1 py-0.5 text-3xs font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
+                  >
+                    {showArchived ? (
+                      <ChevronDown className="size-3" />
+                    ) : (
+                      <ChevronRight className="size-3" />
+                    )}
+                    Archived ({archived.length})
+                  </button>
+                  {showArchived && <ul className="mt-1 space-y-1.5">{archived.map(renderItem)}</ul>}
+                </div>
               )}
               <form onSubmit={add} className="mt-1 flex gap-1">
                 <input
