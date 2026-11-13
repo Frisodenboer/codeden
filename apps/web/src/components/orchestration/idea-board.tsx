@@ -117,7 +117,7 @@ export function IdeaBoard({
             return !v;
           })
         }
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[13px] font-medium"
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[15px] font-medium"
         aria-expanded={!collapsed}
       >
         {collapsed ? (
@@ -127,7 +127,7 @@ export function IdeaBoard({
         )}
         <Lightbulb className="size-3.5 text-primary" />
         Ideas
-        <span className="ml-auto text-2xs font-normal text-muted-foreground">
+        <span className="ml-auto text-xs font-normal text-muted-foreground">
           drag into the chat
         </span>
       </button>
@@ -139,18 +139,20 @@ export function IdeaBoard({
               onChange={(e) => setTitle(e.target.value)}
               placeholder="New idea…"
               aria-label="New idea"
-              className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs outline-none focus:border-primary/50"
+              className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[13.5px] outline-none focus:border-primary/50"
             />
             <button
               type="submit"
               disabled={!title.trim()}
               title="Add idea"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
             >
               <Plus className="size-3.5" />
             </button>
           </form>
-          {planner.error && <p className="text-xs text-status-failed">{planner.error.message}</p>}
+          {planner.error && (
+            <p className="text-[13.5px] text-status-failed">{planner.error.message}</p>
+          )}
           {COLUMNS.map((col) => {
             const cards = ideas
               .filter((i) => i.column === col.id)
@@ -176,7 +178,7 @@ export function IdeaBoard({
                   type="button"
                   disabled={col.id !== "sent"}
                   onClick={() => setShowSent((v) => !v)}
-                  className="flex w-full items-center gap-1 px-1 pb-1 text-left text-2xs font-medium tracking-wide text-muted-foreground uppercase"
+                  className="flex w-full items-center gap-1 px-1 pb-1 text-left text-xs font-medium tracking-wide text-muted-foreground uppercase"
                 >
                   {col.label}
                   <span className="font-normal">({cards.length})</span>
@@ -189,7 +191,7 @@ export function IdeaBoard({
                 {!hidden && (
                   <ul className="space-y-1">
                     {cards.length === 0 && (
-                      <li className="px-1 py-1 text-2xs text-muted-foreground/70">
+                      <li className="px-1 py-1 text-xs text-muted-foreground/70">
                         Drop ideas here
                       </li>
                     )}
@@ -209,7 +211,7 @@ export function IdeaBoard({
                         title={ideaText(idea)}
                       >
                         <GripVertical className="size-3 shrink-0 text-muted-foreground/60" />
-                        <span className="min-w-0 flex-1 truncate text-xs">{idea.title}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13.5px]">{idea.title}</span>
                         <button
                           type="button"
                           title={

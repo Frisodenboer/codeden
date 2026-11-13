@@ -143,7 +143,7 @@ export function FollowUpsCard({ className }: { className?: string }) {
           >
             <span
               className={cn(
-                "line-clamp-2 text-xs font-medium",
+                "line-clamp-2 text-[13.5px] font-medium",
                 done && "font-normal text-muted-foreground line-through",
                 pinnedId === f.id && "text-primary",
               )}
@@ -151,12 +151,12 @@ export function FollowUpsCard({ className }: { className?: string }) {
               {f.title}
             </span>
             {f.detail && !done && (
-              <span className="mt-0.5 line-clamp-2 text-2xs text-muted-foreground hover:text-foreground/80">
+              <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground hover:text-foreground/80">
                 {f.detail}
               </span>
             )}
           </button>
-          <span className="mt-0.5 block truncate text-3xs text-muted-foreground/60">
+          <span className="mt-0.5 block truncate text-2xs text-muted-foreground/60">
             {ADDED_BY[f.addedBy]}
             {where ? ` · ${where}` : ""} · {ageShort(f.doneAt ?? f.createdAt)}
             {f.sessionId && !done && (
@@ -224,7 +224,7 @@ export function FollowUpsCard({ className }: { className?: string }) {
               return !v;
             })
           }
-          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[13px] font-medium"
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[15px] font-medium"
           aria-expanded={!collapsed}
         >
           {collapsed ? (
@@ -235,7 +235,7 @@ export function FollowUpsCard({ className }: { className?: string }) {
           <ListTodo className="size-3.5 text-primary" />
           Follow-ups
           {open > 0 && (
-            <span className="rounded-full bg-primary/10 px-1.5 text-3xs font-medium text-primary">
+            <span className="rounded-full bg-primary/10 px-1.5 text-2xs font-medium text-primary">
               {open}
             </span>
           )}
@@ -243,11 +243,11 @@ export function FollowUpsCard({ className }: { className?: string }) {
         {!collapsed && (
           <div className="space-y-2 border-t border-border p-2">
             <div>
-              <p className="px-1 pb-1 text-3xs font-medium tracking-wide text-muted-foreground uppercase">
+              <p className="px-1 pb-1 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
                 For you
               </p>
               {active.length === 0 ? (
-                <p className="px-1 py-1 text-xs text-muted-foreground">
+                <p className="px-1 py-1 text-[13.5px] text-muted-foreground">
                   Nothing to do. When an agent asks you to do something, it lands here.
                 </p>
               ) : (
@@ -259,7 +259,7 @@ export function FollowUpsCard({ className }: { className?: string }) {
                     type="button"
                     onClick={() => setShowArchived((v) => !v)}
                     aria-expanded={showArchived}
-                    className="flex items-center gap-1 px-1 py-0.5 text-3xs font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
+                    className="flex items-center gap-1 px-1 py-0.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
                   >
                     {showArchived ? (
                       <ChevronDown className="size-3" />
@@ -277,13 +277,13 @@ export function FollowUpsCard({ className }: { className?: string }) {
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Add a follow-up…"
                   aria-label="Add a follow-up"
-                  className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs outline-none focus:border-primary/50"
+                  className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[13.5px] outline-none focus:border-primary/50"
                 />
                 <button
                   type="submit"
                   disabled={!title.trim()}
                   title="Add"
-                  className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
                 >
                   <Plus className="size-3.5" />
                 </button>
@@ -291,7 +291,7 @@ export function FollowUpsCard({ className }: { className?: string }) {
             </div>
             {wakeups.length > 0 && (
               <div>
-                <p className="px-1 pb-1 text-3xs font-medium tracking-wide text-muted-foreground uppercase">
+                <p className="px-1 pb-1 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
                   Agents will
                 </p>
                 <ul className="space-y-0.5">
@@ -299,8 +299,8 @@ export function FollowUpsCard({ className }: { className?: string }) {
                     <li key={w.id} className="flex items-start gap-2 px-1 py-1" title={w.note}>
                       <AlarmClock className="mt-0.5 size-3.5 shrink-0 text-teal-500" />
                       <div className="min-w-0 flex-1">
-                        <span className="line-clamp-2 text-xs">{w.note}</span>
-                        <span className="block truncate text-2xs text-muted-foreground">
+                        <span className="line-clamp-2 text-[13.5px]">{w.note}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
                           {until(w.at)} ·{" "}
                           {w.target === "pm"
                             ? `PM of ${nameOf(w.projectId) ?? "project"}`
@@ -340,7 +340,7 @@ function StickyFollowUp({
       aria-label="Pinned follow-up"
       className="fixed top-14 right-4 z-40 flex max-h-[calc(100vh-5rem)] w-[min(32rem,calc(100vw-2rem))] flex-col rounded-xl border border-primary/40 bg-popover shadow-2xl animate-rise"
     >
-      <header className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-xs text-muted-foreground">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-[13.5px] text-muted-foreground">
         <Pin className="size-3.5 shrink-0 text-primary" />
         <span className="font-medium text-foreground">Follow-up</span>
         <span className="truncate">
@@ -360,14 +360,14 @@ function StickyFollowUp({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 scroll-thin">
         <h2
           className={cn(
-            "text-base font-semibold",
+            "text-[17px] font-semibold",
             done && "font-normal text-muted-foreground line-through",
           )}
         >
           {f.title}
         </h2>
         {f.detail && (
-          <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap text-foreground/85">
+          <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-wrap text-foreground/85">
             {f.detail}
           </p>
         )}
@@ -377,7 +377,7 @@ function StickyFollowUp({
           type="button"
           onClick={onToggleDone}
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium",
+            "flex h-8 items-center gap-1.5 rounded-md px-3 text-[13.5px] font-medium",
             done
               ? "border border-border hover:bg-muted"
               : "bg-status-done text-white hover:bg-status-done/90",
@@ -389,7 +389,7 @@ function StickyFollowUp({
           <Link
             to="/sessions/$sessionId"
             params={{ sessionId: f.sessionId }}
-            className="flex h-8 items-center rounded-md border border-border px-3 text-xs hover:bg-muted"
+            className="flex h-8 items-center rounded-md border border-border px-3 text-[13.5px] hover:bg-muted"
           >
             Open chat
           </Link>

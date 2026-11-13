@@ -163,11 +163,14 @@ export function ScheduledCard({ className }: { className?: string }) {
       )}
       <Link to="/scheduled" className="min-w-0 flex-1" title={`${r.title} · ${formatAt(r.at)}`}>
         <span
-          className={cn("block truncate text-xs", r.ok !== undefined && "text-muted-foreground")}
+          className={cn(
+            "block truncate text-[13.5px]",
+            r.ok !== undefined && "text-muted-foreground",
+          )}
         >
           {r.title}
         </span>
-        <span className="block truncate text-2xs text-muted-foreground">
+        <span className="block truncate text-xs text-muted-foreground">
           {r.ok === undefined ? until(r.at) : formatAt(r.at)} · {r.wherePrefix}
           <span className={cn(r.isProject && "font-semibold text-primary")}>{r.where}</span>
           {r.ok === false && " · failed"}
@@ -204,7 +207,7 @@ export function ScheduledCard({ className }: { className?: string }) {
               return !v;
             });
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] font-medium"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[15px] font-medium"
           aria-expanded={!collapsed}
         >
           {collapsed ? (
@@ -215,32 +218,32 @@ export function ScheduledCard({ className }: { className?: string }) {
           <CalendarClock className="size-3.5 text-primary" />
           Scheduled
           {upcoming.length > 0 && (
-            <span className="rounded-full bg-primary/10 px-1.5 text-3xs font-medium text-primary">
+            <span className="rounded-full bg-primary/10 px-1.5 text-2xs font-medium text-primary">
               {upcoming.length}
             </span>
           )}
           {done.length > 0 && (
-            <span className="flex items-center gap-0.5 rounded-full bg-status-done/15 px-1.5 text-3xs font-medium text-status-done">
+            <span className="flex items-center gap-0.5 rounded-full bg-status-done/15 px-1.5 text-2xs font-medium text-status-done">
               <Check className="size-2.5" />
               {done.length}
             </span>
           )}
         </button>
-        <Link to="/scheduled" className="text-2xs text-muted-foreground hover:text-foreground">
+        <Link to="/scheduled" className="text-xs text-muted-foreground hover:text-foreground">
           View all
         </Link>
       </div>
       {!collapsed && (
         <div className="space-y-1.5 border-t border-border px-1.5 py-1.5">
           {data.error ? (
-            <p className="px-1.5 py-1 text-xs text-status-failed">{data.error.message}</p>
+            <p className="px-1.5 py-1 text-[13.5px] text-status-failed">{data.error.message}</p>
           ) : data.isLoading ? (
-            <p className="px-1.5 py-1 text-xs text-muted-foreground">Loading…</p>
+            <p className="px-1.5 py-1 text-[13.5px] text-muted-foreground">Loading…</p>
           ) : (
             <>
               {done.length > 0 && (
                 <div>
-                  <p className="px-1.5 pt-0.5 text-3xs font-medium tracking-wide text-muted-foreground uppercase">
+                  <p className="px-1.5 pt-0.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
                     Done
                   </p>
                   <ul className="space-y-0.5">{done.map(row)}</ul>
@@ -248,19 +251,21 @@ export function ScheduledCard({ className }: { className?: string }) {
               )}
               <div>
                 {done.length > 0 && (
-                  <p className="px-1.5 pt-0.5 text-3xs font-medium tracking-wide text-muted-foreground uppercase">
+                  <p className="px-1.5 pt-0.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
                     Next
                   </p>
                 )}
                 {upcoming.length === 0 ? (
-                  <p className="px-1.5 py-1 text-xs text-muted-foreground">Nothing scheduled.</p>
+                  <p className="px-1.5 py-1 text-[13.5px] text-muted-foreground">
+                    Nothing scheduled.
+                  </p>
                 ) : (
                   <ul className="space-y-0.5">{upcoming.slice(0, MAX_UPCOMING).map(row)}</ul>
                 )}
                 {upcoming.length > MAX_UPCOMING && (
                   <Link
                     to="/scheduled"
-                    className="block px-1.5 pt-0.5 text-2xs text-muted-foreground hover:text-foreground"
+                    className="block px-1.5 pt-0.5 text-xs text-muted-foreground hover:text-foreground"
                   >
                     +{upcoming.length - MAX_UPCOMING} more
                   </Link>
