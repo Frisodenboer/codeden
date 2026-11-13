@@ -15,6 +15,7 @@ import { advanceBuilding, advanceWatching } from "./progress";
 import { recoverNoCiFailures } from "./rebase";
 import { advanceScout } from "./scout";
 import { mayAutoMerge } from "./trust";
+import { recoverTurnRaceFailures } from "./turn-race";
 import { advanceVerifying } from "./verify";
 
 export { FACTORY_LABEL } from "./intake";
@@ -98,6 +99,9 @@ export async function runTick(
   loop = await intakeIssues(ctx, project, loop);
   loop = await intakeFailedChecks(ctx, project, loop);
   await classifyPending(ctx, project);
+  // Items whose builder was marked failed by a message racing its turn go back to building,
+  // ahead of new work for the free agents.
+  await recoverTurnRaceFailures(ctx, project, loop);
   await assignAgents(ctx, project, loop);
   if (project.autonomyMode === "dark_factory") loop = await advanceScout(ctx, project, loop);
   return save(ctx, { ...loop, state: deriveState(ctx, projectId, loop) }, now);
