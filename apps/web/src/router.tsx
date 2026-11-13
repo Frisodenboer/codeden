@@ -20,6 +20,7 @@ import { NewSessionPage } from "@/routes/new-session";
 import { PmPage } from "@/routes/pm";
 import { ProjectPage, type ProjectTab } from "@/routes/project";
 import { ReportsPage } from "@/routes/reports";
+import { SearchPage } from "@/routes/search";
 import { SessionPage } from "@/routes/session";
 import { SettingsPage } from "@/routes/settings";
 import { SetupPage } from "@/routes/setup";
@@ -45,9 +46,26 @@ const shell = createRoute({ getParentRoute: () => rootRoute, id: "shell", compon
 const sessionRoute = createRoute({
   getParentRoute: () => shell,
   path: "/sessions/$sessionId",
+  // `?item=`: open the transcript at this item (a transcript search hit).
+  validateSearch: (s: Record<string, unknown>): { item?: string } =>
+    typeof s.item === "string" && s.item ? { item: s.item } : {},
   component: function Session() {
     const { sessionId } = sessionRoute.useParams();
-    return <SessionPage sessionId={sessionId} />;
+    const { item } = sessionRoute.useSearch();
+    return <SessionPage sessionId={sessionId} focusItemId={item} />;
+  },
+});
+
+const searchRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/search",
+  validateSearch: (s: Record<string, unknown>): { q?: string; project?: string } => ({
+    ...(typeof s.q === "string" && s.q ? { q: s.q } : {}),
+    ...(typeof s.project === "string" && s.project ? { project: s.project } : {}),
+  }),
+  component: function Search() {
+    const { q, project } = searchRoute.useSearch();
+    return <SearchPage q={q ?? ""} projectId={project} />;
   },
 });
 
@@ -214,6 +232,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => shell, path: "/", component: HomePage }),
     inboxRoute,
     reportsRoute,
+    searchRoute,
     sessionRoute,
     projectRoute,
     newSessionRoute,

@@ -66,8 +66,19 @@ function TranscriptSkeleton() {
   );
 }
 
-/** The centre column for a session: header, transcript, follow-ups and composer. */
-export function ThreadView({ sessionId, empty }: { sessionId: string; empty?: React.ReactNode }) {
+/**
+ * The centre column for a session: header, transcript, follow-ups and composer.
+ * `focusItemId` opens the transcript at that item instead of the end.
+ */
+export function ThreadView({
+  sessionId,
+  empty,
+  focusItemId,
+}: {
+  sessionId: string;
+  empty?: React.ReactNode;
+  focusItemId?: string;
+}) {
   const session = useSession(sessionId);
   const { transcript, isLoading, error } = useTranscript(sessionId);
   const threadId = transcript?.rootThreadId ?? session?.rootThreadId ?? null;
@@ -107,7 +118,12 @@ export function ThreadView({ sessionId, empty }: { sessionId: string; empty?: Re
           {error.message}
         </EmptyState>
       ) : hasItems && transcript && threadId ? (
-        <Transcript transcript={transcript} threadId={threadId} sessionId={sessionId} />
+        <Transcript
+          transcript={transcript}
+          threadId={threadId}
+          sessionId={sessionId}
+          focusItemId={focusItemId}
+        />
       ) : firstMessage ? (
         <FirstMessage input={firstMessage} status={session.status} />
       ) : isLoading || !transcript || !threadId ? (

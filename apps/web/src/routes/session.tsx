@@ -28,13 +28,20 @@ function ForkedEmpty({ origin }: { origin: ForkOrigin }) {
   );
 }
 
-/** Any agent or PM session. */
-export function SessionPage({ sessionId }: { sessionId: string }) {
+/** Any agent or PM session; `focusItemId` opens the transcript at that item. */
+export function SessionPage({
+  sessionId,
+  focusItemId,
+}: {
+  sessionId: string;
+  focusItemId?: string;
+}) {
   const forkedFrom = useSession(sessionId)?.forkedFrom;
   return (
     <ThreadView
       key={sessionId}
       sessionId={sessionId}
+      focusItemId={focusItemId}
       empty={
         forkedFrom ? (
           <ForkedEmpty origin={forkedFrom} />
