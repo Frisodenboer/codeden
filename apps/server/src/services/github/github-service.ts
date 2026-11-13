@@ -53,6 +53,8 @@ export interface GithubServiceDeps extends RunnerDeps {
   inbox: InboxService;
   exec: Exec;
   secrets: SecretStore;
+  /** CodeDen's data directory: its credential files are never attached as evidence (§15). */
+  home?: string;
   /** `fetch` for Octokit and the API base URL (tests point them at a fake GitHub). */
   fetch?: typeof fetch;
   baseUrl?: string;
@@ -320,6 +322,7 @@ export class GithubService {
       session,
       this.githubRepo(session.projectId),
       input,
+      this.deps.home,
     );
   }
 
