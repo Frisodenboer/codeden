@@ -42,7 +42,7 @@ function FollowupChips({
   return (
     <ul
       aria-label="Suggested follow-ups"
-      className="mr-auto flex max-h-[24vh] w-full max-w-[46rem] shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-3 scroll-thin sm:-mt-2 sm:px-6 sm:pb-4"
+      className="mr-auto flex max-h-[24vh] w-full max-w-[46rem] term:max-w-[55rem] shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-3 scroll-thin sm:-mt-2 sm:px-6 sm:pb-4"
     >
       {visible.map((s) => (
         <li
@@ -84,7 +84,7 @@ const dismissedFollowups = new Map<string, Set<string>>();
 
 function TranscriptSkeleton() {
   return (
-    <div className="mr-auto w-full max-w-[46rem] space-y-5 px-6 pt-8">
+    <div className="mr-auto w-full max-w-[46rem] term:max-w-[55rem] space-y-5 px-6 pt-8">
       <Skeleton className="ml-auto h-10 w-2/3 rounded-2xl" />
       <Skeleton className="h-4 w-1/2" />
       <Skeleton className="h-4 w-5/6" />
