@@ -65,7 +65,7 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="group/wg flex h-[26px] pointer-coarse:h-10 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50"
+        className="group/wg flex h-[26px] pointer-coarse:h-10 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] term:h-auto term:px-0 term:text-term transition-colors hover:bg-accent/50"
       >
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
           <Layers className="size-3.5" />
@@ -77,7 +77,7 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
           </span>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
-          <span className="text-3xs text-muted-foreground/60 tabular-nums">
+          <span className="text-3xs text-muted-foreground/60 tabular-nums term:text-term">
             {entries.length} steps{total > 0 ? ` · ${duration(total)}` : ""}
           </span>
           <ChevronRight

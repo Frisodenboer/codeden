@@ -19,7 +19,7 @@ function Working({ startedAt }: { startedAt: string }) {
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="flex items-center gap-2 px-1.5 text-2xs text-muted-foreground">
+    <div className="flex items-center gap-2 px-1.5 text-2xs text-muted-foreground term:px-0 term:text-term">
       <span className="flex gap-0.5">
         {[0, 1, 2].map((i) => (
           <span
@@ -50,8 +50,8 @@ function TurnFooter({
   if (row.filesChanged > 0) parts.push(`${plural(row.filesChanged, "file")} changed`);
   if (cost) parts.push(cost);
   return (
-    <div className="flex items-center gap-3 py-1 text-3xs text-muted-foreground/70">
-      <div className="h-px flex-1 bg-border/70" />
+    <div className="flex items-center gap-3 py-1 text-3xs text-muted-foreground/70 term:py-0 term:text-term term:text-muted-foreground">
+      <div className="h-px flex-1 bg-border/70 term:hidden" />
       {turn.status === "failed" ? (
         <span className="flex items-center gap-1 text-status-failed">
           <OctagonX className="size-3" /> Turn failed{turn.error ? ` · ${turn.error.message}` : ""}
@@ -63,7 +63,7 @@ function TurnFooter({
       ) : (
         <span>{parts.join(" · ") || "Done"}</span>
       )}
-      <div className="h-px flex-1 bg-border/70" />
+      <div className="h-px flex-1 bg-border/70 term:hidden" />
     </div>
   );
 }

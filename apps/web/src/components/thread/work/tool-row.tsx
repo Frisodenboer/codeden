@@ -118,7 +118,7 @@ export function ToolRow({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={showDetails}
         className={cn(
-          "group/tool grid h-[26px] pointer-coarse:h-10 w-full min-w-0 items-center rounded-md px-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
+          "group/tool grid h-[26px] pointer-coarse:h-10 w-full min-w-0 items-center rounded-md px-1.5 text-left text-[13px] term:h-auto term:px-0 term:text-term transition-colors hover:bg-accent/50",
           ROW_COLUMNS,
         )}
       >
@@ -144,7 +144,7 @@ export function ToolRow({
           <span
             title={target}
             className={cn(
-              "col-start-3 ml-2 truncate font-mono text-[12px]",
+              "col-start-3 ml-2 truncate font-mono text-[12px] term:text-term",
               failed ? "text-status-failed/90" : "text-foreground/80",
             )}
           >
@@ -154,14 +154,16 @@ export function ToolRow({
         {meta && (
           <span
             title={meta}
-            className="col-start-4 ml-2 truncate text-2xs text-muted-foreground/70"
+            className="col-start-4 ml-2 truncate text-2xs text-muted-foreground/70 term:text-term"
           >
             {meta}
           </span>
         )}
         <span className="col-start-6 flex items-center gap-1.5 pl-2">
           {ms !== undefined && !running && (
-            <span className="text-3xs text-muted-foreground/60 tabular-nums">{duration(ms)}</span>
+            <span className="text-3xs text-muted-foreground/60 tabular-nums term:text-term">
+              {duration(ms)}
+            </span>
           )}
           <ChevronRight
             className={cn(

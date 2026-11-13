@@ -3,12 +3,15 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/cascadia-mono";
 
 @source "../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 /* Devices without hover (phones, tablets): hover-only affordances need a tap equivalent. */
 @custom-variant touch (@media (hover: none));
+/* "Terminal" font style (Settings > Appearance): chat laid out like Claude Code in a terminal. */
+@custom-variant term (&:is(.font-terminal *));
 
 @theme inline {
   --font-heading: var(--font-sans);
@@ -69,6 +72,9 @@
   --text-2xs--line-height: 1rem;
   --text-3xs: 0.625rem;
   --text-3xs--line-height: 0.875rem;
+  /* One terminal cell row: the size and line height of Claude Code in Windows Terminal. */
+  --text-term: 15px;
+  --text-term--line-height: 1.3;
 }
 
 /*
@@ -185,11 +191,15 @@
     @apply font-sans antialiased;
     color-scheme: light;
   }
-  /* "Terminal" font style (Settings > Appearance): monospace everywhere. */
+  /* "Terminal" font style (Settings > Appearance): Windows Terminal's Cascadia Mono everywhere. */
+  html.font-terminal {
+    --font-mono: "Cascadia Mono Variable", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  }
   html.font-terminal,
   html.font-terminal .font-sans,
-  html.font-terminal .font-heading {
-    font-family: "Geist Mono Variable", ui-monospace, monospace;
+  html.font-terminal .font-heading,
+  html.font-terminal .font-mono {
+    font-family: var(--font-mono);
   }
   html.dark {
     color-scheme: dark;
@@ -252,6 +262,60 @@
 }
 .markdown [data-streamdown="strong"] {
   @apply font-semibold text-foreground;
+}
+
+/*
+ * Terminal style: markdown reads like Claude Code's output. Everything is one size, blocks are
+ * one blank line apart, list items sit on consecutive lines and inline code is coloured text.
+ */
+html.font-terminal .markdown {
+  font-size: var(--text-term);
+  line-height: var(--text-term--line-height);
+  @apply text-foreground;
+}
+html.font-terminal .markdown > * + * {
+  margin-top: 1lh;
+}
+html.font-terminal .markdown h1,
+html.font-terminal .markdown h2,
+html.font-terminal .markdown h3,
+html.font-terminal .markdown h4 {
+  margin-top: 1lh;
+  margin-bottom: 0;
+  font-size: 1em;
+  line-height: inherit;
+  letter-spacing: normal;
+  @apply font-bold;
+}
+html.font-terminal .markdown > :first-child {
+  margin-top: 0;
+}
+html.font-terminal .markdown [data-streamdown="unordered-list"],
+html.font-terminal .markdown [data-streamdown="ordered-list"] {
+  @apply list-outside pl-[2ch];
+}
+html.font-terminal .markdown [data-streamdown="unordered-list"] {
+  list-style-type: "- ";
+}
+html.font-terminal .markdown [data-streamdown="list-item"] {
+  @apply py-0;
+}
+html.font-terminal .markdown [data-streamdown="list-item"] > p + * {
+  margin-top: 0;
+}
+html.font-terminal .markdown [data-streamdown="inline-code"] {
+  @apply rounded-none border-0 bg-transparent p-0 text-[1em] text-primary dark:text-[oklch(0.78_0.09_275)];
+}
+html.font-terminal .markdown [data-streamdown="code-block"] {
+  @apply my-0 rounded-md;
+}
+html.font-terminal .markdown [data-streamdown="code-block"] pre,
+html.font-terminal .markdown [data-streamdown="table"] {
+  font-size: var(--text-term);
+  line-height: var(--text-term--line-height);
+}
+html.font-terminal .markdown [data-streamdown="table-wrapper"] {
+  @apply my-0;
 }
 
 @utility scroll-thin {

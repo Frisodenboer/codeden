@@ -96,14 +96,14 @@ export function UserMessage({ item }: { item: ItemOf<"user_message"> }) {
   const role = sender.from === "pm" || sender.from === "orchestrator" ? sender.from : null;
   const text = folded.text;
   return (
-    <div className="group flex flex-col items-end gap-1.5 animate-rise">
+    <div className="group flex flex-col items-end gap-1.5 animate-rise term:items-stretch">
       <DigestDisclosure folded={folded} />
       {attachments.length > 0 && <Attachments id={item.id} attachments={attachments} />}
       {role ? (
         <SenderMessage from={role} text={sender.text} />
       ) : (
         text && (
-          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-message px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap text-foreground">
+          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-message px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap text-foreground term:max-w-none term:rounded-none term:px-[1ch] term:py-0 term:text-term">
             {text}
           </div>
         )

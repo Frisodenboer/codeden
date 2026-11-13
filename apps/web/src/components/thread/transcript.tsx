@@ -5,10 +5,15 @@ import { Button } from "@/components/ui/button";
 import type { TranscriptState } from "@/lib/transcript/reducer";
 import { buildTimeline, type TimelineRow } from "@/lib/transcript/timeline";
 import { cn } from "@/lib/utils";
+import { useThemeStore } from "@/stores/theme";
 import { TimelineRowView } from "./timeline-row";
 
-const gapAfter = (row: TimelineRow, next: TimelineRow | undefined): number => {
+/** One terminal line (15px × 1.3): every block sits one blank line apart, like Claude Code. */
+const TERM_LINE = 19.5;
+
+const gapAfter = (row: TimelineRow, next: TimelineRow | undefined, term: boolean): number => {
   if (!next) return 0;
+  if (term) return row.type === "work" && next.type === "work" ? 0 : TERM_LINE;
   if (row.type === "work" && next.type === "work") return 4;
   if (row.type === "user" || next.type === "user") return 24;
   if (next.type === "turn-end" || row.type === "turn-end") return 18;
@@ -34,6 +39,7 @@ export function Transcript({
   className?: string;
   contentClassName?: string;
 }) {
+  const term = useThemeStore((s) => s.fontStyle === "terminal");
   const rows = useMemo(() => buildTimeline(transcript, threadId), [transcript, threadId]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -97,7 +103,7 @@ export function Transcript({
         {/* Safety net: long words wrap, and nothing that still overflows can scroll sideways. */}
         <div
           className={cn(
-            "mr-auto w-full max-w-[46rem] overflow-x-clip px-6 pt-6 pb-12 wrap-break-word",
+            "mr-auto w-full max-w-[46rem] overflow-x-clip px-6 pt-6 pb-12 wrap-break-word term:max-w-[100ch] term:text-term",
             contentClassName,
           )}
         >
@@ -113,7 +119,7 @@ export function Transcript({
                   className="absolute inset-x-0 top-0"
                   style={{
                     transform: `translateY(${v.start}px)`,
-                    paddingBottom: gapAfter(row, rows[v.index + 1]),
+                    paddingBottom: gapAfter(row, rows[v.index + 1], term),
                   }}
                 >
                   <TimelineRowView row={row} sessionId={sessionId} />
