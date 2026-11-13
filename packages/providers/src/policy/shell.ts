@@ -21,6 +21,29 @@ export interface SimpleCommand {
   input?: string[];
   /** True when the command reads the output of the one before it (`a | b`, `a |& b`). */
   piped?: boolean;
+  /**
+   * PowerShell list arguments (`a,b`: unquoted commas, outside POSIX shells), each word with the
+   * positions of its unquoted commas. A comma inside quotes or escaped is part of the name.
+   */
+  lists?: Map<string, number[]>;
+}
+
+/** What a word may stand for as paths, from `from` on (after an attached option, `-fFILE`). */
+export type WordPaths = (word: string, from: number) => string[];
+
+/**
+ * The paths a word of `cmd` may stand for, from `from` on: its text and, for a PowerShell list
+ * (`a,b`), each element. The whole text stays: when the shell is unknown it may be one name, or a
+ * brace expansion (`{a,b}`). Callers apply it after reading the word's role, so a list given as a
+ * search pattern stays data.
+ */
+export function wordPaths(cmd: SimpleCommand, word: string, from = 0): string[] {
+  const text = word.slice(from);
+  const commas = cmd.lists?.get(word)?.filter((at) => at >= from) ?? [];
+  if (!commas.length) return [text];
+  const bounds = [from - 1, ...commas, word.length];
+  const elements = bounds.slice(1).map((end, k) => word.slice((bounds[k] as number) + 1, end));
+  return [text, ...elements.filter(Boolean)];
 }
 
 /** Parse a command line into its simple commands. */
@@ -42,6 +65,8 @@ class Builder {
   target: Target = "word";
   heredocStrip = false;
   readonly heredocs: Array<{ delim: string; strip: boolean }> = [];
+  /** Where the word's unquoted commas are: a PowerShell list's element boundaries. */
+  private commas: number[] = [];
 
   constructor(private readonly out: SimpleCommand[]) {}
 
@@ -50,17 +75,37 @@ class Builder {
     this.inWord = true;
   }
 
+  /** An unquoted comma, which separates a PowerShell list's elements (`a,b`). */
+  addComma(): void {
+    this.commas.push(this.word.length);
+    this.add(",");
+  }
+
   endWord(): void {
     if (!this.inWord) return;
     if (this.target === "write") this.cmd.writes.push(this.word);
     else if (this.target === "heredoc") {
       // `<<\EOF` and `<<'EOF'` both end at a line reading `EOF`.
       this.heredocs.push({ delim: this.word.replace(/\\/g, ""), strip: this.heredocStrip });
-    } else if (this.target === "word") this.cmd.words.push(this.word);
-    else if (this.target === "skip") this.cmd.input = [...(this.cmd.input ?? []), this.word];
+    } else if (this.target === "word") {
+      this.cmd.words.push(this.word);
+      if (this.commas.length) this.addList();
+    } else if (this.target === "skip") this.cmd.input = [...(this.cmd.input ?? []), this.word];
     this.target = "word";
     this.word = "";
     this.inWord = false;
+    this.commas = [];
+  }
+
+  /**
+   * Note where the current word's unquoted commas are. The same text written twice with different
+   * quoting keeps every comma either one had, so its list is never missed.
+   */
+  private addList(): void {
+    this.cmd.lists ??= new Map();
+    const seen = this.cmd.lists.get(this.word) ?? [];
+    const commas = [...new Set([...seen, ...this.commas])].sort((a, b) => a - b);
+    this.cmd.lists.set(this.word, commas);
   }
 
   endCommand(): void {
@@ -146,6 +191,10 @@ class Lexer {
         this.i += 1;
         b.cmd.nested.push(this.list(")"));
         b.add(src.slice(start, this.i));
+      } else if (c === "," && this.dialect !== "posix") {
+        // PowerShell passes `a,b` as a list of two paths; a POSIX shell, as one name.
+        b.addComma();
+        this.i += 1;
       } else {
         b.add(c);
         this.i += 1;
