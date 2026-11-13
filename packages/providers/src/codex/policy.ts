@@ -1,4 +1,5 @@
 import type { AutonomyLevel } from "@codeden/contracts";
+import { mostSevere } from "../policy/assessment";
 import {
   classifyCommand,
   classifyRead,
@@ -16,24 +17,26 @@ import type { RequestPermissionProfile } from "./protocol/v2";
  * (recorded with `decidedBy: "policy"`), and only the rest reaches the user.
  */
 
-/** True when the permission level allows an action the classifier assessed as `risk`. */
+/**
+ * True when the permission level allows an action the classifier assessed as `risk`. CodeDen's
+ * own credential files are never allowed by policy. Commands Codex runs inside its sandbox
+ * without asking (reads included) never reach this policy.
+ */
 export function levelAllows(autonomy: AutonomyLevel, risk: RiskAssessment): boolean {
   if (autonomy === "auto") return !risk.risky;
-  if (autonomy === "full") return !risk.risky || risk.action !== "outside_worktree";
+  if (autonomy === "full") {
+    return !risk.risky || (risk.action !== "outside_worktree" && !risk.codeden);
+  }
   return false;
-}
-
-/** The first risky assessment of `items`, or safe. */
-function first(items: RiskAssessment[]): RiskAssessment {
-  return items.find((r) => r.risky) ?? { risky: false };
 }
 
 /**
  * Risk of a command Codex asks to run: the command line as sent and each parsed action, so a
- * redirect or path the parsed form drops still counts.
+ * redirect or path the parsed form drops still counts. Here and below, CodeDen's own
+ * credentials win over an earlier ordinary risk (`mostSevere`).
  */
 export function commandRisk(texts: string[], ctx: RiskContext): RiskAssessment {
-  return first(texts.filter(Boolean).map((text) => classifyCommand(text, ctx)));
+  return mostSevere(texts.filter(Boolean).map((text) => classifyCommand(text, ctx)));
 }
 
 /**
@@ -49,7 +52,7 @@ export function patchRisk(
   if (targets.length === 0) {
     return { risky: true, action: "outside_worktree", reason: "Changes files Codex did not name" };
   }
-  return first(targets.map((target) => classifyWrite(target, ctx)));
+  return mostSevere(targets.map((target) => classifyWrite(target, ctx)));
 }
 
 /**
@@ -79,5 +82,5 @@ export function permissionsRisk(
         : { risky: false as const };
     }),
   ];
-  return first(checks);
+  return mostSevere(checks);
 }
