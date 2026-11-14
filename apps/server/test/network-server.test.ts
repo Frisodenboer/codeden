@@ -1,10 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { networkInterfaces, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NetworkStatus } from "@codeden/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { type RunningServer, startServer } from "../src";
+import { listAddresses } from "../src/network/addresses";
 
 /**
  * Network access against a real server: the listener moves between 127.0.0.1 and 0.0.0.0 on
@@ -14,9 +15,7 @@ import { type RunningServer, startServer } from "../src";
 const TOKEN = "n".repeat(64);
 const GOOD = "maple-river-quiet-orbit-candle";
 const auth = { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" };
-const lanAddress = Object.values(networkInterfaces())
-  .flat()
-  .find((i) => i?.family === "IPv4" && !i.internal && !i.address.startsWith("169.254."))?.address;
+const lanAddress = listAddresses(0).find((address) => address.kind !== "local")?.host;
 
 let home: string;
 let server: RunningServer | undefined;
