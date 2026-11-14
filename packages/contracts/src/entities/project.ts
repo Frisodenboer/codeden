@@ -30,13 +30,21 @@ const projectBase = {
   autonomy: AutonomyLevel.nullable(),
   /** Project autonomy mode (§10.1). */
   autonomyMode: AutonomyMode.default("assisted"),
-  /** Vision file, relative to the repo root; required for autopilot and dark factory. */
+  /** Vision file, relative to the repo root; required for the software and dark factory. */
   visionPath: z.string().min(1).default(DEFAULT_VISION_PATH),
   factoryLimits: FactoryLimits.prefault({}),
   /** Stops this project's factory loop and all its sessions. */
   killSwitch: z.boolean().default(false),
   /** IANA timezone for cron automations; machine timezone when null. */
   timezone: z.string().nullable(),
+  /**
+   * Agent sessions in this project run with `CI=true` (§4.2), so no command waits on a prompt
+   * nothing can answer. Tools that read `CI` then behave as in CI (frozen lockfiles, Playwright
+   * not reusing a running dev server, builds failing on warnings), so a project can turn it off:
+   * the runner then adds no `CI` to its agents' environment. Defaults to true so events written
+   * before the setting existed still parse.
+   */
+  agentCiEnv: z.boolean().default(true),
   /**
    * Pinned projects are listed above the rest (§13). Defaults to false so events written
    * before pinning existed still parse.

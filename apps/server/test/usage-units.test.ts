@@ -70,6 +70,27 @@ describe("price table", () => {
     expect(findPrice("fake", "default")).toBeNull();
   });
 
+  it("prices OpenCode's vendor/model ids from the vendor's table", () => {
+    expect(findPrice("opencode", "anthropic/claude-opus-5-5")?.label).toBe("Opus 5.5");
+    expect(findPrice("opencode", "anthropic/claude-sonnet-4-5-20250929")?.label).toBe("Sonnet 4.5");
+    expect(findPrice("opencode", "openai/gpt-5.5")?.inputPerMTok).toBe(5);
+    expect(findPrice("opencode", "openrouter/anthropic/claude-opus-5-5")).toBeNull();
+    expect(findPrice("opencode", "zai/glm-5")).toBeNull();
+    expect(findPrice("opencode", "default")).toBeNull();
+    // A user's own price for the full OpenCode id wins.
+    const override = {
+      provider: "opencode",
+      model: "openai/gpt-5.5",
+      label: "Mine",
+      inputPerMTok: 1,
+      outputPerMTok: 2,
+      cacheReadPerMTok: 0,
+      cacheWritePerMTok: 0,
+      asOf: "2026-11-10",
+    };
+    expect(findPrice("opencode", "openai/gpt-5.5", [override])?.label).toBe("Mine");
+  });
+
   it("lets user overrides win over the bundled table", () => {
     const override: ModelPrice = {
       provider: "claude",
@@ -134,7 +155,7 @@ describe("ledger deltas", () => {
   it("classifies who started the work", () => {
     expect(sourceOf("user", "dark_factory")).toBe("user");
     expect(sourceOf("pm", "dark_factory")).toBe("factory");
-    expect(sourceOf("automation", "autopilot")).toBe("factory");
+    expect(sourceOf("automation", "software_factory")).toBe("factory");
     expect(sourceOf("automation", "assisted")).toBe("automation");
     expect(sourceOf("orchestrator", null)).toBe("orchestrator");
   });
@@ -142,6 +163,13 @@ describe("ledger deltas", () => {
   it("maps auth methods to billing modes", () => {
     expect(billingFromAuthMethod("claude.ai")).toBe("subscription");
     expect(billingFromAuthMethod("chatgpt")).toBe("subscription");
+    // A Cursor login or key bills the Cursor plan.
+    expect(billingFromAuthMethod("cursor")).toBe("subscription");
+    expect(billingFromAuthMethod("cursor_key")).toBe("subscription");
+    // Gemini CLI: a Google login is a plan; an API key or Vertex AI pays per token.
+    expect(billingFromAuthMethod("oauth-personal")).toBe("subscription");
+    expect(billingFromAuthMethod("gemini-api-key")).toBe("api");
+    expect(billingFromAuthMethod("vertex-ai")).toBe("api");
     expect(billingFromAuthMethod("api_key")).toBe("api");
     expect(billingFromAuthMethod("an API key")).toBe("api");
     expect(billingFromAuthMethod(null)).toBe("unknown");
@@ -253,7 +281,13 @@ describe("budgets and rate limits", () => {
       observedAt: "2026-11-07T09:59:00.000Z",
     };
     const current = toWindow(base, now);
-    expect(current).toMatchObject({ label: "5-hour window", stale: false });
+    // A row from before `used_percent_at` existed dates its figure with the reading.
+    expect(current).toMatchObject({
+      label: "5-hour window",
+      stale: false,
+      usedPercentAt: base.observedAt,
+    });
+    expect(toWindow({ ...base, windowId: "weekly-haiku" }, now).label).toBe("Weekly (Haiku)");
     const stale = toWindow({ ...base, resetsAt: "2026-11-07T09:00:00.000Z" }, now);
     expect(stale.stale).toBe(true);
     const alerts = rateLimitAlerts([current, stale], 85);

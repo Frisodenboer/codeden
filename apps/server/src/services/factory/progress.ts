@@ -1,14 +1,19 @@
 import type { FactoryItem, FactoryLoop, Project } from "@codeden/contracts";
 import { errorMessage } from "../errors";
 import { type FactoryContext, factoryNotice, pauseLoop, raiseInbox } from "./context";
+import { stoppedSinceNudge } from "./idle";
 import { failItem } from "./outcomes";
-import { BUILDER_NUDGE } from "./prompts";
+import { ANALYZE_NUDGE, BUILDER_NUDGE, REPRODUCE_NUDGE } from "./prompts";
+import { rebuildFailed, unreplacedOriginal } from "./rebuild";
+import { awaitTurnRaceResume, BUILDER_FAILED_REASON } from "./turn-race";
 
 const BUSY = new Set(["created", "queued", "starting", "running", "waiting"]);
 
 /**
- * Building (§10.1 step 3): wait for the builder's turn to end with an open PR, nudge it once
- * when it ends without one, fail the item when the session dies.
+ * Building (§10.1): wait for the builder's turn to end with its first step reported (bugs and
+ * features) and then an open PR; nudge it once when it ends without, fail the item when it ends
+ * again without and stays idle past the grace period (`idleGraceMin`). A builder session that
+ * dies or is gone fails it as an infrastructure failure, which the loop recovers by itself.
  */
 export async function advanceBuilding(
   ctx: FactoryContext,
@@ -17,7 +22,13 @@ export async function advanceBuilding(
   item: FactoryItem,
 ): Promise<FactoryLoop> {
   const s = item.builderSessionId ? ctx.repo.find(item.builderSessionId)?.session : undefined;
-  if (!s) return failItem(ctx, loop, item, "The builder session is gone");
+  // Outside the work's code: the loop puts it back by itself (`recover.ts`).
+  const infra = { kind: "infrastructure" } as const;
+  // A rebuild that ends without its new PR leaves the PR it was replacing stuck with the user.
+  const original = unreplacedOriginal(ctx, item);
+  const fail = (reason: string) =>
+    original ? rebuildFailed(ctx, loop, item, original, reason) : failItem(ctx, loop, item, reason);
+  if (!s) return failItem(ctx, loop, item, "The builder session is gone", infra);
   if (BUSY.has(s.status)) return loop;
   const fixAt = item.attempts > 0 ? item.nudges[`fix_${item.attempts}`] : undefined;
   // After a fix request, wait until the builder has taken a turn since.
@@ -35,7 +46,30 @@ export async function advanceBuilding(
     return loop;
   }
   if (s.status === "failed" || s.status === "stopped") {
-    return failItem(ctx, loop, item, `The builder session ${s.status} without a pull request`);
+    // Failed only because a message raced its turn: told to carry on instead.
+    if (await awaitTurnRaceResume(ctx, project, loop, item, s)) return loop;
+    // A session that died otherwise (an error, a runner restart) is no fault of the work
+    // either; one a person stopped is their call.
+    if (s.status === "failed") return failItem(ctx, loop, item, BUILDER_FAILED_REASON, infra);
+    return fail("The builder session stopped without a pull request");
+  }
+  const investigating = !item.investigation && (item.type === "bug" || item.type === "feature");
+  if (investigating) {
+    const step = item.type === "bug" ? "reproduction" : "analysis";
+    const asked = item.nudges.builder_investigate;
+    if (!asked) {
+      const at = ctx.now().toISOString();
+      ctx.store.updateItem(item.id, (i) => ({
+        ...i,
+        nudges: { ...i.nudges, builder_investigate: at },
+      }));
+      await ctx.sessions.message(s.id, item.type === "bug" ? REPRODUCE_NUDGE : ANALYZE_NUDGE);
+      return loop;
+    }
+    if (stoppedSinceNudge(s, asked, ctx.now(), loop.tuning)) {
+      return fail(`The builder ended without reporting its ${step}`);
+    }
+    return loop;
   }
   const nudged = item.nudges.builder_no_pr;
   if (!nudged) {
@@ -44,9 +78,9 @@ export async function advanceBuilding(
     await ctx.sessions.message(s.id, BUILDER_NUDGE);
     return loop;
   }
-  if (Date.parse(s.updatedAt) > Date.parse(nudged)) {
+  if (stoppedSinceNudge(s, nudged, ctx.now(), loop.tuning)) {
     const why = s.result ? `${s.result.outcome}: ${s.result.summary}` : "no pull request";
-    return failItem(ctx, loop, item, `The builder finished without a pull request (${why})`);
+    return fail(`The builder finished without a pull request (${why})`);
   }
   return loop;
 }
@@ -133,6 +167,15 @@ async function regression(
     summary: `CI on ${branch} failed after #${prNumber} was merged (${sha}).`,
     source: "revert" as const,
     area: item.area,
+    type: "bug" as const,
+    investigation: {
+      kind: "reproduction" as const,
+      outcome: "reproduced" as const,
+      summary: `CI on ${branch} failed after #${prNumber} was merged.`,
+      details: null,
+      testPath: null,
+      at,
+    },
     acceptanceCriteria: [
       `Restores ${branch} to its state before #${prNumber}`,
       `CI on ${branch} is green again`,
@@ -168,6 +211,7 @@ async function regression(
   raiseInbox(ctx, {
     id: `inbox:factory-regression:${item.id}`,
     kind: "run_failed",
+    notify: "failure",
     priority: "high",
     projectId: project.id,
     issue: item.issue,

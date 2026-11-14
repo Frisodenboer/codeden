@@ -1,5 +1,5 @@
 import type { TranscriptMessage } from "@codeden/contracts";
-import type { ThreadState, TranscriptState } from "./reducer";
+import { byStart, type ThreadState, type TranscriptState } from "./reducer";
 
 /**
  * Apply a `transcript` message from `watch_session`: the latest state of every thread, turn
@@ -53,9 +53,19 @@ export function applyTranscriptMessage(
       startedAt: turn.startedAt,
       completedAt: turn.completedAt,
       error: turn.error,
+      // Where the conversation can be forked through this turn ("Fork from here", §9).
+      forkPoint: turn.forkPoint ?? null,
     };
     const t = thread(turn.threadId);
-    if (!t.turnIds.includes(turn.id)) t.turnIds.push(turn.id);
+    if (!t.turnIds.includes(turn.id)) {
+      // Placed by start time, so the thread's last turn stays its latest one.
+      const at = t.turnIds.findIndex((id) => {
+        const other = state.turns[id];
+        return other !== undefined && byStart(other, turn) > 0;
+      });
+      if (at === -1) t.turnIds.push(turn.id);
+      else t.turnIds.splice(at, 0, turn.id);
+    }
     if (!state.rootThreadId) state.rootThreadId = turn.threadId;
   }
   for (const r of msg.items) {

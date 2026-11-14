@@ -118,7 +118,11 @@ export function scriptedTurn(
             id: uid("u"),
             kind: "user_message",
             status: "completed",
-            input: { text: input.text, attachments: input.attachments ?? [] },
+            input: {
+              text: input.text,
+              attachments: input.attachments ?? [],
+              ...(input.from ? { from: input.from } : {}),
+            },
           });
         },
       },
@@ -173,7 +177,12 @@ export function scriptedTurn(
               { label: "Explain the diff", prompt: "Walk me through the diff file by file." },
             ],
           });
-          world.emitAgent(sessionId, { type: "turn.completed", ...ids, stopReason: "end_turn" });
+          world.emitAgent(sessionId, {
+            type: "turn.completed",
+            ...ids,
+            forkPoint: ids.turnId,
+            stopReason: "end_turn",
+          });
           world.updateSession(sessionId, { status: "idle" });
         },
       },

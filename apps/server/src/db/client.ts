@@ -31,7 +31,10 @@ export interface Database {
   close(): void;
 }
 
-/** Open (or create) the SQLite database in WAL mode and apply pending migrations. */
+/**
+ * Open (or create) the SQLite database in WAL mode and apply pending migrations. Transcript
+ * items the search index hasn't seen are indexed later, in the background (`SearchBackfill`).
+ */
 export function openDatabase(file: string, migrationsDir?: string): Database {
   const client = new DatabaseSync(file);
   client.exec("PRAGMA journal_mode = WAL;");

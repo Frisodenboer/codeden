@@ -1,0 +1,199 @@
+import type { ApprovalAction, AutonomyLevel } from "@codeden/contracts";
+import { asksAtEveryLevel, mostSevere, touchesCodeden } from "../policy/assessment";
+import { resolveAgainst } from "../policy/paths";
+import { readOnlyCommandDenial } from "../policy/read-only";
+import {
+  classifyCommand,
+  classifyFetch,
+  classifyRead,
+  classifyWrite,
+  type RiskAssessment,
+  type RiskContext,
+} from "../policy/risk";
+import { str } from "../util/text";
+import type { OcPermissionRequest } from "./protocol";
+
+/** What CodeDen does with one OpenCode permission request. */
+export type PolicyDecision =
+  | { kind: "allow" }
+  | { kind: "deny"; message: string }
+  | { kind: "ask"; action: ApprovalAction; reason: string };
+
+/** A permission request plus the tool call it gates, when known. */
+export interface PermissionCall {
+  request: OcPermissionRequest;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+}
+
+/** OpenCode's tools that write files (their permission action is `edit`). */
+export const EDIT_TOOLS = new Set(["edit", "write", "patch"]);
+
+const ALLOW: PolicyDecision = { kind: "allow" };
+
+/**
+ * CodeDen's approval policy for OpenCode (§11.2). The session's rules make every edit, shell
+ * command, path outside the worktree and web fetch ask (`SESSION_PERMISSIONS`); this decides
+ * each ask with the same classifier and levels as the other providers:
+ * - read_only (or a read-only role) -> edits refused, commands only when read-only
+ * - supervised -> every edit and command goes to the user, plus anything risky
+ * - auto       -> only risky calls go to the user
+ * - full       -> only writes outside the worktree go to the user
+ * Asks that come from the user's own OpenCode rules (subagents, skills, MCP tools, `.env`
+ * reads) go to the user unless the classifier clears them.
+ */
+export class OpenCodePolicy {
+  private readonly sessionAllow = new Set<string>();
+
+  constructor(
+    private autonomy: AutonomyLevel,
+    private readonly ctx: RiskContext,
+    /** Read-only sessions (orchestrator, PMs). */
+    private readonly readOnly = false,
+  ) {}
+
+  get level(): AutonomyLevel {
+    return this.autonomy;
+  }
+
+  get isReadOnly(): boolean {
+    return this.readOnly || this.autonomy === "read_only";
+  }
+
+  /**
+   * Switch the level; it applies from the next permission request. Read-only forgets the
+   * session's remembered approvals, so switching back later asks again.
+   */
+  setAutonomy(level: AutonomyLevel): void {
+    this.autonomy = level;
+    if (level === "read_only") this.sessionAllow.clear();
+  }
+
+  decide(call: PermissionCall): PolicyDecision {
+    const { request } = call;
+    // A remembered approval never overrides read-only.
+    if (!this.isReadOnly && this.sessionAllow.has(this.key(call))) return ALLOW;
+    switch (request.action) {
+      case "shell":
+        return this.shell(call);
+      case "edit":
+        return this.edit(request.resources);
+      case "external_directory":
+        // Writes there are decided by the `edit` ask that follows, which carries the diff.
+        return this.gate(this.firstRisk(request.resources.map(dirOf), classifyRead));
+      case "webfetch":
+        return this.gate(this.firstRisk(request.resources, classifyFetch));
+      case "read":
+        return this.gate(this.firstRisk(request.resources, classifyRead), undefined, true);
+      default:
+        return {
+          kind: "ask",
+          action: "tool",
+          reason: `OpenCode asks before ${request.action}`,
+        };
+    }
+  }
+
+  /** Remember an `allow_session` decision: commands (in their directory) and paths match exactly. */
+  allowForSession(call: PermissionCall): void {
+    this.sessionAllow.add(this.key(call));
+  }
+
+  private shell(call: PermissionCall): PolicyDecision {
+    const command = commandOf(call);
+    const risk = classifyCommand(command, { ...this.ctx, dir: this.workdir(call) });
+    if (this.isReadOnly) {
+      if (touchesCodeden(risk)) return this.credentialsDenial();
+      // Agent sessions at `read_only` may run the project's checks; read-only roles may not.
+      const reason = readOnlyCommandDenial(command, { allowChecks: !this.readOnly });
+      return reason ? { kind: "deny", message: `This session is read-only: ${reason}.` } : ALLOW;
+    }
+    return this.gate(risk, "command");
+  }
+
+  /** Read-only sessions never touch CodeDen's own credential files. */
+  private credentialsDenial(): PolicyDecision {
+    return {
+      kind: "deny",
+      message: this.readOnly
+        ? "This session is read-only: CodeDen's own credential files are off limits. Act through CodeDen tools instead."
+        : "This session has read-only permissions: CodeDen's own credential files are off limits. Report what you found instead.",
+    };
+  }
+
+  private edit(paths: readonly string[]): PolicyDecision {
+    if (this.isReadOnly) {
+      return {
+        kind: "deny",
+        message: this.readOnly
+          ? "This session is read-only: it cannot edit files. Act through CodeDen tools instead."
+          : "This session has read-only permissions: it cannot edit files, commit or push. Report what you found instead.",
+      };
+    }
+    return this.gate(this.firstRisk(paths, classifyWrite), "file_change");
+  }
+
+  /** The verdict for every target: CodeDen's own credentials first, then the first risky one. */
+  private firstRisk(
+    targets: readonly string[],
+    classify: (target: string, ctx: RiskContext) => RiskAssessment,
+  ): RiskAssessment {
+    return mostSevere(targets.map((target) => classify(target, this.ctx)));
+  }
+
+  /**
+   * The level's gate (the same as Claude's): edits and commands (`supervisedAction`) always
+   * ask in supervised mode; `alwaysRisky` asks for flagged calls even at full autonomy
+   * (secrets reads). CodeDen's own credential files ask at every level and are refused for
+   * read-only sessions.
+   */
+  private gate(
+    risk: RiskAssessment,
+    supervisedAction?: ApprovalAction,
+    alwaysRisky = false,
+  ): PolicyDecision {
+    const codeden = touchesCodeden(risk);
+    if (codeden && this.isReadOnly) return this.credentialsDenial();
+    if (this.autonomy === "supervised") {
+      if (risk.risky) return { kind: "ask", action: risk.action, reason: risk.reason };
+      if (supervisedAction) {
+        return {
+          kind: "ask",
+          action: supervisedAction,
+          reason: "Supervised mode: every edit and command needs approval",
+        };
+      }
+      return ALLOW;
+    }
+    if (!risk.risky) return ALLOW;
+    const always = alwaysRisky || asksAtEveryLevel(risk);
+    if (this.autonomy === "full" && risk.action !== "outside_worktree" && !always) return ALLOW;
+    return { kind: "ask", action: risk.action, reason: risk.reason };
+  }
+
+  /**
+   * What an approval for the session covers: a command in its working directory (the same
+   * relative path elsewhere is another file), or the exact paths.
+   */
+  private key(call: PermissionCall): string {
+    const { action, resources } = call.request;
+    if (action === "shell") return `shell:${this.workdir(call)}\n${commandOf(call)}`;
+    return `${action}:${[...resources].sort().join("\n")}`;
+  }
+
+  /** Where a shell call runs: its `workdir`, else the worktree. */
+  private workdir(call: PermissionCall): string {
+    const workdir = str(call.toolInput, "workdir");
+    return workdir ? resolveAgainst(workdir, this.ctx) : this.ctx.cwd;
+  }
+}
+
+/** The command an OpenCode `shell` ask is about: the tool input, else its parsed parts. */
+export function commandOf(call: PermissionCall): string {
+  return str(call.toolInput, "command") ?? call.request.resources.join(" && ");
+}
+
+/** `C:/work/other/*` -> `C:/work/other`. */
+function dirOf(resource: string): string {
+  return resource.replace(/[\\/]\*$/, "");
+}

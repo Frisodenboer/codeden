@@ -53,6 +53,8 @@ type WorkbenchApi = Pick<
   | "readFile"
   | "searchMentions"
   | "listSlashCommands"
+  | "searchProjectMentions"
+  | "listProjectSlashCommands"
   | "openTerminal"
   | "artifactUrl"
 >;
@@ -80,6 +82,14 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
     };
   };
 
+  const mentionHits = (query: string) => {
+    const q = query.toLowerCase();
+    return allPaths()
+      .filter((p) => p.path.toLowerCase().includes(q))
+      .sort((a, b) => a.path.length - b.path.length)
+      .slice(0, 8);
+  };
+
   const setupStatus = (): SetupStatus => {
     const checks = setupChecks.map((check) =>
       check.id === "codex" && codexFixed
@@ -92,7 +102,9 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
           }
         : check,
     );
-    const ready = checks.some((c) => (c.id === "claude" || c.id === "codex") && c.state === "ok");
+    const ready = checks.some(
+      (c) => world.snapshot.runner.providers.some((p) => p.id === c.id) && c.state === "ok",
+    );
     return {
       checkedAt: new Date().toISOString(),
       setupCompleted: false,
@@ -136,9 +148,14 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
     auth: mockAuthApi(),
     loginCommand: (tool) => {
       if (tool === "codex") codexFixed = true;
-      const command = { claude: "claude auth login", codex: "codex login", gh: "gh auth login" }[
-        tool
-      ];
+      const command = {
+        claude: "claude auth login",
+        codex: "codex login",
+        opencode: "opencode auth login",
+        cursor: "agent login",
+        gemini: "gemini",
+        gh: "gh auth login",
+      }[tool];
       const [bin = tool, ...args] = command.split(" ");
       return delay({ tool, command: bin, args });
     },
@@ -197,15 +214,10 @@ export function workbenchApi(world: MockWorld): WorkbenchApi {
         `// ${path}\n// (mock) File contents are loaded from the session worktree.\n\nexport {};\n`;
       return delay({ path, content, sizeBytes: content.length, binary: false, truncated: false });
     },
-    searchMentions: (_sessionId, query) => {
-      const q = query.toLowerCase();
-      const hits = allPaths()
-        .filter((p) => p.path.toLowerCase().includes(q))
-        .sort((a, b) => a.path.length - b.path.length)
-        .slice(0, 8);
-      return delay(hits, 40);
-    },
+    searchMentions: (_sessionId, query) => delay(mentionHits(query), 40),
     listSlashCommands: () => delay(slashCommands, 20),
+    searchProjectMentions: (_projectId, query) => delay(mentionHits(query), 40),
+    listProjectSlashCommands: () => delay(slashCommands, 20),
     openTerminal: (opts) => mockTerminal(opts),
     artifactUrl: (id) => artifacts[id]?.() ?? generatedIllustration(id.length),
   };

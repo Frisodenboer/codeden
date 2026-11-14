@@ -34,6 +34,16 @@ export interface UtilityService {
    * summary mode: without a model answer it is the message's first sentence or two.
    */
   speechSummary(text: string): Promise<SpeechSummaryResponse>;
+  /**
+   * Where a session's work got to, for the brief of a handoff (§9), from a compact transcript
+   * of it; null when the job is off or no model answered.
+   */
+  handoffSummary(transcript: string): Promise<string | null>;
+  /**
+   * A one-shot answer from the utility model for a server-side job, such as the software
+   * factory's "Identify type" step; null when no model answered.
+   */
+  complete(job: string, system: string, prompt: string): Promise<string | null>;
 }
 
 /** A `UtilityService` that never calls a model (tests, no providers). */
@@ -46,6 +56,12 @@ export class NoopUtilityService implements UtilityService {
   }
   async speechSummary(text: string): Promise<SpeechSummaryResponse> {
     return { text: shortSpeech(plainSpeech(text)), source: "plain" };
+  }
+  async handoffSummary(): Promise<string | null> {
+    return null;
+  }
+  async complete(): Promise<string | null> {
+    return null;
   }
 }
 
@@ -91,7 +107,7 @@ export function runnerOneShot(runner: RunnerPort): OneShotPort {
   };
 }
 
-const PREFERENCE = ["claude", "codex"];
+const PREFERENCE = ["claude", "codex", "opencode"];
 const TIMEOUT_MS = 60_000;
 /** Read-aloud waits on the summary, so it gets less time than the other jobs. */
 const SPEECH_TIMEOUT_MS = 30_000;
@@ -103,6 +119,15 @@ const TLDR_SYSTEM = [
   "Plain spoken English only: no markdown, code, file paths, lists, numbers of lines or preamble such as 'Summary:'.",
 ].join(" ");
 
+/** A handoff waits on its brief, so the summary gets less time than the other jobs. */
+const HANDOFF_TIMEOUT_MS = 45_000;
+
+const HANDOFF_SYSTEM = [
+  "You brief a coding agent that takes over another agent's unfinished work in the same repository. It can't see the transcript below, only your summary and the code.",
+  "Reply with at most 12 short Markdown bullet lines: what the task is, what was done (and how), decisions and constraints that came up, what remains, and known problems or failing checks.",
+  "Be concrete: name files, commands and errors. Don't invent anything the transcript doesn't show. No preamble and no closing remarks.",
+].join(" ");
+
 /** Server-side warnings for utility jobs, shown whatever the debug setting (stderr). */
 function defaultWarn(message: string): void {
   console.warn(`[codeden] ${new Date().toISOString()} ${message}`);
@@ -110,8 +135,8 @@ function defaultWarn(message: string): void {
 
 /**
  * The real `UtilityService`: a one-shot, tool-less call on a small model (§7.4). The provider
- * comes from settings (`auto` = Claude, then Codex); when the chosen provider fails, the
- * other one is tried. Each job can be switched off in settings.
+ * comes from settings (`auto` = Claude, then Codex, then OpenCode); when the chosen provider
+ * fails, the others are tried. Each job can be switched off in settings.
  */
 export class ProviderUtilityService implements UtilityService {
   constructor(
@@ -180,6 +205,19 @@ export class ProviderUtilityService implements UtilityService {
     if (tldr) return { text: shortSpeech(tldr), source: "utility" };
     this.warn("utility: read-aloud TL;DR unavailable, speaking the message's first sentences");
     return { text: shortSpeech(plain), source: "plain" };
+  }
+
+  async handoffSummary(transcript: string): Promise<string | null> {
+    if (!this.deps.settings().utilityModel.jobs.handoffSummaries || !transcript.trim()) return null;
+    const prompt = `Transcript:\n${transcript}`;
+    const out = await this.run("handoff summary", HANDOFF_SYSTEM, prompt, {
+      timeoutMs: HANDOFF_TIMEOUT_MS,
+    });
+    return out ? out.slice(0, 4_000) : null;
+  }
+
+  complete(job: string, system: string, prompt: string): Promise<string | null> {
+    return this.run(job, system, prompt);
   }
 
   /** One-shot on the configured provider, falling back to the next; null on failure. */

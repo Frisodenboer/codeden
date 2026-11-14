@@ -1,7 +1,11 @@
 import type { ApprovalAction, FileChange, ItemStatus, ToolCallItem } from "@codeden/contracts";
+import { mostSevere, SAFE } from "../policy/assessment";
+import { credentialsRisk } from "../policy/codeden-home";
+import { searchReaches } from "../policy/codeden-search";
 import {
   classifyCommand,
   classifyFetch,
+  classifyGlob,
   classifyRead,
   classifyWrite,
   type RiskAssessment,
@@ -32,7 +36,8 @@ export function parseMcpName(name: string): { server: string; tool: string } | u
   return m?.[1] && m[2] ? { server: m[1], tool: m[2] } : undefined;
 }
 
-function editPath(input: Input): string {
+/** The file an edit tool writes (`file_path`, `notebook_path` or `path`), or "". */
+export function editPath(input: Input): string {
   return str(input, "file_path") ?? str(input, "notebook_path") ?? str(input, "path") ?? "";
 }
 
@@ -225,13 +230,19 @@ export function assessClaudeTool(name: string, input: Input, ctx: RiskContext): 
   }
   if (EDIT_TOOLS.has(name)) return classifyWrite(editPath(input), ctx);
   if (name === "Read") return classifyRead(str(input, "file_path") ?? "", ctx);
-  // Grep reads the files under `path`; its `pattern` and `glob` are not files. Glob only lists
-  // names, so it never reads a secret.
+  // Grep reads the files under `path` (those its `glob` filter matches, at any depth), like
+  // `rg`; its `pattern` is not a file. Glob only lists names, so only CodeDen's own credential
+  // files ask.
   if (name === "Grep") {
     const target = str(input, "path");
-    return target ? classifyRead(target, ctx) : { risky: false };
+    const filter = str(input, "glob");
+    const root = searchReaches(target ? [target] : [], filter ? [filter] : [], ctx);
+    return mostSevere([
+      target ? classifyRead(target, ctx) : SAFE,
+      root ? credentialsRisk(`Reaches CodeDen's own credentials from ${root}`) : SAFE,
+    ]);
   }
-  if (name === "Glob") return { risky: false };
+  if (name === "Glob") return classifyGlob(str(input, "pattern") ?? "", str(input, "path"), ctx);
   if (name === "WebFetch") return classifyFetch(str(input, "url") ?? "", ctx);
   return { risky: false };
 }

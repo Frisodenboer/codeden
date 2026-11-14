@@ -146,6 +146,39 @@ describe("usage ledger projection", () => {
       usedPercent: 91,
     });
   });
+
+  // #193: Claude's `rate_limit_event` usually carries a status and reset time but no percentage.
+  it("keeps a window's last known percentage when a newer reading has none", () => {
+    const limits = (rateLimits: NonNullable<Usage["rateLimits"]>) =>
+      emit("s1", { type: "usage.updated", threadId: "t", usage: { rateLimits } });
+    const resetsAt = "2026-11-10T06:00:00.000Z";
+    limits([{ id: "weekly", status: "ok", usedPercent: 37, resetsAt }]);
+    vi.setSystemTime(NOW + 60_000);
+    limits([{ id: "weekly", status: "ok", resetsAt }]);
+    limits([{ id: "5h", status: "ok", resetsAt: "2026-11-07T17:00:00.000Z" }]);
+    const windows = usage.rateLimitWindows();
+    expect(windows.map((w) => w.windowId)).toEqual(["5h", "weekly"]);
+    expect(windows.find((w) => w.windowId === "weekly")).toMatchObject({
+      status: "ok",
+      usedPercent: 37,
+      // The figure keeps the time it was read; the status is the newer reading's.
+      usedPercentAt: new Date(NOW).toISOString(),
+      observedAt: new Date(NOW + 60_000).toISOString(),
+      resetsAt,
+    });
+    expect(windows.find((w) => w.windowId === "5h")).toMatchObject({
+      usedPercent: null,
+      usedPercentAt: null,
+    });
+
+    // Once the window has reset, the old figure no longer describes it.
+    vi.setSystemTime(Date.parse(resetsAt) + 60_000);
+    limits([{ id: "weekly", status: "ok", resetsAt: "2026-11-17T06:00:00.000Z" }]);
+    expect(usage.rateLimitWindows().find((w) => w.windowId === "weekly")).toMatchObject({
+      usedPercent: null,
+      usedPercentAt: null,
+    });
+  });
 });
 
 describe("UsageService", () => {
@@ -217,6 +250,103 @@ describe("UsageService", () => {
     expect(database.db.select().from(inboxItems).all()).toHaveLength(2);
     expect(usage.budgets().budgets[0]).toMatchObject({ state: "exceeded", spentUsd: 1.5 });
     expect(usage.spendSince("2026-11-07", "p1").usd).toBeCloseTo(1.5);
+  });
+
+  it("prices finished subagents for their cards without counting them anywhere else", async () => {
+    usage.saveSettings({
+      timezone: "UTC",
+      budgets: [{ id: "daily", projectId: null, period: "daily", limitUsd: 1 }],
+    });
+    turn("s1", "u1", { inputTokens: 10, outputTokens: 20, cachedInputTokens: 300, costUsd: 0.05 });
+    const range = { from: "2026-11-01", to: "2026-11-07" };
+    const before = {
+      session: await usage.sessionUsage("s1"),
+      ledger: database.db.select().from(usageLedger).all(),
+      report: (await usage.report(range)).totals,
+      budgets: usage.budgets(),
+      spend: usage.spendSince("2026-11-07", "p1"),
+    };
+    expect(before.session.subagents).toEqual([]);
+
+    const card = (id: string, status: "in_progress" | "completed", stats?: object) =>
+      ({
+        type: "item.completed",
+        threadId: "t",
+        turnId: "u1",
+        item: {
+          id,
+          kind: "subagent",
+          status,
+          childThreadId: `t-${id}`,
+          ...(stats ? { stats } : {}),
+        },
+      }) as AgentEvent;
+    const haiku = {
+      model: "claude-haiku-5-5",
+      inputTokens: 1_000,
+      outputTokens: 2_000,
+      cacheReadTokens: 100_000,
+      cacheWriteTokens: 20_000,
+    };
+    emit(
+      "s1",
+      card("a1", "completed", { totalTokens: 123_000, usage: [haiku] }),
+      // Still running, or finished without tokens per model: no cost.
+      card("a2", "in_progress"),
+      card("a3", "completed", { totalTokens: 5, toolUses: 1 }),
+    );
+
+    const after = await usage.sessionUsage("s1");
+    expect(after.subagents).toEqual([
+      {
+        itemId: "a1",
+        // $0.0001 + $0.001 + $0.001 + $0.0025 at Haiku 5.5's list prices.
+        costUsd: 0.0046,
+        costSource: "estimated",
+        models: [
+          {
+            ...haiku,
+            label: "Haiku 5.5",
+            reasoningTokens: 0,
+            costUsd: 0.0046,
+            costSource: "estimated",
+          },
+        ],
+      },
+    ]);
+    const { subagents: _added, ...rest } = after;
+    const { subagents: _none, ...restBefore } = before.session;
+    expect(rest).toEqual(restBefore);
+    expect(database.db.select().from(usageLedger).all()).toEqual(before.ledger);
+    expect((await usage.report(range)).totals).toEqual(before.report);
+    expect(usage.budgets()).toEqual(before.budgets);
+    expect(usage.spendSince("2026-11-07", "p1")).toEqual(before.spend);
+  });
+
+  // #193 review: Claude's events give whole-second reset times, its plan usage fractions of one.
+  it("raises one limit alert per window when two sources date its reset differently", async () => {
+    const limits = (rateLimits: NonNullable<Usage["rateLimits"]>) =>
+      emit("s1", { type: "usage.updated", threadId: "t", usage: { rateLimits } });
+    // A `rate_limit_event` (rejected), then the plan usage read after the turn.
+    limits([{ id: "5h", status: "limited", resetsAt: "2026-11-07T18:00:00.000Z" }]);
+    const first = await usage.checkAlerts();
+    expect(first.map((i) => i.id)).toEqual([
+      "inbox:usage:limit:claude:5h:2026-11-07T18:00:00.000Z:limited",
+    ]);
+    limits([
+      { id: "5h", status: "limited", usedPercent: 100, resetsAt: "2026-11-07T17:59:59.943Z" },
+    ]);
+    expect(await usage.checkAlerts()).toEqual([]);
+    expect(usage.rateLimitWindows()[0]).toMatchObject({
+      usedPercent: 100,
+      resetsAt: "2026-11-07T18:00:00.000Z",
+    });
+    expect(database.db.select().from(inboxItems).all()).toHaveLength(1);
+
+    // A new window (hours later) is a new reset time, and may alert again.
+    vi.setSystemTime(Date.parse("2026-11-07T18:01:00.000Z"));
+    limits([{ id: "5h", status: "limited", resetsAt: "2026-11-07T23:00:00.000Z" }]);
+    expect(usage.rateLimitWindows()[0]?.resetsAt).toBe("2026-11-07T23:00:00.000Z");
   });
 
   it("rejects duplicate budget ids", () => {

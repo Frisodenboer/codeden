@@ -6,6 +6,7 @@ import type {
   MergeCheckState,
   ProtectedAreas,
   ReviewVerdict,
+  WorkType,
 } from "@codeden/contracts";
 import type { FactoryPr } from "./github-port";
 import { isNonCodeFile, isTestFile, isUiFile, protectedHits } from "./policy";
@@ -16,15 +17,27 @@ export interface CheckInputs {
   pr: FactoryPr;
   issueTitle: string | null;
   review: ReviewVerdict | null;
+  /**
+   * An agent rebased the PR to resolve merge conflicts after the reviewer approved: the
+   * approval waits for the reviewer's re-check of the resolution.
+   */
+  recheck?: boolean;
   /** Provider of the reviewer, for the pending message. */
   reviewer: string | null;
+  /** The item's pipeline; a docs change that touches no code needs no agent review. */
+  type: WorkType | null;
   /** Screenshots attached; null when not looked up (no UI files). */
   evidence: boolean | null;
+  /** Test output attached with `attach_evidence`; null when not looked up. */
+  testOutput: boolean | null;
   /** Result of the configured audit command; null while not run (or not configured). */
   audit: { ok: boolean; detail: string } | null;
   auditConfigured: boolean;
-  /** True once CI had time to register; before that "no checks" counts as pending. */
-  ciGraceOver: boolean;
+  /**
+   * True once CI had its time to start on this head commit (measured from when the factory
+   * first saw the head); before that "no checks" counts as not reported yet.
+   */
+  ciTimedOut: boolean;
   limits: FactoryLimits;
   tuning: FactoryTuning;
   /** Why the PM let this item go over the size limit; null when it didn't. */
@@ -42,9 +55,44 @@ const ORDER: MergeCheckName[] = [
   "ci",
   "review",
   "tests",
+  "test_results",
   "security",
   "ui_evidence",
 ];
+
+/** A `## Test results` section in the PR description. */
+const TEST_RESULTS_HEADING = /^#{1,6}\s*test results\b/im;
+
+/** Whether the PR description reports test results. */
+export function hasTestResults(body: string): boolean {
+  return TEST_RESULTS_HEADING.test(body);
+}
+
+/** The `ci` check's detail while the PR has merge conflicts (the author is asked to rebase). */
+export const CONFLICTS_DETAIL =
+  "Merge conflicts with the base branch: GitHub runs no CI until they are resolved, so the author is rebasing";
+
+/** The `review` check's detail while the reviewer re-checks a conflict resolution. */
+export const RECHECK_DETAIL =
+  "Rebased to resolve merge conflicts after the approval: the reviewer re-checks the resolution (git range-diff)";
+
+const NEVER_STARTED = "CI never started on ";
+
+/** Why the `ci` check failed when no CI ever reported on the head commit. */
+export function ciNeverStarted(headSha: string | null): string {
+  const head = headSha ? headSha.slice(0, 7) : "the head commit";
+  return `${NEVER_STARTED}${head}: is the workflow disabled, or are GitHub Actions turned off for the repository? Fix that and re-run CI, or turn off "Require CI" in the factory settings`;
+}
+
+/** A failed check the author can't fix in code: CI that never started. */
+export function notAuthorFixable(check: MergeCheck): boolean {
+  return check.name === "ci" && (check.detail ?? "").startsWith(NEVER_STARTED);
+}
+
+/** Code files of a change (not tests, docs, config or assets). */
+export function codeFiles(files: readonly string[]): string[] {
+  return files.filter((f) => !isTestFile(f) && !isNonCodeFile(f));
+}
 
 function list(items: string[], max = 5): string {
   return items.length > max
@@ -86,30 +134,45 @@ export function evaluateChecks(i: CheckInputs): { checks: MergeCheck[]; outcome:
   else if (i.largeChange) set("size", "pass", `${measured}; allowed by the PM: ${i.largeChange}`);
   else set("size", "fail", `${measured}, over the limit of ${sizeLimitText(i.tuning)}`);
 
-  switch (i.pr.checks) {
-    case "success":
-      set("ci", "pass", null);
-      break;
-    case "failure":
-      set("ci", "fail", `CI failed: ${list(i.pr.failedChecks) || "see the PR"}`);
-      break;
-    case "pending":
-      set("ci", "pending", "CI is running");
-      break;
-    case "none":
-      if (!i.tuning.requireCi) set("ci", "skipped", "No CI configured (not required)");
-      else if (!i.ciGraceOver) set("ci", "pending", "Waiting for CI to report");
-      else
-        set("ci", "fail", "No CI reported on the head commit; CI is required for automatic merges");
-      break;
-  }
+  // A PR with merge conflicts can't merge and gets no new CI: it waits for the author's rebase
+  // (red CI on it still fails, so the revise round fixes both).
+  if (i.pr.mergeable === "conflicting" && i.pr.checks !== "failure")
+    set("ci", "pending", CONFLICTS_DETAIL);
+  else
+    switch (i.pr.checks) {
+      case "success":
+        set("ci", "pass", null);
+        break;
+      case "failure":
+        set("ci", "fail", `CI failed: ${list(i.pr.failedChecks) || "see the PR"}`);
+        break;
+      case "pending":
+        set("ci", "pending", "CI is running");
+        break;
+      case "none":
+        if (!i.tuning.requireCi) set("ci", "skipped", "No CI configured (not required)");
+        else if (!i.ciTimedOut)
+          set(
+            "ci",
+            "pending",
+            `Waiting for CI to start on ${i.pr.headSha?.slice(0, 7) ?? "the head"}`,
+          );
+        else set("ci", "fail", ciNeverStarted(i.pr.headSha));
+        break;
+    }
 
-  if (!i.review)
+  const code = codeFiles(files);
+  // The docs pipeline has no agent review (Implement docs change -> Merge), as long as the
+  // change really is docs only; anything touching code is reviewed like any other change.
+  const reviewed = !(i.type === "docs" && code.length === 0);
+  if (!reviewed)
+    set("review", "skipped", "Docs-only change: the docs pipeline has no agent review");
+  else if (!i.review)
     set("review", "pending", `Waiting for the review${i.reviewer ? ` (${i.reviewer})` : ""}`);
+  else if (i.review.verdict === "approve" && i.recheck) set("review", "pending", RECHECK_DETAIL);
   else if (i.review.verdict === "approve") set("review", "pass", i.review.summary);
   else set("review", "fail", `${i.review.verdict}: ${i.review.summary}`);
 
-  const code = files.filter((f) => !isTestFile(f) && !isNonCodeFile(f));
   const tests = files.filter(isTestFile);
   if (code.length === 0) set("tests", "pass", "No code changed");
   else if (!i.review)
@@ -135,10 +198,27 @@ export function evaluateChecks(i: CheckInputs): { checks: MergeCheck[]; outcome:
       tests.length ? `${tests.length} test files changed` : "Reviewer: no tests needed",
     );
 
+  if (hasTestResults(i.pr.body)) set("test_results", "pass", "Test results in the PR description");
+  else if (i.testOutput === true) set("test_results", "pass", "Test output attached");
+  else if (code.length === 0) set("test_results", "skipped", "No code changed");
+  else if (i.testOutput === null) set("test_results", "pending", "Checking for test results");
+  else
+    set(
+      "test_results",
+      "fail",
+      "No test results: add a `## Test results` section to the PR or attach the test output with attach_evidence",
+    );
+
   const concerns = i.review?.security.concerns ?? [];
   if (i.auditConfigured && i.audit && !i.audit.ok)
     set("security", "fail", `Audit failed: ${i.audit.detail}`);
   else if (concerns.length > 0) set("security", "fail", `Reviewer: ${concerns.join("; ")}`);
+  else if (!reviewed && !(i.auditConfigured && !i.audit))
+    set(
+      "security",
+      "pass",
+      i.auditConfigured ? "Audit clean; docs-only change" : "Docs-only change",
+    );
   else if ((i.auditConfigured && !i.audit) || !i.review)
     set(
       "security",

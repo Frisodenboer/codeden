@@ -4,19 +4,28 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionsList } from "@/components/project/lists";
 import type { RowMenuAction, RowMenuEntry } from "@/components/shell/sidebar/row-menu";
 import { sessionMenuEntries } from "@/components/shell/sidebar/session-menu";
+import { forkableTurn } from "@/components/thread/fork-from-here";
 import { createMockClient } from "@/lib/api/mock";
 import { sessions as fixtureSessions } from "@/lib/api/mock/fixtures/sessions";
 import {
   canStop,
+  forkBlocked,
+  forkSupported,
   type SessionActions,
   sessionLink,
+  useForkSession,
   useSessionActions,
 } from "@/lib/session-actions";
 import { sessionCounts, sessionsInView } from "@/lib/session-filter";
 import { renderWithClient } from "./utils";
 
 const toast = vi.hoisted(() =>
-  Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
+  Object.assign(vi.fn(), {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    loading: vi.fn(() => "loading-1"),
+  }),
 );
 vi.mock("sonner", () => ({ toast }));
 
@@ -29,6 +38,18 @@ const session = (id: string) => {
 /** Renders the hook and reports its actions. */
 function Probe({ target, onActions }: { target: Session; onActions: (a: SessionActions) => void }) {
   onActions(useSessionActions(target));
+  return <span>ready</span>;
+}
+
+/** Renders `useForkSession` and reports its `fork`. */
+function ForkProbe({
+  target,
+  onFork,
+}: {
+  target: Session;
+  onFork: (fork: (turnId?: string) => void) => void;
+}) {
+  onFork(useForkSession(target).fork);
   return <span>ready</span>;
 }
 
@@ -150,6 +171,100 @@ describe("useSessionActions", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith("s-search", { title: "Search v2" }));
   });
 
+  it("offers Fork only where the provider can fork, and only once nothing is running", () => {
+    const idle: Session = {
+      ...session("s-search"),
+      role: "agent",
+      status: "idle",
+      resumeToken: "claude-1",
+      branch: "codeden/search",
+    };
+    const caps = (fork: boolean) =>
+      ({ id: "claude", displayName: "Claude Code", models: [], capabilities: { fork } }) as never;
+    expect(forkSupported(idle, caps(true))).toBe(true);
+    expect(forkSupported(idle, caps(false))).toBe(false);
+    expect(forkSupported(idle, undefined)).toBe(false);
+    expect(forkSupported({ ...idle, role: "pm" }, caps(true))).toBe(false);
+
+    expect(forkBlocked(idle)).toBeNull();
+    expect(forkBlocked({ ...idle, status: "stopped" })).toBeNull();
+    expect(forkBlocked({ ...idle, status: "running" })).toMatch(/running turn/);
+    // Waiting on the user (an approval, a question or a plan to approve).
+    expect(forkBlocked({ ...idle, status: "waiting" })).toMatch(/waiting on/);
+    expect(forkBlocked({ ...idle, status: "starting" })).toMatch(/hasn't started/);
+    expect(forkBlocked({ ...idle, resumeToken: null })).toMatch(/No conversation/);
+    expect(forkBlocked({ ...idle, branch: null })).toMatch(/git branch/);
+  });
+
+  it("forks through the client and opens the new session", async () => {
+    toast.success.mockClear();
+    const client = createMockClient();
+    const fork = vi.spyOn(client, "forkSession");
+    const { actions } = await actionsFor(session("s-search"), client);
+    actions.fork();
+    await waitFor(() => expect(fork).toHaveBeenCalledWith("s-search"));
+    expect(toast.loading).toHaveBeenCalledWith("Forking the session…");
+    // The "Forking…" toast turns into the result.
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Forked into a new session",
+        expect.objectContaining({ id: "loading-1" }),
+      ),
+    );
+  });
+
+  it("forks from a turn, saying the copy ends with it", async () => {
+    toast.success.mockClear();
+    const client = createMockClient();
+    const fork = vi.spyOn(client, "forkSession");
+    let fromTurn: ((turnId?: string) => void) | undefined;
+    renderWithClient(
+      <ForkProbe
+        target={session("s-search")}
+        onFork={(f) => {
+          fromTurn = f;
+        }}
+      />,
+      client,
+      { withRouter: true },
+    );
+    await screen.findByText("ready");
+    fromTurn?.("turn-2");
+    await waitFor(() => expect(fork).toHaveBeenCalledWith("s-search", { turnId: "turn-2" }));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Forked into a new session",
+        expect.objectContaining({ description: expect.stringMatching(/after that turn/) }),
+      ),
+    );
+  });
+
+  it("offers Fork from here on root turns that are the latest or recorded a fork point", () => {
+    const s = { ...session("s-search"), rootThreadId: "t-root" };
+    const row = (patch: { threadId?: string; forkPoint?: string | null; latest?: boolean }) =>
+      ({
+        key: "end:u1",
+        type: "turn-end",
+        filesChanged: 0,
+        durationMs: null,
+        latest: patch.latest ?? false,
+        turn: {
+          id: "u1",
+          threadId: patch.threadId ?? "t-root",
+          status: "completed",
+          startedAt: "2026-11-12T10:00:00.000Z",
+          completedAt: "2026-11-12T10:01:00.000Z",
+          error: null,
+          forkPoint: patch.forkPoint ?? null,
+        },
+      }) as const;
+    expect(forkableTurn(s, row({ forkPoint: "fp-1" }))).toBe(true);
+    expect(forkableTurn(s, row({ latest: true }))).toBe(true);
+    // An earlier turn without a fork point, and a subagent's turn, can't be forked from.
+    expect(forkableTurn(s, row({}))).toBe(false);
+    expect(forkableTurn(s, row({ threadId: "t-child", forkPoint: "fp-1" }))).toBe(false);
+  });
+
   it("stops only sessions that are working or waiting", () => {
     expect(canStop({ status: "running" })).toBe(true);
     expect(canStop({ status: "waiting" })).toBe(true);
@@ -166,11 +281,19 @@ describe("session row menu", () => {
     open: vi.fn(),
     rename: vi.fn(),
     copyLink: vi.fn(async () => {}),
+    canMakeAutomation: true,
+    makeAutomation: vi.fn(),
     canStop: false,
     stop: vi.fn(),
     archived: false,
     archive: vi.fn(),
     unarchive: vi.fn(),
+    canFork: false,
+    forkBlocked: null,
+    fork: vi.fn(),
+    canHandoff: false,
+    handoffBlocked: null,
+    handoff: vi.fn(),
     ...patch,
   });
 

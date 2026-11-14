@@ -1,15 +1,7 @@
-import type { FactoryLoopState, FactoryStatus, Project } from "@codeden/contracts";
+import type { Project } from "@codeden/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  AlertTriangle,
-  Factory,
-  FileText,
-  Newspaper,
-  Play,
-  SlidersHorizontal,
-  StepForward,
-} from "lucide-react";
+import { AlertTriangle, Factory, FileText, Newspaper, Play, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,16 +11,13 @@ import { factoryKeys, useFactoryStatus } from "@/lib/factory";
 import { ago, compact, usd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AutonomyDialog, ExperimentalBadge } from "./autonomy-dialog";
-import { BacklogColumn, ChecksColumn, RecentColumn } from "./factory-columns";
+import { FactoryRunButtons, OpenFactoryViewButton } from "./factory-actions";
+import { ChecksColumn, IgnoredColumn, RecentColumn } from "./factory-columns";
 import { KillSwitchButton } from "./kill-switch";
 import { LOOP_LABEL, MODE_LABEL } from "./meta";
-
-const STAGES: { id: FactoryLoopState | "merge"; label: string }[] = [
-  { id: "discovering", label: "Discover" },
-  { id: "building", label: "Build" },
-  { id: "verifying", label: "Verify" },
-  { id: "merge", label: "Merge & watch" },
-];
+import { PipelineDiagram } from "./pipeline-diagram";
+import { PullRequestsCard } from "./pull-requests-card";
+import { WipChip } from "./wip-chip";
 
 function Meter(props: {
   label: string;
@@ -59,50 +48,28 @@ function Meter(props: {
   );
 }
 
-function StageStrip({ f, stopped }: { f: FactoryStatus; stopped: boolean }) {
-  const active = STAGES.findIndex((s) => s.id === f.loopState);
-  const loop = LOOP_LABEL[f.loopState];
+function LoopState({ state, stopped }: { state: keyof typeof LOOP_LABEL; stopped: boolean }) {
+  const loop = LOOP_LABEL[stopped ? "stopped" : state];
   return (
-    <div className="flex items-center gap-1.5">
-      {STAGES.map((s, i) => (
-        <div key={s.id} className="flex flex-1 items-center gap-1.5">
-          <div
-            className={cn(
-              "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md border text-2xs",
-              stopped
-                ? "border-border text-muted-foreground/60"
-                : i === active
-                  ? "border-primary/50 bg-primary/10 font-medium text-primary"
-                  : i < active
-                    ? "border-border text-foreground/70"
-                    : "border-dashed border-border text-muted-foreground",
-            )}
-          >
-            {i === active && !stopped && (
-              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-            )}
-            {s.label}
-          </div>
-          {i < STAGES.length - 1 && <span className="h-px w-2 bg-border" />}
-        </div>
-      ))}
-      <span
-        className={cn(
-          "ml-2 shrink-0 rounded-full px-2 py-0.5 text-3xs font-medium",
-          loop.tone === "failed" && "bg-status-failed/12 text-status-failed",
-          loop.tone === "waiting" && "bg-status-waiting/12 text-status-waiting",
-          loop.tone === "running" && "bg-status-running/12 text-status-running",
-          loop.tone === "idle" && "bg-muted text-muted-foreground",
-        )}
-        data-testid="factory-loop-state"
-      >
-        Loop {loop.label.toLowerCase()}
-      </span>
-    </div>
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-2 py-0.5 text-3xs font-medium",
+        loop.tone === "failed" && "bg-status-failed/12 text-status-failed",
+        loop.tone === "waiting" && "bg-status-waiting/12 text-status-waiting",
+        loop.tone === "running" && "bg-status-running/12 text-status-running",
+        loop.tone === "idle" && "bg-muted text-muted-foreground",
+      )}
+      data-testid="factory-loop-state"
+    >
+      Loop {loop.label.toLowerCase()}
+    </span>
   );
 }
 
-/** Factory panel for autopilot and dark-factory projects (§10.1, experimental). */
+/**
+ * The software / dark factory panel (§10.1, experimental): the live pipeline diagram, the
+ * agent pool and budget, merge checks, recent results and the issues ignored for their author.
+ */
 export function FactoryPanel({ project }: { project: Project }) {
   const projectId = project.id;
   const client = useClient();
@@ -119,14 +86,6 @@ export function FactoryPanel({ project }: { project: Project }) {
     },
     onError: fail("Couldn't resume"),
   });
-  const tick = useMutation({
-    mutationFn: () => client.factory.tick(projectId),
-    onSuccess: (s) => {
-      queryClient.setQueryData(factoryKeys.status(projectId), s);
-      toast.success(`Ran one step: loop ${LOOP_LABEL[s.loopState].label.toLowerCase()}`);
-    },
-    onError: fail("Couldn't run a step"),
-  });
   const digest = useMutation({
     mutationFn: () => client.factory.digest(projectId),
     onSuccess: (d) => {
@@ -140,6 +99,9 @@ export function FactoryPanel({ project }: { project: Project }) {
 
   if (!f) return <Skeleton className="h-72 w-full rounded-xl" />;
   const stopped = f.killSwitch || f.globalKillSwitch || f.loopState === "stopped";
+  const readyCount = f.inProgress.filter(
+    (w) => w.step === "merge" && w.stage === "verifying",
+  ).length;
   const budgetUsd = f.limits.dailyBudget.usd;
   const budgetTokens = f.limits.dailyBudget.tokens;
 
@@ -159,24 +121,21 @@ export function FactoryPanel({ project }: { project: Project }) {
           </div>
           <div className="text-2xs text-muted-foreground">
             {f.mode === "dark_factory"
-              ? "Finders and issues feed the backlog; CodeDen merges when every check passes."
-              : "New issues feed the backlog; CodeDen merges when every check passes."}
+              ? "The scout and trusted issues feed the pipelines; "
+              : "Trusted GitHub issues feed the pipelines; "}
+            {f.limits.autoMerge
+              ? "CodeDen merges when every check passes."
+              : "you merge the pull requests."}
           </div>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1">
+          <OpenFactoryViewButton projectId={projectId} variant="outline" />
           {f.loopState === "paused" && (
             <Button size="sm" onClick={() => resume.mutate()} disabled={resume.isPending}>
               <Play /> Resume
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => tick.mutate()}
-            disabled={tick.isPending || stopped}
-          >
-            <StepForward /> Run a step
-          </Button>
+          <FactoryRunButtons f={f} stopped={stopped} />
           <Button
             size="sm"
             variant="ghost"
@@ -186,7 +145,7 @@ export function FactoryPanel({ project }: { project: Project }) {
             <Newspaper /> Digest
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setLimitsOpen(true)}>
-            <SlidersHorizontal /> Limits
+            <SlidersHorizontal /> Settings
           </Button>
           <Button size="sm" variant="ghost" asChild>
             <Link to="/projects/$projectId/vision" params={{ projectId }}>
@@ -211,7 +170,19 @@ export function FactoryPanel({ project }: { project: Project }) {
             {f.globalKillSwitch && <KillSwitchButton scope="global" on size="xs" />}
           </div>
         )}
-        <StageStrip f={f} stopped={stopped} />
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-2xs font-medium text-muted-foreground">Pipelines</span>
+            <span className="text-3xs text-muted-foreground/80">
+              Click an issue to open the agent working on it
+            </span>
+            <span className="ml-auto flex min-w-0 items-center gap-1.5">
+              <WipChip f={f} />
+              <LoopState state={f.loopState} stopped={stopped} />
+            </span>
+          </div>
+          <PipelineDiagram f={f} />
+        </div>
         <div className="flex flex-wrap gap-2">
           <Meter
             label="Spend today"
@@ -224,19 +195,36 @@ export function FactoryPanel({ project }: { project: Project }) {
             }
           />
           <Meter
-            label="Merges today"
-            value={f.mergesToday}
-            max={f.limits.maxMergesPerDay}
-            display={`${f.mergesToday} / ${f.limits.maxMergesPerDay}`}
-            warn={false}
-          />
-          <Meter
-            label="Sessions"
+            label="Agents working"
             value={f.activeSessions}
             max={f.limits.maxConcurrentSessions}
             display={`${f.activeSessions} / ${f.limits.maxConcurrentSessions}`}
             warn={false}
           />
+          <Meter
+            label="PRs in progress"
+            value={f.wip.openPrs}
+            max={f.wip.limit}
+            display={`${f.wip.openPrs} / ${f.wip.limit}`}
+            warn={false}
+          />
+          {f.limits.autoMerge ? (
+            <Meter
+              label="Merges today"
+              value={f.mergesToday}
+              max={f.limits.maxMergesPerDay}
+              display={`${f.mergesToday} / ${f.limits.maxMergesPerDay}`}
+              warn={false}
+            />
+          ) : (
+            <Meter
+              label="Ready for you"
+              value={readyCount}
+              max={Math.max(readyCount, 1)}
+              display={`${readyCount} PR${readyCount === 1 ? "" : "s"}`}
+              warn={false}
+            />
+          )}
           <Meter
             label="Failures in a row"
             value={f.consecutiveFailures}
@@ -244,10 +232,11 @@ export function FactoryPanel({ project }: { project: Project }) {
             display={`${f.consecutiveFailures} / ${f.limits.pauseAfterConsecutiveFailures}`}
           />
         </div>
+        <PullRequestsCard projectId={projectId} pullRequests={f.pullRequests} />
         <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-3">
-          <BacklogColumn projectId={projectId} backlog={f.backlog} inProgress={f.inProgress} />
           <ChecksColumn projectId={projectId} checks={f.mergeChecks} />
           <RecentColumn projectId={projectId} recent={f.recent} />
+          <IgnoredColumn projectId={projectId} ignored={f.ignored} />
         </div>
         {f.lastDigest && (
           <details className="rounded-lg border border-border bg-surface px-3 py-2 text-2xs">
@@ -261,14 +250,21 @@ export function FactoryPanel({ project }: { project: Project }) {
           </details>
         )}
         <p className="text-3xs text-muted-foreground/80">
-          {compact(f.spendToday.tokens)} tokens today · protected:{" "}
+          {compact(f.spendToday.tokens)} tokens today · trusted:{" "}
+          {[f.githubLogin, ...f.limits.trustedAuthors]
+            .filter(Boolean)
+            .map((l) => `@${l}`)
+            .join(", ") || "the GitHub account"}{" "}
+          · auto-merge {f.limits.autoMerge ? "on" : "off"} · protected:{" "}
           {f.limits.protectedPaths.join(", ") || "from the vision"} · deploys{" "}
           {f.limits.allowDeploys ? "allowed" : "off"} · CI{" "}
           {f.tuning.requireCi ? "required" : "optional"} ·{" "}
           {f.tuning.maxChangedLines !== null
             ? `up to ${f.tuning.maxChangedLines.toLocaleString()} changed lines`
             : "no size limit"}
-          {f.lastTickAt && ` · last step ${ago(f.lastTickAt)}`}
+          {/* As of the panel's last refresh: on factory events, every 30 s while work is in
+              flight, every 5 min while idle (`useFactoryStatus`). */}
+          {f.lastTickAt && ` · last check ${ago(f.lastTickAt)}`}
         </p>
       </div>
       <AutonomyDialog project={project} open={limitsOpen} onOpenChange={setLimitsOpen} />

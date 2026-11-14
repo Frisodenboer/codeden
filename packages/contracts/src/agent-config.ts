@@ -2,13 +2,38 @@ import { z } from "zod";
 import { Id, Timestamp } from "./common";
 
 /**
- * Agent configuration screens (§12.4): each provider's own memory files, skills, subagents
- * and MCP servers, edited in place in their native files with a diff preview and a backup
- * before every overwrite or delete. Routes live under `/api/agent-config`.
+ * Agent configuration screens (§12.4): each provider's own memory files, skills, subagents,
+ * MCP servers and hooks (`agent-config-hooks.ts`), edited in place in their native files with
+ * a diff preview and a backup before every overwrite or delete. Routes live under
+ * `/api/agent-config`.
  */
 
 export const AgentConfigProvider = z.enum(["claude", "codex"]);
 export type AgentConfigProvider = z.infer<typeof AgentConfigProvider>;
+
+/** Agent-config screens that exist only for some providers. */
+export interface AgentConfigFeatures {
+  /** CodeDen lists and edits this provider's hooks (`/api/agent-config/hooks`). */
+  hooks: boolean;
+  /**
+   * The provider's native config can switch a skill off, and CodeDen writes that setting
+   * (`/api/agent-config/skills`, `agent-config-skills.ts`).
+   */
+  skillSwitches: boolean;
+}
+
+/**
+ * Which optional agent-config screens each provider has. The UI reads this to decide which
+ * tabs and choices to offer, and never branches on a provider id (Principle 5).
+ */
+export const agentConfigFeatures: Record<AgentConfigProvider, AgentConfigFeatures> = {
+  claude: { hooks: true, skillSwitches: true },
+  codex: { hooks: false, skillSwitches: true },
+};
+
+/** The providers that have a given agent-config feature. */
+export const providersWith = (feature: keyof AgentConfigFeatures): AgentConfigProvider[] =>
+  AgentConfigProvider.options.filter((p) => agentConfigFeatures[p][feature]);
 
 /**
  * - `memory`: CLAUDE.md / CLAUDE.local.md / AGENTS.md files.
@@ -205,32 +230,4 @@ export const McpServerWriteResponse = z.object({
 });
 export type McpServerWriteResponse = z.infer<typeof McpServerWriteResponse>;
 
-// ------------------------------------------------------------------------- what's loaded
-
-/** A skill folder (its `SKILL.md`). */
-export const AgentSkill = z.object({
-  provider: AgentConfigProvider,
-  scope: AgentConfigScope,
-  name: z.string(),
-  description: z.string().optional(),
-  file: AgentConfigFile,
-});
-export type AgentSkill = z.infer<typeof AgentSkill>;
-
-/**
- * `GET /api/sessions/:id/agent-config/loaded`: what the session's provider loads into its
- * context from its working directory, in load order. Computed from each provider's discovery
- * rules (not reported by the provider).
- */
-export const LoadedAgentConfig = z.object({
-  sessionId: Id,
-  provider: z.string(),
-  cwd: z.string(),
-  /** Memory, rule and auto-memory files that exist, broadest scope first. */
-  memory: z.array(AgentConfigFile),
-  skills: z.array(AgentSkill),
-  subagents: z.array(AgentConfigFile),
-  /** Enabled MCP servers, including CodeDen's own. */
-  mcpServers: z.array(McpServerEntry),
-});
-export type LoadedAgentConfig = z.infer<typeof LoadedAgentConfig>;
+// The "what's loaded" view of a session is in `agent-config-loaded.ts`.

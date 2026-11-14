@@ -1,17 +1,20 @@
-import type { Session } from "@codeden/contracts";
+import type { ForkOrigin, Session } from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Archive,
   ArchiveRestore,
+  ArrowRightLeft,
   Bot,
   Copy,
   FolderTree,
   GitBranch,
+  GitFork,
   MoreHorizontal,
   PanelRight,
   Square,
   SquareTerminal,
+  Workflow,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,9 +32,10 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SessionCostChip } from "@/components/usage/session-cost";
 import { useClient } from "@/lib/api";
+import { copyWithFeedback } from "@/lib/copy";
+import { isHandoff } from "@/lib/fork-origin";
 import { statusLabel } from "@/lib/format";
-import { platform } from "@/lib/platform";
-import { useProject } from "@/lib/queries";
+import { useProject, useSession } from "@/lib/queries";
 import { useSessionActions } from "@/lib/session-actions";
 import { cn } from "@/lib/utils";
 import { useViewport } from "@/lib/viewport";
@@ -60,6 +64,29 @@ function Chip({
       {icon}
       <span className="truncate font-mono">{children}</span>
     </span>
+  );
+}
+
+/** Where a forked or handed-off session came from, linking to the source session. */
+function ForkedFromChip({ origin, className }: { origin: ForkOrigin; className?: string }) {
+  const source = useSession(origin.sessionId);
+  const title = source ? (source.title ?? source.purpose) : "another session";
+  const handoff = isHandoff(origin);
+  return (
+    <Link
+      to="/sessions/$sessionId"
+      params={{ sessionId: origin.sessionId }}
+      title={`${handoff ? "Handed off from" : "Forked from"} ${title}`}
+      className={cn(
+        "inline-flex h-6 max-w-44 items-center gap-1.5 rounded-md border border-border/80 px-2 text-2xs text-muted-foreground hover:border-primary/40 hover:text-foreground [&_svg]:size-3",
+        className,
+      )}
+    >
+      {handoff ? <ArrowRightLeft /> : <GitFork />}
+      <span className="truncate">
+        {handoff ? "Handed off from" : "Fork of"} {title}
+      </span>
+    </Link>
   );
 }
 
@@ -144,6 +171,9 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
             {session.worktreePath.split(/[\\/]/).at(-1)}
           </Chip>
         )}
+        {session.forkedFrom && (
+          <ForkedFromChip origin={session.forkedFrom} className="hidden @[48rem]:inline-flex" />
+        )}
         <SessionCostChip sessionId={session.id} className="hidden @[40rem]:inline-flex" />
         {/* Agents show their model and permissions under the message box; the PM and the
             orchestrator have no permission picker there, so their read-only badge stays. */}
@@ -212,11 +242,7 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
           <DropdownMenuContent align="end" className="w-52">
             {session.branch && (
               <DropdownMenuItem
-                onSelect={() =>
-                  void platform
-                    .writeClipboard(session.branch ?? "")
-                    .then(() => toast.success("Branch copied"))
-                }
+                onSelect={() => void copyWithFeedback(session.branch ?? "", "Branch copied")}
               >
                 <Copy /> Copy branch name
               </DropdownMenuItem>
@@ -224,6 +250,41 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
             <DropdownMenuItem onSelect={() => layout.openRightTab("details")}>
               <Bot /> Session details
             </DropdownMenuItem>
+            {actions.canFork && (
+              <DropdownMenuItem
+                disabled={actions.forkBlocked !== null}
+                title={actions.forkBlocked ?? undefined}
+                onSelect={actions.fork}
+              >
+                <GitFork />
+                <span className="flex min-w-0 flex-col">
+                  Fork session
+                  <span className="text-2xs text-muted-foreground">
+                    {actions.forkBlocked ?? "Try another approach in a new worktree"}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            )}
+            {actions.canHandoff && (
+              <DropdownMenuItem
+                disabled={actions.handoffBlocked !== null}
+                title={actions.handoffBlocked ?? undefined}
+                onSelect={() => actions.handoff()}
+              >
+                <ArrowRightLeft />
+                <span className="flex min-w-0 flex-col">
+                  Hand off…
+                  <span className="text-2xs text-muted-foreground">
+                    {actions.handoffBlocked ?? "Continue in a new session, on any provider"}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            )}
+            {actions.canMakeAutomation && (
+              <DropdownMenuItem onSelect={actions.makeAutomation}>
+                <Workflow /> Make an automation…
+              </DropdownMenuItem>
+            )}
             {session.role === "agent" && (
               <>
                 <DropdownMenuSeparator />
@@ -236,9 +297,13 @@ export function ThreadHeader({ session, running }: { session: Session; running: 
                     <Archive /> Archive session
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem variant="destructive" onSelect={actions.stop}>
-                  <X /> Stop session
-                </DropdownMenuItem>
+                {/* Only while a turn runs or a question is open, like the sidebar's row menu:
+                    stopping a finished session would overwrite its outcome. */}
+                {actions.canStop && (
+                  <DropdownMenuItem variant="destructive" onSelect={actions.stop}>
+                    <X /> Stop session
+                  </DropdownMenuItem>
+                )}
               </>
             )}
           </DropdownMenuContent>

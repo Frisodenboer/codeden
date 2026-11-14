@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -44,12 +44,22 @@ export interface GithubEnv {
   githubProject: Project;
   localProject: Project;
   addSession: (patch?: Partial<Session>) => Session;
+  /**
+   * `gh` signs in as another account: every earlier token is revoked (the next request gets a
+   * 401) and `gh auth token` prints `token`, which GitHub knows as `login`.
+   */
+  switchAccount: (token: string, login: string) => void;
   close: () => void;
 }
 
 const ts = "2026-11-07T10:00:00.000Z";
 
-export function createGithubEnv(): GithubEnv {
+export interface GithubEnvOptions {
+  /** Make `artifacts` a junction (a folder symlink elsewhere) to `artifacts-real`. */
+  aliasArtifacts?: boolean;
+}
+
+export function createGithubEnv(opts: GithubEnvOptions = {}): GithubEnv {
   const dir = mkdtempSync(join(tmpdir(), "codeden-gh-"));
   const db = openDatabase(join(dir, "codeden.db"));
   const store = new EventStore(db.db);
@@ -112,7 +122,12 @@ export function createGithubEnv(): GithubEnv {
   };
   const projects = new ProjectService({ db: db.db, store, exec, projectsDir: dir });
   const repo = new SessionRepo(db.db, store);
-  mkdirSync(join(dir, "artifacts"));
+  if (opts.aliasArtifacts) {
+    mkdirSync(join(dir, "artifacts-real"));
+    symlinkSync(join(dir, "artifacts-real"), join(dir, "artifacts"), "junction");
+  } else {
+    mkdirSync(join(dir, "artifacts"));
+  }
   const artifacts = new ArtifactService(db.db, store, join(dir, "artifacts"));
   const inbox = new InboxService(db.db, store, () => async () => {});
   const secrets = new MemorySecretStore();
@@ -165,6 +180,8 @@ export function createGithubEnv(): GithubEnv {
     inbox,
     exec,
     secrets,
+    // The data directory holds `artifacts/` like a real home, and is the sessions' worktree.
+    home: dir,
     fetch: gh.fetch,
     baseUrl: "https://api.github.test",
   });
@@ -201,6 +218,11 @@ export function createGithubEnv(): GithubEnv {
         queuedBehind: [],
       });
       return session;
+    },
+    switchAccount: (token: string, login: string) => {
+      gh.validTokens = new Set([token]);
+      gh.accounts.set(token, login);
+      env.ghTokens = [token];
     },
     close: () => {
       service.stop();

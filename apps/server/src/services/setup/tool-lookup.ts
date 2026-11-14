@@ -1,9 +1,20 @@
-import type { SetupCheck, SetupCommand } from "@codeden/contracts";
-import { brokenInstallMessage, type ExecutableLookup, shellCommandLine } from "@codeden/providers";
+import type { LoginToolId, SetupCheck, SetupCommand } from "@codeden/contracts";
+import {
+  brokenInstallMessage,
+  type ExecutableLookup,
+  type LocateOptions,
+  shellCommandLine,
+} from "@codeden/providers";
 import type { Exec, ExecResult } from "../exec";
 
-/** Finds a working copy of a tool (PATH, then known install locations); injectable for tests. */
-export type Locate = (name: string) => Promise<ExecutableLookup>;
+/**
+ * Finds a working copy of a tool (PATH, then known install locations); injectable for tests.
+ * `validate` replaces the `--version` check, e.g. to accept only Cursor's `agent`.
+ */
+export type Locate = (
+  name: string,
+  opts?: Pick<LocateOptions, "validate">,
+) => Promise<ExecutableLookup>;
 
 /**
  * A look-up through an `Exec` only (`<name> --version`): used when a server is given its own
@@ -22,10 +33,14 @@ export function execLocate(exec: Exec): Locate {
 export const LOGIN_COMMANDS = {
   claude: ["claude", "auth", "login"],
   codex: ["codex", "login"],
+  opencode: ["opencode", "auth", "login"],
+  cursor: ["agent", "login"],
+  // Gemini CLI has no login command: started on its own, it asks how to sign in.
+  gemini: ["gemini"],
   gh: ["gh", "auth", "login", "--web", "--git-protocol", "https"],
-} as const satisfies Record<string, readonly string[]>;
+} as const satisfies Record<LoginToolId, readonly string[]>;
 
-export type LoginTool = keyof typeof LOGIN_COMMANDS;
+export type LoginTool = LoginToolId;
 
 /**
  * The sign-in command typed into the setup terminal (§14 step 3). With a resolved `program`
@@ -57,8 +72,9 @@ export async function lookupTool(
   name: string,
   check: Omit<CheckResult, "state" | "message">,
   notInstalled: { message: string; fix: SetupCommand },
+  locateOpts?: Pick<LocateOptions, "validate">,
 ): Promise<ToolLookup> {
-  const lookup = await locate(name);
+  const lookup = await locate(name, locateOpts);
   const extra = lookup.broken.length > 0 ? { broken: lookup.broken } : {};
   if (lookup.command) {
     return { found: true, path: lookup.command.path, version: lookup.version, extra };

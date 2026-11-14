@@ -14,6 +14,7 @@ import {
 } from "@codeden/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isProcessAlive, type RunningServer, readLiveRunnerLock, startServer } from "../src";
+import { RUNNER_REQUEST_TIMEOUT_FLOOR_MS, waitUntil } from "./support/harness";
 import { removeTree } from "./support/remove-tree";
 import { TestWsClient } from "./support/ws-client";
 
@@ -33,16 +34,6 @@ const api = async (method: string, path: string, body?: unknown) => {
   });
   return { status: res.status, body: (await res.json()) as unknown };
 };
-
-async function waitUntil<T>(probe: () => Promise<T | undefined>, timeoutMs = 20_000): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const value = await probe();
-    if (value !== undefined) return value;
-    if (Date.now() > deadline) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 50));
-  }
-}
 
 const detail = async (id: string) =>
   SessionDetail.parse((await api("GET", `/sessions/${id}`)).body);
@@ -79,6 +70,7 @@ beforeAll(async () => {
     checkSetupOnStart: false,
     userHome: home,
     realtimeFlushMs: 10,
+    runnerRequestTimeoutFloorMs: RUNNER_REQUEST_TIMEOUT_FLOOR_MS,
   });
   ws = await TestWsClient.connect(server.url, TOKEN);
 });
@@ -176,7 +168,12 @@ describe("project -> Fake session through a real runner", () => {
     expect(body.hasMoreBefore).toBe(true);
     const tool = [...items.values()].find((r) => r.item.kind === "tool_call");
     const output = await api("GET", `/sessions/${id}/items/${tool?.item.id}/output`);
-    expect(output.body).toMatchObject({ text: "hello\n" });
+    expect(output.body).toMatchObject({
+      text: "hello\n",
+      totalBytes: 6,
+      truncated: false,
+      outputBytes: 6,
+    });
 
     // Follow-up message in the same session.
     const sent = await api("POST", `/sessions/${id}/messages`, { input: { text: "again" } });

@@ -1,4 +1,4 @@
-import type { Session } from "@codeden/contracts";
+import type { Session, UserInputInit } from "@codeden/contracts";
 import { Paperclip } from "lucide-react";
 import {
   type ClipboardEvent,
@@ -13,9 +13,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSnapshotData } from "@/lib/queries";
+import { useComposerBounds } from "@/lib/toast-placement";
 import { cn } from "@/lib/utils";
 import { type Draft, getDraft, useComposerStore } from "@/stores/composer";
-import { AttachmentStrip, filesToAttachments } from "./attachments";
+import { AttachmentStrip, filesToAttachments, toInputAttachments } from "./attachments";
 import { VoiceButton } from "./voice-button";
 
 export const composerPlaceholders: Record<Session["role"], string> = {
@@ -27,6 +28,12 @@ export const composerPlaceholders: Record<Session["role"], string> = {
 /** A draft can be sent with text, attachments or both. */
 export const canSendDraft = (draft: Draft) =>
   draft.text.trim().length > 0 || draft.attachments.length > 0;
+
+/** What sending the draft sends. */
+export const draftInput = (draft: Draft): UserInputInit => ({
+  text: draft.text.trim(),
+  attachments: toInputAttachments(draft.attachments),
+});
 
 /** Enter sends; Shift+Enter and IME composition keep typing. */
 export const isSendKey = (e: KeyboardEvent<HTMLTextAreaElement>) =>
@@ -45,6 +52,7 @@ export function ComposerBox({
   onKeyDown,
   onCaret,
   textareaRef,
+  combobox,
   menu,
   options,
   actions,
@@ -57,6 +65,12 @@ export function ComposerBox({
   onCaret?: (caret: number) => void;
   /** The textarea, for callers that move the caret. */
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
+  /**
+   * Makes the box a combobox for a suggestion list in `menu`, so screen readers hear the list
+   * open and close and the highlighted option: the listbox's id, whether it is open, and the
+   * highlighted option's id (none when the list is empty).
+   */
+  combobox?: { listId: string; open: boolean; activeId?: string };
   /** Floating content above the box, such as the suggestion menu. */
   menu?: ReactNode;
   /** Controls after the attach button. */
@@ -73,7 +87,10 @@ export function ComposerBox({
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const ref = textareaRef ?? ownRef;
   const fileInput = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  // Toasts are lifted clear of the box (its Send, Stop and pickers) wherever they would cover it.
+  useComposerBounds(box);
 
   useEffect(() => {
     if (focusToken > 0) {
@@ -104,6 +121,7 @@ export function ComposerBox({
         {menu}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for files; the textarea and attach button stay keyboard accessible. */}
         <div
+          ref={box}
           onDragOver={(e) => {
             e.preventDefault();
             setDragging(true);
@@ -119,6 +137,7 @@ export function ComposerBox({
             items={draft.attachments}
             onRemove={(id) => removeAttachment(draftKey, id)}
           />
+          {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-expanded is only set with role="combobox", which supports it; the rule reads the textarea's implicit textbox role. */}
           <textarea
             ref={ref}
             value={draft.text}
@@ -132,6 +151,11 @@ export function ComposerBox({
             onPaste={onPaste}
             placeholder={placeholder}
             aria-label="Message"
+            role={combobox ? "combobox" : undefined}
+            aria-autocomplete={combobox ? "list" : undefined}
+            aria-expanded={combobox ? combobox.open : undefined}
+            aria-controls={combobox?.open ? combobox.listId : undefined}
+            aria-activedescendant={combobox?.open ? combobox.activeId : undefined}
             className="block max-h-64 min-h-[56px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground/70"
           />
           <div className="flex flex-wrap items-center gap-0.5 gap-y-1 px-2 pb-2">

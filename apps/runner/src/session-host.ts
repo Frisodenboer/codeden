@@ -4,10 +4,15 @@ import type {
   RunnerEvent,
   RunnerSessionInfo,
 } from "@codeden/contracts";
-import type { ProviderRegistry, ProviderSession } from "@codeden/providers";
+import {
+  type ProviderRegistry,
+  type ProviderSession,
+  ProviderSessionError,
+} from "@codeden/providers";
 import { CommandError } from "./errors";
 import { createCheckpoint, nextCheckpointIndex } from "./git/checkpoints";
 import { isWorkTree } from "./git/exec";
+import { agentSessionOptions } from "./session-env";
 
 export { CommandError };
 
@@ -40,6 +45,8 @@ export interface SessionHostOptions {
  */
 export class SessionHost {
   private readonly sessions = new Map<string, Hosted>();
+  /** Sessions a `start` is opening, until they are hosted. */
+  private readonly opening = new Set<string>();
 
   constructor(
     private readonly registry: ProviderRegistry,
@@ -66,8 +73,13 @@ export class SessionHost {
     return [...this.sessions.values()].filter((h) => h.state === "running").length;
   }
 
+  /**
+   * Open a provider session and host it. A session that is hosted, or still being opened by
+   * an earlier start, is refused with `session_exists`: a second open would run the
+   * conversation twice (one of them with an MCP token the server has retired).
+   */
   async start(cmd: RunnerCommandOf<"session.start">): Promise<{ resumeToken: string | null }> {
-    if (this.sessions.has(cmd.sessionId)) {
+    if (this.sessions.has(cmd.sessionId) || this.opening.has(cmd.sessionId)) {
       throw new CommandError("session_exists", `Session ${cmd.sessionId} is already running`);
     }
     const adapter = this.registry.get(cmd.providerId);
@@ -79,33 +91,40 @@ export class SessionHost {
           (available.length > 0 ? ` (available: ${available.join(", ")})` : ""),
       );
     }
-    this.emit({ kind: "session.process", sessionId: cmd.sessionId, state: "starting" });
-    let session: ProviderSession;
+    this.opening.add(cmd.sessionId);
+    let hosted: Hosted;
     try {
-      session = await adapter.openSession(cmd.options);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.emit({
-        kind: "session.process",
-        sessionId: cmd.sessionId,
-        state: "crashed",
-        error: { code: "open_failed", message },
-      });
-      throw new CommandError("open_failed", `Could not open the session: ${message}`);
+      this.emit({ kind: "session.process", sessionId: cmd.sessionId, state: "starting" });
+      let opened: ProviderSession;
+      try {
+        opened = await adapter.openSession(agentSessionOptions(cmd.options));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emit({
+          kind: "session.process",
+          sessionId: cmd.sessionId,
+          state: "crashed",
+          error: { code: "open_failed", message },
+        });
+        throw new CommandError("open_failed", `Could not open the session: ${message}`);
+      }
+      const checkpoints = cmd.checkpoints !== false && (await isWorkTree(cmd.options.cwd));
+      hosted = {
+        providerId: cmd.providerId,
+        session: opened,
+        state: "idle",
+        rootThreadId: undefined,
+        cwd: cmd.options.cwd,
+        checkpoints,
+        checkpointChain: Promise.resolve(),
+        drainInterrupted: false,
+        turnCutOff: false,
+      };
+      this.sessions.set(cmd.sessionId, hosted);
+    } finally {
+      this.opening.delete(cmd.sessionId);
     }
-    const checkpoints = cmd.checkpoints !== false && (await isWorkTree(cmd.options.cwd));
-    const hosted: Hosted = {
-      providerId: cmd.providerId,
-      session,
-      state: "idle",
-      rootThreadId: undefined,
-      cwd: cmd.options.cwd,
-      checkpoints,
-      checkpointChain: Promise.resolve(),
-      drainInterrupted: false,
-      turnCutOff: false,
-    };
-    this.sessions.set(cmd.sessionId, hosted);
+    const { session, checkpoints } = hosted;
     if (checkpoints) this.checkpoint(cmd.sessionId, hosted, undefined, true);
     this.emit({ kind: "session.process", sessionId: cmd.sessionId, state: "ready" });
     void this.pump(cmd.sessionId, hosted);
@@ -120,7 +139,15 @@ export class SessionHost {
   async send(cmd: RunnerCommandOf<"session.send">): Promise<void> {
     const hosted = this.get(cmd.sessionId);
     await hosted.checkpointChain;
-    await hosted.session.send(cmd.input);
+    try {
+      await hosted.session.send(cmd.input);
+    } catch (error) {
+      // The server queues the message behind the running turn instead of failing the session.
+      if (error instanceof ProviderSessionError && error.code === "turn_running") {
+        throw new CommandError("turn_running", error.message);
+      }
+      throw error;
+    }
   }
 
   async steer(cmd: RunnerCommandOf<"session.steer">): Promise<void> {
@@ -134,8 +161,8 @@ export class SessionHost {
   }
 
   /**
-   * Model/effort for the next turn and the autonomy level, when the provider can change them
-   * live. Checks every requested setting before applying any.
+   * Model/effort for the next turn, the autonomy level and plan mode, when the provider can
+   * change them live. Checks every requested setting before applying any.
    */
   async configure(cmd: RunnerCommandOf<"session.configure">): Promise<void> {
     const { session } = this.get(cmd.sessionId);
@@ -149,12 +176,25 @@ export class SessionHost {
     if (cmd.autonomy !== undefined && !session.setAutonomy) {
       throw new CommandError("unsupported", "This provider cannot change autonomy live");
     }
+    if (cmd.planMode !== undefined && !session.setPlanMode) {
+      throw new CommandError("unsupported", "This provider has no plan mode");
+    }
     if (modelOrEffort) await session.configure?.(change);
     if (cmd.autonomy !== undefined) await session.setAutonomy?.(cmd.autonomy);
+    if (cmd.planMode !== undefined) await session.setPlanMode?.(cmd.planMode);
   }
 
   async respond(cmd: RunnerCommandOf<"session.respond">): Promise<void> {
-    await this.get(cmd.sessionId).session.respond(cmd.requestId, cmd.response);
+    try {
+      await this.get(cmd.sessionId).session.respond(cmd.requestId, cmd.response);
+    } catch (error) {
+      // An answer the asker can't take (a form's "five" for a number): the request stays open
+      // and the message says what fits.
+      if (error instanceof ProviderSessionError && error.code === "invalid_answer") {
+        throw new CommandError("invalid_answer", error.message);
+      }
+      throw error;
+    }
   }
 
   async stop(sessionId: string, reason: "stopped" | "runner_exit" = "stopped"): Promise<void> {
@@ -187,9 +227,18 @@ export class SessionHost {
     await Promise.all([...this.sessions.values()].map((h) => h.checkpointChain));
   }
 
-  /** Wait until every pending checkpoint of a session has been written (tests, drain). */
+  /**
+   * Wait until every pending checkpoint of a session has been written, including any queued
+   * while waiting (tests, drain, `checkpoint.list` with `settled`). A session this runner
+   * doesn't host has none pending.
+   */
   async settled(sessionId: string): Promise<void> {
-    await this.sessions.get(sessionId)?.checkpointChain;
+    for (;;) {
+      const chain = this.sessions.get(sessionId)?.checkpointChain;
+      if (!chain) return;
+      await chain;
+      if (this.sessions.get(sessionId)?.checkpointChain === chain) return;
+    }
   }
 
   private get(sessionId: string): Hosted {
@@ -226,8 +275,10 @@ export class SessionHost {
     try {
       for await (const raw of hosted.session.events) {
         const event = this.rewrite(hosted, raw);
-        this.emit({ kind: "agent", sessionId, event });
+        // Track first: a turn's end queues its checkpoint before the server hears the turn
+        // ended, so anything it asks after that (`settled`) waits for that checkpoint.
         this.track(sessionId, hosted, event);
+        this.emit({ kind: "agent", sessionId, event });
       }
       await hosted.checkpointChain;
       this.emit({

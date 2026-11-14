@@ -12,10 +12,10 @@ import { useEffect, useRef } from "react";
 import { AutomationsPanel } from "@/components/automations/automations-panel";
 import { SectionLabel } from "@/components/common/bits";
 import { AutonomyModeButton } from "@/components/factory/autonomy-dialog";
+import { OpenFactoryViewButton } from "@/components/factory/factory-actions";
 import { FactoryPanel } from "@/components/factory/factory-panel";
 import { ProjectGithub } from "@/components/github/project-github";
 import { SessionsList } from "@/components/project/lists";
-import { NewSessionDialog } from "@/components/project/new-session-dialog";
 import { NowNext } from "@/components/project/now-next";
 import { ProjectTile } from "@/components/shell/sidebar/project-group";
 import { Button } from "@/components/ui/button";
@@ -28,17 +28,15 @@ import { PageHeader } from "./page-header";
 
 export type ProjectTab = "overview" | "github";
 
-type ProjectSearch = { newSession?: boolean; tab?: ProjectTab; archived?: boolean };
+type ProjectSearch = { tab?: ProjectTab; archived?: boolean };
 
 /** Project home: Now / Next, factory panel, sessions and automations, and GitHub (§8.4, §9). */
 export function ProjectPage({
   projectId,
-  newSession,
   tab,
   sessionView = "active",
 }: {
   projectId: string;
-  newSession: boolean;
   tab: ProjectTab;
   /** Active sessions, or the archived ones (the sidebar's "N archived" row opens these). */
   sessionView?: SessionView;
@@ -96,6 +94,7 @@ export function ProjectPage({
         }
         actions={
           <>
+            {factory && <OpenFactoryViewButton projectId={projectId} />}
             <Button size="sm" variant="ghost" asChild>
               <Link to="/projects/$projectId/vision" params={{ projectId }}>
                 <FileText /> Vision
@@ -106,8 +105,10 @@ export function ProjectPage({
                 <Bot /> Talk to the PM
               </Link>
             </Button>
-            <Button size="sm" onClick={() => go({ ...tabSearch, newSession: true })}>
-              <MessageSquarePlus /> New session
+            <Button size="sm" asChild>
+              <Link to="/projects/$projectId/new" params={{ projectId }}>
+                <MessageSquarePlus /> New session
+              </Link>
             </Button>
           </>
         }
@@ -167,12 +168,25 @@ export function ProjectPage({
                 </div>
                 {listed.length > 0 ? (
                   <SessionsList sessions={listed} />
-                ) : (
+                ) : showArchived ? (
                   <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-                    {showArchived
-                      ? "No archived sessions. Archive one from its menu to tidy the sidebar."
-                      : "No active sessions."}
+                    No archived sessions. Archive one from its menu to tidy the sidebar.
                   </p>
+                ) : (
+                  <div
+                    className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground"
+                    data-testid="sessions-empty"
+                  >
+                    <p>
+                      No active sessions. A session is one agent working on one task, in its own
+                      worktree and branch.
+                    </p>
+                    <Button size="sm" asChild>
+                      <Link to="/projects/$projectId/new" params={{ projectId }}>
+                        <MessageSquarePlus /> Start a session
+                      </Link>
+                    </Button>
+                  </div>
                 )}
               </section>
               <section id="automations">
@@ -192,11 +206,6 @@ export function ProjectPage({
           )}
         </div>
       </div>
-      <NewSessionDialog
-        projectId={projectId}
-        open={newSession}
-        onOpenChange={(open) => go(open ? { ...tabSearch, newSession: true } : tabSearch)}
-      />
     </>
   );
 }

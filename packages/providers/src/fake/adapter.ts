@@ -4,7 +4,12 @@ import type {
   ProviderStatus,
   SessionOptions,
 } from "@codeden/contracts";
-import type { ProviderAdapter, ProviderSession } from "../adapter";
+import {
+  type ForkConversationOptions,
+  type ProviderAdapter,
+  type ProviderSession,
+  withFork,
+} from "../adapter";
 import { FakeSession } from "./session";
 
 /** Options for the scripted Fake provider. */
@@ -29,9 +34,9 @@ const capabilities: ProviderCapabilities = {
   userQuestions: false,
   subagents: true,
   rollback: false,
-  fork: false,
+  fork: true,
   images: false,
-  planMode: false,
+  planMode: true,
   reasoningEffort: false,
   mcp: false,
   skills: false,
@@ -44,7 +49,8 @@ const capabilities: ProviderCapabilities = {
  * user message, assistant message (word deltas), a todo list, a command tool call,
  * optionally an approval request (waits for `respond`) and a subagent child thread,
  * followups, usage, then `turn.completed`. Prompts containing `[fail]` fail the turn;
- * `[mcp]` adds an MCP tool call with a long JSON result before the command.
+ * `[mcp]` adds an MCP tool call with a long JSON result before the command. In plan mode a
+ * turn first proposes a plan and waits for its approval (`./plan`).
  */
 export class FakeProvider implements ProviderAdapter {
   readonly id = "fake";
@@ -77,6 +83,17 @@ export class FakeProvider implements ProviderAdapter {
   }
 
   async openSession(opts: SessionOptions): Promise<ProviderSession> {
-    return new FakeSession(opts, this.options);
+    return new FakeSession(await withFork(this, opts), this.options);
   }
+
+  /**
+   * A fork gets a conversation of its own, named after the one it copies and, with `upTo`,
+   * the turn it ends with (`<token>:fork-<n>@<turn>`).
+   */
+  async forkConversation(resumeToken: string, opts?: ForkConversationOptions): Promise<string> {
+    this.forks += 1;
+    return `${resumeToken}:fork-${this.forks}${opts?.upTo ? `@${opts.upTo}` : ""}`;
+  }
+
+  private forks = 0;
 }

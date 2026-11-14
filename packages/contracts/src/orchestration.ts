@@ -80,7 +80,17 @@ export const Notice = z.discriminatedUnion("type", [
   z.object({
     ...noticeBase,
     type: z.literal("session.needs_input"),
-    data: z.object({ ...workRef, inboxItemId: Id, kind: InboxItemKind, question: z.string() }),
+    data: z.object({
+      ...workRef,
+      inboxItemId: Id,
+      kind: InboxItemKind,
+      question: z.string(),
+      /**
+       * The MCP server whose form this question is (an elicitation): it waits for the user,
+       * like an approval, and the PM can't answer it.
+       */
+      mcpServer: z.string().min(1).optional(),
+    }),
   }),
   z.object({
     ...noticeBase,
@@ -124,8 +134,14 @@ export const Notice = z.discriminatedUnion("type", [
       pr: GitHubPrRef,
       reviewer: z.string().nullable(),
       state: z.enum(["approved", "changes_requested", "commented", "dismissed", "pending"]),
-      /** Start of the review body. */
+      /** Start of the review body; empty for an untrusted review. */
       body: z.string(),
+      /**
+       * The reviewer has no write access to the repository and is not a trusted author: the
+       * body is left out, and the review is no instruction to anyone. Absent on trusted
+       * reviews (and on notices from before it was tracked).
+       */
+      untrusted: z.boolean().optional(),
     }),
   }),
   z.object({
@@ -197,6 +213,7 @@ export const Notice = z.discriminatedUnion("type", [
         "regression",
         "merged",
         "failed",
+        "ready",
       ]),
       /** Instructions (for the PM) or a summary (for the orchestrator). */
       text: z.string(),
@@ -251,7 +268,7 @@ export const ProjectStatus = z.object({
     kind: z.enum(["github", "local"]),
     /**
      * The project's autonomy mode: tells the PM who merges pull requests (the user in manual and
-     * assisted, the factory loop in autopilot and dark factory).
+     * assisted, the factory loop in the software and dark factory).
      */
     mode: AutonomyMode,
   }),

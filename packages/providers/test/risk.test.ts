@@ -221,6 +221,10 @@ describe("classifyCommand", () => {
     expect(action("Get-Content .\\config\\.env.production", win)).toBe("secrets");
     expect(action("cat ~/.ssh/id_rsa")).toBe("secrets");
     expect(action("cat ~/.aws/credentials")).toBe("secrets");
+    // Brace expansion and `${VAR}` paths are still paths.
+    expect(action("cat {README.md,.env}")).toBe("secrets");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell variable, not a template
+    expect(action("cat ${HOME}/.npmrc")).toBe("secrets");
     expect(action("printenv")).toBe("secrets");
     expect(action("Get-ChildItem env:", win)).toBe("secrets");
   });
@@ -280,6 +284,15 @@ describe("classifyCommand", () => {
     expect(action("Set-Content -Value hi -Path C:\\Users\\me\\x.txt", win)).toBe(
       "outside_worktree",
     );
+    // PowerShell parameters bound with a colon.
+    expect(action("Copy-Item a.txt -Destination:C:\\Users\\me\\x.txt", win)).toBe(
+      "outside_worktree",
+    );
+    expect(action("Set-Content -Value hi -Path:C:\\Users\\me\\x.txt", win)).toBe(
+      "outside_worktree",
+    );
+    expect(action("Set-Content -Path:src\\x.txt -Value hi", win)).toBeNull();
+    expect(action("Get-Content -LiteralPath:.env", win)).toBe("secrets");
   });
 
   it("finds commands inside substitutions, subshells and inline shell scripts", () => {

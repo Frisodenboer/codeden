@@ -44,6 +44,8 @@ export function reduceAgentEvent(
         ...(event.resumeToken !== undefined ? { resumeToken: event.resumeToken } : {}),
         ...(event.model !== undefined ? { model: event.model } : {}),
         ...(event.title !== undefined ? { title: event.title } : {}),
+        // The agent left (or entered) plan mode itself, e.g. once its plan was approved.
+        ...(event.planMode !== undefined ? { planMode: event.planMode } : {}),
       }));
       break;
     case "thread.started":
@@ -58,6 +60,7 @@ export function reduceAgentEvent(
         status: "running",
         startedAt: d.getTurn(sessionId, event.turnId)?.startedAt ?? ts,
         completedAt: null,
+        forkPoint: null,
       });
       if (isRootThread(d, sessionId, event.threadId)) setStatus(d, sessionId, "running", ts);
       break;
@@ -133,6 +136,8 @@ function onTurnEnded(
     status,
     completedAt: ts,
     error,
+    // Where the conversation can be forked through this turn ("Fork from here", §9).
+    forkPoint: event.forkPoint ?? null,
   });
 
   // Requests left open by the turn can no longer be answered.

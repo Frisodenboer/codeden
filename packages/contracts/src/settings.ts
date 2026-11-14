@@ -3,7 +3,7 @@ import { AutonomyLevel, ProviderId, QuietHours, ReasoningEffort } from "./common
 import { UpdateMode } from "./updates";
 import { DictationEngine, WhisperModelId } from "./voice-api";
 
-/** `auto` lets CodeDen pick the first ready provider (Claude, then Codex). */
+/** `auto` lets CodeDen pick the first ready provider (Claude, then Codex, then OpenCode). */
 export const ProviderChoice = z.union([z.literal("auto"), ProviderId]);
 export type ProviderChoice = z.infer<typeof ProviderChoice>;
 
@@ -129,6 +129,11 @@ export const Settings = z.object({
           readAloudSummary: z.boolean().default(true),
           sessionTitles: z.boolean().default(true),
           noticeSummaries: z.boolean().default(true),
+          /**
+           * The "where it got to" summary in a handoff's brief (§9). Off, or without an answer,
+           * the brief quotes the source's last reply instead.
+           */
+          handoffSummaries: z.boolean().default(true),
         })
         .prefault({}),
     })
@@ -219,6 +224,20 @@ export const Settings = z.object({
       browser: z.boolean().default(false),
       /** A short chime when an agent is blocked on the user (an approval or a question). */
       sound: z.boolean().default(true),
+      /**
+       * Which inbox categories (`InboxItem.notify`) raise a toast and a desktop notification.
+       * Approvals and questions always do while `toasts` / `browser` is on; switched-off
+       * categories still land in the inbox. The factory looks after its own activity, so that
+       * category is off by default.
+       */
+      categories: z
+        .object({
+          needs_you: z.boolean().default(true),
+          failure: z.boolean().default(true),
+          factory: z.boolean().default(false),
+          automation: z.boolean().default(true),
+        })
+        .prefault({}),
     })
     .prefault({}),
   /** Global factory controls (§10.1). */

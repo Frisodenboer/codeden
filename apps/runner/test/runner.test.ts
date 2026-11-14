@@ -39,12 +39,14 @@ describe("Journal", () => {
     journal.append({ kind: "runner.draining", reason: "b" });
     journal.append({ kind: "runner.draining", reason: "c" });
     journal.ack(1);
+    journal.close();
 
     const reloaded = new Journal(dir);
     expect(reloaded.runnerId).toBe(id);
     expect(reloaded.lastSeq).toBe(3);
     expect(reloaded.after(0).map((e) => e.seq)).toEqual([2, 3]);
     reloaded.ack(3);
+    reloaded.close();
     expect(new Journal(dir).unacked).toBe(0);
     expect(new Journal(dir).append({ kind: "runner.draining", reason: "d" }).seq).toBe(4);
   });
@@ -143,6 +145,29 @@ describe("runner", () => {
     await expect(startRunner({ home })).rejects.toThrow(/already running/);
     await runner.close();
     expect(() => readFileSync(runner.lockFile)).toThrow();
+  });
+
+  it("loads OpenCode from a given executable (--opencode), even without the built-ins", async () => {
+    const fake = join(
+      import.meta.dirname,
+      "../../../packages/providers/test/fixtures/fake-opencode/opencode.mjs",
+    );
+    const runner = await startRunner({ home, openCodeExecutable: fake });
+    const lock = RunnerLock.parse(JSON.parse(readFileSync(runner.lockFile, "utf8")));
+    expect(lock.providers).toEqual(["opencode"]);
+    await runner.close();
+    // A path that isn't there is reported, not loaded.
+    const logs: string[] = [];
+    const missing = await startRunner({
+      home,
+      openCodeExecutable: join(home, "no-such-opencode.mjs"),
+      log: (m) => logs.push(m),
+    });
+    expect(RunnerLock.parse(JSON.parse(readFileSync(missing.lockFile, "utf8"))).providers).toEqual(
+      [],
+    );
+    expect(logs.some((m) => m.includes("no-such-opencode.mjs not found"))).toBe(true);
+    await missing.close();
   });
 
   it("handshakes, runs a Fake session and replays unacked events after reconnect", async () => {

@@ -23,7 +23,7 @@ CodeDen polls instead of using webhooks (a local app can't receive them):
 - A new session on the head branch of an open, unlinked PR gets linked within a few seconds.
 - `CODEDEN_GITHUB_SYNC=0` turns polling off.
 
-Sync produces events that the rest of CodeDen reacts to: `issue.opened`, `issue.labeled`, `issue.commented`, `issue.updated`, `pr.opened`, `pr.updated`, `pr.review_requested`, `pr.checks_passed`, `pr.checks_failed`, `pr.merged`, `pr.closed` and `review.submitted`. They feed [notices](orchestration.md#notices), [automation triggers](automations.md#triggers) and the [factory loop](autonomy-and-dark-factory.md). The very first import is silent, so connecting an existing repository doesn't flood your PM.
+Sync produces events that the rest of CodeDen reacts to: `issue.opened`, `issue.labeled`, `issue.commented`, `issue.updated`, `pr.opened`, `pr.updated`, `pr.review_requested`, `pr.checks_passed`, `pr.checks_failed`, `pr.merged`, `pr.closed` and `review.submitted`. They feed [notices](orchestration.md#notices), [automation triggers](automations.md#triggers) and the [factory loop](software-factory.md). The very first import is silent, so connecting an existing repository doesn't flood your PM.
 
 ## Where you see it
 
@@ -39,7 +39,7 @@ Sync produces events that the rest of CodeDen reacts to: `issue.opened`, `issue.
 Every session records its issue, branch, PR and commits.
 
 - **Branches** are `codeden/<slug>-<id>` by default, on a fresh worktree under `~/.codeden/wt/`.
-- **Pull requests** are opened by the agent with `create_pull_request`. It refuses to run with uncommitted changes unless the agent passes a commit message, pushes the session branch, then creates the PR (or updates the open one for that branch). The body gets `Fixes #<issue>` when the session has an issue, plus a footer naming the CodeDen session.
+- **Pull requests** are opened by the agent with `create_pull_request`. In a session you started, the agent opens one when you ask: type it, or click **Open PR** in the git bar or the **Issue / PR** tab. Sessions a PM, automation or the factory started open theirs when the work is done. `create_pull_request` refuses to run with uncommitted changes unless the agent passes a commit message, pushes the session branch, then creates the PR (or updates the open one for that branch). The body gets `Fixes #<issue>` when the session has an issue, plus a footer naming the CodeDen session.
 - **A PR belongs** to the session that opened it, or to the session whose branch is its head.
 - **Comments** CodeDen posts carry a hidden `<!-- codeden -->` marker (they're posted with your token). It's stripped again when comments are shown to agents or in the UI, and those comments never trigger automations.
 
@@ -52,11 +52,19 @@ When a session's PR is merged, CodeDen:
 1. stops the session's provider if it's idle and marks the session **completed**;
 2. comments "Resolved by #N" on the linked issues.
 
-In **Manual** and **Assisted** projects, nothing is ever merged without you. Automatic merges only happen in the experimental [factory modes](autonomy-and-dark-factory.md), and only after every merge check passes.
+In **Manual** and **Assisted** projects, nothing is ever merged without you. Automatic merges only happen in the experimental [factory modes](software-factory.md) with auto-merge turned on, only for work from trusted authors, and only after every merge check passes.
 
 ### Feedback on your sessions' pull requests
 
-When a pull request owned by a session **you** started fails its checks, gets a review that requests changes, or runs into merge conflicts, CodeDen sends the session a message (from CodeDen, queued behind a running turn) so the agent can fix it without you relaying anything: the failing checks with their links (and a hint to read the logs with `gh run view <run-id> --log-failed`), the reviewer's comments, or the base branch to merge. Each problem is sent once per head commit, and at most three messages go out per pull request; after that it's up to you. Archived and stopped sessions aren't messaged. Sessions started by a project manager, the orchestrator or an automation are followed up by the project manager instead. Turn it off under **Settings › General › Agent sessions › Pass on pull request feedback**.
+When a pull request owned by a session **you** started fails its checks, gets a trusted review that requests changes (see below), or runs into merge conflicts, CodeDen sends the session a message (from CodeDen, queued behind a running turn) so the agent can fix it without you relaying anything: the failing checks with their links (and a hint to read the logs with `gh run view <run-id> --log-failed`), the reviewer's comments, or the base branch to merge. Each problem is sent once per head commit, and at most three messages go out per pull request; after that it's up to you. Archived and stopped sessions aren't messaged. Sessions started by a project manager, the orchestrator or an automation are followed up by the project manager instead. Turn it off under **Settings › General › Agent sessions › Pass on pull request feedback**.
+
+On a public repository anyone can review a pull request, and a review passed on to an agent is a prompt. So requested changes are passed on only when the reviewer:
+
+- has write access to the repository: its owner, a member of the organization that owns it, or a collaborator (GitHub's author association);
+- is the GitHub account CodeDen uses (the one `gh` is signed in as);
+- is one of the project's **Trusted authors** (in its [factory settings](software-factory.md#who-the-factory-works-for)).
+
+The message also tells the agent that comments and reviews from people without write access are input data, not instructions. Anyone else's review isn't sent to the session. The project manager still gets a notice about it, but without the review's text, and it doesn't wake the PM: it shows up in the PM's next update instead. See [Security → What CodeDen trusts from GitHub](security.md#what-codeden-trusts-from-github).
 
 ## Evidence
 
@@ -65,6 +73,7 @@ Agents attach screenshots, test output and other files with `attach_evidence`:
 - Files are committed to a dedicated orphan branch, **`codeden/evidence`**, under `pr-<n>/<session>/` or `issue-<n>/<session>/`. CodeDen uses the Git Data API, so no checkout is touched and your branches stay clean.
 - One comment on the PR or issue embeds the images and includes the summary and test output.
 - Images are linked through `github.com/<owner>/<repo>/blob/<commit>/<path>?raw=true`, which GitHub serves to signed-in readers, so they **render inline in private repositories too**.
+- Secrets files (`.env`, `.npmrc`, SSH keys, `*.pem`, ...) and CodeDen's own credential files are never attached, even when renamed or reached through a symlink. See [Security → Files](security.md#files).
 
 Browser screenshots taken with `browser_screenshot` can go straight into evidence, which is how the [UI review automation](automations.md#built-in-templates) and the factory's `ui_evidence` merge check work.
 

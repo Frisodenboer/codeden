@@ -13,17 +13,29 @@ import type { McpTokenStore } from "../../mcp/tokens";
 import { errorMessage, ServiceError } from "../errors";
 import type { InboxService } from "../inbox-service";
 import type { ProjectService } from "../projects/project-service";
-import { type RunnerPort, runnerErrorCode } from "../runner-port";
+import {
+  type RunnerDeps,
+  type RunnerPort,
+  runnerErrorCode,
+  runnerForSession,
+  runnerUnavailable,
+} from "../runner-port";
 import { slugWords } from "./conflicts";
+import type { ForkStart } from "./fork";
+import { withHandoffBrief } from "./handoff";
 import { ownBranch } from "./own-branch";
 import type { SessionRepo } from "./repo";
 import { setupFailureNote, withSetupNote } from "./setup-failure";
 
-export interface LauncherDeps {
+export interface LauncherDeps extends RunnerDeps {
   repo: SessionRepo;
   projects: ProjectService;
-  runner: RunnerPort;
   inbox: InboxService;
+  /**
+   * CodeDen's data directory (§6), sent with every session so the agent's policy guards the
+   * credential files in it (`SessionOptions.codedenHome`, §15).
+   */
+  home: string;
   /** `<home>/wt`: worktrees live in `wt/<project>/<session>` (§6). */
   worktreesDir: string;
   /** `<home>/orchestrator`: the orchestrator's working directory (§8.1). */
@@ -33,6 +45,25 @@ export interface LauncherDeps {
   log?: (message: string) => void;
   /** How long to wait for the runner before failing a start. */
   connectTimeoutMs?: number;
+}
+
+/**
+ * A fork's start (§9): its worktree branches from the source's branch (`WorkspaceRequest.baseRef`),
+ * then gets the source's latest checkpoint as uncommitted changes; its pull request still
+ * targets the source's base branch.
+ */
+export interface LaunchFork {
+  /** The branch the fork's pull request targets (the source's base branch). */
+  baseBranch: string | null;
+  /** The source's latest checkpoint; omitted when it has none yet. */
+  restoreCheckpoint?: { sessionId: string; index: number };
+}
+
+/** What a start needs: the first input, the workspace to prepare and, for a fork, its plan. */
+export interface LaunchOptions {
+  input?: UserInput;
+  workspace: WorkspaceRequest;
+  fork?: LaunchFork;
 }
 
 interface PreparedWorkspace {
@@ -48,88 +79,102 @@ interface PreparedWorkspace {
 
 const PREPARE_TIMEOUT_MS = 10 * 60_000;
 const START_TIMEOUT_MS = 60_000;
+/**
+ * `session.start` refusals after which no provider process of the session runs on the runner:
+ * it was neither hosted nor being opened (those answer `session_exists`), and this open failed.
+ */
+const NOTHING_RUNS = new Set(["open_failed", "unknown_provider"]);
 
 /**
- * Starts sessions on the runner: prepares the workspace (`workspace.prepare`), then opens the
- * provider session (`session.start`). Failures mark the session failed and raise a
- * `run_failed` inbox item instead of throwing, since starts run in the background.
+ * Starts sessions on their runner (the one in `sessions.runnerId`, else the home runner):
+ * prepares the workspace (`workspace.prepare`), then opens the provider session
+ * (`session.start`). Failures mark the session failed and raise a `run_failed` inbox item
+ * instead of throwing, since starts run in the background.
  */
 export class SessionLauncher {
   constructor(private readonly deps: LauncherDeps) {}
 
-  async launch(
-    sessionId: string,
-    opts: { input?: UserInput; workspace: WorkspaceRequest },
-  ): Promise<void> {
-    const { repo, runner } = this.deps;
+  /** Start a new session in the background: failures mark it failed (see `start`). */
+  async launch(sessionId: string, opts: LaunchOptions): Promise<void> {
     try {
-      const session = repo.get(sessionId);
-      await this.requireRunner();
-      const project = session.projectId ? this.deps.projects.get(session.projectId) : null;
-      const ws = await this.prepareWorkspace(session, project, opts.workspace);
-      repo.update(sessionId, (s) => ({
-        ...s,
-        cwd: ws.cwd,
-        worktreePath: ws.worktreePath,
-        branch: ws.branch,
-        baseBranch: ws.baseBranch,
-      }));
-      if (ws.fallback) {
-        const fallback = ws.fallback;
-        repo.setStartMeta(sessionId, (m) => ({
-          ...defaultMeta(opts.workspace),
-          ...m,
-          workspaceFallback: fallback,
-        }));
-      }
-      const result = await runner.request(
-        {
-          name: "session.start",
-          sessionId,
-          providerId: session.provider,
-          options: this.sessionOptions({
-            ...session,
-            cwd: ws.cwd,
-            worktreePath: ws.worktreePath,
-            branch: ws.branch,
-            baseBranch: ws.baseBranch,
-          }),
-          input: withSetupNote(opts.input, ws.setupNote),
-        },
-        START_TIMEOUT_MS,
-      );
-      repo.update(sessionId, (s) => ({
-        ...s,
-        resumeToken: s.resumeToken ?? result.resumeToken,
-        runnerId: runner.runnerId(),
-        status: s.status === "starting" ? (opts.input ? "running" : "idle") : s.status,
-      }));
+      await this.start(sessionId, opts);
     } catch (error) {
       this.fail(sessionId, "start", error);
     }
   }
 
   /**
+   * Prepare the session's workspace, record it on the session, then open the provider session.
+   * Throws on failure; nothing reaches the provider when the workspace could not be prepared.
+   */
+  private async start(sessionId: string, opts: LaunchOptions): Promise<void> {
+    const { repo } = this.deps;
+    const session = repo.get(sessionId);
+    const runner = runnerForSession(this.deps, sessionId);
+    await this.requireRunner(runner);
+    const project = session.projectId ? this.deps.projects.get(session.projectId) : null;
+    const ws = await this.prepareWorkspace(runner, session, project, opts.workspace, opts.fork);
+    repo.update(sessionId, (s) => ({
+      ...s,
+      cwd: ws.cwd,
+      worktreePath: ws.worktreePath,
+      branch: ws.branch,
+      baseBranch: ws.baseBranch,
+    }));
+    if (ws.fallback) {
+      const fallback = ws.fallback;
+      repo.setStartMeta(sessionId, (m) => ({
+        ...defaultMeta(opts.workspace),
+        ...m,
+        workspaceFallback: fallback,
+      }));
+    }
+    const brief = this.pendingBrief(sessionId);
+    const input = brief ? withHandoffBrief(brief, opts.input) : opts.input;
+    const result = await this.open(
+      runner,
+      {
+        ...session,
+        cwd: ws.cwd,
+        worktreePath: ws.worktreePath,
+        branch: ws.branch,
+        baseBranch: ws.baseBranch,
+      },
+      withSetupNote(input, ws.setupNote),
+    );
+    if (brief) this.briefDelivered(sessionId);
+    repo.update(sessionId, (s) => ({
+      ...s,
+      resumeToken: s.resumeToken ?? result.resumeToken,
+      runnerId: runner.runnerId() ?? s.runnerId,
+      status: s.status === "starting" ? (input ? "running" : "idle") : s.status,
+    }));
+  }
+
+  /**
    * Re-open a session the runner no longer hosts (runner restart, stopped session) through the
-   * provider's resume token, optionally starting a turn. Throws on failure.
+   * provider's resume token, optionally starting a turn. Throws on failure. A fork whose
+   * worktree was never made (its first start failed) gets it made now, as at its first start:
+   * it never runs anywhere else. A handoff whose brief no start delivered yet (§9) sends it now,
+   * ahead of `input`.
    */
   async resume(session: Session, input?: UserInput): Promise<void> {
-    await this.requireRunner();
+    const forkStart = this.pendingForkStart(session);
+    if (forkStart) {
+      await this.start(session.id, { ...forkStart, ...(input ? { input } : {}) });
+      return;
+    }
+    const runner = runnerForSession(this.deps, session.id);
+    await this.requireRunner(runner);
     const { session: current, setupNote } = await this.restoreWorktree(session);
-    const result = await this.deps.runner.request(
-      {
-        name: "session.start",
-        sessionId: current.id,
-        providerId: current.provider,
-        options: this.sessionOptions(current),
-        input: withSetupNote(input, setupNote),
-      },
-      START_TIMEOUT_MS,
-    );
+    const brief = this.pendingBrief(session.id);
+    const first = brief ? withHandoffBrief(brief, input) : input;
+    const result = await this.open(runner, current, withSetupNote(first, setupNote));
+    if (brief) this.briefDelivered(session.id);
     this.deps.repo.update(session.id, (s) => ({
       ...s,
       resumeToken: result.resumeToken ?? s.resumeToken,
-      runnerId: this.deps.runner.runnerId(),
+      runnerId: runner.runnerId() ?? s.runnerId,
     }));
   }
 
@@ -142,7 +187,7 @@ export class SessionLauncher {
       return { session, setupNote: null };
     }
     const project = this.deps.projects.get(session.projectId);
-    const result = await this.deps.runner.request(
+    const result = await runnerForSession(this.deps, session.id).request(
       {
         name: "workspace.prepare",
         sessionId: session.id,
@@ -179,24 +224,61 @@ export class SessionLauncher {
   }
 
   /**
-   * Provider options for a start or resume: model, effort, autonomy, cwd, the CodeDen system
-   * prompt, and CodeDen's MCP server through the runner's local proxy with a freshly minted
-   * session token (minting revokes the previous one).
+   * Open the provider session on the runner (`session.start`) with a freshly minted MCP token,
+   * then retire the tokens no running process holds (§8.3). Started: the session's other
+   * tokens (their processes are gone). Refused because the session already runs or is being
+   * opened (`session_exists`, a second resume racing the first after a restart): only the new
+   * token, since that process holds an earlier one. Could not be opened: all of them, nothing
+   * runs. Any other failure (a timeout, a lost connection, an error once the process ran)
+   * retires nothing: a process may hold the new token or an earlier one; the next open or the
+   * session's end retires them.
    */
-  sessionOptions(session: Session): SessionOptions {
-    const proxyUrl = this.deps.runner.mcpProxyUrl();
+  private async open(runner: RunnerPort, session: Session, input: UserInput | undefined) {
+    const token = runner.mcpProxyUrl()
+      ? this.deps.tokens.mint({
+          role: session.role,
+          sessionId: session.id,
+          projectId: session.projectId,
+        })
+      : null;
+    try {
+      const result = await runner.request(
+        {
+          name: "session.start",
+          sessionId: session.id,
+          providerId: session.provider,
+          options: this.sessionOptions(session, token),
+          input,
+        },
+        START_TIMEOUT_MS,
+      );
+      if (token) this.deps.tokens.revokeSession(session.id, token);
+      return result;
+    } catch (error) {
+      const code = runnerErrorCode(error);
+      if (token && code === "session_exists") this.deps.tokens.revoke(token);
+      if (token && NOTHING_RUNS.has(code ?? "")) this.deps.tokens.revokeSession(session.id);
+      throw error;
+    }
+  }
+
+  /**
+   * Provider options for a start or resume: model, effort, autonomy, plan mode, cwd, the
+   * CodeDen system prompt, and, given the session's MCP token, CodeDen's MCP server through the
+   * runner's local proxy. A session still planning reopens in plan mode; one whose plan was
+   * approved reopens at its permission level. A project that turned off `CI=true` for its
+   * agents (`agentCiEnv`) sends `ciEnv: false`.
+   */
+  sessionOptions(session: Session, mcpToken: string | null = null): SessionOptions {
+    const project = this.projectOf(session);
+    const proxyUrl = runnerForSession(this.deps, session.id).mcpProxyUrl();
     const mcpServers: McpServerConfig[] = [];
-    if (proxyUrl) {
-      const token = this.deps.tokens.mint({
-        role: session.role,
-        sessionId: session.id,
-        projectId: session.projectId,
-      });
+    if (proxyUrl && mcpToken) {
       mcpServers.push({
         transport: "http",
         name: MCP_SERVER_NAME,
         url: proxyUrl,
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${mcpToken}` },
         toolTimeoutSec: 600,
         trusted: true,
       });
@@ -208,14 +290,44 @@ export class SessionLauncher {
       model: session.model ?? undefined,
       effort: session.effort ?? undefined,
       autonomy: session.autonomy,
+      planMode: session.planMode ?? false,
       resumeToken: session.resumeToken ?? undefined,
-      systemPrompt: codedenSystemPrompt(session, this.projectOf(session)),
+      systemPrompt: codedenSystemPrompt(session, project),
       // The orchestrator and PMs never write project code (§11.2). Agent sessions at the
       // `read_only` level carry it in `autonomy`, so it can change live.
       readOnly: session.role !== "agent",
+      codedenHome: this.deps.home,
       mcpServers,
       ...(ownBranch(session) ? { ownBranch: ownBranch(session) } : {}),
+      ...(project?.agentCiEnv === false ? { ciEnv: false } : {}),
     });
+  }
+
+  /** A fork's workspace plan while its worktree doesn't exist yet (`ForkStart`). */
+  private pendingForkStart(session: Session): ForkStart | null {
+    if (session.worktreePath) return null;
+    return this.deps.repo.find(session.id)?.startMeta?.forkStart ?? null;
+  }
+
+  /**
+   * A handoff's brief that no start has delivered yet (§9). A session that has had a turn got
+   * it already (a start that timed out after the runner took it), so it is dropped then.
+   */
+  private pendingBrief(sessionId: string): UserInput | null {
+    const brief = this.deps.repo.find(sessionId)?.startMeta?.handoffBrief ?? null;
+    if (brief && this.deps.repo.turnCount(sessionId) > 0) {
+      this.briefDelivered(sessionId);
+      return null;
+    }
+    return brief;
+  }
+
+  /** The brief reached the provider: later starts are plain resumes. */
+  private briefDelivered(sessionId: string): void {
+    this.deps.repo.setStartMeta(sessionId, (m) => ({
+      ...(m ?? defaultMeta({ mode: "worktree" })),
+      handoffBrief: null,
+    }));
   }
 
   /** The session's project for its system prompt; null without one (or once it is gone). */
@@ -228,15 +340,17 @@ export class SessionLauncher {
     }
   }
 
-  private async requireRunner(): Promise<void> {
-    const ok = await this.deps.runner.waitForConnection(this.deps.connectTimeoutMs ?? 15_000);
-    if (!ok) throw new ServiceError(503, "runner_unavailable", "The runner is not connected");
+  private async requireRunner(runner: RunnerPort): Promise<void> {
+    const ok = await runner.waitForConnection(this.deps.connectTimeoutMs ?? 15_000);
+    if (!ok) throw runnerUnavailable(runner);
   }
 
   private async prepareWorkspace(
+    runner: RunnerPort,
     session: Session,
     project: Project | null,
     req: WorkspaceRequest,
+    fork?: LaunchFork,
   ): Promise<PreparedWorkspace> {
     if (!project) {
       mkdirSync(this.deps.orchestratorDir, { recursive: true });
@@ -263,7 +377,7 @@ export class SessionLauncher {
     const fetch =
       req.fetch ?? (project.kind === "github" && req.mode === "worktree" && !req.baseRef);
     try {
-      const result = await this.deps.runner.request(
+      const result = await runner.request(
         {
           name: "workspace.prepare",
           sessionId: session.id,
@@ -274,6 +388,7 @@ export class SessionLauncher {
           baseRef,
           setupCommands: req.setupCommands ?? [],
           ...(fetch ? { fetch: true } : {}),
+          ...(fork?.restoreCheckpoint ? { restoreCheckpoint: fork.restoreCheckpoint } : {}),
         },
         PREPARE_TIMEOUT_MS,
       );
@@ -281,12 +396,13 @@ export class SessionLauncher {
         cwd: result.cwd,
         worktreePath: req.mode === "worktree" ? result.cwd : null,
         branch: result.branch,
-        baseBranch: baseRef ?? null,
+        baseBranch: fork ? fork.baseBranch : (baseRef ?? null),
         fallback: null,
         setupNote: setupFailureNote(result.setup),
       };
     } catch (error) {
-      if (runnerErrorCode(error) !== "not_implemented") throw error;
+      // A fork needs its own worktree (the source's code); it never falls back to the root.
+      if (fork || runnerErrorCode(error) !== "not_implemented") throw error;
       if (req.mode === "existing") return plain(path);
       return {
         ...plain(project.path),

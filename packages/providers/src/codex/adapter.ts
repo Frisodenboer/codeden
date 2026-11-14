@@ -4,7 +4,13 @@ import type {
   ProviderStatus,
   SessionOptions,
 } from "@codeden/contracts";
-import type { ProviderAdapter, ProviderSession, RefreshModelsOptions } from "../adapter";
+import {
+  type ForkConversationOptions,
+  type ProviderAdapter,
+  type ProviderSession,
+  type RefreshModelsOptions,
+  withFork,
+} from "../adapter";
 import { executableFingerprint, ModelFreshness } from "../freshness";
 import { ModelCatalog } from "../models";
 import type { ResolvedCommand } from "../util/exec";
@@ -12,6 +18,7 @@ import { quickLocate } from "../util/locate";
 import { DEFAULT_MODEL_ID } from "../util/model";
 import type { UtilityModel } from "../utility";
 import { detectCodex } from "./detect";
+import { forkCodexThread } from "./fork";
 import { listCodexModels, visibleCodexModels } from "./models";
 import { CodexUtilityModel } from "./one-shot";
 import { CodexSession } from "./session";
@@ -19,8 +26,8 @@ import { CodexSession } from "./session";
 export const CODEX_PROVIDER_ID = "codex";
 
 /**
- * Honest flags: subagents (collab agents) are experimental in app-server and not surfaced as
- * child threads yet; rollback/fork exist in the protocol but are not wired up.
+ * Honest flags: agents Codex spawns surface as child threads (`CodexSubagents`); rollback
+ * exists in the protocol but is not wired up. Fork is `thread/fork` (`forkConversation`).
  */
 const capabilities: ProviderCapabilities = {
   resume: true,
@@ -28,9 +35,9 @@ const capabilities: ProviderCapabilities = {
   interrupt: true,
   approvals: true,
   userQuestions: true,
-  subagents: false,
+  subagents: true,
   rollback: false,
-  fork: false,
+  fork: true,
   images: true,
   planMode: false,
   reasoningEffort: true,
@@ -125,7 +132,7 @@ export class CodexAdapter implements ProviderAdapter {
   async openSession(opts: SessionOptions): Promise<ProviderSession> {
     const executable = this.executable();
     if (!executable) throw new Error("Codex is not installed (no `codex` on PATH)");
-    const session = new CodexSession(opts, {
+    const session = new CodexSession(await withFork(this, opts), {
       executable,
       onModels: (models) => {
         const visible = visibleCodexModels(models);
@@ -140,6 +147,16 @@ export class CodexAdapter implements ProviderAdapter {
       throw error;
     }
     return session;
+  }
+
+  /**
+   * Copy a thread with `thread/fork` (see `forkCodexThread`); returns the new thread's id. With
+   * `upTo` (a turn id), the copy ends with that turn.
+   */
+  async forkConversation(resumeToken: string, opts: ForkConversationOptions): Promise<string> {
+    const executable = this.executable();
+    if (!executable) throw new Error("Codex is not installed (no `codex` on PATH)");
+    return forkCodexThread(executable, resumeToken, opts);
   }
 
   utilityModel(): UtilityModel {

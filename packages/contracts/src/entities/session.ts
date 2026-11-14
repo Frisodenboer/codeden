@@ -11,7 +11,7 @@ import {
   Timestamp,
 } from "../common";
 import { Item } from "../items";
-import { workFields } from "../work";
+import { StartedBy, workFields } from "../work";
 import { SessionResult } from "../workbench";
 
 /**
@@ -39,6 +39,46 @@ export const SessionStatus = z.enum([
 ]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
 
+/**
+ * How a session was made from another one: `fork` continues the source's conversation through
+ * the provider's native fork; `handoff` starts a new conversation, possibly on another
+ * provider, from a brief of the source's work (§9). Both start from the source's code.
+ */
+export const ForkKind = z.enum(["fork", "handoff"]);
+export type ForkKind = z.infer<typeof ForkKind>;
+
+/**
+ * Where a forked or handed-off session came from: the source session and the checkpoint its
+ * worktree started from (null when the source had none yet). The source is left as it was.
+ */
+export const ForkOrigin = z.object({
+  sessionId: Id,
+  checkpoint: z.int().nonnegative().nullable(),
+  /** A fork or a handoff; absent on forks recorded before handoffs existed, so means `fork`. */
+  kind: ForkKind.optional(),
+  /**
+   * The source's turn the fork was taken at ("Fork from here"): its conversation ends with
+   * that turn and its code is that turn's checkpoint. Absent or null: the source's latest
+   * moment.
+   */
+  turnId: Id.nullable().optional(),
+  /**
+   * That turn's number among the source's own turns (1 is its first), counted when it was
+   * forked. Checkpoint numbers can differ from it (a checkpoint that failed to write takes no
+   * number), so this is what to show as "turn N". Absent when unknown.
+   */
+  turnNumber: z.int().positive().nullable().optional(),
+  /**
+   * Who started the work the session continues, when it wasn't the user: the source's
+   * `startedBy`, or the one the source recorded here when it was itself forked or handed off.
+   * The new session is the user's, but the work and any issue text in it are still the
+   * factory's, an automation's or a PM's, so PR feedback goes by this and trusts it no more than
+   * the source. Absent: the user's (and on sessions recorded before it existed).
+   */
+  startedBy: StartedBy.optional(),
+});
+export type ForkOrigin = z.infer<typeof ForkOrigin>;
+
 /** An agent session of any role (§8.1). */
 export const Session = z.object({
   id: Id,
@@ -54,6 +94,12 @@ export const Session = z.object({
   model: z.string().nullable(),
   effort: ReasoningEffort.nullable(),
   autonomy: AutonomyLevel,
+  /**
+   * True while the session is planning (where the provider reports `capabilities.planMode`):
+   * the agent explores and proposes a plan, and implements only once the plan is approved.
+   * Absent means false.
+   */
+  planMode: z.boolean().optional(),
   status: SessionStatus,
   /** Directory the agent runs in. */
   cwd: z.string(),
@@ -79,6 +125,8 @@ export const Session = z.object({
    * checkpoints stay; the worktree is recreated from the branch on the next message.
    */
   worktreeRemovedAt: Timestamp.nullable().optional(),
+  /** Set when the session was forked from another one (its conversation and code). */
+  forkedFrom: ForkOrigin.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   endedAt: Timestamp.nullable(),
@@ -109,6 +157,12 @@ export const Turn = z.object({
   startedAt: Timestamp,
   completedAt: Timestamp.nullable(),
   error: ErrorInfo.nullable(),
+  /**
+   * The provider's position at the end of this turn (`forkPoint` on its end event): the
+   * conversation can be forked through this turn. Absent or null when it can't, e.g. a turn
+   * recorded before CodeDen kept these, or a provider that doesn't report them.
+   */
+  forkPoint: z.string().nullable().optional(),
 });
 export type Turn = z.infer<typeof Turn>;
 

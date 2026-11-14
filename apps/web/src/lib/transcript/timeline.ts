@@ -17,6 +17,8 @@ export type TimelineRow =
       turn: TurnState;
       filesChanged: number;
       durationMs: number | null;
+      /** The thread's latest turn (forking from it copies the whole conversation, §9). */
+      latest: boolean;
     }
   | { key: string; type: "working"; turn: TurnState };
 
@@ -78,12 +80,16 @@ export function buildTimeline(state: TranscriptState, threadId: string): Timelin
       turn,
       filesChanged: filesByTurn.get(turnId)?.size ?? 0,
       durationMs: duration,
+      latest: state.threads[threadId]?.turnIds.at(-1) === turnId,
     });
   };
 
   let currentTurn: string | null = null;
   for (const entry of entries) {
     const { item, turnId } = entry;
+    // Follow-ups are no rows, and the server's own suggestions for a turn can arrive after the
+    // next turn began, so they must not split that turn in two.
+    if (item.kind === "followups") continue;
     if (currentTurn !== null && turnId !== currentTurn) {
       flush();
       lastTurnRows(currentTurn);
@@ -116,6 +122,22 @@ export function buildTimeline(state: TranscriptState, threadId: string): Timelin
   flush();
   lastTurnRows(currentTurn);
   return rows;
+}
+
+/** Index of the row showing `itemId` (a work group shows several items), or -1. */
+export function rowIndexOfItem(rows: TimelineRow[], itemId: string): number {
+  return rows.findIndex((row) => {
+    switch (row.type) {
+      case "user":
+      case "assistant":
+      case "card":
+        return row.item.id === itemId;
+      case "work":
+        return row.entries.some((e) => e.id === itemId);
+      default:
+        return false;
+    }
+  });
 }
 
 /** Follow-up suggestions of the latest completed turn, if it's the last turn (§7.5). */

@@ -14,8 +14,11 @@ import type { InboxService } from "../inbox-service";
 import type { NoticeDraft } from "../orchestration/notices";
 import type { ProjectService } from "../projects/project-service";
 import type { SessionRepo } from "../sessions/repo";
+import type { RateLimitReading } from "./availability";
 import type { FactoryGithub } from "./github-port";
+import type { PrFiles } from "./overlap";
 import type { FactorySessions } from "./sessions";
+import type { SlotBoard } from "./slots";
 import type { FactoryStore } from "./store";
 import { readVision } from "./vision";
 
@@ -32,14 +35,30 @@ export interface FactoryContext {
       projectId?: string,
       sessionIds?: ReadonlySet<string>,
     ): { usd: number; tokens: number };
+    /** Latest rate-limit window of every provider: a `limited` one makes it unavailable. */
+    rateLimitWindows?(): RateLimitReading[];
   };
   inbox: InboxService;
   /** Record an orchestration notice (wakes its target unless `wake` is false). */
   notify: (draft: NoticeDraft, wake?: boolean) => void;
   settings: SettingsStore;
   exec: Exec;
+  /** One call to the utility model (the "Identify type" step); null when none answered. */
+  complete: (job: string, system: string, prompt: string) => Promise<string | null>;
+  /**
+   * Archive sessions of finished work in the background, in order, which removes their
+   * worktrees (see `cleanup.ts`). Sessions gone, archived or busy by then are left alone.
+   */
+  archiveSessions: (sessionIds: string[]) => void;
+  /** Who gets the next free agent slot (`slots.ts`), in memory. */
+  slots: SlotBoard;
+  /** Files changed by the factory's open PRs as last read, for overlap-aware scheduling. */
+  prFiles: PrFiles;
   now: () => Date;
-  /** How long a PR may report no CI before "no checks" fails (default 3 minutes). */
+  /**
+   * How long CI may take to start on a commit (a PR's new head, a merge on the default branch)
+   * before "no checks" counts as never started (default 10 minutes).
+   */
   ciGraceMs: number;
   log?: (message: string) => void;
 }
@@ -69,12 +88,16 @@ export function visionOf(project: Project): {
   }
 }
 
-/** Raise (or refresh) a factory inbox item. */
+/**
+ * Raise (or refresh) a factory inbox item. `notify` says whether it needs the user (`needs_you`,
+ * `failure`) or is the factory's own activity (`factory`), which toasts only when they ask for it.
+ */
 export function raiseInbox(
   ctx: FactoryContext,
   item: {
     id: string;
     kind: InboxItem["kind"];
+    notify: InboxItem["notify"];
     projectId: string;
     title: string;
     body: string | null;
@@ -93,6 +116,7 @@ export function raiseInbox(
     kind: item.kind,
     status: "open",
     priority: item.priority ?? "normal",
+    notify: item.notify,
     title: item.title,
     body: item.body,
     projectId: item.projectId,
@@ -117,7 +141,15 @@ export function factoryNotice(
     id: string;
     projectId: string;
     target: "pm" | "orchestrator";
-    event: "triage_needed" | "digest" | "paused" | "escalated" | "regression" | "merged" | "failed";
+    event:
+      | "triage_needed"
+      | "digest"
+      | "paused"
+      | "escalated"
+      | "regression"
+      | "merged"
+      | "failed"
+      | "ready";
     title: string;
     text: string;
     itemIds?: string[];
@@ -152,6 +184,7 @@ export function pauseLoop(
     raiseInbox(ctx, {
       id: `inbox:factory-paused:${loop.projectId}`,
       kind: "run_failed",
+      notify: "failure",
       priority: "high",
       projectId: loop.projectId,
       title: "Factory loop paused",

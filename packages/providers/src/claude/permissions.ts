@@ -1,5 +1,7 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type { ApprovalAction, AutonomyLevel } from "@codeden/contracts";
+import { asksAtEveryLevel, touchesCodeden } from "../policy/assessment";
+import { isInNotes } from "../policy/paths";
 import { readOnlyCommandDenial } from "../policy/read-only";
 import type { RiskContext } from "../policy/risk";
 import { str } from "../util/text";
@@ -8,9 +10,12 @@ import {
   COMMAND_TOOLS,
   defaultApprovalAction,
   EDIT_TOOLS,
+  editPath,
   PLAN_TOOL,
   QUESTION_TOOL,
 } from "./tools";
+
+const FINISH_PLAN = "Finish the plan and present it with ExitPlanMode; once the user approves it";
 
 /** The decision for one tool call. */
 export type Gate = { ask: false } | { ask: true; action: ApprovalAction; reason: string };
@@ -23,7 +28,8 @@ export type Gate = { ask: false } | { ask: true; action: ApprovalAction; reason:
  * - auto       -> `acceptEdits`, plus the risky-action classifier
  * - full       -> `bypassPermissions`, asking only for writes outside the worktree (the OS
  *                 temp directory counts as inside, except for secrets files there)
- * Plan mode overrides all of them with `plan`.
+ * Plan mode overrides all of them with `plan`. CodeDen's own credential files ask at every
+ * level and are refused for read-only sessions (`../policy/codeden-home`).
  */
 export function permissionModeFor(autonomy: AutonomyLevel, planMode: boolean): PermissionMode {
   if (planMode) return "plan";
@@ -39,6 +45,10 @@ export function permissionModeFor(autonomy: AutonomyLevel, planMode: boolean): P
  */
 export class ClaudePolicy {
   private readonly sessionAllow = new Set<string>();
+  /** `allow_session` decisions on calls that touched CodeDen's own credentials (`credentialKey`). */
+  private readonly credentialAllow = new Set<string>();
+  /** Plan mode: edits outside Claude's notes and writing commands are refused. */
+  private planning = false;
 
   constructor(
     private autonomy: AutonomyLevel,
@@ -64,9 +74,28 @@ export class ClaudePolicy {
     this.autonomy = level;
   }
 
-  /** Why a call is refused outright (read-only sessions), or undefined. */
-  denial(toolName: string, input: Record<string, unknown>): string | undefined {
-    if (!this.isReadOnly) return undefined;
+  /**
+   * Plan mode on or off. Claude's `plan` mode hands file edits to `canUseTool`, which Auto and
+   * Full would approve, so CodeDen refuses them itself while the agent plans.
+   */
+  setPlanning(on: boolean): void {
+    this.planning = on;
+  }
+
+  /**
+   * Why a call is refused outright (read-only sessions, plan mode), or undefined. `dir` is the
+   * shell's current directory, as for `gate`.
+   */
+  denial(toolName: string, input: Record<string, unknown>, dir?: string): string | undefined {
+    if (this.isReadOnly && touchesCodeden(this.assess(toolName, input, dir))) {
+      return this.readOnly
+        ? "This session is read-only: CodeDen's own credential files are off limits. Act through CodeDen tools instead."
+        : "This session has read-only permissions: CodeDen's own credential files are off limits. Report what you found instead.";
+    }
+    // A planning agent writes its plan into Claude's notes folders, at every level (the
+    // `read_only` level included). Read-only roles (orchestrator, PMs) never plan.
+    if (this.planning && !this.readOnly && this.isNotesEdit(toolName, input)) return undefined;
+    if (!this.isReadOnly) return this.planning ? this.planDenial(toolName, input) : undefined;
     if (EDIT_TOOLS.has(toolName)) {
       return this.readOnly
         ? "This session is read-only: it cannot edit files. Act through CodeDen tools instead."
@@ -83,6 +112,28 @@ export class ClaudePolicy {
   }
 
   /**
+   * Plan mode refusals at every level: edits (the plan file in Claude's notes folders was let
+   * through by `denial`) and shell commands outside the read-only allowlist (checks may run).
+   */
+  private planDenial(toolName: string, input: Record<string, unknown>): string | undefined {
+    if (EDIT_TOOLS.has(toolName)) {
+      return `Plan mode: don't edit files yet. ${FINISH_PLAN}, you can implement it.`;
+    }
+    if (COMMAND_TOOLS.has(toolName)) {
+      const reason = readOnlyCommandDenial(str(input, "command") ?? "", { allowChecks: true });
+      return reason ? `Plan mode: ${reason}. ${FINISH_PLAN}, you can run it.` : undefined;
+    }
+    return undefined;
+  }
+
+  /** An edit tool writing inside Claude's notes folders (its plans folder, auto-memory). */
+  private isNotesEdit(toolName: string, input: Record<string, unknown>): boolean {
+    if (!EDIT_TOOLS.has(toolName)) return false;
+    const target = editPath(input);
+    return target !== "" && isInNotes(target, this.ctx);
+  }
+
+  /**
    * Decide one tool call. `dir` is the shell's current directory as Claude reports it (an
    * earlier `cd` persists between Bash calls); relative paths resolve from it.
    */
@@ -91,10 +142,16 @@ export class ClaudePolicy {
       return { ask: true, action: "other", reason: "The agent is asking a question" };
     }
     if (toolName === PLAN_TOOL) {
-      return { ask: true, action: "other", reason: "The agent finished planning" };
+      return { ask: true, action: "plan", reason: "The agent finished planning" };
     }
-    if (this.sessionAllow.has(this.key(toolName, input))) return { ask: false };
-    const risk = assessClaudeTool(toolName, input, dir ? { ...this.ctx, dir } : this.ctx);
+    const risk = this.assess(toolName, input, dir);
+    // CodeDen's own credentials are covered only by an approval given for them, in the same
+    // directory: approving `cat runner/runner.json` in the worktree, or the whole Read tool,
+    // doesn't approve reading the runner's token after a `cd` into CodeDen's home.
+    const remembered = touchesCodeden(risk)
+      ? this.credentialAllow.has(this.credentialKey(toolName, input, dir))
+      : this.sessionAllow.has(this.key(toolName, input));
+    if (remembered) return { ask: false };
     if (this.autonomy === "supervised") {
       if (risk.risky) return { ask: true, action: risk.action, reason: risk.reason };
       if (COMMAND_TOOLS.has(toolName) || EDIT_TOOLS.has(toolName)) {
@@ -107,8 +164,14 @@ export class ClaudePolicy {
       return { ask: false };
     }
     if (!risk.risky) return { ask: false };
-    if (this.autonomy === "full" && risk.action !== "outside_worktree") return { ask: false };
+    if (this.autonomy === "full" && risk.action !== "outside_worktree" && !asksAtEveryLevel(risk)) {
+      return { ask: false };
+    }
     return { ask: true, action: risk.action, reason: risk.reason };
+  }
+
+  private assess(toolName: string, input: Record<string, unknown>, dir?: string) {
+    return assessClaudeTool(toolName, input, dir ? { ...this.ctx, dir } : this.ctx);
   }
 
   /**
@@ -126,9 +189,20 @@ export class ClaudePolicy {
     };
   }
 
-  /** Remember an `allow_session` decision. Commands and edits match exactly; others by name. */
-  allowForSession(toolName: string, input: Record<string, unknown>): void {
+  /**
+   * Remember an `allow_session` decision. Commands and edits match exactly; others by name. A
+   * call that touches CodeDen's own credentials is remembered only as itself, in `dir`.
+   */
+  allowForSession(toolName: string, input: Record<string, unknown>, dir?: string): void {
     this.sessionAllow.add(this.key(toolName, input));
+    if (touchesCodeden(this.assess(toolName, input, dir))) {
+      this.credentialAllow.add(this.credentialKey(toolName, input, dir));
+    }
+  }
+
+  /** The exact call, in the directory its relative paths resolve from. */
+  private credentialKey(toolName: string, input: Record<string, unknown>, dir?: string): string {
+    return `${toolName}\n${dir ?? this.ctx.cwd}\n${JSON.stringify(input)}`;
   }
 
   private key(toolName: string, input: Record<string, unknown>): string {

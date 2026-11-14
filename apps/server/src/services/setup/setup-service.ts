@@ -25,8 +25,13 @@ export interface SetupServiceDeps {
   now?: () => number;
   /** Finds claude, codex and gh (default: PATH, then their known install locations). */
   locate?: Locate;
-  /** The user's home folder, for known install locations (default: `os.homedir()`). */
+  /**
+   * The user's home folder, for known install locations and the CLIs' own settings (default:
+   * `os.homedir()`).
+   */
   userHome?: string;
+  /** Read for which login variables are set, never their values (default: `process.env`). */
+  env?: NodeJS.ProcessEnv;
   /**
    * Picks up PATH changes made since CodeDen started, before an explicit re-check (default:
    * the Windows registry's user and machine `Path`; nothing elsewhere).
@@ -41,8 +46,25 @@ export interface SetupServiceDeps {
   onChecked?: (status: SetupStatus) => void;
 }
 
-const ORDER: SetupToolId[] = ["claude", "codex", "gh", "git", "browser", "node"];
-const PROVIDERS: SetupToolId[] = ["claude", "codex"];
+const ORDER: SetupToolId[] = [
+  "claude",
+  "codex",
+  "opencode",
+  "cursor",
+  "gemini",
+  "gh",
+  "git",
+  "browser",
+  "node",
+];
+/** Agent providers: setup is ready when at least one is installed and signed in. */
+export const PROVIDER_CHECKS: readonly SetupToolId[] = [
+  "claude",
+  "codex",
+  "opencode",
+  "cursor",
+  "gemini",
+];
 
 /**
  * First-run setup and re-checks on launch (§14). Runs every detection in parallel with a
@@ -111,12 +133,15 @@ export class SetupService {
     const userHome = this.deps.userHome;
     const env: CheckEnv = {
       exec: this.deps.exec,
-      locate: this.deps.locate ?? ((name) => findExecutable(name, { home: userHome })),
+      locate:
+        this.deps.locate ?? ((name, opts) => findExecutable(name, { home: userHome, ...opts })),
       shell: this.shell(),
       platform: this.deps.platform ?? process.platform,
       nodeVersion: this.deps.nodeVersion ?? process.version,
       now: this.now(),
       browserProbe: this.deps.browserProbe,
+      ...(userHome ? { userHome } : {}),
+      ...(this.deps.env ? { env: this.deps.env } : {}),
     };
     const checks = await Promise.all(ORDER.map((id) => this.timed(id, env)));
     const previous = this.cached;
@@ -126,7 +151,9 @@ export class SetupService {
     const status: SetupStatus = {
       checkedAt: new Date(this.now()).toISOString(),
       setupCompleted: this.deps.settings.get().setup.completed,
-      ready: checks.some((c) => PROVIDERS.includes(c.id) && c.installed && c.loggedIn === true),
+      ready: checks.some(
+        (c) => PROVIDER_CHECKS.includes(c.id) && c.installed && c.loggedIn === true,
+      ),
       checks,
       warnings,
     };

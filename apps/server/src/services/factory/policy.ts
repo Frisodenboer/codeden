@@ -1,11 +1,16 @@
-import type { DiscoveryArea, FactoryLimits, FactoryLoop, ProtectedAreas } from "@codeden/contracts";
+import type {
+  FactoryItem,
+  FactoryItemSource,
+  FactoryLimits,
+  ProtectedAreas,
+} from "@codeden/contracts";
 import { matchingGlobs } from "./globs";
 import { DEPLOY_GLOBS, mentionsTopic } from "./vision";
 
 /**
  * Pure rules of the factory loop (§10.1). Everything here is deterministic and enforced by the
- * server, never left to agent judgement: budgets, slots, merge limits, pausing, reviewer choice
- * and the path heuristics the merge checks use.
+ * server, never left to agent judgement: budgets, slots, merge limits, pausing and the path
+ * heuristics the merge checks use.
  */
 
 /** Local calendar day, `YYYY-MM-DD` (counters and digests are per local day). */
@@ -31,9 +36,34 @@ export function budgetExceeded(
   return null;
 }
 
-/** True when limits carry a daily budget (required for autopilot and dark factory). */
+/** True when limits carry a daily budget (required for the software and dark factory). */
 export function hasBudget(limits: FactoryLimits): boolean {
   return limits.dailyBudget.usd !== undefined || limits.dailyBudget.tokens !== undefined;
+}
+
+/** Who asked for the work decides its place in the queue first (lower goes first). */
+const QUEUE_TIER: Record<FactoryItemSource, number> = {
+  failed_check: 0,
+  revert: 0,
+  issue: 1,
+  discovery: 2,
+};
+
+/**
+ * The order free agents take queued work in (§10.1 Assign): repairs of the default branch
+ * first, then the issues people filed, then the work the scout found; within each, by priority
+ * (the scout's, a failed check's), then age. People's issues carry no priority, so ranking by
+ * priority alone would put every scout finding ahead of every issue a person filed.
+ */
+export function queueOrder(
+  a: Pick<FactoryItem, "source" | "score" | "createdAt">,
+  b: Pick<FactoryItem, "source" | "score" | "createdAt">,
+): number {
+  return (
+    QUEUE_TIER[a.source] - QUEUE_TIER[b.source] ||
+    (b.score ?? 0.5) - (a.score ?? 0.5) ||
+    a.createdAt.localeCompare(b.createdAt)
+  );
 }
 
 /** Free session slots under `maxConcurrentSessions`. */
@@ -41,7 +71,10 @@ export function freeSlots(activeSessions: number, limits: FactoryLimits): number
   return Math.max(0, limits.maxConcurrentSessions - activeSessions);
 }
 
-/** Whether another build may start: merges today plus work in flight stay under the cap. */
+/**
+ * Whether another build may start while auto-merge is on: merges today plus work in flight
+ * stay under the daily merge cap.
+ */
 export function mayBuild(mergesToday: number, inFlight: number, limits: FactoryLimits): boolean {
   return mergesToday + inFlight < limits.maxMergesPerDay;
 }
@@ -54,34 +87,6 @@ export function mayMerge(mergesToday: number, limits: FactoryLimits): boolean {
 /** The loop pauses after this many failed merge checks or reverts in a row. */
 export function shouldPause(consecutiveFailures: number, limits: FactoryLimits): boolean {
   return consecutiveFailures >= limits.pauseAfterConsecutiveFailures;
-}
-
-/** Providers tried for reviews, in order, when the author's provider is excluded. */
-const REVIEW_ORDER = ["codex", "claude"];
-
-export interface ReviewerChoice {
-  provider: string;
-  /** True when the reviewer runs on a different provider from the author. */
-  crossProvider: boolean;
-  /** Set when the review falls back to the author's provider. */
-  note: string | null;
-}
-
-/**
- * The independent reviewer runs on a different provider from the author (Codex reviews
- * Claude's work and vice versa). With only one provider available it falls back to the same
- * provider and says so.
- */
-export function pickReviewer(author: string | null, available: readonly string[]): ReviewerChoice {
-  const others = available.filter((p) => p !== author);
-  const preferred = [...REVIEW_ORDER, ...others].find((p) => others.includes(p));
-  if (preferred) return { provider: preferred, crossProvider: true, note: null };
-  const fallback = author ?? available[0] ?? "claude";
-  return {
-    provider: fallback,
-    crossProvider: false,
-    note: `No provider other than ${fallback} is available; the review ran on the same provider as the author.`,
-  };
 }
 
 const TEST_FILE =
@@ -120,29 +125,6 @@ export function protectedHits(input: {
     .filter((h) => h.globs.length > 0);
   const topics = input.areas.topics.filter((t) => mentionsTopic(input.text, t));
   return { paths, topics };
-}
-
-/** The next `count` discovery areas, round-robin from `loop.nextArea`. */
-export function nextAreas(
-  areas: readonly DiscoveryArea[],
-  start: number,
-  count: number,
-): DiscoveryArea[] {
-  if (areas.length === 0) return [];
-  const out: DiscoveryArea[] = [];
-  for (let i = 0; i < Math.min(count, areas.length); i++) {
-    const area = areas[(start + i) % areas.length];
-    if (area) out.push(area);
-  }
-  return out;
-}
-
-/** Whether a dark-factory discovery round is due. */
-export function discoveryDue(loop: FactoryLoop, waiting: number, now: number): boolean {
-  if (loop.discovery.length > 0) return false;
-  if (waiting >= loop.tuning.minBacklog) return false;
-  if (!loop.lastDiscoveryAt) return true;
-  return now - Date.parse(loop.lastDiscoveryAt) >= loop.tuning.discoveryIntervalMin * 60_000;
 }
 
 /** A work key slug from a title: `factory:add-dark-mode`. */

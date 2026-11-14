@@ -9,6 +9,11 @@
 // every turn, one after the other (`notify: true` ones as notifications); each answer is logged as `{ method: "answer:<method>", params }`
 // and the turn completes once all are answered.
 // FAKE_CODEX_TURN=hang starts turns that never complete and never answers `turn/interrupt`.
+// FAKE_CODEX_TURN=open sends the scripted requests but keeps the turn open until
+// `turn/interrupt`, which ends it as interrupted; interrupts for other threads (sub-agents) are
+// answered but their turns never end. Scripted entries with `afterInterrupt: true` are held
+// back and sent as notifications once the root turn has been interrupted.
+// FAKE_CODEX_ECHO=1 echoes each turn/start and turn/steer input as a userMessage item.
 import { appendFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -76,6 +81,28 @@ function modelList(msg) {
   });
 }
 
+/**
+ * FAKE_CODEX_ECHO=1: echo each input as a `userMessage` item, as the real server does, with the
+ * request's `clientUserMessageId` as its `clientId`.
+ */
+function echoUserMessage(turnId, params) {
+  if (process.env.FAKE_CODEX_ECHO !== "1") return;
+  send({
+    method: "item/completed",
+    params: {
+      threadId: "thread-1",
+      turnId,
+      item: {
+        type: "userMessage",
+        id: `${turnId}-user-${++echoes}`,
+        clientId: params.clientUserMessageId ?? null,
+        content: params.input,
+      },
+    },
+  });
+}
+let echoes = 0;
+
 createInterface({ input: process.stdin }).on("line", (line) => {
   const msg = JSON.parse(line);
   if (msg.id !== undefined && !msg.method && waiting.has(msg.id)) {
@@ -92,15 +119,46 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     case "thread/start":
     case "thread/resume":
       return send({ id: msg.id, result: { thread: { id: "thread-1" }, model: "gpt-configured" } });
+    // "thread-source" holds turn-1 to turn-3, listed two per page (newest first); "old-codex"
+    // stands for an app-server without the method. Any other thread answers like Codex 0.160
+    // does for a thread a short-lived app-server hasn't loaded.
+    case "thread/turns/list": {
+      const threadId = msg.params?.threadId;
+      if (threadId === "old-codex") {
+        return send({ id: msg.id, error: { code: -32601, message: "method not found" } });
+      }
+      if (threadId !== "thread-source") {
+        return send({ id: msg.id, error: { code: -32600, message: `thread not loaded: ${threadId}` } });
+      }
+      const all = ["turn-3", "turn-2", "turn-1"];
+      const from = Number(msg.params?.cursor ?? 0);
+      const data = all.slice(from, from + 2).map((id) => ({ id, items: [], status: "completed" }));
+      const next = from + 2 < all.length ? String(from + 2) : null;
+      return send({ id: msg.id, result: { data, nextCursor: next, backwardsCursor: null } });
+    }
+    // Codex 0.160's answers: "missing" is a thread deleted from disk, "turn-gone" a turn the
+    // thread doesn't hold, "turn-running" a turn still in progress.
+    case "thread/fork": {
+      const { threadId, lastTurnId } = msg.params ?? {};
+      const fail = (message) => send({ id: msg.id, error: { code: -32600, message } });
+      if (threadId === "missing") return fail(`no rollout found for thread id ${threadId}`);
+      if (lastTurnId === "turn-gone") return fail(`turn not found: ${lastTurnId}`);
+      if (lastTurnId === "turn-running") {
+        return fail(`lastTurnId '${lastTurnId}' identifies an in-progress turn`);
+      }
+      return send({ id: msg.id, result: { thread: { id: "thread-fork-1" }, model: "gpt-configured" } });
+    }
     case "model/list":
       return modelList(msg);
     case "turn/start": {
       const turn = { id: `turn-${++turns}`, status: "completed", items: [], error: null };
       send({ id: msg.id, result: { turn: { ...turn, status: "inProgress" } } });
+      echoUserMessage(turn.id, msg.params);
       if (turnMode === "hang") return;
       // Like the real server: the turn completes after the response has been handled.
       setTimeout(async () => {
         for (const [i, r] of scripted.entries()) {
+          if (r.afterInterrupt) continue;
           // `notify: true` entries are notifications (such as `item/started`), sent as they are.
           if (r.notify) {
             send({ method: r.method, params: { threadId: "thread-1", turnId: turn.id, ...r.params } });
@@ -115,13 +173,24 @@ createInterface({ input: process.stdin }).on("line", (line) => {
             ...r.params,
           });
         }
-        send({ method: "turn/completed", params: { threadId: "thread-1", turn } });
+        if (turnMode !== "open") send({ method: "turn/completed", params: { threadId: "thread-1", turn } });
       }, 50);
       return;
     }
+    case "turn/steer":
+      send({ id: msg.id, result: { turnId: msg.params.expectedTurnId } });
+      return echoUserMessage(msg.params.expectedTurnId, msg.params);
     case "turn/interrupt":
       if (turnMode === "hang") return;
-      return send({ id: msg.id, result: {} });
+      send({ id: msg.id, result: {} });
+      if (turnMode === "open" && msg.params?.threadId === "thread-1") {
+        const turn = { id: msg.params.turnId, status: "interrupted", items: [], error: null };
+        send({ method: "turn/completed", params: { threadId: "thread-1", turn } });
+        for (const r of scripted.filter((entry) => entry.afterInterrupt)) {
+          send({ method: r.method, params: { threadId: "thread-1", turnId: turn.id, ...r.params } });
+        }
+      }
+      return;
     default:
       return send({ id: msg.id, result: {} });
   }

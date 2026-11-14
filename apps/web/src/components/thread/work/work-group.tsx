@@ -1,5 +1,5 @@
 import { ChevronRight, Layers } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ImageGallery, ImageThumbnail } from "@/components/common/image-viewer";
 import { useClient } from "@/lib/api";
 import { duration } from "@/lib/format";
@@ -41,13 +41,28 @@ function GeneratedImages({ entries }: { entries: WorkEntry[] }) {
 /**
  * Consecutive tool calls and reasoning of a turn, collapsed into one sentence
  * ("Edited 2 files, ran 3 commands and 4 more"). While live, the running step shows beneath.
+ * Opens by itself when `focusItemId` (a search hit) is one of its steps.
  */
-export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boolean }) {
-  const [open, setOpen] = useState(false);
+export function WorkGroup({
+  sessionId,
+  entries,
+  live,
+  focusItemId,
+}: {
+  sessionId: string;
+  entries: WorkEntry[];
+  live: boolean;
+  focusItemId?: string;
+}) {
+  const holdsFocus = Boolean(focusItemId && entries.some((e) => e.id === focusItemId));
+  const [open, setOpen] = useState(holdsFocus);
+  useEffect(() => {
+    if (holdsFocus) setOpen(true);
+  }, [holdsFocus]);
   if (entries.length === 1 && entries[0]) {
     return (
       <div>
-        <ToolRow entry={entries[0]} />
+        <ToolRow sessionId={sessionId} entry={entries[0]} />
         <GeneratedImages entries={entries} />
       </div>
     );
@@ -92,7 +107,7 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
       {open ? (
         <div className="relative mt-0.5 ml-[13px] border-l border-border pl-2.5">
           {entries.map((e) => (
-            <ToolRow key={e.id} entry={e} />
+            <ToolRow key={e.id} sessionId={sessionId} entry={e} />
           ))}
         </div>
       ) : (
@@ -101,7 +116,7 @@ export function WorkGroup({ entries, live }: { entries: WorkEntry[]; live: boole
             className="relative mt-0.5 ml-[13px] border-l border-border pl-2.5"
             title={`Now: ${entryLabel(current).verb}`}
           >
-            <ToolRow entry={current} />
+            <ToolRow sessionId={sessionId} entry={current} />
           </div>
         )
       )}

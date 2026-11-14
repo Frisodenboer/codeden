@@ -10,6 +10,7 @@ import { allTools } from "../mcp/tools";
 import type { HomePaths } from "../paths";
 import type { SettingsStore } from "../settings-store";
 import { AgentConfigService } from "./agent-config/agent-config-service";
+import { reportedCommands } from "./agent-config/slash-commands";
 import { ArtifactService } from "./artifacts";
 import { AutomationService, type AutomationServiceDeps } from "./automations/automation-service";
 import { BrowserService } from "./browser/browser-service";
@@ -18,6 +19,7 @@ import { type FactoryOptions, FactoryService } from "./factory/factory-service";
 import { type FactoryGithub, GithubFactoryPort } from "./factory/github-port";
 import { ConfigFiles } from "./files/config-files";
 import { GithubService, type GithubServiceDeps } from "./github/github-service";
+import { projectTrustedAuthors } from "./github/review-trust";
 import { ImageService } from "./images/image-service";
 import { InboxService } from "./inbox-service";
 import { GithubServicePort } from "./orchestration/github-port";
@@ -28,9 +30,10 @@ import {
 import type { AutomationPort, GithubPort } from "./orchestration/ports";
 import { ProjectService } from "./projects/project-service";
 import { ProjectRedetector } from "./projects/redetector";
-import { type RunnerPort, redetectProviders } from "./runner-port";
+import { type RunnerPort, type RunnerRouter, redetectProviders, singleRunner } from "./runner-port";
 import type { SecretStore } from "./secrets";
 import { AutoRetry, type AutoRetryDeps } from "./sessions/auto-retry";
+import { GeneratedImages } from "./sessions/generated-images";
 import { SessionLauncher } from "./sessions/launcher";
 import { SessionLifecycle } from "./sessions/lifecycle";
 import { Outbox } from "./sessions/outbox";
@@ -60,7 +63,10 @@ export interface ServicesOptions {
   store: EventStore;
   settings: SettingsStore;
   paths: HomePaths;
+  /** The home runner: provider detection, utility jobs, orchestrator and PMs. */
   runner: RunnerPort;
+  /** Routes each session to its own runner (`docs/remote-runners.md` §8); default: `runner`. */
+  runners?: RunnerRouter;
   secrets: SecretStore;
   exec?: Exec;
   /** Finds claude, codex and gh for the setup checks (tests fake it with `exec`). */
@@ -110,7 +116,10 @@ export interface AppServices {
   store: EventStore;
   settings: SettingsStore;
   paths: HomePaths;
+  /** The home runner (global work). Session work goes through `runners.forSession`. */
   runner: RunnerPort;
+  /** Which runner serves each session. */
+  runners: RunnerRouter;
   secrets: SecretStore;
   utility: UtilityService;
   projects: ProjectService;
@@ -159,6 +168,8 @@ export interface AppServices {
   worktreeCleanup: WorktreeCleanup;
   /** Denies approvals nobody is there to answer, so unattended work never waits forever. */
   unwatchedApprovals: UnwatchedApprovals;
+  /** Images made with a provider's own tools: stored as artifacts and shown inline. */
+  generatedImages: GeneratedImages;
   /** CI failures, requested changes and conflicts sent to user-started sessions' agents (§9). */
   prFeedback: PrFeedbackService;
   /** Continues agent sessions after transient failures and usage limits. */
@@ -169,6 +180,7 @@ export interface AppServices {
 export function createServices(opts: ServicesOptions): AppServices {
   const exec = opts.exec ?? runTool;
   const userHome = opts.userHome ?? homedir();
+  const runners = opts.runners ?? singleRunner(opts.runner);
   const utility =
     opts.utility ??
     new ProviderUtilityService({
@@ -203,7 +215,9 @@ export function createServices(opts: ServicesOptions): AppServices {
     repo: sessionRepo,
     projects,
     runner: opts.runner,
+    runners,
     inbox,
+    home: opts.paths.home,
     worktreesDir: opts.paths.worktrees,
     orchestratorDir: opts.paths.orchestrator,
     tokens: mcpTokens,
@@ -213,19 +227,22 @@ export function createServices(opts: ServicesOptions): AppServices {
     repo: sessionRepo,
     projects,
     runner: opts.runner,
+    runners,
     inbox,
     artifacts,
     settings: opts.settings,
     launcher,
     outbox,
     questions,
+    tokens: mcpTokens,
+    utility,
   });
   const queue = new QueueService({
     outbox,
     repo: sessionRepo,
     sessions,
     artifacts,
-    providers: () => opts.runner.providers(),
+    providers: (sessionId) => runners.forSession(sessionId).providers(),
   });
   const lifecycle = new SessionLifecycle({
     db: opts.db,
@@ -243,13 +260,18 @@ export function createServices(opts: ServicesOptions): AppServices {
     projects,
     repo: sessionRepo,
     runner: opts.runner,
+    runners,
     artifacts,
     inbox,
     exec,
     secrets: opts.secrets,
+    home: opts.paths.home,
     ...opts.github,
     log: opts.log,
   });
+  // The factory and issue triage share it, so both trust the same issue authors.
+  const factoryGithub = opts.factory?.github ?? new GithubFactoryPort(github);
+  const trustedAuthors = projectTrustedAuthors(projects);
   const redetector = new ProjectRedetector({
     projects,
     store: opts.store,
@@ -284,6 +306,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     repo: sessionRepo,
     inbox,
     orchestration: () => services.orchestration,
+    github: factoryGithub,
     home: opts.paths.home,
     ...opts.automations,
     log: opts.log,
@@ -302,9 +325,24 @@ export function createServices(opts: ServicesOptions): AppServices {
     sessions,
     projects,
     inbox,
+    artifacts,
     github: opts.orchestration?.github ?? new GithubServicePort(github),
+    trustedAuthors,
     automation: opts.orchestration?.automation ?? automations,
+    timezone: () => usage.timezone(),
     options: opts.orchestration,
+    log: opts.log,
+  });
+  const worktreeCleanup = new WorktreeCleanup({
+    repo: sessionRepo,
+    projects,
+    runner: opts.runner,
+    runners,
+    store: opts.store,
+    settings: () => opts.settings.get(),
+    stopSession: (id) => (sessions as SessionService).stop(id),
+    inbox,
+    ...opts.worktreeCleanup,
     log: opts.log,
   });
   const factory = new FactoryService({
@@ -319,19 +357,10 @@ export function createServices(opts: ServicesOptions): AppServices {
     notify: (draft, wake) => orchestration.notify(draft, wake),
     settings: opts.settings,
     exec,
-    github: opts.factory?.github ?? new GithubFactoryPort(github),
+    github: factoryGithub,
+    complete: (job, system, prompt) => utility.complete(job, system, prompt),
+    archiveSession: (id) => worktreeCleanup.archive(id),
     options: opts.factory,
-    log: opts.log,
-  });
-  const worktreeCleanup = new WorktreeCleanup({
-    repo: sessionRepo,
-    projects,
-    runner: opts.runner,
-    store: opts.store,
-    settings: () => opts.settings.get(),
-    stopSession: (id) => (sessions as SessionService).stop(id),
-    inbox,
-    ...opts.worktreeCleanup,
     log: opts.log,
   });
   const unwatchedApprovals = new UnwatchedApprovals({
@@ -349,6 +378,7 @@ export function createServices(opts: ServicesOptions): AppServices {
     settings: opts.settings,
     paths: opts.paths,
     runner: opts.runner,
+    runners,
     secrets: opts.secrets,
     utility,
     projects,
@@ -362,12 +392,14 @@ export function createServices(opts: ServicesOptions): AppServices {
       sessions,
       launcher,
       runner: opts.runner,
+      runners,
       log: opts.log,
     }),
     inbox,
     artifacts,
     browser: new BrowserService({
       runner: opts.runner,
+      runners,
       repo: sessionRepo,
       settings: () => opts.settings.get(),
       log: opts.log,
@@ -395,11 +427,19 @@ export function createServices(opts: ServicesOptions): AppServices {
     factory,
     worktreeCleanup,
     unwatchedApprovals,
+    generatedImages: new GeneratedImages({
+      db: opts.db,
+      store: opts.store,
+      repo: sessionRepo,
+      artifacts,
+      log: opts.log,
+    }),
     prFeedback: new PrFeedbackService({
       store: opts.store,
       repo: sessionRepo,
       settings: () => opts.settings.get(),
       send: (id, input) => sessions.send(id, { input, whenBusy: "queue" }, "codeden"),
+      trustedAuthors,
       log: opts.log,
     }),
     autoRetry: new AutoRetry({
@@ -422,7 +462,11 @@ export function createServices(opts: ServicesOptions): AppServices {
       projects,
       repo: sessionRepo,
       backupDir: join(opts.paths.backups, "agent-config"),
-      mcpProxyUrl: () => opts.runner.mcpProxyUrl(),
+      disabledHooksFile: opts.paths.disabledHooks,
+      // The proxy the session's own runner gave its agent; MCP tests stay on the home runner.
+      mcpProxyUrl: (sessionId) => runners.forSession(sessionId).mcpProxyUrl(),
+      runner: opts.runner,
+      reportedCommands: (sessionId) => reportedCommands(opts.db, sessionId),
     }),
     github,
     orchestration,
@@ -430,7 +474,12 @@ export function createServices(opts: ServicesOptions): AppServices {
     userHome,
     questions,
     mcpTokens,
-    workbench: new WorkbenchService({ db: opts.db, repo: sessionRepo, runner: opts.runner }),
+    workbench: new WorkbenchService({
+      db: opts.db,
+      repo: sessionRepo,
+      runner: opts.runner,
+      runners,
+    }),
     tools: undefined as unknown as ToolRegistry,
   };
   services.tools = new ToolRegistry(allTools, services, opts.log);

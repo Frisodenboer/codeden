@@ -8,7 +8,7 @@ Open **Usage** in the sidebar.
 
 ## The ledger
 
-Every turn records a **usage delta**, computed from the provider's own numbers (Claude reports cumulative session totals, so CodeDen stores the per-turn difference):
+Every turn records a **usage delta**, computed from the provider's own numbers (Claude reports cumulative session totals, so CodeDen stores the per-turn difference; OpenCode reports every model call with its tokens and cost, so a turn is their sum, subagents included):
 
 - input, output, cache-read and cache-write tokens, and reasoning tokens where reported;
 - cost in USD;
@@ -22,13 +22,19 @@ The ledger lives in your local database, never anywhere else.
 |---|---|
 | **Reported** | The provider returned a USD cost for the turn |
 | **Estimated** (shown with ≈) | Tokens multiplied by the price table for that model |
-| **API-equivalent** | You're on a subscription login (claude.ai or ChatGPT): this is what the same work would cost on API credits, not what you're billed |
+| **API-equivalent** | You're on a subscription login (claude.ai, ChatGPT, Cursor or a Google login in Gemini CLI): this is what the same work would cost on API credits, not what you're billed |
 
-The billing mode comes from how each CLI reports its login: API keys and console accounts are pay-per-token; claude.ai and ChatGPT logins are subscriptions.
+The billing mode comes from how each CLI reports its login: API keys and console accounts are pay-per-token; claude.ai, ChatGPT and Cursor logins are subscriptions (a Cursor API key bills your Cursor plan too). Gemini CLI's Google login counts as a subscription; its Gemini API key and Vertex AI logins pay per token. OpenCode reports how each of its providers is connected (API key, OAuth, environment).
 
 ### The price table
 
 CodeDen bundles list prices for current Claude and OpenAI models, taken from the providers' pricing pages. Open **Prices** on the Usage page to see them and to add or override a model's price; your entries win over the bundled table. Turns whose model has no price and no reported cost are counted as **unpriced**, so a missing price never hides spend silently.
+
+OpenCode usually reports each turn's cost itself. When it doesn't (OpenCode's free models, or a provider it has no prices for), OpenCode model ids such as `anthropic/claude-opus-5-5` and `openai/gpt-5.5` are priced from the Claude and OpenAI rows; other vendors' models are unpriced unless you add a price for the full id under provider `opencode`.
+
+Cursor bills through your Cursor plan and reports no prices, so its turns show the token counts and context use the CLI reports (when it reports them) and count as **unpriced**. Add a price under provider `cursor` if you want an estimate.
+
+Gemini CLI reports each turn's tokens (cached and thinking tokens included) and its context use, but no cost. Add prices under provider `gemini` for the models you use if you want estimates; until then its turns count as **unpriced**.
 
 ## Reports
 
@@ -57,7 +63,7 @@ Add budgets on the Usage page:
 - **Daily** or **monthly**, for **all projects** or one project, in USD.
 - A **warning** share (default 80%) and the limit itself. Crossing either raises an inbox item and a notification, once per budget and period.
 
-Budgets are alerts; they don't stop work. To hard-stop autonomous work on spend, use the [factory's daily budget](autonomy-and-dark-factory.md#limits).
+Budgets are alerts; they don't stop work. To hard-stop autonomous work on spend, use the [factory's daily budget](software-factory.md#settings-and-limits).
 
 ## Where it's stored
 

@@ -38,7 +38,7 @@ test("M1 flow with the Fake provider", async ({ page }) => {
     const checklist = page.getByTestId("setup-checklist");
     await expect(checklist.locator("[data-check=git]")).toBeVisible();
     await expect(checklist.getByText("Checking…")).toHaveCount(0, { timeout: 60_000 });
-    for (const id of ["claude", "codex", "gh", "git", "browser"]) {
+    for (const id of ["claude", "codex", "opencode", "gh", "git", "browser"]) {
       await expect(checklist.locator(`[data-check=${id}]`)).toBeVisible();
     }
     await page.getByRole("button", { name: "Skip setup" }).click();
@@ -52,7 +52,10 @@ test("M1 flow with the Fake provider", async ({ page }) => {
     await path.fill(process.env.CODEDEN_E2E_REPO ?? "");
     await path.press("Enter");
     await dialog.getByRole("button", { name: "Add project" }).click();
-    await expect(page).toHaveURL(/\/projects\//);
+    // A new project opens its New session view, ready for the first task.
+    await expect(page).toHaveURL(/\/projects\/[^/]+\/new$/);
+    await expect(page.getByTestId("new-session")).toBeVisible();
+    await page.goto(page.url().replace(/\/new$/, ""));
     await expect(page.getByRole("heading", { name: "demo-repo" })).toBeVisible();
   });
 
@@ -66,12 +69,14 @@ test("M1 flow with the Fake provider", async ({ page }) => {
     await expect(page.getByTestId("next-runs")).toContainText("No scheduled runs");
   });
 
-  await test.step("start a Fake session and stream the transcript", async () => {
-    await page.getByRole("button", { name: "New session" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("What should the agent do?").fill("Say hello [approval]");
-    await expect(dialog.getByRole("button", { name: "Provider and model" })).toContainText(/Fake/);
-    await dialog.getByRole("button", { name: "Start session" }).click();
+  await test.step("start a Fake session from the draft and stream the transcript", async () => {
+    // The project page's button (the sidebar's "+" is a link of the same name).
+    await page.getByRole("main").getByRole("link", { name: "New session" }).click();
+    await expect(page).toHaveURL(/\/projects\/[^/]+\/new$/);
+    const draft = page.getByTestId("new-session");
+    await expect(draft.getByRole("button", { name: "Provider and model" })).toContainText(/Fake/);
+    await draft.getByLabel("Message", { exact: true }).fill("Say hello [approval]");
+    await draft.getByLabel("Message", { exact: true }).press("Enter");
     await expect(page).toHaveURL(/\/sessions\//);
     await expect(page.getByText("Echo: Say hello [approval]")).toBeVisible();
   });

@@ -19,7 +19,7 @@ export type CostSource = z.infer<typeof CostSource>;
 export const BillingMode = z.enum(["api", "subscription", "unknown"]);
 export type BillingMode = z.infer<typeof BillingMode>;
 
-/** Who started the work a ledger row belongs to. `factory`: autopilot / dark-factory work. */
+/** Who started the work a ledger row belongs to. `factory`: software- and dark-factory work. */
 export const UsageSource = z.enum(["user", "orchestrator", "pm", "automation", "factory"]);
 export type UsageSource = z.infer<typeof UsageSource>;
 
@@ -217,12 +217,41 @@ export const TurnUsage = z.object({
 });
 export type TurnUsage = z.infer<typeof TurnUsage>;
 
+/** One model's share of a subagent run's cost. */
+export const SubagentModelCost = z.object({
+  ...TokenCounts.shape,
+  /** The model the tokens were priced as (the session's model when the provider named none). */
+  model: z.string(),
+  /** The price table's name for the model, when it has one. */
+  label: z.string().optional(),
+  costUsd: z.number().nonnegative(),
+  costSource: CostSource,
+});
+export type SubagentModelCost = z.infer<typeof SubagentModelCost>;
+
+/**
+ * What a finished subagent run cost, priced from `SubagentStats.usage` when read (§7.3). Display
+ * only: the run's tokens are already in its session's turns, so this is never added to totals.
+ * `reported` when every model's cost came from the provider, `unpriced` when no model could be
+ * priced, else `estimated`.
+ */
+export const SubagentCost = z.object({
+  /** The `subagent` item. */
+  itemId: Id,
+  costUsd: z.number().nonnegative(),
+  costSource: CostSource,
+  models: z.array(SubagentModelCost),
+});
+export type SubagentCost = z.infer<typeof SubagentCost>;
+
 /** `GET /api/usage/sessions/:id`: totals for the session header plus per-turn rows. */
 export const SessionUsage = z.object({
   sessionId: Id,
   totals: UsageTotals,
   billing: BillingMode,
   turns: z.array(TurnUsage),
+  /** The cost of each finished subagent that reported tokens per model, for its card. */
+  subagents: z.array(SubagentCost).default([]),
 });
 export type SessionUsage = z.infer<typeof SessionUsage>;
 
@@ -233,8 +262,15 @@ export const RateLimitWindow = z.object({
   windowId: z.string(),
   label: z.string(),
   status: z.enum(["ok", "warning", "limited"]),
+  /**
+   * The share used, from the latest reading that had one; null when none has been read in the
+   * current window. Claude often reports only the status, so this can be older than the status.
+   */
   usedPercent: z.number().min(0).max(100).nullable(),
+  /** When `usedPercent` was read (null without one); can be earlier than `observedAt`. */
+  usedPercentAt: Timestamp.nullable(),
   resetsAt: Timestamp.nullable(),
+  /** When the latest reading (status, reset time) arrived. */
   observedAt: Timestamp,
   /** The window has reset since this reading, so the percentage is out of date. */
   stale: z.boolean(),

@@ -1,10 +1,14 @@
-import { useNavigate } from "@tanstack/react-router";
+import { isFactoryMode, type Session } from "@codeden/contracts";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import {
+  ArrowRightLeft,
   Bot,
   FolderPlus,
+  GitFork,
   Inbox,
   Keyboard,
   MessageSquarePlus,
+  MonitorPlay,
   Moon,
   PanelLeft,
   PanelRight,
@@ -12,8 +16,10 @@ import {
   Settings,
   SlidersHorizontal,
   SquareTerminal,
+  TextSearch,
+  Workflow,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Hotkey } from "@/components/common/bits";
 import { StatusDot } from "@/components/common/status-dot";
 import {
@@ -27,10 +33,12 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useSnapshot } from "@/lib/queries";
+import { canMakeAutomation, useSessionActions } from "@/lib/session-actions";
 import { formatCombo, type ShortcutId, shortcut } from "@/lib/shortcuts";
 import { useLayoutStore } from "@/stores/layout";
 import { useThemeStore } from "@/stores/theme";
 import { useUiStore } from "@/stores/ui";
+import { PaletteTranscripts, paletteFilter } from "./palette-transcripts";
 import { ProjectTile } from "./sidebar/project-group";
 
 const SETTINGS = [
@@ -53,6 +61,7 @@ function Row({
   keys,
   onSelect,
   value,
+  disabled,
 }: {
   icon: ReactNode;
   label: string;
@@ -62,9 +71,10 @@ function Row({
   keys?: ShortcutId;
   onSelect: () => void;
   value?: string;
+  disabled?: boolean;
 }) {
   return (
-    <CommandItem onSelect={onSelect} value={value ?? label} className="gap-2.5">
+    <CommandItem onSelect={onSelect} value={value ?? label} disabled={disabled} className="gap-2.5">
       <span className="flex size-4 items-center justify-center text-muted-foreground [&_svg]:size-4">
         {icon}
       </span>
@@ -81,14 +91,68 @@ function Row({
   );
 }
 
-/** Ctrl K: jump to any session or project, or run an action. */
+/**
+ * Fork the session on screen (§9), when its provider can fork. Disabled, with the reason,
+ * while a turn runs or before it has a conversation.
+ */
+function ForkCurrentSession({ session, close }: { session: Session; close: () => void }) {
+  const actions = useSessionActions(session);
+  if (!actions.canFork) return null;
+  return (
+    <Row
+      icon={<GitFork />}
+      label="Fork this session"
+      hint={actions.forkBlocked ?? session.title ?? session.purpose}
+      value="fork this session new worktree branch"
+      disabled={actions.forkBlocked !== null}
+      onSelect={() => {
+        actions.fork();
+        close();
+      }}
+    />
+  );
+}
+
+/**
+ * Hand off the session on screen (§9): open the handoff dialog to continue it in a new session,
+ * on any provider. Disabled, with the reason, while a turn runs or before it has done anything.
+ */
+function HandoffCurrentSession({ session, close }: { session: Session; close: () => void }) {
+  const actions = useSessionActions(session);
+  if (!actions.canHandoff) return null;
+  return (
+    <Row
+      icon={<ArrowRightLeft />}
+      label="Hand off this session…"
+      hint={actions.handoffBlocked ?? "Continue in a new session, on any provider"}
+      value="hand off this session handoff continue another provider switch"
+      disabled={actions.handoffBlocked !== null}
+      onSelect={() => {
+        close();
+        actions.handoff();
+      }}
+    />
+  );
+}
+
+/** Ctrl K: jump to any session or project, find what was said in a transcript, or run an action. */
 export function CommandPalette() {
   const open = useUiStore((s) => s.paletteOpen);
   const setOpen = useUiStore((s) => s.setPaletteOpen);
+  const [search, setSearch] = useState("");
+  // Each opening starts from an empty search.
+  useEffect(() => {
+    if (!open) setSearch("");
+  }, [open]);
   const { data } = useSnapshot();
   const navigate = useNavigate();
   const layout = useLayoutStore();
   const toggleTheme = useThemeStore((s) => s.toggle);
+  // The session page that's open, if any: "Make an automation from this session…" and "Fork this
+  // session" act on it.
+  const { sessionId } = useParams({ strict: false }) as { sessionId?: string };
+  const current = sessionId ? data?.sessions.find((s) => s.id === sessionId) : undefined;
+  const automationSource = current && canMakeAutomation(current) ? current : undefined;
 
   const run = (fn: () => void) => () => {
     setOpen(false);
@@ -103,8 +167,12 @@ export function CommandPalette() {
       title="Command palette"
       className="sm:max-w-xl"
     >
-      <Command>
-        <CommandInput placeholder="Search sessions, projects and actions…" />
+      <Command filter={paletteFilter}>
+        <CommandInput
+          placeholder="Search sessions, transcripts, projects and actions…"
+          value={search}
+          onValueChange={setSearch}
+        />
         <CommandList className="max-h-[min(440px,60dvh)]">
           <CommandEmpty>No results.</CommandEmpty>
           <CommandGroup heading="Go to">
@@ -120,6 +188,13 @@ export function CommandPalette() {
               keys="inbox"
               onSelect={run(() => navigate({ to: "/inbox" }))}
             />
+            <Row
+              icon={<TextSearch />}
+              label="Search transcripts"
+              hint="What was asked, answered or run"
+              value="search transcripts find messages commands"
+              onSelect={run(() => navigate({ to: "/search" }))}
+            />
             {data?.projects.map((p) => (
               <Row
                 key={p.id}
@@ -131,6 +206,23 @@ export function CommandPalette() {
                 )}
               />
             ))}
+            {data?.projects
+              .filter((p) => isFactoryMode(p.autonomyMode))
+              .map((p) => (
+                <Row
+                  key={`factory-view:${p.id}`}
+                  icon={<MonitorPlay />}
+                  label={`Factory view · ${p.name}`}
+                  hint="Full screen, live"
+                  value={`factory view ${p.name} pipeline full screen`}
+                  onSelect={run(() =>
+                    navigate({
+                      to: "/projects/$projectId/factory/view",
+                      params: { projectId: p.id },
+                    }),
+                  )}
+                />
+              ))}
           </CommandGroup>
           <CommandGroup heading="Sessions">
             {data?.sessions
@@ -149,8 +241,32 @@ export function CommandPalette() {
                 />
               ))}
           </CommandGroup>
+          <PaletteTranscripts
+            search={search}
+            sessions={data?.sessions ?? []}
+            projects={data?.projects ?? []}
+            close={() => setOpen(false)}
+          />
           <CommandSeparator />
           <CommandGroup heading="Actions">
+            {current && <ForkCurrentSession session={current} close={() => setOpen(false)} />}
+            {current && <HandoffCurrentSession session={current} close={() => setOpen(false)} />}
+            {automationSource?.projectId && (
+              <Row
+                icon={<Workflow />}
+                label="Make an automation from this session…"
+                hint={automationSource.title ?? automationSource.purpose}
+                onSelect={run(
+                  () =>
+                    automationSource.projectId &&
+                    navigate({
+                      to: "/projects/$projectId/automations/new",
+                      params: { projectId: automationSource.projectId },
+                      search: { session: automationSource.id },
+                    }),
+                )}
+              />
+            )}
             <Row
               icon={<MessageSquarePlus />}
               label="New session…"
@@ -158,9 +274,8 @@ export function CommandPalette() {
                 () =>
                   data?.projects[0] &&
                   navigate({
-                    to: "/projects/$projectId",
+                    to: "/projects/$projectId/new",
                     params: { projectId: data.projects[0].id },
-                    search: { newSession: true },
                   }),
               )}
             />

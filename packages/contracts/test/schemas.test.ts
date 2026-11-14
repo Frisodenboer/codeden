@@ -26,6 +26,7 @@ import {
   Snapshot,
   SOURCE_VERSION,
   sortProjects,
+  Turn,
 } from "../src";
 import {
   sampleAgentEvents,
@@ -72,6 +73,23 @@ describe("agent events", () => {
     expect(item.kind === "tool_call" && item.toolKind === "command" && item.command).toBe("ls");
   });
 
+  it("round-trips the images a tool call generated, by path only", () => {
+    const item = roundTrip(Item, {
+      id: "ig_1",
+      kind: "tool_call",
+      toolKind: "other",
+      status: "completed",
+      toolName: "image_generation",
+      generatedImages: [{ path: "/home/u/.codex/generated_images/t/ig_1.png", caption: "A fox" }],
+    });
+    expect(item.kind === "tool_call" && item.generatedImages).toEqual([
+      { path: "/home/u/.codex/generated_images/t/ig_1.png", caption: "A fox" },
+    ]);
+    expect(Item.safeParse({ ...item, generatedImages: [{ path: "", caption: "x" }] }).success).toBe(
+      false,
+    );
+  });
+
   it("rejects a tool call missing its kind-specific fields", () => {
     const bad = { id: "i", kind: "tool_call", toolKind: "command", status: "completed" };
     expect(Item.safeParse({ ...bad, toolName: "Bash" }).success).toBe(false);
@@ -112,6 +130,32 @@ describe("agent events", () => {
     };
     expect(roundTrip(Item, answered)).toMatchObject({ decidedBy: "pm", answers: { q1: ["Zod"] } });
     expect(Item.safeParse({ ...answered, decidedBy: "policy" }).success).toBe(false);
+  });
+
+  it("carries MCP elicitations: a server's form and a web link to open", () => {
+    const form = {
+      id: "q",
+      kind: "user_question",
+      status: "in_progress",
+      requestId: "r",
+      questions: [{ id: "environment", question: "Deploy where?" }],
+      mcpServer: "deploy",
+    };
+    expect(roundTrip(Item, form)).toMatchObject({ mcpServer: "deploy" });
+    const link = {
+      id: "a",
+      kind: "approval_request",
+      status: "in_progress",
+      requestId: "r",
+      action: "network",
+      title: "Open a link from github",
+      url: "https://github.com/login/device",
+      options: ["allow_once", "deny"],
+    };
+    expect(roundTrip(Item, link)).toMatchObject({ url: "https://github.com/login/device" });
+    // Only web links: a card never links to a script or a local file.
+    expect(Item.safeParse({ ...link, url: "javascript:alert(1)" }).success).toBe(false);
+    expect(Item.safeParse({ ...link, url: "file:///etc/passwd" }).success).toBe(false);
   });
 
   it("limits followups to four suggestions", () => {
@@ -213,6 +257,72 @@ describe("entities", () => {
     roundTrip(Project, sampleProject);
     roundTrip(Project, { ...sampleProject, kind: "local", github: undefined });
     roundTrip(Session, sampleSession);
+    roundTrip(Session, { ...sampleSession, forkedFrom: { sessionId: "s0", checkpoint: 2 } });
+    roundTrip(Session, { ...sampleSession, forkedFrom: { sessionId: "s0", checkpoint: null } });
+    roundTrip(Session, {
+      ...sampleSession,
+      forkedFrom: { sessionId: "s0", checkpoint: 1, turnId: "turn-1" },
+    });
+    roundTrip(Session, {
+      ...sampleSession,
+      forkedFrom: { sessionId: "s0", checkpoint: 1, turnId: "turn-2", turnNumber: 2 },
+    });
+    roundTrip(Session, {
+      ...sampleSession,
+      forkedFrom: { sessionId: "s0", checkpoint: 3, kind: "fork" },
+    });
+    expect(
+      roundTrip(Session, {
+        ...sampleSession,
+        forkedFrom: { sessionId: "s0", checkpoint: null, kind: "handoff" },
+      }).forkedFrom?.kind,
+    ).toBe("handoff");
+    // A handoff of the factory's work records who started it (#248).
+    expect(
+      roundTrip(Session, {
+        ...sampleSession,
+        forkedFrom: {
+          sessionId: "s0",
+          checkpoint: 1,
+          kind: "handoff",
+          startedBy: { kind: "pm", id: "factory" },
+        },
+      }).forkedFrom?.startedBy,
+    ).toEqual({ kind: "pm", id: "factory" });
+    expect(
+      Session.safeParse({
+        ...sampleSession,
+        forkedFrom: { sessionId: "s0", checkpoint: 1, startedBy: { kind: "factory" } },
+      }).success,
+    ).toBe(false);
+    expect(
+      Session.safeParse({
+        ...sampleSession,
+        forkedFrom: { sessionId: "s0", checkpoint: 1, kind: "copy" },
+      }).success,
+    ).toBe(false);
+    expect(
+      Session.safeParse({
+        ...sampleSession,
+        forkedFrom: { sessionId: "s0", checkpoint: 1, turnId: "t", turnNumber: 0 },
+      }).success,
+    ).toBe(false);
+    expect(
+      Session.safeParse({ ...sampleSession, forkedFrom: { sessionId: "s0", checkpoint: -1 } })
+        .success,
+    ).toBe(false);
+    const turn = {
+      id: "u1",
+      threadId: "t1",
+      sessionId: "s1",
+      status: "completed",
+      startedAt: ts,
+      completedAt: ts,
+      error: null,
+    };
+    roundTrip(Turn, turn);
+    roundTrip(Turn, { ...turn, forkPoint: "msg-uuid-1" });
+    roundTrip(Turn, { ...turn, forkPoint: null });
     roundTrip(InboxItem, sampleInboxItem);
     roundTrip(InboxItem, {
       ...sampleInboxItem,
@@ -223,7 +333,14 @@ describe("entities", () => {
       itemId: null,
       requestId: null,
     });
+    roundTrip(InboxItem, { ...sampleInboxItem, kind: "message", notify: "factory" });
     roundTrip(Automation, sampleAutomation);
+  });
+
+  it("reads inbox items stored without a notify category as needs_you", () => {
+    const { notify: _, ...stored } = sampleInboxItem;
+    expect(InboxItem.parse(stored).notify).toBe("needs_you");
+    expect(InboxItem.safeParse({ ...sampleInboxItem, notify: "noise" }).success).toBe(false);
   });
 
   it("orders projects pinned first, then by sortOrder, then by name", () => {
@@ -303,6 +420,10 @@ describe("provider contracts", () => {
       mcpServers: [{ transport: "http", name: "codeden", url: "http://127.0.0.1:1234/mcp" }],
     });
     expect(opts.planMode).toBe(false);
+    expect(opts.forkFrom).toBeUndefined();
+    const fork = roundTrip(SessionOptions, { ...opts, forkFrom: "claude-session-1" });
+    expect(fork.forkFrom).toBe("claude-session-1");
+    expect(SessionOptions.safeParse({ ...opts, forkFrom: "" }).success).toBe(false);
     roundTrip(ProviderStatus, {
       providerId: "claude",
       installed: true,

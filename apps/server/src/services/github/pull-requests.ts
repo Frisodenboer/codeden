@@ -1,7 +1,7 @@
 import { type GitHubRepo, GithubPr, githubPrId, type Session } from "@codeden/contracts";
 import type { EventStore } from "../../events/store";
 import { badRequest, conflict, notFound } from "../errors";
-import { type RunnerPort, toServiceError } from "../runner-port";
+import { type RunnerDeps, type RunnerPort, runnerForSession, toServiceError } from "../runner-port";
 import { ownBranch } from "../sessions/own-branch";
 import type { SessionRepo } from "../sessions/repo";
 import { sessionWorkdir } from "../sessions/workdir";
@@ -35,11 +35,10 @@ export interface CreatePullRequestResult {
   commit: string | null;
 }
 
-export interface PullRequestDeps {
+export interface PullRequestDeps extends RunnerDeps {
   client: GithubClient;
   store: GithubStore;
   events: EventStore;
-  runner: RunnerPort;
   repo: SessionRepo;
 }
 
@@ -70,23 +69,23 @@ const NOT_FAST_FORWARD = /\((non-fast-forward|fetch first)\)|updates were reject
  * only the session's own work, and refuses if someone else pushed there since.
  */
 async function pushBranch(
-  deps: PullRequestDeps,
+  runner: RunnerPort,
   session: Session,
   cwd: string,
   branch: string,
 ): Promise<void> {
   const push = { name: "git.push", cwd, branch, setUpstream: true } as const;
   try {
-    await deps.runner.request(push, 5 * 60_000);
+    await runner.request(push, 5 * 60_000);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (ownBranch(session) !== branch || !NOT_FAST_FORWARD.test(message)) throw error;
-    await deps.runner.request({ ...push, forceWithLease: true }, 5 * 60_000);
+    await runner.request({ ...push, forceWithLease: true }, 5 * 60_000);
   }
 }
 
 /**
- * Push the session's branch through the runner and open (or update) its pull request (§8.2,
+ * Push the session's branch through its runner and open (or update) its pull request (§8.2,
  * §9). The PR is projected right away (`pr.opened` / `pr.updated`) and linked to the session.
  */
 export async function createPullRequest(
@@ -108,8 +107,9 @@ export async function createPullRequest(
   }
 
   let commit: string | null = null;
+  const runner = runnerForSession(deps, session.id);
   try {
-    const status = await deps.runner.request({ name: "git.status", cwd }, 30_000);
+    const status = await runner.request({ name: "git.status", cwd }, 30_000);
     if (status.files.length > 0) {
       if (!input.commitMessage) {
         throw badRequest(
@@ -118,13 +118,10 @@ export async function createPullRequest(
         );
       }
       commit = (
-        await deps.runner.request(
-          { name: "git.commit", cwd, message: input.commitMessage },
-          5 * 60_000,
-        )
+        await runner.request({ name: "git.commit", cwd, message: input.commitMessage }, 5 * 60_000)
       ).commit;
     }
-    await pushBranch(deps, session, cwd, branch);
+    await pushBranch(runner, session, cwd, branch);
   } catch (error) {
     throw toServiceError(error);
   }
@@ -188,12 +185,14 @@ export async function refreshPr(
   number: number,
   sessionId?: string | null,
 ): Promise<GithubPr> {
-  const [node] = await fetchPullRequests(deps.client, repo.owner, repo.repo, [number]);
-  if (!node)
+  const [fetched] = await fetchPullRequests(deps.client, repo.owner, repo.repo, [number]);
+  if (!fetched)
     throw notFound(`No pull request #${number} in ${repo.owner}/${repo.repo}`, "pr_not_found");
   const prev = deps.store.pr(projectId, number);
-  const next = GithubPr.parse(toGithubPr(projectId, node, sessionId ?? prev?.sessionId ?? null));
-  const events = diffPr(prev, next);
+  const next = GithubPr.parse(
+    toGithubPr(projectId, fetched.node, sessionId ?? prev?.sessionId ?? null),
+  );
+  const events = diffPr(prev, next, { viewer: fetched.viewer });
   if (events.length > 0) deps.events.append(events);
   return deps.store.pr(projectId, number) ?? { ...next, id: githubPrId(projectId, number) };
 }
