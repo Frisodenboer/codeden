@@ -4,6 +4,14 @@ All notable changes to CodeDen are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Security
+
+- Updated the HTTP and WebSocket dependencies to fix request validation and memory exhaustion issues, and updated the desktop runtime and updater with upstream security fixes and safer download redirects.
+
+### Fixed
+
+- Updated desktop packaging, the web build tool and the formatter to their latest compatible patch releases.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added
