@@ -180,8 +180,6 @@ export class ClaudeEventMapper {
     const ctx = this.ctxFor(msg.parent_tool_use_id);
     const isRoot = !msg.parent_tool_use_id;
     const messageId = str(message, "id") ?? this.newId();
-    if (isRoot)
-      this.contextTokens = contextTokensFromMessageUsage(message.usage) ?? this.contextTokens;
     const content = Array.isArray(message.content) ? (message.content as Block[]) : [];
     for (const block of content) {
       if (
@@ -249,6 +247,7 @@ export class ClaudeEventMapper {
         },
       });
     }
+    if (isRoot) this.reportContext(contextTokensFromMessageUsage(message.usage));
   }
 
   private onUser(msg: Raw): void {
@@ -317,6 +316,22 @@ export class ClaudeEventMapper {
     const id = this.compactNoticeId ?? this.newId();
     this.compactNoticeId = undefined;
     return id;
+  }
+
+  /**
+   * Context size after each top-level assistant message, so the composer's context meter shows
+   * during a long turn (and the first one) instead of only after `result`. A report without
+   * token counts only sets the latest context figures; it never touches a turn's usage.
+   */
+  private reportContext(tokens: number | undefined): void {
+    if (tokens === undefined || tokens === this.contextTokens) return;
+    this.contextTokens = tokens;
+    const contextWindow = this.queryTotal?.contextWindow;
+    this.emit({
+      type: "usage.updated",
+      threadId: this.rootThreadId,
+      usage: contextWindow ? { contextTokens: tokens, contextWindow } : { contextTokens: tokens },
+    });
   }
 
   /** The user pressed stop: the next `result` ends the turn as interrupted. */

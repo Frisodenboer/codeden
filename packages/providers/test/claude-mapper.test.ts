@@ -85,16 +85,19 @@ describe("ClaudeEventMapper", () => {
       "item.delta",
       "item.delta",
       "item.completed",
+      // The context size right after the message, then the turn's usage from `result`.
+      "usage.updated",
       "usage.updated",
       "turn.completed",
     ]);
+    expect(events[7]).toMatchObject({ type: "usage.updated", usage: { contextTokens: 100 } });
     const done = events[6];
     expect(done?.type === "item.completed" && done.item).toMatchObject({
       id: "m1:0",
       kind: "assistant_message",
       text: "Hello",
     });
-    const usage = events[7];
+    const usage = events[8];
     expect(usage?.type === "usage.updated" && usage.usage).toMatchObject({
       inputTokens: 5,
       outputTokens: 7,
@@ -325,6 +328,37 @@ describe("ClaudeEventMapper", () => {
       type: "turn.failed",
       error: { code: "error_max_turns", message: "Reached max turns" },
     });
+  });
+
+  it("reports the context size during a turn, with the window once a result gave it", () => {
+    const { mapper, events } = setup();
+    mapper.beginTurn();
+    mapper.handle(assistant("m1", [{ type: "text", text: "a" }]));
+    mapper.handle(result());
+    mapper.beginTurn();
+    mapper.handle({
+      type: "assistant",
+      message: {
+        id: "m2",
+        content: [{ type: "text", text: "b" }],
+        usage: { input_tokens: 20, cache_read_input_tokens: 500 },
+      },
+      parent_tool_use_id: null,
+    });
+    // Subagent messages don't change the root context.
+    mapper.handle({
+      type: "assistant",
+      message: { id: "m3", content: [], usage: { input_tokens: 9999 } },
+      parent_tool_use_id: "tool-x",
+    });
+    const mid = events.filter(
+      (e) => e.type === "usage.updated" && e.usage.inputTokens === undefined,
+    );
+    expect(mid.map((e) => e.type === "usage.updated" && e.usage)).toEqual([
+      { contextTokens: 100 },
+      { contextTokens: 520, contextWindow: 200000 },
+    ]);
+    expect(mid.every((e) => e.type === "usage.updated" && e.turnId === undefined)).toBe(true);
   });
 
   it("reports each turn's own usage from the query's running totals", () => {
