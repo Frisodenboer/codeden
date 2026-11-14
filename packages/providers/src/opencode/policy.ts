@@ -1,4 +1,6 @@
-import type { AutonomyLevel, McpServerConfig } from "@codeden/contracts";
+import type { ApprovalAction, AutonomyLevel } from "@codeden/contracts";
+import { asksAtEveryLevel, mostSevere, touchesCodeden } from "../policy/assessment";
+import { resolveAgainst } from "../policy/paths";
 import { readOnlyCommandDenial } from "../policy/read-only";
 import {
   classifyCommand,
@@ -8,186 +10,190 @@ import {
   type RiskAssessment,
   type RiskContext,
 } from "../policy/risk";
-import type { OcPermissionRequest, OcPermissionRule } from "./types";
+import { str } from "../util/text";
+import type { OcPermissionRequest } from "./protocol";
+
+/** What CodeDen does with one OpenCode permission request. */
+export type PolicyDecision =
+  | { kind: "allow" }
+  | { kind: "deny"; message: string }
+  | { kind: "ask"; action: ApprovalAction; reason: string };
+
+/** A permission request plus the tool call it gates, when known. */
+export interface PermissionCall {
+  request: OcPermissionRequest;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+}
+
+/** OpenCode's tools that write files (their permission action is `edit`). */
+export const EDIT_TOOLS = new Set(["edit", "write", "patch"]);
+
+const ALLOW: PolicyDecision = { kind: "allow" };
 
 /**
- * CodeBench's permission levels on opencode (§11.2, docs/plans/opencode-provider.md step 5).
- *
- * opencode is told to *ask* for every edit, command, fetch and access outside the project, and
- * CodeBench answers each request itself, so the level applies from the next tool call (live):
- * - **read_only** (and the read-only roles): edits are refused; commands run only when the
- *   read-only allowlist accepts them (agents may also run checks); reads and fetches are fine.
- * - **supervised**: every request reaches the user.
- * - **auto**: the risk classifier decides; only risky requests reach the user.
- * - **full**: everything runs, except writes outside the worktree.
- * Read-only *roles* (orchestrator, PMs) also get a native `edit: deny`, as a second wall.
+ * CodeDen's approval policy for OpenCode (§11.2). The session's rules make every edit, shell
+ * command, path outside the worktree and web fetch ask (`SESSION_PERMISSIONS`); this decides
+ * each ask with the same classifier and levels as the other providers:
+ * - read_only (or a read-only role) -> edits refused, commands only when read-only
+ * - supervised -> every edit and command goes to the user, plus anything risky
+ * - auto       -> only risky calls go to the user
+ * - full       -> only writes outside the worktree go to the user
+ * Asks that come from the user's own OpenCode rules (subagents, skills, MCP tools, `.env`
+ * reads) go to the user unless the classifier clears them.
  */
+export class OpenCodePolicy {
+  private readonly sessionAllow = new Set<string>();
 
-/** What CodeBench does with one opencode permission request. */
-export type PermissionDecision =
-  | { kind: "allow"; reason: string }
-  | { kind: "deny"; reason: string }
-  | { kind: "ask"; risk: RiskAssessment };
+  constructor(
+    private autonomy: AutonomyLevel,
+    private readonly ctx: RiskContext,
+    /** Read-only sessions (orchestrator, PMs). */
+    private readonly readOnly = false,
+  ) {}
 
-const EDITS = new Set(["edit", "write", "multiedit", "patch", "apply_patch"]);
-const READS = new Set(["read", "glob", "grep", "list", "codesearch", "lsp"]);
-const FETCHES = new Set(["webfetch", "websearch"]);
-
-/** The name an MCP server is registered under in opencode for one CodeBench session. */
-export function opencodeMcpName(server: string, sessionId: string): string {
-  const id = sessionId.replace(/[^a-zA-Z0-9]/g, "").slice(-8) || "session";
-  return `${server.replace(/[^a-zA-Z0-9_-]/g, "_")}-${id}`;
-}
-
-/** The rule set an opencode session starts with (and gets again on resume). */
-export function opencodePermissions(
-  opts: { readOnly?: boolean | undefined },
-  mcp: readonly { name: string; trusted: boolean }[] = [],
-): OcPermissionRule[] {
-  const rule = (permission: string, action: OcPermissionRule["action"]): OcPermissionRule => ({
-    permission,
-    pattern: "*",
-    action,
-  });
-  return [
-    rule("edit", opts.readOnly ? "deny" : "ask"),
-    rule("bash", "ask"),
-    rule("webfetch", "ask"),
-    rule("websearch", "ask"),
-    rule("external_directory", "ask"),
-    // CodeBench's own tools run without prompts; other MCP servers ask like any tool.
-    ...mcp.map((s) => rule(`${s.name}_*`, s.trusted ? "allow" : "ask")),
-  ];
-}
-
-/** The paths a request is about: opencode's `metadata.filepath`, else its patterns. */
-function paths(req: OcPermissionRequest): string[] {
-  const meta = req.metadata ?? {};
-  if (typeof meta.filepath === "string") return [meta.filepath];
-  if (Array.isArray(meta.files)) {
-    const files = meta.files.flatMap((f) =>
-      typeof f === "string"
-        ? [f]
-        : f && typeof f === "object" && typeof (f as { filePath?: unknown }).filePath === "string"
-          ? [(f as { filePath: string }).filePath]
-          : [],
-    );
-    if (files.length) return files;
+  get level(): AutonomyLevel {
+    return this.autonomy;
   }
-  // `external_directory` patterns are folders with a trailing `/*` or `\*`.
-  return req.patterns.map((p) => p.replace(/[\\/]\*+$/, "")).filter(Boolean);
-}
 
-function first(items: RiskAssessment[]): RiskAssessment {
-  return items.find((r) => r.risky) ?? { risky: false };
-}
-
-/** The classifier's view of a request, independent of the level. */
-export function permissionRisk(req: OcPermissionRequest, ctx: RiskContext): RiskAssessment {
-  const p = req.permission;
-  if (p === "bash") {
-    const command = commandOf(req);
-    return command
-      ? classifyCommand(command, ctx)
-      : { risky: true, action: "command", reason: "Runs a command opencode did not name" };
+  get isReadOnly(): boolean {
+    return this.readOnly || this.autonomy === "read_only";
   }
-  if (EDITS.has(p)) {
-    const targets = paths(req);
-    return targets.length
-      ? first(targets.map((t) => classifyWrite(t, ctx)))
-      : { risky: true, action: "outside_worktree", reason: "Changes files opencode did not name" };
-  }
-  if (READS.has(p)) return first(paths(req).map((t) => classifyRead(t, ctx)));
-  if (p === "external_directory") {
-    const targets = paths(req);
-    return targets.length
-      ? first(targets.map((t) => classifyWrite(t, ctx)))
-      : { risky: true, action: "outside_worktree", reason: "Works outside the worktree" };
-  }
-  if (FETCHES.has(p)) {
-    const url = typeof req.metadata?.url === "string" ? req.metadata.url : req.patterns[0];
-    return url && p === "webfetch" ? classifyFetch(url, ctx) : { risky: false };
-  }
-  if (p === "doom_loop") {
-    return { risky: true, action: "tool", reason: "opencode saw the same tool call repeat" };
-  }
-  return { risky: true, action: "tool", reason: `Uses ${p}` };
-}
 
-/** The command line of a `bash` request. */
-export function commandOf(req: OcPermissionRequest): string {
-  const meta = req.metadata ?? {};
-  if (typeof meta.command === "string") return meta.command;
-  return req.patterns.join(" && ");
-}
+  /**
+   * Switch the level; it applies from the next permission request. Read-only forgets the
+   * session's remembered approvals, so switching back later asks again.
+   */
+  setAutonomy(level: AutonomyLevel): void {
+    this.autonomy = level;
+    if (level === "read_only") this.sessionAllow.clear();
+  }
 
-/** True when the permission level allows an action the classifier assessed as `risk`. */
-function levelAllows(autonomy: AutonomyLevel, risk: RiskAssessment): boolean {
-  if (autonomy === "auto") return !risk.risky;
-  if (autonomy === "full") return !risk.risky || risk.action !== "outside_worktree";
-  return false;
-}
-
-export interface DecideOptions {
-  autonomy: AutonomyLevel;
-  /** Read-only role (orchestrator, PM): no checks either. */
-  readOnly?: boolean | undefined;
-  risk: RiskContext;
-}
-
-/** Decide one opencode permission request for the session's current level. */
-export function decidePermission(
-  req: OcPermissionRequest,
-  opts: DecideOptions,
-): PermissionDecision {
-  const readOnly = opts.readOnly || opts.autonomy === "read_only";
-  const risk = permissionRisk(req, opts.risk);
-  if (readOnly) {
-    if (EDITS.has(req.permission)) {
-      return { kind: "deny", reason: "File edits are not allowed in a read-only session" };
+  decide(call: PermissionCall): PolicyDecision {
+    const { request } = call;
+    // A remembered approval never overrides read-only.
+    if (!this.isReadOnly && this.sessionAllow.has(this.key(call))) return ALLOW;
+    switch (request.action) {
+      case "shell":
+        return this.shell(call);
+      case "edit":
+        return this.edit(request.resources);
+      case "external_directory":
+        // Writes there are decided by the `edit` ask that follows, which carries the diff.
+        return this.gate(this.firstRisk(request.resources.map(dirOf), classifyRead));
+      case "webfetch":
+        return this.gate(this.firstRisk(request.resources, classifyFetch));
+      case "read":
+        return this.gate(this.firstRisk(request.resources, classifyRead), undefined, true);
+      default:
+        return {
+          kind: "ask",
+          action: "tool",
+          reason: `OpenCode asks before ${request.action}`,
+        };
     }
-    if (req.permission === "bash") {
-      const denial = readOnlyCommandDenial(commandOf(req), { allowChecks: !opts.readOnly });
-      return denial
-        ? { kind: "deny", reason: denial }
-        : { kind: "allow", reason: "Read-only command" };
-    }
-    if (req.permission === "external_directory") {
-      // Reading elsewhere is fine; anything opencode would write there was refused above.
-      const reads = first(paths(req).map((t) => classifyRead(t, opts.risk)));
-      return reads.risky
-        ? { kind: "ask", risk: reads }
-        : { kind: "allow", reason: "Read-only access" };
-    }
-    if (READS.has(req.permission) || FETCHES.has(req.permission)) {
-      return risk.risky ? { kind: "ask", risk } : { kind: "allow", reason: "Read-only access" };
-    }
-    return { kind: "ask", risk };
   }
-  if (levelAllows(opts.autonomy, risk)) {
+
+  /** Remember an `allow_session` decision: commands (in their directory) and paths match exactly. */
+  allowForSession(call: PermissionCall): void {
+    this.sessionAllow.add(this.key(call));
+  }
+
+  private shell(call: PermissionCall): PolicyDecision {
+    const command = commandOf(call);
+    const risk = classifyCommand(command, { ...this.ctx, dir: this.workdir(call) });
+    if (this.isReadOnly) {
+      if (touchesCodeden(risk)) return this.credentialsDenial();
+      // Agent sessions at `read_only` may run the project's checks; read-only roles may not.
+      const reason = readOnlyCommandDenial(command, { allowChecks: !this.readOnly });
+      return reason ? { kind: "deny", message: `This session is read-only: ${reason}.` } : ALLOW;
+    }
+    return this.gate(risk, "command");
+  }
+
+  /** Read-only sessions never touch CodeDen's own credential files. */
+  private credentialsDenial(): PolicyDecision {
     return {
-      kind: "allow",
-      reason: `Allowed by the ${opts.autonomy === "full" ? "Full" : "Auto"} permission level`,
+      kind: "deny",
+      message: this.readOnly
+        ? "This session is read-only: CodeDen's own credential files are off limits. Act through CodeDen tools instead."
+        : "This session has read-only permissions: CodeDen's own credential files are off limits. Report what you found instead.",
     };
   }
-  return { kind: "ask", risk };
+
+  private edit(paths: readonly string[]): PolicyDecision {
+    if (this.isReadOnly) {
+      return {
+        kind: "deny",
+        message: this.readOnly
+          ? "This session is read-only: it cannot edit files. Act through CodeDen tools instead."
+          : "This session has read-only permissions: it cannot edit files, commit or push. Report what you found instead.",
+      };
+    }
+    return this.gate(this.firstRisk(paths, classifyWrite), "file_change");
+  }
+
+  /** The verdict for every target: CodeDen's own credentials first, then the first risky one. */
+  private firstRisk(
+    targets: readonly string[],
+    classify: (target: string, ctx: RiskContext) => RiskAssessment,
+  ): RiskAssessment {
+    return mostSevere(targets.map((target) => classify(target, this.ctx)));
+  }
+
+  /**
+   * The level's gate (the same as Claude's): edits and commands (`supervisedAction`) always
+   * ask in supervised mode; `alwaysRisky` asks for flagged calls even at full autonomy
+   * (secrets reads). CodeDen's own credential files ask at every level and are refused for
+   * read-only sessions.
+   */
+  private gate(
+    risk: RiskAssessment,
+    supervisedAction?: ApprovalAction,
+    alwaysRisky = false,
+  ): PolicyDecision {
+    const codeden = touchesCodeden(risk);
+    if (codeden && this.isReadOnly) return this.credentialsDenial();
+    if (this.autonomy === "supervised") {
+      if (risk.risky) return { kind: "ask", action: risk.action, reason: risk.reason };
+      if (supervisedAction) {
+        return {
+          kind: "ask",
+          action: supervisedAction,
+          reason: "Supervised mode: every edit and command needs approval",
+        };
+      }
+      return ALLOW;
+    }
+    if (!risk.risky) return ALLOW;
+    const always = alwaysRisky || asksAtEveryLevel(risk);
+    if (this.autonomy === "full" && risk.action !== "outside_worktree" && !always) return ALLOW;
+    return { kind: "ask", action: risk.action, reason: risk.reason };
+  }
+
+  /**
+   * What an approval for the session covers: a command in its working directory (the same
+   * relative path elsewhere is another file), or the exact paths.
+   */
+  private key(call: PermissionCall): string {
+    const { action, resources } = call.request;
+    if (action === "shell") return `shell:${this.workdir(call)}\n${commandOf(call)}`;
+    return `${action}:${[...resources].sort().join("\n")}`;
+  }
+
+  /** Where a shell call runs: its `workdir`, else the worktree. */
+  private workdir(call: PermissionCall): string {
+    const workdir = str(call.toolInput, "workdir");
+    return workdir ? resolveAgainst(workdir, this.ctx) : this.ctx.cwd;
+  }
 }
 
-/** One CodeBench MCP server as opencode's MCP config (`POST /mcp`). */
-export function opencodeMcpConfig(server: McpServerConfig): Record<string, unknown> {
-  if (server.transport === "http") {
-    return {
-      type: "remote",
-      url: server.url,
-      ...(server.headers ? { headers: server.headers } : {}),
-      // CodeBench's proxy authenticates with the session's bearer token, never OAuth.
-      oauth: false,
-      ...(server.toolTimeoutSec ? { timeout: server.toolTimeoutSec * 1000 } : {}),
-    };
-  }
-  return {
-    type: "local",
-    command: [server.command, ...server.args],
-    ...(server.env ? { environment: server.env } : {}),
-  };
+/** The command an OpenCode `shell` ask is about: the tool input, else its parsed parts. */
+export function commandOf(call: PermissionCall): string {
+  return str(call.toolInput, "command") ?? call.request.resources.join(" && ");
+}
+
+/** `C:/work/other/*` -> `C:/work/other`. */
+function dirOf(resource: string): string {
+  return resource.replace(/[\\/]\*$/, "");
 }

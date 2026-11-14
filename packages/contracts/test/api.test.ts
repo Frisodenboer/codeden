@@ -2,10 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   CreateProjectRequest,
   defaultSettings,
+  ForkSessionRequest,
+  ForkSessionResponse,
+  HANDOFF_NOTE_MAX,
+  HandoffSessionRequest,
+  HandoffSessionResponse,
   ListSessionsQuery,
+  LoginCommandResponse,
+  LoginToolId,
   RefreshModelsResponse,
   ReorderProjectsRequest,
   SendMessageRequest,
+  SetupCheck,
+  SetupToolId,
   StartSessionRequest,
   StartSessionResponse,
   ThreadItemsQuery,
@@ -28,6 +37,19 @@ describe("api schemas", () => {
     expect(req.workspace.mode).toBe("worktree");
     expect(req.startedBy).toEqual({ kind: "user" });
     expect(req.input?.attachments).toEqual([]);
+    expect(req.replacesConflict).toBeUndefined();
+  });
+
+  it("names the open conflict a start replaces", () => {
+    const req = roundTrip(StartSessionRequest, {
+      projectId: "p1",
+      input: { text: "Second wording" },
+      replacesConflict: "conflict:1",
+    });
+    expect(req.replacesConflict).toBe("conflict:1");
+    expect(StartSessionRequest.safeParse({ projectId: "p1", replacesConflict: "" }).success).toBe(
+      false,
+    );
   });
 
   it("round-trips a model refresh response", () => {
@@ -59,6 +81,119 @@ describe("api schemas", () => {
     expect(RefreshModelsResponse.safeParse({}).success).toBe(false);
   });
 
+  it("round-trips Cursor's setup check and sign-in command", () => {
+    expect(SetupToolId.options).toContain("cursor");
+    const check = roundTrip(SetupCheck, {
+      id: "cursor",
+      label: "Cursor",
+      state: "missing",
+      installed: true,
+      version: "2026.10.22-abc1234",
+      executablePath: "/home/me/.local/bin/agent",
+      loggedIn: false,
+      authMethod: null,
+      account: null,
+      loginExpiresAt: null,
+      message: "Not signed in to Cursor",
+      fix: { kind: "login", command: "'/home/me/.local/bin/agent' login" },
+      durationMs: 400,
+    });
+    expect(check.fix?.kind).toBe("login");
+    expect(
+      roundTrip(LoginCommandResponse, { tool: "cursor", command: "agent", args: ["login"] }).tool,
+    ).toBe("cursor");
+  });
+
+  it("round-trips Gemini CLI's setup check and sign-in command", () => {
+    expect(SetupToolId.options).toContain("gemini");
+    const check = roundTrip(SetupCheck, {
+      id: "gemini",
+      label: "Gemini CLI",
+      state: "ok",
+      installed: true,
+      version: "0.68.0",
+      executablePath: "/usr/local/bin/gemini",
+      loggedIn: true,
+      authMethod: "oauth-personal",
+      account: "dev@example.com",
+      loginExpiresAt: null,
+      message: "Signed in",
+      fix: null,
+      durationMs: 120,
+    });
+    expect(check.authMethod).toBe("oauth-personal");
+    // Gemini CLI has no login command: run on its own, it asks how to sign in.
+    expect(
+      roundTrip(LoginCommandResponse, { tool: "gemini", command: "gemini", args: [] }),
+    ).toEqual({ tool: "gemini", command: "gemini", args: [] });
+  });
+
+  it("round-trips OpenCode's setup check, sign-in command and provider info", () => {
+    expect(SetupToolId.options).toContain("opencode");
+    expect(LoginToolId.options).toEqual(["claude", "codex", "opencode", "cursor", "gemini", "gh"]);
+    const check = roundTrip(SetupCheck, {
+      id: "opencode",
+      label: "OpenCode",
+      state: "ok",
+      installed: true,
+      version: "2.2.7",
+      executablePath: "C:UsersmeAppDataRoaming\npm\node_modules@opencodecli\binopencode.exe",
+      loggedIn: true,
+      authMethod: "credentials",
+      account: "anthropic, openai",
+      loginExpiresAt: null,
+      message: "OpenCode 2.2.7, connected to anthropic, openai",
+      fix: null,
+      durationMs: 900,
+    });
+    expect(check.id).toBe("opencode");
+    expect(
+      roundTrip(LoginCommandResponse, {
+        tool: "opencode",
+        command: "opencode",
+        args: ["auth", "login"],
+      }).tool,
+    ).toBe("opencode");
+    expect(LoginCommandResponse.safeParse({ tool: "rm", command: "rm", args: [] }).success).toBe(
+      false,
+    );
+    const info = roundTrip(RefreshModelsResponse, {
+      providers: [
+        {
+          id: "opencode",
+          displayName: "OpenCode",
+          capabilities: {
+            resume: true,
+            steer: true,
+            interrupt: true,
+            approvals: true,
+            userQuestions: true,
+            subagents: true,
+            rollback: false,
+            fork: false,
+            images: true,
+            planMode: false,
+            reasoningEffort: true,
+            mcp: true,
+            skills: false,
+            liveAutonomy: true,
+            readOnly: true,
+          },
+          models: [
+            {
+              id: "lmstudio/openai/gpt-oss-20b",
+              label: "GPT OSS 20B",
+              description: "LM Studio",
+              efforts: ["low", "medium", "high"],
+              contextWindow: 131072,
+            },
+          ],
+        },
+      ],
+    });
+    expect(info.providers[0]?.models[0]?.id).toBe("lmstudio/openai/gpt-oss-20b");
+  });
+
   it("accepts every start outcome", () => {
     for (const value of [
       { status: "started", sessionId: "s1" },
@@ -69,6 +204,56 @@ describe("api schemas", () => {
       roundTrip(StartSessionResponse, value);
     }
     expect(() => StartSessionResponse.parse({ status: "conflict", existing: [] })).toThrow();
+  });
+
+  it("round-trips fork requests and responses", () => {
+    expect(roundTrip(ForkSessionRequest, {})).toEqual({});
+    expect(roundTrip(ForkSessionRequest, { title: "  Try OAuth instead " }).title).toBe(
+      "Try OAuth instead",
+    );
+    expect(ForkSessionRequest.safeParse({ title: "" }).success).toBe(false);
+    expect(ForkSessionRequest.safeParse({ title: "x".repeat(201) }).success).toBe(false);
+    expect(roundTrip(ForkSessionRequest, { turnId: "turn-2" }).turnId).toBe("turn-2");
+    expect(ForkSessionRequest.safeParse({ turnId: "" }).success).toBe(false);
+    roundTrip(ForkSessionResponse, { sessionId: "s2" });
+    expect(ForkSessionResponse.safeParse({}).success).toBe(false);
+  });
+
+  it("round-trips handoff requests and responses", () => {
+    expect(roundTrip(HandoffSessionRequest, { provider: "codex" })).toEqual({ provider: "codex" });
+    const full = roundTrip(HandoffSessionRequest, {
+      provider: "claude",
+      model: " opus ",
+      effort: "high",
+      title: " Second opinion ",
+      note: "  Review the approach before changing anything. ",
+    });
+    expect(full).toEqual({
+      provider: "claude",
+      model: "opus",
+      effort: "high",
+      title: "Second opinion",
+      note: "Review the approach before changing anything.",
+    });
+    expect(
+      roundTrip(HandoffSessionRequest, { provider: "codex", model: null, effort: null }),
+    ).toEqual({ provider: "codex", model: null, effort: null });
+    expect(HandoffSessionRequest.safeParse({}).success).toBe(false);
+    expect(HandoffSessionRequest.safeParse({ provider: "" }).success).toBe(false);
+    expect(HandoffSessionRequest.safeParse({ provider: "codex", note: " " }).success).toBe(false);
+    expect(
+      HandoffSessionRequest.safeParse({ provider: "codex", note: "x".repeat(HANDOFF_NOTE_MAX + 1) })
+        .success,
+    ).toBe(false);
+    expect(HandoffSessionRequest.safeParse({ provider: "codex", effort: "huge" }).success).toBe(
+      false,
+    );
+    roundTrip(HandoffSessionResponse, { sessionId: "s3" });
+    expect(HandoffSessionResponse.safeParse({}).success).toBe(false);
+  });
+
+  it("defaults the handoff summary job on", () => {
+    expect(defaultSettings().utilityModel.jobs.handoffSummaries).toBe(true);
   });
 
   it("parses project sources", () => {

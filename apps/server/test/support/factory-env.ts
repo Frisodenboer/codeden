@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,7 @@ import {
   type Notice,
   type Project,
   type ProviderInfo,
+  type ProviderStatus,
   type Session,
   type StartSessionRequest,
   type StartSessionResponse,
@@ -14,6 +15,7 @@ import {
 import { type Database, openDatabase } from "../../src/db/client";
 import { EventStore } from "../../src/events/store";
 import type { Exec, ExecResult } from "../../src/services/exec";
+import type { RateLimitReading } from "../../src/services/factory/availability";
 import { FactoryService } from "../../src/services/factory/factory-service";
 import { VISION_TEMPLATE } from "../../src/services/factory/vision";
 import { InboxService } from "../../src/services/inbox-service";
@@ -45,12 +47,29 @@ export interface FactoryEnv {
   starts: StartSessionRequest[];
   /** Messages sent to sessions. */
   messages: Array<{ sessionId: string; text: string }>;
+  /**
+   * The scripted session service the factory uses: every message is sent at once and marks the
+   * session running. A test can replace a method (e.g. `send` with a real `SessionService`'s).
+   */
+  sessions: SessionService;
   stopped: string[];
+  /** Sessions the factory archived (through `archiveSession`), in order. */
+  archived: string[];
+  /** Commands the factory ran (the audit), with their working directory. */
+  execs: Array<{ command: string; args: string[]; cwd: string | undefined }>;
   notices: NoticeDraft[];
   spend: { usd: number; tokens: number };
   /** Session filters the budget asked spend for (null: the whole project). */
   spendFilters: Array<string[] | null>;
   providers: string[];
+  /** What detection reports per provider, over "installed and signed in". */
+  detected: Record<string, Partial<ProviderStatus>>;
+  /** How many times the factory asked the runner to detect providers. */
+  detections: number;
+  /** Rate-limit windows the usage service reports. */
+  rateLimits: RateLimitReading[];
+  /** The utility model's answer to the "Identify type" call (null: no model). */
+  model: (system: string, prompt: string) => Promise<string | null>;
   /** Shift of the factory clock against real time (day rollover, CI grace). */
   clock: { offsetMs: number };
   now: () => Date;
@@ -71,14 +90,13 @@ export function createFactoryEnv(
   const repo = new SessionRepo(db.db, store);
   const inbox = new InboxService(db.db, store, () => async () => {});
   const settings = new SettingsStore(join(dir, "settings.json"));
-  const exec: Exec = async (): Promise<ExecResult> => ({
-    code: 0,
-    stdout: "",
-    stderr: "",
-    notFound: false,
-    timedOut: false,
-    path: null,
-  });
+  const execs: FactoryEnv["execs"] = [];
+  const exec: Exec = async (command, args, opts): Promise<ExecResult> => {
+    execs.push({ command, args, cwd: opts?.cwd });
+    // Like spawning a real process: a working directory that doesn't exist can't start.
+    if (opts?.cwd && !existsSync(opts.cwd)) throw new Error(`spawn ${command} ENOENT`);
+    return { code: 0, stdout: "", stderr: "", notFound: false, timedOut: false, path: null };
+  };
   const projects = new ProjectService({ db: db.db, store, exec, projectsDir: dir });
   const gh = new FakeFactoryGithub();
   const repoDir = join(dir, "repo");
@@ -124,10 +142,16 @@ export function createFactoryEnv(
     starts: [],
     messages: [],
     stopped: [],
+    archived: [],
+    execs,
     notices: [],
     spend: { usd: 0, tokens: 0 },
     spendFilters: [],
     providers: opts.providers ?? ["claude", "codex"],
+    detected: {},
+    detections: 0,
+    rateLimits: [],
+    model: async () => null,
     clock: { offsetMs: 0 },
   } as unknown as FactoryEnv;
 
@@ -136,6 +160,10 @@ export function createFactoryEnv(
       env.starts.push(req);
       const provider =
         req.provider && req.provider !== "auto" ? req.provider : (env.providers[0] ?? "fake");
+      // A reviewer works in the builder's worktree (`existing`): its cwd, not a worktree of its own.
+      const existing = req.workspace?.mode === "existing" ? req.workspace.path : undefined;
+      const worktreePath = existing ? null : join(dir, "wt", randomUUID().slice(0, 6));
+      if (worktreePath) mkdirSync(worktreePath, { recursive: true });
       const session: Session = {
         ...sampleSession,
         id: randomUUID(),
@@ -148,7 +176,8 @@ export function createFactoryEnv(
         provider,
         status: "running",
         issue: req.issue ?? null,
-        worktreePath: join(dir, "wt", randomUUID().slice(0, 6)),
+        cwd: existing ?? worktreePath ?? dir,
+        worktreePath,
         branch: "codeden/x",
         pr: null,
         createdAt: new Date().toISOString(),
@@ -164,7 +193,15 @@ export function createFactoryEnv(
     },
     send: async (sessionId: string, req: { input: { text: string } }) => {
       env.messages.push({ sessionId, text: req.input.text });
-      repo.update(sessionId, (s) => ({ ...s, status: "running" }));
+      // Messaging an archived session brings it back, recreating a removed worktree.
+      const s = repo.get(sessionId);
+      if (s.worktreePath && s.worktreeRemovedAt) mkdirSync(s.worktreePath, { recursive: true });
+      repo.update(sessionId, (cur) => ({
+        ...cur,
+        status: "running",
+        archivedAt: null,
+        worktreeRemovedAt: null,
+      }));
       return { status: "sent" };
     },
     stop: async (sessionId: string) => {
@@ -172,8 +209,23 @@ export function createFactoryEnv(
       return repo.update(sessionId, (s) => ({ ...s, status: "stopped" }));
     },
   } as unknown as SessionService;
+  env.sessions = sessions;
   const runner = {
-    providers: () => env.providers.map((id) => ({ id }) as ProviderInfo),
+    providers: () => env.providers.map((id) => ({ id, displayName: id }) as ProviderInfo),
+    isConnected: () => true,
+    // Provider detection: installed and signed in unless a test says otherwise.
+    request: async (command: { name: string }) => {
+      if (command.name !== "provider.detect") throw new Error(`unexpected ${command.name}`);
+      env.detections += 1;
+      return {
+        statuses: env.providers.map((providerId) => ({
+          providerId,
+          installed: true,
+          loggedIn: true,
+          ...env.detected[providerId],
+        })),
+      };
+    },
   } as unknown as RunnerPort;
 
   const build = () =>
@@ -189,6 +241,7 @@ export function createFactoryEnv(
           env.spendFilters.push(ids ? [...ids] : null);
           return env.spend;
         },
+        rateLimitWindows: () => env.rateLimits,
       },
       inbox,
       notify: (draft) => {
@@ -198,6 +251,19 @@ export function createFactoryEnv(
       settings,
       exec,
       github: gh,
+      complete: (_job, system, prompt) => env.model(system, prompt),
+      archiveSession: async (sessionId) => {
+        env.archived.push(sessionId);
+        const at = new Date().toISOString();
+        const worktree = repo.get(sessionId).worktreePath;
+        if (worktree) rmSync(worktree, { recursive: true, force: true });
+        return repo.update(sessionId, (s) => ({
+          ...s,
+          status: s.status === "idle" ? "stopped" : s.status,
+          archivedAt: at,
+          worktreeRemovedAt: s.worktreePath ? at : null,
+        }));
+      },
       options: { autoTick: false, now: () => env.now(), ciGraceMs: 60_000 },
     });
   env.factory = build();

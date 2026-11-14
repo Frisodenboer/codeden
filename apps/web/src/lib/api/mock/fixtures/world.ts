@@ -4,9 +4,11 @@ import {
   type AutomationTrigger,
   defaultSettings,
   FactoryLimits,
+  HOME_RUNNER_ID,
   type Project,
   type ProviderInfo,
   type RunnerConnectionStatus,
+  type RunnerRecord,
   type ScheduledRun,
 } from "@codeden/contracts";
 import { ago, ahead } from "./helpers";
@@ -26,6 +28,7 @@ function project(
     factoryLimits: limits,
     killSwitch: false,
     timezone: null,
+    agentCiEnv: true,
     pinned: false,
     sortOrder: 0,
     createdAt: ago(60 * 24 * 12),
@@ -55,7 +58,7 @@ export const projects: Project[] = [
       slug: "storefront",
       path: "C:\\Code\\storefront",
       sortOrder: 0,
-      autonomyMode: "autopilot",
+      autonomyMode: "dark_factory",
       factoryLimits: {
         ...limits,
         maxConcurrentSessions: 3,
@@ -299,6 +302,7 @@ export const providers: ProviderInfo[] = [
       ...caps,
       subagents: false,
       userQuestions: false,
+      planMode: false,
       skills: true,
       liveAutonomy: false,
     },
@@ -372,6 +376,122 @@ export const providers: ProviderInfo[] = [
       },
     ],
   },
+  {
+    id: "opencode",
+    displayName: "OpenCode",
+    capabilities: {
+      ...caps,
+      planMode: false,
+      skills: false,
+      liveAutonomy: true,
+    },
+    // OpenCode lists the models of every provider it is connected to, as `<provider>/<model>`;
+    // the description names the provider. Efforts are each model's own variants.
+    models: [
+      {
+        id: "anthropic/claude-opus-5-5",
+        label: "Claude Opus 5.5",
+        description: "Anthropic",
+        efforts: ["low", "medium", "high", "xhigh", "max"],
+        isDefault: true,
+        contextWindow: 1_000_000,
+      },
+      {
+        id: "openai/gpt-6.1-sol",
+        label: "GPT-6.1 Sol",
+        description: "OpenAI",
+        efforts: ["low", "medium", "high", "xhigh"],
+        contextWindow: 400_000,
+      },
+      {
+        id: "deepseek/deepseek-v4.1",
+        label: "DeepSeek V4.1",
+        description: "DeepSeek",
+        efforts: ["low", "high", "max"],
+        contextWindow: 1_000_000,
+      },
+      {
+        id: "zai/glm-5.3",
+        label: "GLM-5.3",
+        description: "Z.AI",
+        efforts: [],
+        contextWindow: 200_000,
+      },
+      {
+        id: "ollama/qwen3.8:27b",
+        label: "qwen3.8:27b",
+        description: "Ollama (local)",
+        efforts: [],
+        contextWindow: 262_144,
+      },
+      {
+        id: "opencode/iceman-free",
+        label: "Iceman Free",
+        description: "OpenCode",
+        efforts: [],
+        contextWindow: 262_144,
+      },
+    ],
+  },
+  {
+    id: "cursor",
+    displayName: "Cursor",
+    capabilities: {
+      ...caps,
+      steer: false,
+      rollback: false,
+      fork: false,
+      reasoningEffort: false,
+      skills: false,
+      liveAutonomy: true,
+    },
+    // Cursor lists the models of the user's plan; efforts are separate model ids.
+    models: [
+      {
+        id: "default",
+        label: "Default",
+        description: "The model selected in Cursor's CLI (Cursor's own default)",
+        efforts: [],
+        isDefault: true,
+      },
+      { id: "auto", label: "Auto", efforts: [] },
+      { id: "composer-2", label: "Composer 2", efforts: [] },
+      { id: "gpt-6.1-sol-high", label: "GPT-6.1 Sol High", efforts: [] },
+    ],
+  },
+  {
+    id: "gemini",
+    displayName: "Gemini CLI",
+    capabilities: {
+      ...caps,
+      steer: false,
+      userQuestions: false,
+      subagents: false,
+      rollback: false,
+      fork: false,
+      reasoningEffort: false,
+      skills: false,
+      liveAutonomy: true,
+    },
+    // What a Gemini CLI session lists; before one has, Default and Gemini CLI's aliases.
+    models: [
+      {
+        id: "default",
+        label: "Default",
+        description: "The model selected in Gemini CLI (its own setting)",
+        efforts: [],
+        isDefault: true,
+      },
+      {
+        id: "auto",
+        label: "Auto",
+        description: "Gemini CLI picks a Pro or Flash model",
+        efforts: [],
+      },
+      { id: "gemini-3-pro-preview", label: "Gemini 3 Pro Preview", efforts: [] },
+      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", efforts: [] },
+    ],
+  },
 ];
 
 export const runner: RunnerConnectionStatus = {
@@ -381,6 +501,25 @@ export const runner: RunnerConnectionStatus = {
   providers,
   lastError: null,
 };
+
+/** The runners list: only the home runner, as on a machine without sandboxes. */
+export const runners: RunnerRecord[] = [
+  {
+    id: HOME_RUNNER_ID,
+    backend: "local",
+    home: true,
+    runnerId: "runner-local",
+    sandboxRef: null,
+    projectId: null,
+    sessionId: null,
+    state: "connected",
+    version: "0.1.0",
+    imageVersion: null,
+    createdAt: "2026-11-01T08:00:00.000Z",
+    lastSeenAt: "2026-11-01T08:00:00.000Z",
+    lastError: null,
+  },
+];
 
 export const settings = (() => {
   const s = defaultSettings();

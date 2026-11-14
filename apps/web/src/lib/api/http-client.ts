@@ -5,10 +5,12 @@ import {
   DiffResult,
   DisconnectGithubResponse,
   FollowUp,
+  ForkSessionResponse,
   FsListResponse,
   GitCommitResponse,
   GitPushResponse,
   GitStatusResponse,
+  HandoffSessionResponse,
   Idea,
   InboxItem,
   LoginCommandResponse,
@@ -27,9 +29,12 @@ import {
   SessionSnapshot,
   Settings,
   SetupStatus,
+  SlashCommandList,
   Snapshot,
   SpeechSummaryResponse,
   StartSessionResponse,
+  ToolOutputResponse,
+  TranscriptSearchResponse,
   UpdateStatus,
 } from "@codeden/contracts";
 import { httpAutomationsApi } from "./automations-api";
@@ -44,7 +49,6 @@ import {
   httpVoiceApi,
 } from "./http-features";
 import { httpGithubApi, httpOrchestrationApi, httpSessionConflictApi } from "./http-orchestration";
-import { configApi } from "./http-unwired";
 import { httpAuthApi, httpNetworkApi } from "./network-api";
 import { httpQueueApi } from "./queue-api";
 import { RealtimeSocket } from "./realtime-socket";
@@ -76,7 +80,17 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
   const wsBase = origin.replace(/^http/, "ws");
   const socket = new RealtimeSocket(`${wsBase}/ws`);
   const enc = encodeURIComponent;
+  // File lists for `@` mentions, by URL, reused for 30 seconds while the user types.
   const fileCache = new Map<string, { at: number; list: SessionFileList }>();
+  const mentionsFrom = async (path: string, query: string) => {
+    const cached = fileCache.get(path);
+    const list =
+      cached && Date.now() - cached.at < 30_000
+        ? cached.list
+        : await get(path, (v) => SessionFileList.parse(v));
+    fileCache.set(path, { at: cached?.list === list ? cached.at : Date.now(), list });
+    return rankMentions(list, query);
+  };
 
   return {
     kind: "http",
@@ -88,6 +102,8 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     onConnectionChange: (listener) => socket.onState(listener),
 
     getSessionDetail: (id) => get(`/sessions/${enc(id)}`, (v) => SessionDetail.parse(v)),
+    getToolOutput: (id, itemId) =>
+      get(`/sessions/${enc(id)}/items/${enc(itemId)}/output`, (v) => ToolOutputResponse.parse(v)),
     async sendMessage(id, input, mode) {
       const body: SendMessageRequestInit = { input, whenBusy: whenBusy[mode] };
       await post(`/sessions/${enc(id)}/messages`, body);
@@ -103,7 +119,20 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     async stopSession(id) {
       await post(`/sessions/${enc(id)}/stop`);
     },
+    forkSession: (id, req) =>
+      post(`/sessions/${enc(id)}/fork`, req ?? {}, (v) => ForkSessionResponse.parse(v)),
+    handoffSession: (id, req) =>
+      post(`/sessions/${enc(id)}/handoff`, req, (v) => HandoffSessionResponse.parse(v)),
     queue: httpQueueApi(http),
+    searchTranscripts: ({ q, projectId, role, includeArchived, cursor, limit }) => {
+      const params = new URLSearchParams({ q });
+      if (projectId) params.set("projectId", projectId);
+      if (role) params.set("role", role);
+      if (includeArchived === false) params.set("includeArchived", "false");
+      if (cursor) params.set("cursor", cursor);
+      if (limit) params.set("limit", String(limit));
+      return get(`/search/transcripts?${params}`, (v) => TranscriptSearchResponse.parse(v));
+    },
 
     ...httpSessionConflictApi(http),
     resolveInbox: (id, resolution) =>
@@ -201,15 +230,14 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     async deleteFollowUp(id) {
       await call("DELETE", `/planner/follow-ups/${enc(id)}`);
     },
-    async searchMentions(id, query) {
-      const cached = fileCache.get(id);
-      const list =
-        cached && Date.now() - cached.at < 30_000
-          ? cached.list
-          : await get(`/sessions/${enc(id)}/files`, (v) => SessionFileList.parse(v));
-      fileCache.set(id, { at: cached?.list === list ? cached.at : Date.now(), list });
-      return rankMentions(list, query);
-    },
+    searchMentions: (id, query) => mentionsFrom(`/sessions/${enc(id)}/files`, query),
+    listSlashCommands: (id) =>
+      get(`/sessions/${enc(id)}/commands`, (v) => SlashCommandList.parse(v)),
+    searchProjectMentions: (id, query) => mentionsFrom(`/projects/${enc(id)}/files`, query),
+    listProjectSlashCommands: (id, provider) =>
+      get(`/projects/${enc(id)}/commands?provider=${enc(provider)}`, (v) =>
+        SlashCommandList.parse(v),
+      ),
     openTerminal: (o) => openTerminalSocket(wsBase, o),
     artifactUrl: (id) => `${origin}/api/artifacts/${enc(id)}`,
     speechSummary: (text) =>
@@ -221,7 +249,6 @@ export function createHttpClient(origin: string, opts: HttpClientOptions = {}): 
     voice: httpVoiceApi(http),
     orchestration: httpOrchestrationApi(http),
     github: httpGithubApi(http),
-    ...configApi(http),
   };
 }
 

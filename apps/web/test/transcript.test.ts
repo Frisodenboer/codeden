@@ -1,6 +1,7 @@
-import type { AgentEvent } from "@codeden/contracts";
+import type { AgentEvent, Item, ItemRecord, SessionSnapshot, Turn } from "@codeden/contracts";
 import { describe, expect, it } from "vitest";
 import { MockWorld } from "@/lib/api/mock/world";
+import { applyTranscriptMessage } from "@/lib/transcript/apply-transcript";
 import {
   activeTurn,
   applyAgentEvent,
@@ -12,6 +13,7 @@ import {
   buildTimeline,
   finalAssistantText,
   latestFollowups,
+  rowIndexOfItem,
   summarizeWork,
   type WorkEntry,
 } from "@/lib/transcript/timeline";
@@ -128,6 +130,90 @@ describe("applyAgentEvent", () => {
   });
 });
 
+describe("turn order", () => {
+  // Turn ids are random, so a snapshot's turns can arrive in any order: here "a" is the latest.
+  const at = (minute: number) => `2026-11-07T10:0${minute}:00.000Z`;
+  const turn = (id: string, minute: number): Turn => ({
+    id,
+    threadId: T,
+    sessionId: "s1",
+    status: "completed",
+    startedAt: at(minute),
+    completedAt: at(minute),
+    error: null,
+    forkPoint: `fp-${id}`,
+  });
+  const record = (turnId: string, position: number, item: Item): ItemRecord => ({
+    sessionId: "s1",
+    threadId: T,
+    turnId,
+    position,
+    item,
+    createdAt: at(0),
+    updatedAt: at(0),
+  });
+  const turnItems = (turnId: string, position: number): ItemRecord[] => [
+    record(turnId, position, {
+      id: `m-${turnId}`,
+      kind: "assistant_message",
+      status: "completed",
+      text: turnId,
+    }),
+    record(turnId, position + 1, {
+      id: `f-${turnId}`,
+      kind: "followups",
+      status: "completed",
+      source: "agent",
+      suggestions: [{ prompt: `after ${turnId}` }],
+    }),
+  ];
+  const base = new MockWorld().sessionSnapshot("s-checkout");
+  const snap: SessionSnapshot = {
+    seq: 1,
+    session: { ...base.session, id: "s1", rootThreadId: T },
+    threads: [
+      {
+        id: T,
+        sessionId: "s1",
+        parentThreadId: null,
+        parentItemId: null,
+        title: null,
+        agentType: null,
+        createdAt: at(0),
+      },
+    ],
+    turns: [turn("a", 3), turn("b", 1), turn("c", 2)],
+    items: [...turnItems("b", 0), ...turnItems("c", 2), ...turnItems("a", 4)],
+  };
+
+  it("builds a snapshot's turns in start order, whatever their ids", () => {
+    const s = transcriptFromSnapshot(snap);
+    expect(s.threads[T]?.turnIds).toEqual(["b", "c", "a"]);
+    expect(latestFollowups(s, T)?.map((f) => f.prompt)).toEqual(["after a"]);
+    const ends = buildTimeline(s, T).flatMap((r) =>
+      r.type === "turn-end" ? [[r.turn.id, r.latest]] : [],
+    );
+    expect(ends).toEqual([
+      ["b", false],
+      ["c", false],
+      ["a", true],
+    ]);
+  });
+
+  it("places turns from a transcript message by start time", () => {
+    const first = transcriptFromSnapshot({ ...snap, turns: [turn("b", 1)], items: [] });
+    const s = applyTranscriptMessage(first, {
+      type: "transcript",
+      sessionId: "s1",
+      seq: 2,
+      threads: [],
+      turns: [turn("a", 3), turn("c", 2)],
+      items: [],
+    });
+    expect(s.threads[T]?.turnIds).toEqual(["b", "c", "a"]);
+  });
+});
+
 describe("buildTimeline", () => {
   const world = new MockWorld();
   const t = world.transcript("s-checkout");
@@ -149,6 +235,74 @@ describe("buildTimeline", () => {
     const end = rows.find((r) => r.type === "turn-end");
     expect(end?.type === "turn-end" && end.filesChanged).toBe(2);
     expect(rows.at(-1)?.type).toBe("working");
+  });
+
+  it("finds the row showing an item, inside work groups too", () => {
+    const work = rows.find((r) => r.type === "work" && r.entries.length > 1);
+    const step = work?.type === "work" ? work.entries.at(-1) : undefined;
+    expect(step).toBeDefined();
+    expect(rowIndexOfItem(rows, step?.id ?? "")).toBe(rows.indexOf(work as (typeof rows)[number]));
+    const card = rows.findIndex((r) => r.type === "card");
+    const cardRow = rows[card];
+    expect(rowIndexOfItem(rows, cardRow?.type === "card" ? cardRow.item.id : "")).toBe(card);
+    expect(rowIndexOfItem(rows, rows[0]?.type === "user" ? rows[0].item.id : "")).toBe(0);
+    expect(rowIndexOfItem(rows, "no-such-item")).toBe(-1);
+  });
+
+  it("keeps a turn whole when an earlier turn's follow-ups arrive during it", () => {
+    const say = (turnId: string, id: string): AgentEvent => ({
+      type: "item.completed",
+      threadId: T,
+      turnId,
+      item: { id, kind: "assistant_message", status: "completed", text: id },
+    });
+    const s = run([
+      { type: "turn.started", threadId: T, turnId: "u1" },
+      say("u1", "a"),
+      { type: "turn.completed", threadId: T, turnId: "u1" },
+      { type: "turn.started", threadId: T, turnId: "u2" },
+      say("u2", "b"),
+      // Suggestions for u1, written by the server once u2 had begun.
+      {
+        type: "item.completed",
+        threadId: T,
+        turnId: "u1",
+        item: {
+          id: "f1",
+          kind: "followups",
+          status: "completed",
+          source: "utility",
+          suggestions: [],
+        },
+      },
+      say("u2", "c"),
+    ]);
+    const keys = buildTimeline(s, T).map((r) => r.key);
+    expect(keys).toEqual(["a", "end:u1", "b", "c", "working:u2"]);
+  });
+
+  it("marks the thread's latest turn and keeps each turn's fork point", () => {
+    const say = (turnId: string): AgentEvent => ({
+      type: "item.completed",
+      threadId: T,
+      turnId,
+      item: { id: `m-${turnId}`, kind: "assistant_message", status: "completed", text: turnId },
+    });
+    const s = run([
+      { type: "turn.started", threadId: T, turnId: "u1" },
+      say("u1"),
+      { type: "turn.completed", threadId: T, turnId: "u1", forkPoint: "fp-1" },
+      { type: "turn.started", threadId: T, turnId: "u2" },
+      say("u2"),
+      { type: "turn.interrupted", threadId: T, turnId: "u2", reason: "user" },
+    ]);
+    const ends = buildTimeline(s, T).flatMap((r) =>
+      r.type === "turn-end" ? [[r.turn.id, r.latest, r.turn.forkPoint]] : [],
+    );
+    expect(ends).toEqual([
+      ["u1", false, "fp-1"],
+      ["u2", true, null],
+    ]);
   });
 
   it("only offers follow-ups when the last turn completed", () => {

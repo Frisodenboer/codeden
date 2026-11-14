@@ -5,13 +5,20 @@ import type {
   ReasoningEffort,
   SessionOptions,
 } from "@codeden/contracts";
-import type { ProviderAdapter, ProviderSession, RefreshModelsOptions } from "../adapter";
+import {
+  type ForkConversationOptions,
+  type ProviderAdapter,
+  type ProviderSession,
+  type RefreshModelsOptions,
+  withFork,
+} from "../adapter";
 import { executableFingerprint, ModelFreshness } from "../freshness";
 import { ModelCatalog } from "../models";
 import type { ResolvedCommand } from "../util/exec";
 import { quickLocate } from "../util/locate";
 import type { UtilityModel } from "../utility";
 import { detectClaude } from "./detect";
+import { forkClaudeConversation } from "./fork";
 import { listClaudeModels, toModelInfos } from "./models";
 import { ClaudeUtilityModel } from "./one-shot";
 import { type ClaudeSdkModule, claudeSdkReady, loadClaudeSdk } from "./sdk";
@@ -27,7 +34,8 @@ const capabilities: ProviderCapabilities = {
   userQuestions: true,
   subagents: true,
   rollback: false,
-  fork: false,
+  // The SDK copies a conversation into a new session file (`forkConversation`).
+  fork: true,
   images: true,
   planMode: true,
   reasoningEffort: true,
@@ -63,7 +71,10 @@ export interface ClaudeAdapterOptions {
    * Load the SDK (tests stub it). By default sessions use `loadClaudeSdk()`, and discovery
    * uses it only when the SDK is ready without an install (`claudeSdkReady()`).
    */
-  loadSdk?: () => Promise<Pick<ClaudeSdkModule, "query">>;
+  loadSdk?: () => Promise<
+    Pick<ClaudeSdkModule, "query" | "forkSession" | "getSessionMessages"> &
+      Partial<Pick<ClaudeSdkModule, "getSubagentMessages">>
+  >;
 }
 
 /** Claude Code through the Claude Agent SDK and the user's installed `claude` (§7.2). */
@@ -127,10 +138,11 @@ export class ClaudeAdapter implements ProviderAdapter {
   async openSession(opts: SessionOptions): Promise<ProviderSession> {
     const executable = this.executable();
     if (!executable) throw new Error("Claude Code is not installed (no `claude` on PATH)");
-    const { query } = await (this.options.loadSdk ?? loadClaudeSdk)();
-    return new ClaudeSession(opts, {
+    const { query, getSubagentMessages } = await (this.options.loadSdk ?? loadClaudeSdk)();
+    return new ClaudeSession(await withFork(this, opts), {
       executable,
       query,
+      ...(getSubagentMessages ? { getSubagentMessages } : {}),
       // Every session start reports the list of the `claude` it runs: the cheapest refresh.
       onModels: (models) => {
         if (!models.length) return;
@@ -138,6 +150,16 @@ export class ClaudeAdapter implements ProviderAdapter {
         this.catalog.set(toModelInfos(models));
       },
     });
+  }
+
+  /**
+   * Copy a conversation (see `forkClaudeConversation`): at once, with fresh message ids, the
+   * original untouched; with `upTo`, only through the turn that ended with that message. The
+   * copy is found from any worktree of the project.
+   */
+  async forkConversation(resumeToken: string, opts?: ForkConversationOptions): Promise<string> {
+    const sdk = await (this.options.loadSdk ?? loadClaudeSdk)();
+    return forkClaudeConversation(sdk, resumeToken, opts?.upTo);
   }
 
   utilityModel(): UtilityModel {

@@ -129,6 +129,9 @@ describe("runner protocol", () => {
     expect(detect.name === "provider.detect" && detect.waitForModels).toBe(true);
     // Older servers send neither field.
     roundTrip(RunnerCommand, { name: "provider.detect" });
+    // The factory's periodic availability check only detects.
+    const quick = roundTrip(RunnerCommand, { name: "provider.detect", refreshModels: false });
+    expect(quick.name === "provider.detect" && quick.refreshModels).toBe(false);
     const result = roundTrip(RunnerCommandResults["provider.detect"], {
       statuses: [],
       providers: [],
@@ -202,25 +205,98 @@ describe("runner protocol", () => {
         projectSlug: "demo",
         fetch: true,
       },
+      {
+        name: "workspace.prepare",
+        sessionId: "s2",
+        repoPath: "/repo",
+        strategy: "worktree",
+        baseRef: "codeden/login-ab12",
+        restoreCheckpoint: { sessionId: "s1", index: 3 },
+      },
       { name: "workspace.remove", repoPath: "/repo", path: "/wt/demo/s1", deleteBranch: "b" },
       { name: "git.branches", cwd: "/repo" },
       { name: "git.commit", cwd: "/repo", message: "feat: x", paths: ["a.ts"] },
       { name: "git.push", cwd: "/repo", setUpstream: true },
       { name: "checkpoint.list", cwd: "/repo", sessionId: "s1" },
+      { name: "checkpoint.list", cwd: "/repo", sessionId: "s1", settled: true },
+      { name: "provider.fork", providerId: "claude", resumeToken: "claude-1", cwd: "/repo" },
+      {
+        name: "provider.fork",
+        providerId: "codex",
+        resumeToken: "thread-1",
+        cwd: "/repo",
+        upTo: "turn-3",
+      },
       { name: "checkpoint.diff", cwd: "/repo", sessionId: "s1", from: 0, to: 2 },
       { name: "checkpoint.restoreFiles", cwd: "/repo", sessionId: "s1", index: 1 },
       { name: "pty.attach", ptyId: "p1" },
       { name: "ports.list", probe: [5173] },
+      {
+        name: "mcp.test",
+        spec: { type: "stdio", command: "npx", args: ["-y", "x"], env: { A: "1" } },
+        cwd: "/repo",
+        expandEnv: true,
+        timeoutMs: 30_000,
+      },
+      {
+        name: "mcp.test",
+        spec: { type: "http", url: "https://example.com/mcp", headers: { A: "b" } },
+        expandEnv: false,
+      },
+      {
+        name: "mcp.test",
+        spec: { type: "stdio", command: "gh-mcp", extra: { env_vars: ["GITHUB_TOKEN"] } },
+        expandEnv: false,
+        stdioEnv: "allowlist",
+      },
     ];
     for (const command of commands) roundTrip(RunnerCommand, command);
     expect(
       RunnerCommand.safeParse({ name: "checkpoint.diff", cwd: "/r", sessionId: "s", from: -1 })
         .success,
     ).toBe(false);
+    const mcpTest = { name: "mcp.test", spec: { type: "http", url: "http://x" }, expandEnv: true };
+    expect(RunnerCommand.safeParse({ ...mcpTest, timeoutMs: 120_001 }).success).toBe(false);
+    expect(RunnerCommand.safeParse({ ...mcpTest, stdioEnv: "none" }).success).toBe(false);
+    roundTrip(RunnerCommandResults["mcp.test"], {
+      ok: true,
+      durationMs: 5,
+      server: { name: "s", version: "1" },
+      protocolVersion: null,
+      toolCount: 0,
+      morePages: false,
+      tools: [],
+    });
+    expect(
+      RunnerCommand.safeParse({
+        name: "workspace.prepare",
+        sessionId: "s2",
+        repoPath: "/repo",
+        strategy: "worktree",
+        restoreCheckpoint: { sessionId: "s1", index: -1 },
+      }).success,
+    ).toBe(false);
     roundTrip(RunnerCommandResults["checkpoint.diff"], {
       diff: "diff --git a/x b/x",
       files: [{ path: "x", status: "modified", additions: 1, deletions: 2, binary: false }],
     });
+    roundTrip(RunnerCommandResults["provider.fork"], { resumeToken: "claude-2" });
+    expect(RunnerCommandResults["provider.fork"].safeParse({ resumeToken: "" }).success).toBe(
+      false,
+    );
+    expect(
+      RunnerCommand.safeParse({ name: "provider.fork", providerId: "claude", cwd: "/repo" })
+        .success,
+    ).toBe(false);
+    expect(
+      RunnerCommand.safeParse({
+        name: "provider.fork",
+        providerId: "claude",
+        resumeToken: "c",
+        cwd: "/repo",
+        upTo: "",
+      }).success,
+    ).toBe(false);
     roundTrip(RunnerCommandResults["workspace.remove"], { removed: true, discardedChanges: true });
     roundTrip(RunnerCommandResults["workspace.remove"], { removed: true });
     roundTrip(RunnerCommandResults["workspace.prepare"], {

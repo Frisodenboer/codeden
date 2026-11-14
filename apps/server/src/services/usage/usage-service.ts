@@ -5,6 +5,7 @@ import {
   type InboxItem,
   type ProjectSpend,
   type RateLimitsResponse,
+  type RateLimitWindow,
   type SessionUsage,
   type UsageQuery,
   type UsageReport,
@@ -39,6 +40,7 @@ import {
 import { backfillUsageLedger } from "./backfill";
 import { BUNDLED_PRICES } from "./prices";
 import { buildReport, type ReportNames, toCsv } from "./report";
+import { subagentCosts } from "./subagents";
 
 export interface UsageServiceOptions {
   db: Db;
@@ -128,15 +130,15 @@ export class UsageService {
       .from(usageLedger)
       .where(eq(usageLedger.sessionId, sessionId))
       .all();
-    const rows = priceRows(raw.map(toLedgerRow), this.settings().prices, this.timezone());
+    const prices = this.settings().prices;
+    const rows = priceRows(raw.map(toLedgerRow), prices, this.timezone());
     rows.sort((a, b) => a.ts.localeCompare(b.ts));
-    const provider =
-      rows[0]?.provider ??
-      this.opts.db
-        .select({ provider: sessions.provider })
-        .from(sessions)
-        .where(eq(sessions.id, sessionId))
-        .get()?.provider;
+    const session = this.opts.db
+      .select({ provider: sessions.provider, model: sessions.model })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .get();
+    const provider = rows[0]?.provider ?? session?.provider;
     const billing = provider ? ((await this.billing())[provider] ?? "unknown") : "unknown";
     return {
       sessionId,
@@ -152,6 +154,8 @@ export class UsageService {
         costUsd: r.costUsd,
         costSource: r.costSource,
       })),
+      // Display only: what each subagent cost, for its card (§7.3); never part of the totals.
+      subagents: session ? subagentCosts(this.opts.db, sessionId, session, prices) : [],
     };
   }
 
@@ -207,16 +211,20 @@ export class UsageService {
     };
   }
 
-  async limits(): Promise<RateLimitsResponse> {
+  /** The latest reading of every provider's rate-limit windows (the factory's availability). */
+  rateLimitWindows(): RateLimitWindow[] {
     const now = this.now();
-    const windows = this.opts.db
+    return this.opts.db
       .select()
       .from(rateLimitWindows)
       .all()
       .map((r) => toWindow(r, now))
       .sort((a, b) => a.provider.localeCompare(b.provider) || a.windowId.localeCompare(b.windowId));
+  }
+
+  async limits(): Promise<RateLimitsResponse> {
     return {
-      windows,
+      windows: this.rateLimitWindows(),
       warnPercent: this.settings().rateLimitWarnPercent,
       billing: await this.billing(),
     };
@@ -281,6 +289,8 @@ export class UsageService {
         kind: "message",
         status: "open",
         priority: s.priority,
+        // A budget alert: the user decides whether to keep spending.
+        notify: "needs_you",
         title: s.title,
         body: s.body,
         projectId: s.projectId,

@@ -94,6 +94,8 @@ export const UpdateProjectRequest = z.object({
   defaultBranch: z.string().nullable().optional(),
   /** Pin or unpin the project in the project list (§13). */
   pinned: z.boolean().optional(),
+  /** Run this project's agent sessions with `CI=true`, or not (`Project.agentCiEnv`, §4.2). */
+  agentCiEnv: z.boolean().optional(),
 });
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequest>;
 
@@ -140,6 +142,11 @@ export const StartSessionRequest = z.object({
   model: z.string().min(1).optional(),
   effort: ReasoningEffort.optional(),
   autonomy: AutonomyLevel.optional(),
+  /**
+   * Start in plan mode: the agent explores and proposes a plan, and implements only once the
+   * plan is approved. Agent sessions on a provider with `capabilities.planMode` only.
+   */
+  planMode: z.boolean().optional(),
   workspace: WorkspaceRequest.prefault({}),
   /** One line describing the work; defaults to the first line of the input. */
   purpose: z.string().trim().min(1).max(300).optional(),
@@ -157,6 +164,12 @@ export const StartSessionRequest = z.object({
   input: UserInput.optional(),
   /** The caller's decision when a previous attempt returned `conflict`. */
   conflict: ConflictDecision.optional(),
+  /**
+   * The open persisted conflict this request is a new version of (the New session draft sent
+   * again while its card is up). The server closes that conflict whatever this start returns;
+   * a conflict that is closed already or belongs to another project is left alone.
+   */
+  replacesConflict: Id.optional(),
 });
 export type StartSessionRequest = z.infer<typeof StartSessionRequest>;
 export type StartSessionRequestInit = z.input<typeof StartSessionRequest>;
@@ -177,6 +190,56 @@ export const StartSessionResponse = z.discriminatedUnion("status", [
   z.object({ status: z.literal("joined"), sessionId: Id }),
 ]);
 export type StartSessionResponse = z.infer<typeof StartSessionResponse>;
+
+/**
+ * `POST /api/sessions/:id/fork`: a new agent session that continues this one's conversation
+ * (the provider's native fork) in a new worktree started from its latest checkpoint.
+ */
+export const ForkSessionRequest = z.object({
+  /** Defaults to the source's title followed by "(fork)". */
+  title: z.string().trim().min(1).max(200).optional(),
+  /**
+   * Fork from this finished turn of the source's root thread ("Fork from here"): the
+   * conversation ends with it and the code is its checkpoint. Omitted: the latest moment.
+   */
+  turnId: Id.optional(),
+});
+export type ForkSessionRequest = z.infer<typeof ForkSessionRequest>;
+
+/** `POST /api/sessions/:id/fork` response: the new session (it starts in the background). */
+export const ForkSessionResponse = z.object({ sessionId: Id });
+export type ForkSessionResponse = z.infer<typeof ForkSessionResponse>;
+
+/** Longest note a handoff passes on ("What should it do next?"). */
+export const HANDOFF_NOTE_MAX = 4_000;
+
+/**
+ * `POST /api/sessions/:id/handoff`: continue an agent session in a new one, on any provider
+ * (§9). The new session gets the source's code as a fork does (a new branch from the source's
+ * branch, its latest checkpoint restored as uncommitted changes) and, instead of a copy of the
+ * conversation, a brief of the work so far as its first message, which starts a turn at once.
+ * The source is only read.
+ */
+export const HandoffSessionRequest = z.object({
+  /** The provider the work continues on; the source's own gives a fresh conversation. */
+  provider: ProviderId,
+  /**
+   * The model; omitted or null: the source's model when the provider is the same, else the
+   * provider's default.
+   */
+  model: z.string().trim().min(1).nullable().optional(),
+  /** The reasoning effort, chosen the same way as `model`. */
+  effort: ReasoningEffort.nullable().optional(),
+  /** Defaults to the source's title followed by "(to <provider>)". */
+  title: z.string().trim().min(1).max(200).optional(),
+  /** What the new session should do next, added to the brief; "continue" when omitted. */
+  note: z.string().trim().min(1).max(HANDOFF_NOTE_MAX).optional(),
+});
+export type HandoffSessionRequest = z.infer<typeof HandoffSessionRequest>;
+
+/** `POST /api/sessions/:id/handoff` response: the new session (it starts in the background). */
+export const HandoffSessionResponse = z.object({ sessionId: Id });
+export type HandoffSessionResponse = z.infer<typeof HandoffSessionResponse>;
 
 /** Recorded with a session about how it was started (forced starts keep their reason). */
 export const SessionStartMeta = z.object({
@@ -257,11 +320,20 @@ export const ThreadItemsPage = z.object({
 });
 export type ThreadItemsPage = z.infer<typeof ThreadItemsPage>;
 
-/** `GET /api/sessions/:id/items/:itemId/output`: the full output of a tool call. */
+/**
+ * `GET /api/sessions/:id/items/:itemId/output`: the output the server stored for a tool call, as
+ * of the request. Long output may itself be stored cut (the latest part of a stream, or what the
+ * provider kept), which `truncated` says.
+ */
 export const ToolOutputResponse = z.object({
   itemId: Id,
   text: z.string(),
+  /** UTF-8 size of `text`. */
   totalBytes: z.int().nonnegative(),
+  /** The stored copy is cut: part of the output was never kept, so `text` isn't all of it. */
+  truncated: z.boolean(),
+  /** UTF-8 size of the tool's whole output when the request was answered (≥ `totalBytes`). */
+  outputBytes: z.int().nonnegative(),
 });
 export type ToolOutputResponse = z.infer<typeof ToolOutputResponse>;
 
@@ -296,8 +368,29 @@ export type InboxCounts = z.infer<typeof InboxCounts>;
 
 // ---------------------------------------------------------------- first-run setup
 
-export const SetupToolId = z.enum(["claude", "codex", "opencode", "gh", "git", "browser", "node"]);
+/**
+ * A first-run check (§14): the agent CLIs (`claude`, `codex`, `opencode`, `cursor`: the Cursor
+ * CLI, `agent`; `gemini`: Gemini CLI), then `gh`, `git`, the browser and Node.js.
+ */
+export const SetupToolId = z.enum([
+  "claude",
+  "codex",
+  "opencode",
+  "cursor",
+  "gemini",
+  "gh",
+  "git",
+  "browser",
+  "node",
+]);
 export type SetupToolId = z.infer<typeof SetupToolId>;
+
+/**
+ * Setup checks whose sign-in command the UI can run in its embedded terminal (`cursor` runs
+ * `agent login`; `gemini` runs `gemini`, which asks how to sign in when it has no login).
+ */
+export const LoginToolId = z.enum(["claude", "codex", "opencode", "cursor", "gemini", "gh"]);
+export type LoginToolId = z.infer<typeof LoginToolId>;
 
 /** A command the UI runs in its embedded terminal to fix a check (§14 step 3). */
 export const SetupCommand = z.object({
@@ -386,7 +479,7 @@ export type RefreshModelsResponse = z.infer<typeof RefreshModelsResponse>;
 
 /** `POST /api/setup/login/:tool` response: what to run in a terminal. */
 export const LoginCommandResponse = z.object({
-  tool: z.enum(["claude", "codex", "opencode", "gh"]),
+  tool: LoginToolId,
   command: z.string(),
   args: z.array(z.string()),
 });

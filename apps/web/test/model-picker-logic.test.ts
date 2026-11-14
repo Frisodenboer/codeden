@@ -10,6 +10,7 @@ import {
   favoriteRows,
   modelName,
   providerAvailability,
+  providerOptionLabel,
   providerTabs,
   resolveModel,
   searchRows,
@@ -204,6 +205,33 @@ describe("availability", () => {
     expect(providerAvailability("fake", [check({ id: "claude" })]).ready).toBe(true);
     expect(providerAvailability("codex", undefined).ready).toBe(true);
   });
+
+  it("names a provider in a plain list with why it can't run (#255)", () => {
+    const label = (c: SetupCheck | null) =>
+      providerOptionLabel("Codex", providerAvailability("codex", c ? [c] : undefined));
+    expect(label(null)).toBe("Codex");
+    expect(label(check({ id: "codex" }))).toBe("Codex");
+    expect(label(check({ id: "codex", state: "warning" }))).toBe("Codex");
+    expect(label(check({ id: "codex", state: "missing", loggedIn: false }))).toBe(
+      "Codex (not signed in)",
+    );
+    expect(label(check({ id: "codex", state: "missing", installed: false }))).toBe(
+      "Codex (not installed)",
+    );
+    expect(
+      label(
+        check({
+          id: "codex",
+          state: "missing",
+          installed: false,
+          broken: [{ path: "C:\\npm\\codex.cmd", reason: "points at a missing package" }],
+        }),
+      ),
+    ).toBe("Codex (installed but broken)");
+    expect(label(check({ id: "codex", state: "missing", loggedIn: null }))).toBe(
+      "Codex (not ready)",
+    );
+  });
 });
 
 describe("tabs", () => {
@@ -277,7 +305,14 @@ describe("favourites", () => {
 
   it("puts the Favourites tab first and can move to it", () => {
     const tabs = providerTabs(providers, undefined, undefined, { favorites: true });
-    expect(tabs.map((t) => t.id)).toEqual([FAVORITES_TAB, "claude", "codex"]);
+    expect(tabs.map((t) => t.id)).toEqual([
+      FAVORITES_TAB,
+      "claude",
+      "codex",
+      "opencode",
+      "cursor",
+      "gemini",
+    ]);
     expect(adjacentTab(tabs, "claude", -1)?.id).toBe(FAVORITES_TAB);
     expect(tabRows(tabs[0], providers, favorites).map((r) => r.model.id)).toEqual([
       "gpt-6-nova",
@@ -287,7 +322,8 @@ describe("favourites", () => {
 
   it("ranks favourites first among equal search matches", () => {
     const starred = [{ provider: "codex", model: "gpt-5.6-luna-mini" }];
-    expect(searchRows(providers, "mini", starred).map((r) => r.model.id)).toEqual([
+    // "gpt mini", not "mini": Gemini's names contain "mini" too (ranked after these).
+    expect(searchRows(providers, "gpt mini", starred).map((r) => r.model.id)).toEqual([
       "gpt-5.6-luna-mini",
       "gpt-6.1-sol-mini",
       "gpt-6-astra-mini",

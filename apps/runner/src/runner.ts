@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import {
@@ -14,9 +14,12 @@ import {
   configureClaudeSdk,
   FakeProvider,
   loadFixture,
+  OpenCodeAdapter,
   type ProviderAdapter,
   ProviderRegistry,
   ReplayProvider,
+  type ResolvedCommand,
+  resolveExecutable,
 } from "@codeden/providers";
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
@@ -24,6 +27,7 @@ import { WebSocketServer } from "ws";
 import { BrowserManager, createBrowserCommandHandlers } from "./browser";
 import type { RunnerCore } from "./commands";
 import { connectionHandlers, type ServerConnection } from "./connection";
+import { DeltaBatcher, type DeltaBatcherOptions } from "./delta-batcher";
 import { Journal } from "./journal";
 import { assertSingleInstance, removeOwnLock } from "./lock";
 import { HttpMcpUpstream, handleMcpRequest, type McpUpstream } from "./mcp/proxy";
@@ -40,8 +44,13 @@ export interface StartRunnerOptions {
   enableFakeProvider?: boolean;
   /** Extra adapters (tests). */
   adapters?: ProviderAdapter[];
-  /** Load the real Claude Code and Codex adapters (the runner process does; tests opt in). */
+  /** Load the real Claude Code, Codex and OpenCode adapters (the runner process does; tests opt in). */
   builtinProviders?: boolean;
+  /**
+   * Run OpenCode from this executable instead of looking for `opencode` (an install outside
+   * PATH, or the fake OpenCode in tests). Loads OpenCode even without the built-ins.
+   */
+  openCodeExecutable?: string;
   /** Recorded fixtures to serve as Replay providers (tests), registered as `replay-<n>`. */
   replayFixtures?: string[];
   /** Port to listen on (127.0.0.1); 0 = random. */
@@ -56,6 +65,8 @@ export interface StartRunnerOptions {
   browser?: BrowserManager;
   /** Called after `runner.shutdown` or a drain-and-exit closed everything (the CLI exits). */
   onShutdown?: () => void;
+  /** How streamed deltas are batched before they are journaled (tests lengthen the window). */
+  deltaBatching?: DeltaBatcherOptions;
   log?: (message: string) => void;
 }
 
@@ -77,6 +88,14 @@ const DEFAULT_DRAIN_TIMEOUT = 5 * 60_000;
  */
 export const MODEL_LIST_MAX_AGE_MS = 10 * 60_000;
 
+/** An `opencode` given by path: a JavaScript file runs with Node.js (a test stand-in). */
+function openCodeCommand(file: string): ResolvedCommand | undefined {
+  if (/\.[cm]?js$/i.test(file)) {
+    return existsSync(file) ? { kind: "node-script", path: file, script: file } : undefined;
+  }
+  return resolveExecutable(file);
+}
+
 /**
  * Start the runner (§4.2): WebSocket server on 127.0.0.1, lock file with port/token/pid,
  * provider sessions, terminals, git/worktree operations, the local MCP proxy and a durable
@@ -91,9 +110,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   await assertSingleInstance(lockFile);
 
   const token = randomBytes(32).toString("hex");
-  const journal = new Journal(dir, (error) =>
-    log(`journal: could not compact after an ack (will retry on the next one): ${String(error)}`),
-  );
+  const journal = new Journal(dir);
   // Claude Code support is installed on demand into `<home>/deps` in the published package.
   configureClaudeSdk({
     depsDir: join(opts.home, "deps"),
@@ -102,6 +119,11 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   const registry = new ProviderRegistry(opts.adapters ?? []);
   if (opts.enableFakeProvider && !registry.get("fake"))
     registry.register(new FakeProvider({ delayMs: 15 }));
+  if (opts.openCodeExecutable && !registry.get("opencode")) {
+    const executable = openCodeCommand(opts.openCodeExecutable);
+    if (executable) registry.register(new OpenCodeAdapter({ executable }));
+    else log(`opencode: ${opts.openCodeExecutable} not found; looking for it on PATH`);
+  }
   if (opts.builtinProviders) {
     for (const adapter of builtinProviders())
       if (!registry.get(adapter.id)) registry.register(adapter);
@@ -123,10 +145,16 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   let port = 0;
 
   let stopped = false;
-  const emit = (event: RunnerEvent) => {
+  const journalEvent = (event: RunnerEvent) => {
     if (stopped) return; // late callbacks after close (killed processes)
     const msg = journal.append(event);
     attached?.deliver(msg);
+  };
+  // Every durable event goes through the batcher: streamed deltas wait briefly to be merged,
+  // and any other event journals the batches it follows first, so order is kept.
+  const deltas = new DeltaBatcher(journalEvent, opts.deltaBatching);
+  const emit = (event: RunnerEvent) => {
+    if (!stopped) deltas.push(event);
   };
   const stream = (data: RunnerStream) => {
     attached?.deliver({ type: "stream", ts: new Date().toISOString(), stream: data });
@@ -245,7 +273,7 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
   // Spawns provider CLIs, so it runs in the background; it never throws.
   void registry.refreshModels();
   // Finish deleting worktrees a previous run moved to the trash; it never throws.
-  void emptyTrash(opts.home, log);
+  void emptyTrash(opts.home, { log });
 
   const removeLock = () => removeOwnLock(lockFile);
   process.once("exit", removeLock);
@@ -267,7 +295,13 @@ export async function startRunner(opts: StartRunnerOptions): Promise<RunningRunn
         if ("closeAllConnections" in server) server.closeAllConnections();
       });
       process.off("exit", removeLock);
+      deltas.flush();
       stopped = true;
+      try {
+        journal.close();
+      } catch (error) {
+        log(`journal: ${String(error)}`);
+      }
       log("runner stopped");
     })();
     return closing;

@@ -1,398 +1,440 @@
-import type { AgentEvent, FileChange, Item, ItemOf, ToolCallItem, Usage } from "@codeden/contracts";
-import { count, shorten, toJson, toolOutput } from "../util/text";
-import { type ClassifiedError, classifyOpencodeError, isAbortError } from "./errors";
-import type {
-  OcError,
-  OcEvent,
-  OcReasoningPart,
-  OcStepFinishPart,
-  OcTextPart,
-  OcTodo,
-  OcToolPart,
-} from "./types";
+import type { AgentEvent, Item, ItemOf } from "@codeden/contracts";
+import { shorten } from "../util/text";
+import { modelId } from "./config";
+import { failure, type TurnOutcome } from "./errors";
+import {
+  contentText,
+  diffsOf,
+  subagentSummary,
+  type ToolMapContext,
+  type ToolState,
+  todosOf,
+  toolCallItem,
+} from "./items";
+import type { OcEvent, OcEventOf } from "./protocol";
+import { OpenCodeSubagents, type ThreadCtx } from "./subagents";
+import { TurnUsage } from "./usage";
 
-type Todo = ItemOf<"todo_list">["todos"][number];
-type Outcome =
-  | { type: "completed" }
-  | { type: "interrupted" }
-  | ({ type: "failed" } & ClassifiedError);
+export type { ThreadCtx };
 
-const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "patch", "apply_patch"]);
-const SEARCH_TOOLS = new Set(["grep", "glob", "list", "codesearch", "lsp"]);
-
-/** opencode names MCP tools `<server>_<tool>`, with non-word characters as `_`. */
-function mcpPrefix(server: string): string {
-  return `${server.replace(/[^a-zA-Z0-9_-]/g, "_")}_`;
-}
-
-export interface OpencodeMapperOptions {
-  /**
-   * The session's MCP servers, to recognise their tools: plain names, or `{ name, server }`
-   * where `name` is what opencode registered (per session) and `server` the name to show.
-   */
-  mcpServers?: readonly (string | { name: string; server: string })[];
-  /** Context window of a CodeBench model id (`provider/model`), for the context meter. */
-  contextWindow?: (model: string) => number | undefined;
+export interface MapperOptions {
+  sessionId: string;
+  emit: (event: AgentEvent) => void;
+  tools: ToolMapContext;
+  /** Context window of a model (CodeDen id), for usage. */
+  contextWindow?: (model: string | undefined) => number | undefined;
 }
 
 /**
- * Translates opencode server events for one opencode session into normalized `AgentEvent`s.
- * A CodeBench turn is one prompt: from `beginTurn` (on send) to `session.idle`. opencode part
- * ids are used as item ids (they are unique per session).
+ * Translates OpenCode's v2 events for one session (and its subagent sessions) into normalized
+ * `AgentEvent`s (§7.3). A CodeDen turn spans one OpenCode execution of the root session;
+ * subagent sessions become child threads of the `subagent` item that started them.
  */
-export class OpencodeEventMapper {
+export class OpenCodeEventMapper {
   readonly rootThreadId: string;
-  /** opencode session id (also the resume token). */
-  opencodeSessionId: string | undefined;
+  /** The OpenCode session id (also the resume token). */
+  rootSession: string | undefined;
+  /** Turn id the next execution of the root session opens (set by `send()`). */
+  pendingTurnId: string | undefined;
   private turnId: string | undefined;
+  private readonly ended = new Set<string>();
   private turnCount = 0;
-  private readonly userMessages = new Set<string>();
-  private readonly open = new Map<string, Item>();
-  private readonly toolOutputSent = new Map<string, number>();
-  private readonly callToItem = new Map<string, string>();
-  private todos: { id: string; todos: Todo[] } | undefined;
-  private turnError: OcError | undefined;
-  private aborted = false;
-  private usage = emptyUsage();
+  private usage: TurnUsage | undefined;
   private model: string | undefined;
+  private readonly open = new Map<string, { ctx: ThreadCtx; item: Item }>();
+  private readonly tools = new Map<string, ToolState & { session: string }>();
+  private readonly subagents: OpenCodeSubagents;
+  private todos: { id: string; ctx: ThreadCtx; item: ItemOf<"todo_list"> } | undefined;
 
-  constructor(
-    sessionId: string,
-    private readonly emit: (event: AgentEvent) => void,
-    private readonly options: OpencodeMapperOptions = {},
-  ) {
-    this.rootThreadId = `${sessionId}:thread-root`;
+  constructor(private readonly opts: MapperOptions) {
+    this.rootThreadId = `${opts.sessionId}:thread-root`;
+    this.subagents = new OpenCodeSubagents(opts.sessionId, opts.emit, (threadId, ok) =>
+      this.closeOpen(ok, threadId),
+    );
   }
 
   get currentTurnId(): string | undefined {
     return this.turnId;
   }
 
-  /** The tool call item for an opencode `callID` (permission requests name the call). */
-  itemForCall(callID: string | undefined): string | undefined {
-    return callID ? this.callToItem.get(callID) : undefined;
+  /** The model the session runs (CodeDen id), once known. */
+  get currentModel(): string | undefined {
+    return this.model;
   }
 
-  /** Start a new turn; returns its id. An open turn is closed as interrupted first. */
-  beginTurn(): string {
+  set currentModel(model: string | undefined) {
+    this.model = model;
+  }
+
+  /** The thread context of an OpenCode session (root or subagent), while a turn runs. */
+  ctxFor(session: string): ThreadCtx | undefined {
+    if (session === this.rootSession) {
+      return this.turnId ? { threadId: this.rootThreadId, turnId: this.turnId } : undefined;
+    }
+    return this.subagents.ctxFor(session);
+  }
+
+  /** The tool call a permission request or form belongs to. */
+  tool(callId: string | undefined): ToolState | undefined {
+    return callId ? this.tools.get(callId) : undefined;
+  }
+
+  /**
+   * Start a turn by id. Idempotent, and a no-op for a turn that already ended. Consumes
+   * `pendingTurnId` when it names this turn, so a later execution OpenCode starts on its own
+   * (a late steer, a queued prompt) gets a turn of its own instead of this ended one.
+   */
+  beginTurn(turnId: string): void {
+    if (this.pendingTurnId === turnId) this.pendingTurnId = undefined;
+    if (this.turnId === turnId || this.ended.has(turnId)) return;
     if (this.turnId) this.endTurn({ type: "interrupted" });
+    this.turnId = turnId;
     this.turnCount += 1;
-    const id = `turn-${this.turnCount}-${Date.now().toString(36)}`;
-    this.turnId = id;
-    this.turnError = undefined;
-    this.aborted = false;
-    this.usage = emptyUsage();
-    this.emit({ type: "turn.started", ...this.ctx(id) });
-    return id;
-  }
-
-  /** Mark the running turn as aborted by the user; `session.idle` then closes it. */
-  markAborted(): void {
-    if (this.turnId) this.aborted = true;
-  }
-
-  private ctx(turnId: string): { threadId: string; turnId: string } {
-    return { threadId: this.rootThreadId, turnId };
+    this.usage = new TurnUsage(this.opts.contextWindow?.(this.model));
+    this.opts.emit({ type: "turn.started", threadId: this.rootThreadId, turnId });
   }
 
   handle(event: OcEvent): void {
-    const p = event.properties as { sessionID?: string };
-    if (p?.sessionID && this.opencodeSessionId && p.sessionID !== this.opencodeSessionId) return;
     switch (event.type) {
-      case "message.updated": {
-        const info = event.properties.info;
-        if (info.role === "user") {
-          this.userMessages.add(info.id);
-          return;
-        }
-        if (info.providerID && info.modelID) {
-          const model = `${info.providerID}/${info.modelID}`;
-          if (model !== this.model) {
-            this.model = model;
-            this.emit({ type: "session.updated", model });
-          }
-        }
-        if (info.error && this.turnId) {
-          if (isAbortError(info.error)) this.aborted = true;
-          else this.turnError = info.error;
+      case "session.created":
+        if (event.data.parentID) {
+          this.subagents.onSessionCreated(event.data.sessionID, event.data.parentID);
         }
         return;
-      }
-      case "message.part.updated": {
-        const part = event.properties.part;
-        if (!this.turnId || this.userMessages.has(part.messageID)) return;
-        if (part.type === "text") this.text(part as OcTextPart, "assistant_message");
-        else if (part.type === "reasoning") this.text(part as OcReasoningPart, "reasoning");
-        else if (part.type === "tool") this.tool(part as OcToolPart);
-        else if (part.type === "step-finish") this.step(part as OcStepFinishPart);
+      case "session.execution.started":
+        if (event.data.sessionID === this.rootSession) this.onExecutionStarted();
         return;
-      }
-      case "message.part.delta": {
-        const { partID, field, delta } = event.properties;
-        const turnId = this.turnId;
-        const item = this.open.get(partID);
-        if (!turnId || !item || field !== "text" || !delta) return;
-        if (item.kind !== "assistant_message" && item.kind !== "reasoning") return;
-        item.text += delta;
-        this.emit({
-          type: "item.delta",
-          ...this.ctx(turnId),
-          itemId: partID,
-          delta: { type: "text", text: delta },
-        });
+      case "session.execution.succeeded":
+        if (event.data.sessionID === this.rootSession) this.endTurn({ type: "completed" });
         return;
-      }
-      case "session.status": {
-        const status = event.properties.status;
-        if (status.type === "retry" && this.turnId) {
-          this.notice("warning", `${status.message} (retry ${status.attempt})`, "retrying");
+      case "session.execution.failed":
+        if (event.data.sessionID === this.rootSession) this.endTurn(failure(event.data.error));
+        return;
+      case "session.execution.interrupted":
+        if (event.data.sessionID === this.rootSession) {
+          this.endTurn({
+            type: "interrupted",
+            reason: event.data.reason === "user" ? "user" : "provider",
+          });
         }
         return;
-      }
-      case "session.error": {
-        const error = event.properties.error;
-        if (!this.turnId || !error) return;
-        if (isAbortError(error)) this.aborted = true;
-        else this.turnError = error;
+      case "session.step.started":
+        if (event.data.sessionID === this.rootSession && event.data.model) {
+          this.noteModel(modelId(event.data.model));
+        }
         return;
-      }
-      case "session.compacted":
-        if (this.turnId) this.notice("info", "Context compacted", "context_compacted");
+      case "session.step.ended":
+      case "session.step.failed":
+        this.addUsage(event.data.sessionID, event.data.tokens, event.data.cost);
         return;
-      case "todo.updated":
-        this.updateTodos(event.properties.todos);
+      case "session.compaction.ended":
+        this.addUsage(event.data.sessionID, event.data.tokens, event.data.cost);
+        this.notice(event.data.sessionID, "info", "Context compacted", "context_compacted");
         return;
-      case "session.idle":
-        this.finishTurn();
+      case "session.compaction.failed":
+        this.addUsage(event.data.sessionID, event.data.tokens, event.data.cost);
+        this.notice(
+          event.data.sessionID,
+          "warning",
+          `Context compaction failed: ${event.data.error.message}`,
+          "compaction_failed",
+        );
+        return;
+      case "session.retry.scheduled":
+        this.notice(
+          event.data.sessionID,
+          "warning",
+          `Retrying (attempt ${event.data.attempt}): ${shorten(event.data.error.message, 200)}`,
+          "retrying",
+        );
+        return;
+      case "session.model.selected":
+        if (event.data.sessionID === this.rootSession) this.noteModel(modelId(event.data.model));
+        return;
+      case "session.text.started":
+      case "session.reasoning.started":
+        this.startText(event);
+        return;
+      case "session.text.delta":
+      case "session.reasoning.delta":
+        this.deltaText(event);
+        return;
+      case "session.text.ended":
+      case "session.reasoning.ended":
+        this.endText(event);
+        return;
+      case "session.tool.input.started":
+        this.onToolInput(event);
+        return;
+      case "session.tool.called":
+        this.onToolCalled(event);
+        return;
+      case "session.tool.progress":
+        this.subagents.onProgress(event.data.id, event.data.metadata);
+        return;
+      case "session.tool.success":
+      case "session.tool.failed":
+        this.onToolEnded(event);
         return;
       default:
         return;
     }
   }
 
-  /** `session.idle`: the prompt is done; close the turn by what happened in it. */
-  private finishTurn(): void {
-    if (!this.turnId) return;
-    if (this.aborted) this.endTurn({ type: "interrupted" });
-    else if (this.turnError)
-      this.endTurn({ type: "failed", ...classifyOpencodeError(this.turnError) });
-    else this.endTurn({ type: "completed" });
+  /** Remember file diffs a permission request showed for a tool call. */
+  noteDiffs(callId: string | undefined, metadata: Record<string, unknown> | undefined): void {
+    const state = callId ? this.tools.get(callId) : undefined;
+    const diffs = diffsOf(metadata);
+    if (state && diffs) state.diffs = diffs;
   }
 
-  private text(part: OcTextPart | OcReasoningPart, kind: "assistant_message" | "reasoning"): void {
+  /** Close the current turn (also when the server dies or the session closes). */
+  endTurn(outcome: TurnOutcome): void {
     const turnId = this.turnId;
     if (!turnId) return;
-    if (part.type === "text" && (part.synthetic || part.ignored)) return;
-    const done = part.time?.end !== undefined;
-    const item: Item =
-      kind === "assistant_message"
-        ? { id: part.id, kind, status: done ? "completed" : "in_progress", text: part.text ?? "" }
-        : { id: part.id, kind, status: done ? "completed" : "in_progress", text: part.text ?? "" };
-    if (done) {
-      this.open.delete(part.id);
-      // Reasoning that streamed nothing visible is not worth a transcript entry.
-      if (kind === "reasoning" && !item.text.trim()) {
-        this.emit({
-          type: "item.completed",
-          ...this.ctx(turnId),
-          item: { ...item, redacted: true } as Item,
-        });
-        return;
-      }
-      this.emit({ type: "item.completed", ...this.ctx(turnId), item });
-      return;
-    }
-    if (this.open.has(part.id)) return;
-    this.open.set(part.id, item);
-    this.emit({ type: "item.started", ...this.ctx(turnId), item });
-  }
-
-  private tool(part: OcToolPart): void {
-    const turnId = this.turnId;
-    if (!turnId) return;
-    this.callToItem.set(part.callID, part.id);
-    const item = this.toolItem(part);
-    const state = part.state;
-    if (state.status === "completed" || state.status === "error") {
-      this.open.delete(part.id);
-      this.toolOutputSent.delete(part.id);
-      this.emit({ type: "item.completed", ...this.ctx(turnId), item });
-      return;
-    }
-    const known = this.open.has(part.id);
-    this.open.set(part.id, item);
-    if (!known) {
-      this.emit({ type: "item.started", ...this.ctx(turnId), item });
-    } else if (state.status === "running") {
-      // Live output (bash streams `metadata.output`); send only what is new.
-      const live = typeof state.metadata?.output === "string" ? state.metadata.output : undefined;
-      const sent = this.toolOutputSent.get(part.id) ?? 0;
-      if (live !== undefined && live.length > sent) {
-        this.toolOutputSent.set(part.id, live.length);
-        this.emit({
-          type: "item.delta",
-          ...this.ctx(turnId),
-          itemId: part.id,
-          delta: { type: "tool_output", text: live.slice(sent) },
-        });
-      } else {
-        this.emit({ type: "item.updated", ...this.ctx(turnId), item });
-      }
-    }
-  }
-
-  /** opencode tool part -> CodeBench tool call item. */
-  toolItem(part: OcToolPart): ToolCallItem {
-    const state = part.state;
-    const input = (state.input ?? {}) as Record<string, unknown>;
-    const meta = ("metadata" in state ? state.metadata : undefined) ?? {};
-    const status: ToolCallItem["status"] =
-      state.status === "completed"
-        ? "completed"
-        : state.status === "error"
-          ? "failed"
-          : "in_progress";
-    const s = (v: unknown) => (typeof v === "string" ? v : undefined);
-    const base = {
-      id: part.id,
-      kind: "tool_call" as const,
-      status,
-      toolName: part.tool,
-      ...(s("title" in state ? state.title : undefined)
-        ? { title: shorten(s((state as { title?: string }).title) ?? "", 120) }
-        : {}),
-      input: toJson(input),
-      ...(state.status === "completed" ? { output: toolOutput(state.output ?? "") } : {}),
-      ...(state.status === "error" ? { error: { message: state.error } } : {}),
-      ...(state.status === "completed" || state.status === "error"
-        ? { durationMs: Math.max(0, state.time.end - state.time.start) }
-        : {}),
-    };
-    const tool = part.tool.toLowerCase();
-    if (tool === "bash" || tool === "shell") {
-      const exit = typeof meta.exit === "number" ? meta.exit : undefined;
-      return {
-        ...base,
-        toolKind: "command",
-        command: s(input.command) ?? "",
-        ...(s(input.workdir) ? { cwd: s(input.workdir) } : {}),
-        ...(exit !== undefined ? { exitCode: exit } : {}),
-        title:
-          base.title ?? shorten(s(input.description) ?? s(input.command) ?? "Run command", 120),
-      };
-    }
-    if (EDIT_TOOLS.has(tool)) {
-      return { ...base, toolKind: "file_edit", changes: fileChanges(tool, input, meta) };
-    }
-    if (tool === "read") {
-      const offset = typeof input.offset === "number" ? input.offset : undefined;
-      const limit = typeof input.limit === "number" ? input.limit : undefined;
-      return {
-        ...base,
-        toolKind: "file_read",
-        path: s(input.filePath) ?? s(input.path) ?? "",
-        ...(offset !== undefined && offset >= 1 ? { startLine: Math.round(offset) } : {}),
-        ...(offset !== undefined && limit !== undefined && offset >= 1 && limit >= 1
-          ? { endLine: Math.round(offset + limit - 1) }
-          : {}),
-      };
-    }
-    if (SEARCH_TOOLS.has(tool)) {
-      const matches = count(meta.matches) ?? count(meta.count);
-      return {
-        ...base,
-        toolKind: "search",
-        query: s(input.pattern) ?? s(input.query) ?? s(input.path) ?? "",
-        ...(s(input.path) ? { path: s(input.path) } : {}),
-        ...(matches !== undefined ? { matchCount: matches } : {}),
-      };
-    }
-    if (tool === "webfetch")
-      return { ...base, toolKind: "web", ...(s(input.url) ? { url: s(input.url) } : {}) };
-    if (tool === "websearch") {
-      return { ...base, toolKind: "web", ...(s(input.query) ? { query: s(input.query) } : {}) };
-    }
-    for (const entry of this.options.mcpServers ?? []) {
-      const { name, server } = typeof entry === "string" ? { name: entry, server: entry } : entry;
-      const prefix = mcpPrefix(name);
-      if (part.tool.startsWith(prefix) && part.tool.length > prefix.length) {
-        return { ...base, toolKind: "mcp", server, tool: part.tool.slice(prefix.length) };
-      }
-    }
-    return { ...base, toolKind: "other" };
-  }
-
-  /** `step-finish`: one model call. Usage is the turn's own total so far. */
-  private step(part: OcStepFinishPart): void {
-    const turnId = this.turnId;
-    if (!turnId) return;
-    const t = part.tokens;
-    const u = this.usage;
-    u.inputTokens += t.input ?? 0;
-    u.outputTokens += (t.output ?? 0) + (t.reasoning ?? 0);
-    u.reasoningTokens += t.reasoning ?? 0;
-    u.cachedInputTokens += t.cache?.read ?? 0;
-    u.cacheWriteTokens += t.cache?.write ?? 0;
-    u.costUsd += part.cost ?? 0;
-    const context =
-      (t.input ?? 0) +
-      (t.cache?.read ?? 0) +
-      (t.cache?.write ?? 0) +
-      (t.output ?? 0) +
-      (t.reasoning ?? 0);
-    const usage: Usage = {
-      inputTokens: count(u.inputTokens),
-      outputTokens: count(u.outputTokens),
-      reasoningTokens: count(u.reasoningTokens),
-      cachedInputTokens: count(u.cachedInputTokens),
-      cacheWriteTokens: count(u.cacheWriteTokens),
-      contextTokens: count(context),
-      // opencode prices every call from its model table (0 on subscription plans such as Z.AI's).
-      costUsd: Math.round(u.costUsd * 1e9) / 1e9,
-    };
-    const window = this.model ? this.options.contextWindow?.(this.model) : undefined;
-    if (window && window > 0) usage.contextWindow = Math.round(window);
-    this.emit({ type: "usage.updated", ...this.ctx(turnId), usage });
-  }
-
-  private updateTodos(list: OcTodo[]): void {
-    const turnId = this.turnId;
-    if (!turnId) return;
-    const todos: Todo[] = list.map((t, i) => ({
-      id: t.id ?? String(i + 1),
-      text: t.content,
-      status:
-        t.status === "in_progress"
-          ? "in_progress"
-          : t.status === "completed" || t.status === "cancelled"
-            ? "completed"
-            : "pending",
-    }));
+    const ok = outcome.type === "completed";
+    this.subagents.endTurn(ok);
+    this.closeOpen(ok);
     if (this.todos) {
-      this.todos.todos = todos;
-      this.emit({
-        type: "item.updated",
-        ...this.ctx(turnId),
-        item: { id: this.todos.id, kind: "todo_list", status: "in_progress", todos },
+      this.opts.emit({
+        type: "item.completed",
+        ...this.todos.ctx,
+        item: { ...this.todos.item, status: ok ? "completed" : "cancelled" },
       });
+      this.todos = undefined;
+    }
+    const ctx = { threadId: this.rootThreadId, turnId };
+    this.turnId = undefined;
+    this.usage = undefined;
+    this.ended.add(turnId);
+    this.tools.clear();
+    if (outcome.type === "completed") {
+      this.opts.emit({ type: "turn.completed", ...ctx, stopReason: "end_turn" });
+    } else if (outcome.type === "interrupted") {
+      this.opts.emit({ type: "turn.interrupted", ...ctx, reason: outcome.reason ?? "user" });
     } else {
-      this.todos = { id: `todos-${turnId}`, todos };
-      this.emit({
-        type: "item.started",
-        ...this.ctx(turnId),
-        item: { id: this.todos.id, kind: "todo_list", status: "in_progress", todos },
+      this.opts.emit({
+        type: "turn.failed",
+        ...ctx,
+        error: {
+          code: outcome.code ?? "turn_failed",
+          message: outcome.message,
+          ...(outcome.detail ? { detail: outcome.detail } : {}),
+          ...(outcome.kind ? { kind: outcome.kind } : {}),
+          ...(outcome.retryAt ? { retryAt: outcome.retryAt } : {}),
+        },
       });
     }
   }
 
-  private notice(level: "info" | "warning", message: string, code: string): void {
-    const turnId = this.turnId;
-    if (!turnId) return;
-    this.emit({
+  // ---------------------------------------------------------------- internals
+
+  private onExecutionStarted(): void {
+    if (this.turnId) return;
+    const pending = this.pendingTurnId;
+    this.pendingTurnId = undefined;
+    // An execution always opens a turn: never under an id that already ended.
+    const id =
+      pending && !this.ended.has(pending)
+        ? pending
+        : `turn-${this.turnCount + 1}-${Date.now().toString(36)}`;
+    this.beginTurn(id);
+  }
+
+  private noteModel(model: string): void {
+    if (model === this.model) return;
+    this.model = model;
+    this.opts.emit({ type: "session.updated", model });
+  }
+
+  /** Complete the open items (of one thread, or all), as completed or cancelled. */
+  private closeOpen(ok: boolean, threadId?: string): void {
+    for (const [id, { ctx, item }] of this.open) {
+      if (threadId && ctx.threadId !== threadId) continue;
+      this.opts.emit({
+        type: "item.completed",
+        ...ctx,
+        item: { ...item, status: ok ? "completed" : "cancelled" } as Item,
+      });
+      this.open.delete(id);
+    }
+  }
+
+  private textKey(data: { assistantMessageID: string; ordinal: number }, kind: string): string {
+    return `${data.assistantMessageID}-${kind}-${data.ordinal}`;
+  }
+
+  private startText(
+    event: OcEventOf<"session.text.started"> | OcEventOf<"session.reasoning.started">,
+  ): void {
+    const ctx = this.ctxFor(event.data.sessionID);
+    if (!ctx) return;
+    const reasoning = event.type === "session.reasoning.started";
+    const id = this.textKey(event.data, reasoning ? "reasoning" : "text");
+    if (this.open.has(id)) return;
+    const item: Item = reasoning
+      ? { id, kind: "reasoning", status: "in_progress", text: "" }
+      : { id, kind: "assistant_message", status: "in_progress", text: "" };
+    this.open.set(id, { ctx, item });
+    this.opts.emit({ type: "item.started", ...ctx, item });
+  }
+
+  private deltaText(
+    event: OcEventOf<"session.text.delta"> | OcEventOf<"session.reasoning.delta">,
+  ): void {
+    const reasoning = event.type === "session.reasoning.delta";
+    const id = this.textKey(event.data, reasoning ? "reasoning" : "text");
+    const open = this.open.get(id);
+    if (!open || !event.data.delta) return;
+    // Kept on the open item, so a turn that ends early (an interrupt) keeps what streamed.
+    open.item = { ...open.item, text: streamedText(open.item) + event.data.delta } as Item;
+    this.opts.emit({
+      type: "item.delta",
+      ...open.ctx,
+      itemId: id,
+      delta: { type: "text", text: event.data.delta },
+    });
+  }
+
+  private endText(
+    event: OcEventOf<"session.text.ended"> | OcEventOf<"session.reasoning.ended">,
+  ): void {
+    const reasoning = event.type === "session.reasoning.ended";
+    const id = this.textKey(event.data, reasoning ? "reasoning" : "text");
+    const open = this.open.get(id);
+    const ctx = open?.ctx ?? this.ctxFor(event.data.sessionID);
+    if (!ctx) return;
+    this.open.delete(id);
+    // The final text, or what streamed when the end event carries none (a cut-off step).
+    const text = event.data.text || (open ? streamedText(open.item) : "");
+    if (!reasoning && !text.trim() && !open) return;
+    const item: Item = reasoning
+      ? {
+          id,
+          kind: "reasoning",
+          status: "completed",
+          text,
+          ...(text.trim() ? {} : { redacted: true }),
+        }
+      : { id, kind: "assistant_message", status: "completed", text };
+    this.opts.emit({ type: "item.completed", ...ctx, item });
+  }
+
+  private onToolInput(event: OcEventOf<"session.tool.input.started">): void {
+    const { id, name, sessionID } = event.data;
+    if (this.tools.has(id)) return;
+    this.tools.set(id, { id, name, input: {}, status: "in_progress", session: sessionID });
+  }
+
+  private onToolCalled(event: OcEventOf<"session.tool.called">): void {
+    const { id, sessionID, input } = event.data;
+    const state = this.tools.get(id) ?? {
+      id,
+      name: "tool",
+      input: {},
+      status: "in_progress" as const,
+      session: sessionID,
+    };
+    state.input = input ?? {};
+    state.startedAt = Date.now();
+    this.tools.set(id, state);
+    const ctx = this.ctxFor(sessionID);
+    if (!ctx) return;
+    if (state.name === "subagent") {
+      this.subagents.start(state, ctx);
+      return;
+    }
+    if (state.name === "todowrite") {
+      this.updateTodos(ctx, state.input);
+      return;
+    }
+    const item = toolCallItem(state, this.opts.tools);
+    if (!item) return;
+    this.open.set(id, { ctx, item });
+    this.opts.emit({ type: "item.started", ...ctx, item });
+  }
+
+  private onToolEnded(
+    event: OcEventOf<"session.tool.success"> | OcEventOf<"session.tool.failed">,
+  ): void {
+    const { id, sessionID } = event.data;
+    const state = this.tools.get(id);
+    if (!state) return;
+    state.endedAt = Date.now();
+    state.output = contentText(event.data.content);
+    state.metadata = event.data.metadata;
+    state.diffs = diffsOf(event.data.metadata) ?? state.diffs;
+    if (event.type === "session.tool.failed") {
+      const type = event.data.error.type;
+      state.status =
+        type === "permission.rejected" ? "declined" : type === "aborted" ? "cancelled" : "failed";
+      state.error = event.data.error.message;
+    } else {
+      state.status = "completed";
+    }
+    if (this.subagents.has(id)) {
+      this.subagents.finish(
+        id,
+        state.status === "completed"
+          ? "completed"
+          : state.status === "cancelled"
+            ? "interrupted"
+            : "failed",
+        subagentSummary(state.output || state.error || ""),
+      );
+      return;
+    }
+    if (state.name === "todowrite") return;
+    const open = this.open.get(id);
+    const ctx = open?.ctx ?? this.ctxFor(sessionID);
+    const item = toolCallItem(state, this.opts.tools);
+    if (!ctx || !item) return;
+    this.open.delete(id);
+    this.opts.emit({ type: "item.completed", ...ctx, item });
+  }
+
+  private updateTodos(ctx: ThreadCtx, input: Record<string, unknown>): void {
+    const todos = todosOf(input);
+    if (!todos) return;
+    if (this.todos) {
+      this.todos.item = { ...this.todos.item, todos };
+      this.opts.emit({ type: "item.updated", ...this.todos.ctx, item: this.todos.item });
+      return;
+    }
+    const item: ItemOf<"todo_list"> = {
+      id: `todos-${ctx.turnId}`,
+      kind: "todo_list",
+      status: "in_progress",
+      todos,
+    };
+    this.todos = { id: item.id, ctx, item };
+    this.opts.emit({ type: "item.started", ...ctx, item });
+  }
+
+  private addUsage(
+    session: string,
+    tokens: Parameters<TurnUsage["add"]>[0],
+    cost: number | undefined,
+  ): void {
+    if (!this.usage || !this.turnId || (!tokens && !cost)) return;
+    if (session !== this.rootSession && !this.subagents.isChildSession(session)) return;
+    this.usage.add(tokens, cost, session === this.rootSession);
+    this.opts.emit({
+      type: "usage.updated",
+      threadId: this.rootThreadId,
+      turnId: this.turnId,
+      usage: this.usage.snapshot(),
+    });
+  }
+
+  private notice(session: string, level: "info" | "warning", message: string, code: string): void {
+    const ctx = this.ctxFor(session);
+    if (!ctx) return;
+    this.opts.emit({
       type: "item.completed",
-      ...this.ctx(turnId),
+      ...ctx,
       item: {
-        id: `${code}-${turnId}-${Date.now().toString(36)}`,
+        id: `${code}-${ctx.turnId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         kind: "notice",
         status: "completed",
         level,
@@ -401,109 +443,9 @@ export class OpencodeEventMapper {
       },
     });
   }
-
-  /** Close the current turn (also used on interrupt deadlines and server exits). */
-  endTurn(outcome: Outcome): void {
-    const turnId = this.turnId;
-    if (!turnId) return;
-    const ctx = this.ctx(turnId);
-    const ok = outcome.type === "completed";
-    for (const item of this.open.values()) {
-      this.emit({
-        type: "item.completed",
-        ...ctx,
-        item: { ...item, status: ok ? "completed" : "cancelled" } as Item,
-      });
-    }
-    this.open.clear();
-    this.toolOutputSent.clear();
-    if (this.todos) {
-      this.emit({
-        type: "item.completed",
-        ...ctx,
-        item: {
-          id: this.todos.id,
-          kind: "todo_list",
-          status: ok ? "completed" : "cancelled",
-          todos: this.todos.todos,
-        },
-      });
-      this.todos = undefined;
-    }
-    this.turnId = undefined;
-    if (outcome.type === "completed")
-      this.emit({ type: "turn.completed", ...ctx, stopReason: "end_turn" });
-    else if (outcome.type === "interrupted")
-      this.emit({ type: "turn.interrupted", ...ctx, reason: "user" });
-    else {
-      this.emit({
-        type: "turn.failed",
-        ...ctx,
-        error: {
-          code: outcome.code,
-          message: outcome.message,
-          ...(outcome.detail ? { detail: outcome.detail } : {}),
-          kind: outcome.kind,
-          retryable: outcome.kind === "transient" || outcome.kind === "usage_limit",
-        },
-      });
-    }
-  }
 }
 
-function emptyUsage() {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    reasoningTokens: 0,
-    cachedInputTokens: 0,
-    cacheWriteTokens: 0,
-    costUsd: 0,
-  };
-}
-
-/** Lines added and removed in a unified diff. */
-function diffStats(diff: string): { additions: number; deletions: number } {
-  let additions = 0;
-  let deletions = 0;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---")) continue;
-    if (line.startsWith("+")) additions += 1;
-    else if (line.startsWith("-")) deletions += 1;
-  }
-  return { additions, deletions };
-}
-
-/** The file changes of an edit/write/patch tool call, as far as opencode reports them. */
-function fileChanges(
-  tool: string,
-  input: Record<string, unknown>,
-  meta: Record<string, unknown>,
-): FileChange[] {
-  const diff = typeof meta.diff === "string" ? meta.diff : undefined;
-  const stats = diff ? diffStats(diff) : undefined;
-  const path =
-    (typeof input.filePath === "string" && input.filePath) ||
-    (typeof meta.filepath === "string" && meta.filepath) ||
-    (typeof input.path === "string" && input.path) ||
-    undefined;
-  if (path) {
-    const change: FileChange["change"] =
-      tool === "write" && meta.exists === false ? "add" : "modify";
-    return [{ path, change, ...(diff ? { diff } : {}), ...(stats ?? {}) }];
-  }
-  // apply_patch / patch: opencode lists the touched files in metadata.
-  const files = Array.isArray(meta.files) ? meta.files : [];
-  return files.flatMap((f): FileChange[] => {
-    if (typeof f === "string") return [{ path: f, change: "modify" }];
-    if (f && typeof f === "object") {
-      const r = f as Record<string, unknown>;
-      const p =
-        (typeof r.filePath === "string" && r.filePath) || (typeof r.path === "string" && r.path);
-      if (!p) return [];
-      const kind = r.type === "add" || r.type === "delete" ? r.type : "modify";
-      return [{ path: p, change: kind }];
-    }
-    return [];
-  });
+/** The text streamed so far into an open message or reasoning item. */
+function streamedText(item: Item): string {
+  return item.kind === "assistant_message" || item.kind === "reasoning" ? item.text : "";
 }

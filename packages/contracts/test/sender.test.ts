@@ -4,9 +4,11 @@ import {
   Item,
   MessageSender,
   messageFrom,
+  QueuedMessage,
   QueueSender,
   RunnerCommand,
   SENDER_LINES,
+  StartSessionRequest,
   splitSender,
   UserInput,
 } from "../src";
@@ -45,6 +47,24 @@ describe("message senders", () => {
     expect(envelope.type).toBe("agent.item.completed");
   });
 
+  it("round-trips the sender of a session's opening brief", () => {
+    const req = roundTrip(StartSessionRequest, {
+      projectId: "p1",
+      purpose: "Factory (bug): Fix the transcript",
+      input: { text: "## Goal\n\nFix **it**", from: "factory" },
+    });
+    expect(req.input?.from).toBe("factory");
+    for (const from of ["factory", "automation", "codeden"] as const) {
+      const item = roundTrip(Item, {
+        id: "u1",
+        kind: "user_message",
+        status: "completed",
+        input: { text: "Brief", attachments: [], from },
+      });
+      expect(item.kind === "user_message" && item.input.from).toBe(from);
+    }
+  });
+
   it("still loads user messages stored before senders were recorded", () => {
     const old = Item.parse({
       id: "u1",
@@ -56,6 +76,23 @@ describe("message senders", () => {
       text: "Message from your project manager:\nShip it",
       attachments: [],
     });
+  });
+
+  it("round-trips an orchestrator message relayed for the user, queued or delivered", () => {
+    const input = roundTrip(UserInput, {
+      ...messageFrom("orchestrator", "Fix #4"),
+      relayedForUser: true,
+    });
+    expect(input).toMatchObject({ from: "orchestrator", relayedForUser: true });
+    const queued = roundTrip(QueuedMessage, {
+      id: "q1",
+      sessionId: "s1",
+      input,
+      from: "orchestrator",
+      createdAt: ts,
+    });
+    expect(queued.input.relayedForUser).toBe(true);
+    expect(UserInput.parse({ text: "hi" }).relayedForUser).toBeUndefined();
   });
 
   it("rejects an unknown sender", () => {

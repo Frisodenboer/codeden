@@ -3,6 +3,7 @@ import type {
   AutomationRun,
   ErrorInfo,
   FactoryLimits,
+  ForkOrigin,
   GitHubIssueRef,
   GitHubPrRef,
   GitHubRepo,
@@ -63,6 +64,8 @@ export const projects = sqliteTable(
     factoryLimits: json<FactoryLimits>("factory_limits"),
     killSwitch: integer("kill_switch", { mode: "boolean" }).notNull().default(false),
     timezone: text("timezone"),
+    /** Agent sessions run with `CI=true` (§4.2); the migration keeps it on for every project. */
+    agentCiEnv: integer("agent_ci_env", { mode: "boolean" }).notNull().default(true),
     pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
     /** Manual list position (§13); the migration backfills it from the alphabetical order. */
     sortOrder: integer("sort_order").notNull().default(0),
@@ -93,6 +96,7 @@ export const sessions = sqliteTable(
     model: text("model"),
     effort: text("effort"),
     autonomy: text("autonomy").notNull(),
+    planMode: integer("plan_mode", { mode: "boolean" }).notNull().default(false),
     status: text("status").notNull(),
     cwd: text("cwd").notNull(),
     worktreePath: text("worktree_path"),
@@ -109,6 +113,8 @@ export const sessions = sqliteTable(
     endedAt: text("ended_at"),
     archivedAt: text("archived_at"),
     worktreeRemovedAt: text("worktree_removed_at"),
+    /** The session this one was forked from, and the checkpoint its worktree started at. */
+    forkedFrom: json<ForkOrigin>("forked_from"),
     /** Accumulated usage (server-side projection; not part of the `Session` entity). */
     usage: json<Usage>("usage"),
     /** How the session was started (workspace fallback, forced conflict reason, queue). */
@@ -150,6 +156,8 @@ export const turns = sqliteTable(
     error: json<ErrorInfo>("error"),
     /** Usage reported for this turn (latest `usage.updated` with this turnId). */
     usage: json<Usage>("usage"),
+    /** The provider's fork point at the end of the turn (`forkPoint` on its end event, §9). */
+    forkPoint: text("fork_point"),
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.id] })],
 );
@@ -181,6 +189,7 @@ export const inboxItems = sqliteTable(
     kind: text("kind").notNull(),
     status: text("status").notNull(),
     priority: text("priority").notNull().default("normal"),
+    notify: text("notify").notNull().default("needs_you"),
     title: text("title").notNull(),
     body: text("body"),
     projectId: text("project_id"),

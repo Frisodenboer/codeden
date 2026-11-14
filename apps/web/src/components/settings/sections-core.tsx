@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useSnapshotData } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { type FontStyle, type ThemePreference, useThemeStore } from "@/stores/theme";
+import { AgentEnvironmentSettings } from "./agent-environment";
 import { CustomModelSettings } from "./custom-models";
 import { ModelVisibilitySettings } from "./model-visibility";
 import { Segmented, SettingRow, SettingsSection, useSettings } from "./settings-ui";
@@ -103,6 +104,7 @@ export function GeneralSettings() {
           />
         </SettingRow>
       </SettingsSection>
+      <AgentEnvironmentSettings />
       <SettingsSection title="Background work">
         <SettingRow
           label="Automations"
@@ -287,6 +289,11 @@ export function UtilitySettings() {
     ["followups", "Follow-up suggestions", "When the agent didn't suggest any itself."],
     ["sessionTitles", "Session titles", "Short titles from the first message."],
     ["noticeSummaries", "Notice summaries", "One-line summaries in PM wake-ups."],
+    [
+      "handoffSummaries",
+      "Handoff summaries",
+      "What a session did, in the brief of a handoff. Off: its last reply.",
+    ],
   ] as const;
   const utilityAuto = settings.utilityModel.provider === "auto";
   return (

@@ -1,11 +1,13 @@
-import type {
-  AgentEvent,
-  ErrorInfo,
-  Item,
-  ItemDelta,
-  SessionSnapshot,
-  TurnStatus,
-  Usage,
+import {
+  type AgentEvent,
+  appendToolOutput,
+  type ErrorInfo,
+  type Item,
+  type ItemDelta,
+  OUTPUT_PREVIEW_CHARS,
+  type SessionSnapshot,
+  type TurnStatus,
+  type Usage,
 } from "@codeden/contracts";
 
 export interface TurnState {
@@ -15,6 +17,8 @@ export interface TurnState {
   startedAt: string;
   completedAt: string | null;
   error: ErrorInfo | null;
+  /** Set when the conversation can be forked through this turn ("Fork from here", §9). */
+  forkPoint?: string | null;
 }
 
 export interface ThreadState {
@@ -25,7 +29,7 @@ export interface ThreadState {
   agentType: string | null;
   /** Item ids in display order. */
   itemIds: string[];
-  /** Turn ids in order. */
+  /** Turn ids in start order: the last one is the thread's latest turn. */
   turnIds: string[];
 }
 
@@ -83,7 +87,9 @@ export function transcriptFromSnapshot(snap: SessionSnapshot): TranscriptState {
       turnIds: [],
     };
   }
-  for (const turn of snap.turns) {
+  // Turn ids are random, so never rely on the order they arrive in. The sort is stable, so turns
+  // that started together keep the server's order.
+  for (const turn of [...snap.turns].sort(byStart)) {
     state.turns[turn.id] = { ...turn };
     ensureThread(state, turn.threadId).turnIds.push(turn.id);
   }
@@ -110,6 +116,11 @@ export function transcriptFromSnapshot(snap: SessionSnapshot): TranscriptState {
  */
 function settle(item: Item): Item {
   return item.status === "in_progress" ? ({ ...item, status: "cancelled" } as Item) : item;
+}
+
+/** Compare turns by when they started (ISO timestamps sort as strings). */
+export function byStart(a: { startedAt: string }, b: { startedAt: string }): number {
+  return a.startedAt < b.startedAt ? -1 : a.startedAt > b.startedAt ? 1 : 0;
 }
 
 function ensureThread(state: TranscriptState, id: string): ThreadState {
@@ -140,9 +151,10 @@ function applyDelta(item: Item, delta: ItemDelta): Item {
       if (item.kind === "reasoning") return { ...item, summary: (item.summary ?? "") + delta.text };
       return item;
     case "tool_output":
+      // Live output keeps the same bounded tail the server previews, so a long command never
+      // grows the tab; the rest is fetched on demand ("Show full output").
       if (item.kind === "tool_call") {
-        const prev = item.output ?? { text: "", truncated: false };
-        return { ...item, output: { ...prev, text: prev.text + delta.text } };
+        return { ...item, output: appendToolOutput(item.output, delta.text, OUTPUT_PREVIEW_CHARS) };
       }
       return item;
     case "tool_input":
@@ -236,6 +248,7 @@ export function applyAgentEvent(
         status,
         completedAt: ts,
         error: event.type === "turn.failed" ? event.error : (turn?.error ?? null),
+        forkPoint: event.forkPoint ?? null,
       };
       for (const [id, entry] of Object.entries(state.items)) {
         if (entry.turnId === event.turnId && entry.item.status === "in_progress") {

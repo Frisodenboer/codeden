@@ -13,6 +13,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { rowToAutomation, rowToItemRecord, rowToSession, rowToThread, rowToTurn } from "../db/rows";
 import { automations, inboxItems, items, sessions, threads, turns } from "../db/schema";
+import { turnsOldestFirst } from "../db/turn-order";
 import type { AppServices } from "../services/container";
 import { badRequest, notFound } from "../services/errors";
 import { clientItemRecord } from "../services/sessions/client-items";
@@ -29,7 +30,7 @@ import { plannerRoutes } from "./planner";
 import { projectFileRoutes } from "./project-files";
 import { projectRoutes } from "./projects";
 import { scheduledRoutes } from "./scheduled";
-import { sessionCommandRoutes } from "./session-commands";
+import { searchRoutes } from "./search";
 import { sessionFileRoutes } from "./session-files";
 import { sessionRoutes } from "./sessions";
 import { artifactRoutes, fileRoutes, providerRoutes, secretRoutes, setupRoutes } from "./system";
@@ -41,7 +42,8 @@ import { utilityRoutes, workbenchRoutes } from "./workbench";
 
 export interface ApiContext {
   services: AppServices;
-  runnerStatus: () => Snapshot["runner"];
+  /** The home runner's connection and every runner (`RunnerHub.status`). */
+  runnerStatus: () => Pick<Snapshot, "runner" | "runners">;
   startedAt: number;
   /** Stop the server (and optionally the runner) after the response is sent. */
   shutdown: (opts: { stopRunner: boolean }) => void;
@@ -88,7 +90,6 @@ export function createApi(ctx: ApiContext) {
     .route("/", speechRoutes(s))
     .route("/sessions", sessionAgentConfigRoutes(s))
     .route("/sessions", sessionFileRoutes(s))
-    .route("/sessions", sessionCommandRoutes(s))
     .route("/projects", projectFileRoutes(s))
     .route("/scheduled", scheduledRoutes(s))
     .route("/planner", plannerRoutes(s))
@@ -99,6 +100,7 @@ export function createApi(ctx: ApiContext) {
     .route("/automations", automationRoutes(s))
     .route("/projects", projectAutomationRoutes(s))
     .route("/usage", usageRoutes(s))
+    .route("/search", searchRoutes(s))
     .route("/setup", setupRoutes(s))
     .route("/providers", providerRoutes(s))
     .route("/updates", updateRoutes(s))
@@ -147,7 +149,7 @@ function buildSnapshot(ctx: ApiContext): Snapshot {
     automations: s.db.select().from(automations).all().map(rowToAutomation),
     scheduled: s.orchestration.automation.listScheduledRuns(null, 20),
     roleSessions: s.orchestration.roles.refs(),
-    runner: ctx.runnerStatus(),
+    ...ctx.runnerStatus(),
   };
 }
 
@@ -180,7 +182,14 @@ function buildSessionSnapshot(s: AppServices, sessionId: string): SessionSnapsho
       .where(eq(threads.sessionId, sessionId))
       .all()
       .map(rowToThread),
-    turns: s.db.select().from(turns).where(eq(turns.sessionId, sessionId)).all().map(rowToTurn),
+    // Oldest first, so a thread's last turn is its latest one.
+    turns: s.db
+      .select()
+      .from(turns)
+      .where(eq(turns.sessionId, sessionId))
+      .orderBy(...turnsOldestFirst)
+      .all()
+      .map(rowToTurn),
     items: s.db
       .select()
       .from(items)

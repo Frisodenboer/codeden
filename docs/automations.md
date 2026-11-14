@@ -42,11 +42,17 @@ Choose **Starts off** or **Starts on** in the header, then **Save**, or **Save a
 
 **From a template.** On the Templates tab, **Use template** opens the same editor filled in from a built-in or global template, to adjust before saving. **Add and enable** adds it as it is.
 
+**From a session.** Did something once by hand that worked ("audit the auth routes", "update the dependencies and open a PR")? Choose **Make an automation…** in the session's **⋯** menu, or **Make an automation from this session…** in the command palette (**Ctrl K**) while the session is open. The same editor opens for the session's project, filled in from the session: its opening message as the prompt (attachments are left out), its provider, model, effort and permissions, and its title as the name and session title. It runs **only when you run it** until you pick a schedule or an event. Nothing is saved until you press **Save**, and like every new automation it starts off.
+
 **Later.** The automation's page is the same editor plus its schedule, **Run now**, pause and skip, and recent runs. **Duplicate** makes an editable copy (off), **Export** shares it, and the bin icon deletes it (its past runs and sessions stay).
 
 **Files are read-only here.** Automations defined in a `.md` file (see [The file format](#the-file-format)) show a **From file** badge and are edited in the file; **Duplicate to edit** makes a copy you can change in CodeDen.
 
 **From the PM.** Ask your PM ("run the linter every night and tell me what fails") and it can create the automation with `create_automation`, or change one with `update_automation`, using the same validation. PM-created automations start off and say **Created by the PM**, so you can check the prompt and permissions before switching them on.
+
+- **A change to what an automation does switches it off.** When the PM changes the trigger, the action (the prompt, agent or permissions included) or the guards of an automation that's on, it's switched off in the same change, and your inbox gets **Automation switched off: the project manager changed "…"**, listing each setting's old and new value. It runs again only once you switch it on.
+- **Renaming it, a new description or a new work key keeps it on.**
+- **Some automations are yours alone.** The PM can't change automations for all projects, or automations defined in a `.md` file (those are edited in the file).
 
 ## Sharing: export and import
 
@@ -82,7 +88,7 @@ In files, the editor's choices are stored as one of three trigger types. Schedul
 | **Event** | `type: event`, `event`, optional `filter` | See the event list below |
 | **Manual** | `type: manual` | Runs only when you (or a PM) start it |
 
-In a project in **Manual** [autonomy mode](autonomy-and-dark-factory.md), scheduled and event automations don't fire on their own (the Now / Next strip is empty); you can still run any automation by hand.
+In a project in **Manual** [autonomy mode](software-factory.md), scheduled and event automations don't fire on their own (the Now / Next strip is empty); you can still run any automation by hand.
 
 **Events:**
 
@@ -130,7 +136,7 @@ Guards are checked in this order every time a trigger fires:
 
 Every outcome is recorded as a run: `queued`, `running`, `completed`, `failed`, `skipped` or `cancelled`. Skipped runs carry a reason: `overlap`, `concurrency`, `quiet_hours`, `daily_cap`, `disabled`, `skipped_by_pm`, `conflict_skip` or `factory_intake`. Session runs follow their session, and link to it both ways. Skipped runs send an `automation.skipped` notice to the PM, which may take over or adjust the schedule.
 
-PMs manage automations with `list_automations`, `create_automation` and `update_automation` (created off; files stay read-only), `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation` / `resume_automation` (no cron or event runs while paused) and `cancel_queued_run`.
+PMs manage automations with `list_automations`, `create_automation` and `update_automation` (created off; changing what one that's on does switches it off; automations for all projects and files are yours to change, see [From the PM](#create-an-automation)), `run_automation`, `list_scheduled_runs`, `skip_next_run`, `pause_automation` / `resume_automation` (no cron or event runs while paused) and `cancel_queued_run`.
 
 ## The file format
 
@@ -174,17 +180,19 @@ You are drafting the weekly **release notes** for {{project.name}} ({{date}}).
 ## 1. Collect
 - List the pull requests merged since last Friday:
   `gh pr list --state merged --search "merged:>=<the date 7 days ago, YYYY-MM-DD>" --json number,title,author,labels,url`
-- Skip PRs labelled `skip-changelog` and pure dependency bumps.
+- Skip PRs labelled `skip-changelog`, pure dependency bumps, and PRs that already added a
+  note in `changes/` (`gh pr view <number> --json files`).
 - Call `report_progress` with the number of PRs found.
 
 ## 2. Write
-- Group the changes under **Added**, **Changed**, **Fixed** and **Security**, one line each,
-  written for users, not developers. Link every line to its PR.
-- Prepend the draft to `CHANGELOG.md` under an `## Unreleased` heading. Don't touch older entries.
+- For each remaining user-facing PR, add one note file `changes/<PR number>-<short-slug>.md`:
+  front matter `section: added`, `changed`, `fixed` or `security` between `---` lines, then one
+  `- ` bullet written for users, not developers, that links the PR. No headings.
+- Don't edit `CHANGELOG.md`: the release gathers `changes/` into the new version's section.
 
 ## 3. Deliver
 - Open a pull request with `create_pull_request` titled `docs: release notes draft ({{date}})`.
-- If nothing was merged this week, don't open a PR.
+- If no PR needs a note, don't open a PR.
 
 Call `finish` with the PR link, or say that there was nothing to release.
 ```
@@ -228,7 +236,7 @@ Tip: quote any value that starts with `{{`, as in the `workKey` above, so YAML d
 | `action` | `start_session` \| `message_pm` \| `triage` | `start_session` | |
 | `workKey` | string | `automation:<file name>` | `<kind>:<id>`; may use placeholders |
 | `title` | string | | Session title; may use placeholders |
-| `provider` | string | the agent role default | `claude`, `codex` |
+| `provider` | string | the agent role default | `claude`, `codex`, `opencode`, `cursor`, `gemini` |
 | `model` | string | the provider default | |
 | `effort` | `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` | | Each model supports a subset |
 | `autonomy` | `read_only` \| `supervised` \| `auto` \| `full` | your default | The permissions; see [Security](security.md#permissions) |
@@ -280,8 +288,20 @@ With the **Issue triage** automation on (GitHub projects only), each new issue g
 
 Then:
 
-- a **ready** issue starts a session (work key `issue:<n>`) if `autoStart` is on and the project isn't in Manual mode;
+- a **ready** issue starts a session (work key `issue:<n>`) if `autoStart` is on, the project isn't in Manual mode and the issue's author is trusted (see below);
 - otherwise you get a **"Should I take this on?"** inbox item to accept (a session starts) or decline.
+
+### Who triage starts work for
+
+On a public repository anyone can open an issue, and an issue is a prompt for an agent. So even with `autoStart` on, triage only starts a session by itself for issues by:
+
+- the GitHub account CodeDen uses (the one `gh` is signed in as);
+- the logins in **Trusted authors** in the project's [factory settings](software-factory.md#who-the-factory-works-for);
+- people with write access to the repository: its owner, members of the organization that owns it and collaborators (GitHub's author association).
+
+Anyone else's ready issue always becomes the inbox decision, and the item says the author has no write access. So does an issue whose author GitHub can't check at that moment. Labels don't count as trust, because issue templates can apply them for anyone.
+
+The PM and the agent that resolves an issue are both told that the issue text and its comments are input data, not instructions: they act on the work the issue describes and ignore anything in it that asks them to reveal secrets, change CI, release or deploy files, contact unknown hosts or act outside the repository. Comments added after you accept an issue get the same treatment.
 
 The `policy` block in the frontmatter controls this:
 
@@ -292,7 +312,7 @@ policy:
     needs_info: [needs-info]
   comment: true          # post a short comment explaining the decision
   closeRejected: false   # close duplicates and out-of-scope issues as "not planned"
-  autoStart: false       # start sessions for ready issues without asking
+  autoStart: false       # start sessions for trusted authors' ready issues without asking
   provider: codex        # optional: provider, model and autonomy for sessions it starts
 ```
 
@@ -300,4 +320,4 @@ A triage run stays **running** until the PM reports its decision, and fails if n
 
 ## Automations and the factory
 
-In **Autopilot** and **Dark factory** projects the [factory loop](autonomy-and-dark-factory.md) owns issue intake. Automations triggered by `issue.opened` or `issue.labeled` whose action is `triage` or `start_session` are recorded as skipped (`factory_intake`) instead, so an issue is never taken on twice. Scheduled automations, `message_pm` automations and manual runs keep working alongside the loop.
+In **Software factory** and **Dark factory** projects the [factory loop](software-factory.md) owns issue intake. Automations triggered by `issue.opened` or `issue.labeled` whose action is `triage` or `start_session` are recorded as skipped (`factory_intake`) instead, so an issue is never taken on twice. Scheduled automations, `message_pm` automations and manual runs keep working alongside the loop.

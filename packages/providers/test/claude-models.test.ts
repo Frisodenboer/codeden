@@ -78,6 +78,7 @@ function stubSdk(initial: Behaviour = "list") {
         if (state.behaviour === "newer") return NEWER_MODELS;
         return state.behaviour === "empty" ? [] : SDK_MODELS;
       },
+      supportedCommands: async () => [],
       close: () => {
         state.closed++;
         finish();
@@ -85,7 +86,11 @@ function stubSdk(initial: Behaviour = "list") {
     };
     return q as unknown as Query;
   }) as unknown as ClaudeSdkModule["query"];
-  return { query, state, load: async () => ({ query }) };
+  const forkSession: ClaudeSdkModule["forkSession"] = async () => {
+    throw new Error("not used here");
+  };
+  const getSessionMessages: ClaudeSdkModule["getSessionMessages"] = async () => [];
+  return { query, state, load: async () => ({ query, forkSession, getSessionMessages }) };
 }
 
 const EXPECTED = [

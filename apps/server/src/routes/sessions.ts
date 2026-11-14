@@ -1,6 +1,10 @@
 import {
   ArchiveSessionRequest,
   EditQueuedMessageRequest,
+  ForkSessionRequest,
+  type ForkSessionResponse,
+  HandoffSessionRequest,
+  type HandoffSessionResponse,
   ListSessionsQuery,
   type QueuedMessageList,
   RespondRequest,
@@ -19,7 +23,7 @@ import { jsonBody, queryOf } from "./validate";
 
 /**
  * `/api/sessions`: start (with conflict handling), message, steer, interrupt, respond, stop,
- * archive (removes the worktree, §9), unarchive and the queued-message tray.
+ * fork, handoff, archive (removes the worktree, §9), unarchive and the queued-message tray.
  */
 export function sessionRoutes(s: AppServices) {
   return (
@@ -28,8 +32,13 @@ export function sessionRoutes(s: AppServices) {
       .post("/", jsonBody(StartSessionRequest), async (c) => {
         const req = c.req.valid("json");
         const result = await s.sessions.start(req);
-        if (result.status !== "conflict") return c.json(result, 200);
-        // Persist the conflict (inbox item) so it can be resolved later (§8.4).
+        if (result.status !== "conflict") {
+          // A new version of a request that had an open conflict: that conflict is done.
+          s.orchestration.conflicts.closeReplaced(req, result);
+          return c.json(result, 200);
+        }
+        // Persist the conflict (inbox item) so it can be resolved later (§8.4); it replaces the
+        // open conflict of an earlier version of the same request.
         const record = s.orchestration.conflicts.record(req, result.existing);
         return c.json({ ...result, conflictId: record.id }, 409);
       })
@@ -53,6 +62,22 @@ export function sessionRoutes(s: AppServices) {
         return c.json({ ok: true as const });
       })
       .post("/:id/stop", async (c) => c.json(await s.sessions.stop(c.req.param("id"))))
+      // A new session continuing this one's conversation and code (§9); 409 when it can't.
+      .post("/:id/fork", jsonBody(ForkSessionRequest), async (c) => {
+        const body: ForkSessionResponse = await s.sessions.fork(
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        return c.json(body);
+      })
+      // A new session, on any provider, with this one's code and a brief of its work (§9).
+      .post("/:id/handoff", jsonBody(HandoffSessionRequest), async (c) => {
+        const body: HandoffSessionResponse = await s.sessions.handoff(
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        return c.json(body);
+      })
       .post("/:id/archive", jsonBody(ArchiveSessionRequest), async (c) =>
         c.json(await s.worktreeCleanup.archive(c.req.param("id"), c.req.valid("json"))),
       )
@@ -84,10 +109,13 @@ export function sessionRoutes(s: AppServices) {
         const { item } = record;
         if (item.kind !== "tool_call") throw badRequest("Only tool calls have output", "no_output");
         const text = item.output?.text ?? "";
+        const totalBytes = Buffer.byteLength(text, "utf8");
         const body: ToolOutputResponse = {
           itemId: item.id,
           text,
-          totalBytes: Buffer.byteLength(text, "utf8"),
+          totalBytes,
+          truncated: item.output?.truncated ?? false,
+          outputBytes: Math.max(totalBytes, item.output?.totalBytes ?? totalBytes),
         };
         return c.json(body);
       })

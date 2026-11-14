@@ -3,6 +3,10 @@
  * Everything that crosses a process or network boundary is defined here first.
  */
 export * from "./agent-config";
+export * from "./agent-config-hooks";
+export * from "./agent-config-loaded";
+export * from "./agent-config-mcp-test";
+export * from "./agent-config-skills";
 export * from "./agent-events";
 export * from "./api";
 export * from "./automations-api";
@@ -18,6 +22,9 @@ export * from "./entities/session";
 export * from "./events";
 export * from "./factory";
 export * from "./factory-api";
+export * from "./factory-pipeline";
+export * from "./factory-prs";
+export * from "./form-answers";
 export * from "./github";
 export * from "./images-api";
 export * from "./input";
@@ -34,8 +41,13 @@ export * from "./runner/browser";
 export * from "./runner/commands";
 export * from "./runner/events";
 export * from "./runner/messages";
+export * from "./runners";
+export * from "./search";
+export * from "./search-text";
 export * from "./session-files";
 export * from "./settings";
+export * from "./slash-commands";
+export * from "./tool-output";
 export * from "./tools";
 export * from "./updates";
 export * from "./usage";

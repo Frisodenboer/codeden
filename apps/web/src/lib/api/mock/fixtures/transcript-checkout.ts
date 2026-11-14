@@ -16,6 +16,7 @@ import { cartPatch, countLines, specPatch } from "./patches";
 
 const T = "t-checkout";
 const R = "t-checkout-review";
+const E = "t-checkout-explore";
 
 const failingRun = `Running 20 tests using 4 workers
 
@@ -79,10 +80,26 @@ const review: Item[] = [
   ),
 ];
 
+const explore: Item[] = [
+  search("ex-1", "/api/cart/price", 4, "src"),
+  read("ex-2", "src/checkout/useCart.ts", 1, 64),
+  assistant(
+    "ex-3",
+    "`useCart.updateQuantity` fetches `/api/cart/price` on every change and calls `setTotal` with whichever response lands last.",
+  ),
+];
+
 export const checkoutTranscript = buildTranscript(
   "s-checkout",
   [
     { id: T, title: "Fix flaky checkout e2e test" },
+    {
+      id: E,
+      parentThreadId: T,
+      parentItemId: "ck-explore",
+      agentType: "Explore",
+      title: "Find where the cart total is set",
+    },
     {
       id: R,
       parentThreadId: T,
@@ -117,6 +134,30 @@ export const checkoutTranscript = buildTranscript(
         ),
         read("ck-t1", "tests/e2e/checkout.spec.ts"),
         search("ck-t2", "waitForTimeout", 7, "tests"),
+        {
+          id: "ck-explore",
+          kind: "subagent",
+          status: "completed",
+          childThreadId: E,
+          agentType: "Explore",
+          description: "Find where the cart total is set",
+          summary:
+            "useCart.updateQuantity sets the total from whichever price response lands last.",
+          stats: {
+            totalTokens: 48_213,
+            toolUses: 23,
+            durationMs: 72_000,
+            usage: [
+              {
+                model: "claude-sonnet-5-5",
+                inputTokens: 1_240,
+                outputTokens: 3_180,
+                cacheReadTokens: 412_000,
+                cacheWriteTokens: 46_500,
+              },
+            ],
+          },
+        },
         read("ck-t3", "src/checkout/useCart.ts", 1, 64),
         cmd("ck-t4", "pnpm test:e2e checkout --repeat-each=20", failingRun, 1, 41_700),
         assistant("ck-a1", analysis),
@@ -148,7 +189,11 @@ export const checkoutTranscript = buildTranscript(
           0,
           8_900,
         ),
-        cmd("ck-t7", "pnpm test:e2e checkout --repeat-each=50", passingRun, 0, 96_000),
+        {
+          ...cmd("ck-t7", "pnpm test:e2e checkout --repeat-each=50", passingRun, 0, 96_000),
+          // A long run whose transcript copy was cut: its details offer "Show full output".
+          output: { text: passingRun, truncated: true, totalBytes: 1_284_310 },
+        },
         notice("ck-n1", "Turn checkpoint saved · 2 files changed", "info", "checkpoint"),
         assistant("ck-a2", summary),
         followups("ck-f1", [
@@ -218,6 +263,7 @@ export const checkoutTranscript = buildTranscript(
         },
       ],
     },
+    { id: "ex-turn-1", threadId: E, start: 33, end: 32, items: explore },
     { id: "rv-turn-1", threadId: R, start: 4, status: "running", items: review },
   ],
 );

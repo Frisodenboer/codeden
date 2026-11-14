@@ -6,24 +6,26 @@ import {
   type Project,
 } from "@codeden/contracts";
 import { errorMessage } from "../errors";
-import { budgetSpend, type FactoryContext, factoryNotice, visionOf } from "./context";
-import {
-  budgetExceeded,
-  discoveryDue,
-  freeSlots,
-  localDay,
-  mayBuild,
-  nextAreas,
-  slugify,
-} from "./policy";
+import { earliestUntil, untilText } from "./availability";
+import { archiveFinished } from "./cleanup";
+import { budgetSpend, type FactoryContext, visionOf } from "./context";
+import { classifyPending, intakeFailedChecks, intakeIssues } from "./intake";
+import { openPrFiles, scheduleOrder } from "./overlap";
+import { advanceOwned } from "./owned";
+import { budgetExceeded, localDay, mayBuild, queueOrder } from "./policy";
 import { advanceBuilding, advanceWatching } from "./progress";
-import { triageInstructions } from "./prompts";
-import { sizeLimitText } from "./size";
-import { WAITING_STAGES } from "./store";
+import { advanceQueue } from "./queue";
+import { closeReplacedPrs } from "./rebuild";
+import { recoverInfraFailures } from "./recover";
+import { advanceScout } from "./scout";
+import { claimSlot } from "./slots";
+import { OWNED_STAGES } from "./store";
+import { mayAutoMerge } from "./trust";
+import { recoverTurnRaceFailures } from "./turn-race";
 import { advanceVerifying } from "./verify";
+import { finishesOpenWork, unopenedBuilds, wipOf, wipText } from "./wip";
 
-/** Label on issues the factory created or accepted. */
-export const FACTORY_LABEL = "codeden-factory";
+export { FACTORY_LABEL } from "./intake";
 
 /** What a tick needs besides the context: the daily digest hook. */
 export interface TickHooks {
@@ -33,8 +35,14 @@ export interface TickHooks {
 
 /**
  * One step of a project's factory loop (§10.1). The server drives the state machine and
- * enforces the limits; the PM and the agents only do the judgement. Safe to call at any time
- * and after a restart: every step reads the persisted state and moves it forward.
+ * enforces the limits; agents only do the judgement. Safe to call at any time and after a
+ * restart: every step reads the persisted state and moves it forward.
+ *
+ * Order: work in flight moves first (watch, build, verify), finished work's sessions are
+ * archived, then intake (new issues, failed checks on main), Identify type, the free agents
+ * take the queue, and last the dark factory's scout gets whatever agents are still free. Who
+ * gets a free agent is decided by `slots.ts` (reviews, then fixes and rebases, then builds,
+ * then the scout), whatever the order the steps run in.
  */
 export async function runTick(
   ctx: FactoryContext,
@@ -46,11 +54,10 @@ export async function runTick(
   let loop = ctx.store.loopOrNew(projectId, now);
   const killed = project.killSwitch || ctx.settings.get().factory.killSwitch;
   if (!isFactoryMode(project.autonomyMode) || project.archivedAt) {
-    if (loop.state !== "idle" && loop.state !== "stopped")
-      loop = { ...loop, state: "idle", discovery: [] };
+    if (loop.state !== "idle" && loop.state !== "stopped") loop = { ...loop, state: "idle" };
     return save(ctx, loop, now);
   }
-  if (killed) return save(ctx, { ...loop, state: "stopped", discovery: [] }, now);
+  if (killed) return save(ctx, { ...loop, state: "stopped" }, now);
   if (loop.state === "stopped") loop = { ...loop, state: "idle" };
 
   // Day rollover: digest for the day that ended, fresh counters; a budget pause ends.
@@ -66,25 +73,36 @@ export async function runTick(
     }
   }
 
+  // Who is installed and signed in: detected again in the background every few minutes.
+  ctx.sessions.refreshAvailability();
+  // Work that waited for an agent on the last tick gets the free slots first (`slots.ts`).
+  ctx.slots.beginTick(projectId);
+  // Items that failed for a reason outside their code go back by themselves (builders that
+  // must carry on wait until after the reviews, fixes and rebases, below).
+  const failedAtStart = new Set(ctx.store.items(projectId, ["failed"]).map((i) => i.id));
+  loop = await recoverInfraFailures(ctx, project, loop, { resume: false });
   // Items already in flight move on even while paused (merges stay blocked, reverts excepted).
-  loop = dropFinishedDiscovery(ctx, loop);
   // Watch merges first, then builds, then verification, so a PR found while building is
-  // verified in the same step and a fresh merge is watched from the next one.
-  for (const stage of ["watching", "building", "verifying"] as const) {
+  // verified in the same step and a fresh merge is watched from the next one. Then the merge
+  // queue takes one step (at most one merge per tick), and the PRs of failed and escalated
+  // items, which wait for a person, are kept free of conflicts.
+  for (const stage of ["watching", "building", "verifying", ...OWNED_STAGES] as const) {
     for (const item of ctx.store.items(projectId, [stage])) {
-      try {
-        if (stage === "building") loop = await advanceBuilding(ctx, project, loop, item);
-        else if (stage === "verifying") loop = await advanceVerifying(ctx, project, loop, item);
-        else loop = await advanceWatching(ctx, project, loop, item);
-      } catch (error) {
-        ctx.log?.(`factory: ${item.id}: ${errorMessage(error)}`);
-        ctx.store.updateItem(item.id, (i) => ({
-          ...i,
-          note: `Loop error: ${errorMessage(error)}`,
-        }));
-      }
+      loop = await step(ctx, item, loop, () => {
+        if (stage === "building") return advanceBuilding(ctx, project, loop, item);
+        if (stage === "verifying") return advanceVerifying(ctx, project, loop, item);
+        if (stage === "watching") return advanceWatching(ctx, project, loop, item);
+        return advanceOwned(ctx, project, loop, item);
+      });
     }
+    if (stage === "verifying") loop = await advanceQueue(ctx, project, loop);
   }
+  // PRs a rebuild or an integrator replaced are closed, whatever their item's stage by now.
+  await closeReplacedPrs(ctx, project).catch((error: unknown) =>
+    ctx.log?.(`factory: closing replaced PRs: ${errorMessage(error)}`),
+  );
+  // Finished work gives back its sessions and worktrees, also while paused.
+  archiveFinished(ctx, projectId);
 
   if (loop.state !== "paused") {
     const spend = budgetSpend(ctx, projectId, today, project.factoryLimits);
@@ -93,18 +111,37 @@ export async function runTick(
   }
   if (loop.state === "paused") return save(ctx, loop, now);
 
-  loop = intakeIssues(ctx, project, loop);
-  await intakeFailedChecks(ctx, project, loop).then((l) => {
-    loop = l;
-  });
-  if (project.autonomyMode === "dark_factory") loop = await discover(ctx, project, loop, now);
-  requestTriage(ctx, project);
-  loop = await build(ctx, project, loop);
+  loop = await intakeIssues(ctx, project, loop);
+  loop = await intakeFailedChecks(ctx, project, loop);
+  await classifyPending(ctx, project);
+  // Builders of work that failed for a reason outside its code, or whose builder was marked
+  // failed by a message racing its turn, carry on: ahead of new work for the free agents.
+  loop = await recoverInfraFailures(ctx, project, loop, { resume: true, only: failedAtStart });
+  await recoverTurnRaceFailures(ctx, project, loop);
+  await assignAgents(ctx, project, loop);
+  if (project.autonomyMode === "dark_factory") loop = await advanceScout(ctx, project, loop);
   return save(ctx, { ...loop, state: deriveState(ctx, projectId, loop) }, now);
 }
 
+/** One item's step: an error is noted on the item and never stops the tick. */
+async function step(
+  ctx: FactoryContext,
+  item: FactoryItem,
+  loop: FactoryLoop,
+  run: () => Promise<FactoryLoop>,
+): Promise<FactoryLoop> {
+  try {
+    return await run();
+  } catch (error) {
+    ctx.log?.(`factory: ${item.id}: ${errorMessage(error)}`);
+    ctx.store.updateItem(item.id, (i) => ({ ...i, note: `Loop error: ${errorMessage(error)}` }));
+    return loop;
+  }
+}
+
+/** Ticks that change nothing append nothing (the status shows the tick time from memory). */
 function save(ctx: FactoryContext, loop: FactoryLoop, now: Date): FactoryLoop {
-  return ctx.store.saveLoop({ ...loop, lastTickAt: now.toISOString() });
+  return ctx.store.saveTick(loop, now.toISOString());
 }
 
 /** The loop state the panel shows: the most advanced stage with work in it. */
@@ -112,175 +149,139 @@ function deriveState(ctx: FactoryContext, projectId: string, loop: FactoryLoop):
   const active = ctx.store.items(projectId, ["building", "verifying", "watching"]);
   if (active.some((i) => i.stage === "verifying" || i.stage === "watching")) return "verifying";
   if (active.some((i) => i.stage === "building")) return "building";
-  if (loop.discovery.length > 0) return "discovering";
+  if (loop.scout.round) return "discovering";
   return "idle";
 }
 
-/** Forget discovery runs whose sessions ended (their candidates arrive through the tool). */
-function dropFinishedDiscovery(ctx: FactoryContext, loop: FactoryLoop): FactoryLoop {
-  const running = loop.discovery.filter((d) => {
-    const s = ctx.repo.find(d.sessionId)?.session;
-    return (
-      s !== undefined && ["created", "queued", "starting", "running", "waiting"].includes(s.status)
-    );
-  });
-  return running.length === loop.discovery.length ? loop : { ...loop, discovery: running };
-}
+/** Notes the scheduler writes on queued items (replaced or cleared as things change). */
+const HOLD_NOTE = /^(Waiting: finishing open work|Deferred: likely overlaps)/;
 
-/** New issues (opened after the factory was enabled, or labelled for it) become candidates. */
-function intakeIssues(ctx: FactoryContext, project: Project, loop: FactoryLoop): FactoryLoop {
-  const known = new Set(
-    ctx.store.items(project.id).flatMap((i) => (i.issue ? [i.issue.number] : [])),
+/** Say why a queued item waits (`note`), or clear such a note once it no longer holds (null). */
+function scheduleNote(ctx: FactoryContext, itemId: string, note: string | null): void {
+  ctx.store.updateItem(
+    itemId,
+    (i) => {
+      if (note) return { ...i, note };
+      return i.note && HOLD_NOTE.test(i.note) ? { ...i, note: null } : i;
+    },
+    { touch: false },
   );
-  // GitHub timestamps have second precision and clocks drift: allow a minute of slack.
-  const since = loop.enabledAt ? Date.parse(loop.enabledAt) - 60_000 : Number.POSITIVE_INFINITY;
-  for (const issue of ctx.github.openIssues(project.id)) {
-    if (known.has(issue.number)) continue;
-    const opened = issue.createdAt ? Date.parse(issue.createdAt) : 0;
-    const labelled = issue.labels.includes(FACTORY_LABEL);
-    if (!labelled && opened < since) continue;
-    ctx.store.createItem({
-      projectId: project.id,
-      workKey: `issue:${issue.number}`,
-      title: issue.title,
-      summary: (issue.body ?? "").slice(0, 4_000),
-      source: "issue",
-      stage: "candidate",
-      issue: { number: issue.number, url: issue.url, title: issue.title },
-    });
-  }
-  return loop;
 }
 
-/** A failed check on the default branch becomes a candidate (once per commit). */
-async function intakeFailedChecks(
+/** While auto-merge is on: merges today plus work in flight stay under the daily merge cap. */
+function underMergeCap(
   ctx: FactoryContext,
   project: Project,
   loop: FactoryLoop,
-): Promise<FactoryLoop> {
-  // Regressions after factory merges are handled by the watch step.
-  if (ctx.store.items(project.id, ["watching"]).length > 0) return loop;
-  let head: Awaited<ReturnType<typeof ctx.github.mainHead>>;
-  try {
-    head = await ctx.github.mainHead(project.id);
-  } catch {
-    return loop;
-  }
-  if (head.checks !== "failure" || loop.seenFailedShas.includes(head.sha)) return loop;
-  const failing = head.failed.join(", ") || "CI";
-  ctx.store.createItem({
-    projectId: project.id,
-    workKey: `factory:fix-main-${head.sha.slice(0, 7)}`,
-    title: `Fix failing ${failing} on the default branch`,
-    summary: `Checks failing on ${head.sha}: ${failing}.`,
-    source: "failed_check",
-    area: "tech_debt",
-    acceptanceCriteria: [`${failing} passes on the default branch`],
-    stage: "candidate",
-  });
-  return { ...loop, seenFailedShas: [...loop.seenFailedShas, head.sha].slice(-20) };
+  item: FactoryItem,
+) {
+  if (!mayAutoMerge(item, project.factoryLimits)) return true;
+  const inFlight = ctx.store
+    .items(project.id, ["building", "verifying"])
+    .filter((i) => mayAutoMerge(i, project.factoryLimits)).length;
+  return mayBuild(loop.mergesToday, inFlight, project.factoryLimits);
 }
 
-/** Dark factory: improvement finders per area when the backlog runs low. */
-async function discover(
-  ctx: FactoryContext,
-  project: Project,
-  loop: FactoryLoop,
-  now: Date,
-): Promise<FactoryLoop> {
-  const waiting = ctx.store.items(project.id, WAITING_STAGES).length;
-  if (!discoveryDue(loop, waiting, now.getTime())) return loop;
-  const slots = freeSlots(ctx.sessions.activeCount(project.id), project.factoryLimits);
-  const areas = nextAreas(
-    loop.tuning.areas,
-    loop.nextArea,
-    Math.min(slots, loop.tuning.discoveryPerRound),
+/**
+ * The orchestrator of the swarm: give queued items to free agents, within the agent limit (new
+ * builds come after reviews, fixes and rebases, `slots.ts`), the work-in-progress limit
+ * (`wip.ts`) and, while auto-merge is on, the daily merge cap. Items that clearly overlap an open
+ * PR wait behind those that don't (`overlap.ts`). An item whose issue was closed meanwhile stops.
+ * Every build that will open a PR takes room under the work-in-progress limit, those started
+ * earlier and those this tick starts, so the limit is never overshot.
+ */
+async function assignAgents(ctx: FactoryContext, project: Project, loop: FactoryLoop) {
+  const wip = wipOf(ctx, project, loop);
+  let building = unopenedBuilds(ctx, project.id);
+  const queue = scheduleOrder(
+    ctx.store.items(project.id, ["backlog"]).sort(queueOrder),
+    openPrFiles(ctx, project),
   );
-  if (areas.length === 0) return loop;
   const vision = visionOf(project).text;
-  const known = ctx.store
-    .items(project.id)
-    .slice(0, 40)
-    .map((i) => i.title);
-  const runs = [...loop.discovery];
-  for (const area of areas) {
-    try {
-      const res = await ctx.sessions.startDiscovery(project.id, area, vision, known);
-      if (res.status === "started")
-        runs.push({ sessionId: res.sessionId, area, startedAt: now.toISOString() });
-    } catch (error) {
-      ctx.log?.(`factory: discovery ${area}: ${errorMessage(error)}`);
+  let full = false;
+  for (const { item, overlap } of queue) {
+    if (item.issue && ctx.github.issue(project.id, item.issue.number)?.state === "closed") {
+      ctx.store.updateItem(item.id, (i) => ({
+        ...i,
+        stage: "rejected",
+        reason: "The issue was closed on GitHub",
+        finishedAt: ctx.now().toISOString(),
+      }));
+      continue;
     }
+    const takesRoom = !finishesOpenWork(ctx, item);
+    if (takesRoom && wip.openPrs + building >= wip.limit) {
+      scheduleNote(ctx, item.id, `Waiting: ${wipText(wip, building).replace(/^F/, "f")}`);
+      continue;
+    }
+    if (!full && underMergeCap(ctx, project, loop, item)) {
+      if (claimSlot(ctx, project, "build", `build:${item.id}`, { ordered: true })) {
+        const started = await startBuilder(ctx, project, item, vision, loop);
+        if (started && takesRoom) building++;
+        continue;
+      }
+      full = true;
+    }
+    const deferred =
+      overlap && `Deferred: likely overlaps open PR #${overlap.pr} (${overlap.path})`;
+    scheduleNote(ctx, item.id, deferred || null);
   }
-  return {
-    ...loop,
-    discovery: runs,
-    nextArea: (loop.nextArea + areas.length) % Math.max(1, loop.tuning.areas.length),
-    lastDiscoveryAt: now.toISOString(),
-  };
 }
 
-/** Wake the PM once for candidates it has not been asked about. */
-function requestTriage(ctx: FactoryContext, project: Project): void {
-  const fresh = ctx.store.items(project.id, ["candidate"]).filter((i) => !i.triageRequestedAt);
-  if (fresh.length === 0) return;
-  const at = ctx.now().toISOString();
-  factoryNotice(ctx, {
-    id: `factory.triage:${project.id}:${fresh.map((i) => i.id.slice(0, 8)).join(",")}`.slice(
-      0,
-      200,
-    ),
-    projectId: project.id,
-    target: "pm",
-    event: "triage_needed",
-    title: `Factory: ${fresh.length} candidate${fresh.length === 1 ? "" : "s"} to triage`,
-    text: triageInstructions(
-      fresh,
-      project.autonomyMode === "dark_factory",
-      sizeLimitText(ctx.store.loopOrNew(project.id).tuning),
-    ),
-    itemIds: fresh.map((i) => i.id),
-  });
-  for (const item of fresh) ctx.store.updateItem(item.id, (i) => ({ ...i, triageRequestedAt: at }));
-}
-
-/** Start builders for the best-scored backlog items, within slots and the merge cap. */
-async function build(
+/**
+ * The builder's provider and model (§10.1, Provider availability): `builderProvider` and
+ * `builderModel` when that provider is available; otherwise another available provider (the
+ * project's, then the agent default, then any), with its default model. `auto` stays `auto`
+ * while every provider is available. Nothing available: the build waits.
+ */
+function chooseBuilder(
   ctx: FactoryContext,
   project: Project,
   loop: FactoryLoop,
-): Promise<FactoryLoop> {
-  const backlog = ctx.store
-    .items(project.id, ["backlog"])
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.createdAt.localeCompare(b.createdAt));
-  const vision = visionOf(project).text;
-  for (const item of backlog) {
-    const inFlight = ctx.store.items(project.id, ["building", "verifying"]).length;
-    if (!mayBuild(loop.mergesToday, inFlight, project.factoryLimits)) break;
-    if (freeSlots(ctx.sessions.activeCount(project.id), project.factoryLimits) === 0) break;
-    await startBuilder(ctx, item, vision, loop);
+): { provider: string; model: string | null } | { waiting: string } {
+  const wanted = loop.tuning.builderProvider;
+  const available = ctx.sessions.providers();
+  const blocked = ctx.sessions.unavailable();
+  if (blocked.length === 0) {
+    return { provider: wanted, model: wanted === "auto" ? null : loop.tuning.builderModel };
   }
-  return loop;
+  if (available.length === 0) {
+    return { waiting: `Waiting: no build provider available${untilText(earliestUntil(blocked))}` };
+  }
+  if (wanted !== "auto" && available.includes(wanted)) {
+    return { provider: wanted, model: loop.tuning.builderModel };
+  }
+  const roleDefault = ctx.settings.get().providers.agent.provider;
+  const order = [wanted, project.defaultProvider, roleDefault, ...available];
+  const provider = order.find((p): p is string => Boolean(p) && available.includes(p as string));
+  return { provider: provider ?? (available[0] as string), model: null };
 }
 
+/** Start a builder for a queued item; true when the item is building. */
 async function startBuilder(
   ctx: FactoryContext,
+  project: Project,
   item: FactoryItem,
   vision: string,
   loop: FactoryLoop,
-): Promise<void> {
-  const provider = loop.tuning.builderProvider;
+): Promise<boolean> {
+  const choice = chooseBuilder(ctx, project, loop);
+  if ("waiting" in choice) {
+    ctx.store.updateItem(item.id, (i) => ({ ...i, note: choice.waiting }));
+    return false;
+  }
+  const { provider, model } = choice;
   try {
-    const res = await ctx.sessions.startBuilder(item, vision, provider);
+    const res = await ctx.sessions.startBuilder(item, vision, provider, model);
     if (res.status === "conflict") {
       const other = res.existing.map((w) => w.workKey).join(", ");
       ctx.store.updateItem(item.id, (i) => ({
         ...i,
         note: `Waiting: overlaps running work (${other})`,
       }));
-      return;
+      return false;
     }
-    if (res.status !== "started" && res.status !== "queued") return;
+    if (res.status !== "started" && res.status !== "queued") return false;
     const session = ctx.repo.find(res.sessionId)?.session;
     ctx.store.updateItem(item.id, (i) => ({
       ...i,
@@ -289,15 +290,12 @@ async function startBuilder(
       builderProvider: session?.provider ?? (provider === "auto" ? null : provider),
       note: null,
     }));
+    return true;
   } catch (error) {
     ctx.store.updateItem(item.id, (i) => ({
       ...i,
       note: `Build not started: ${errorMessage(error)}`,
     }));
+    return false;
   }
-}
-
-/** A work key for a new candidate from its title. */
-export function candidateWorkKey(title: string): string {
-  return `factory:${slugify(title)}`;
 }

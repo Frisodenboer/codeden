@@ -10,6 +10,7 @@ import {
   SessionDetail,
   SetupStatus,
   StartSessionResponse,
+  TranscriptSearchResponse,
 } from "@codeden/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type RunningServer, startServer } from "../src";
@@ -158,6 +159,10 @@ describe("api routes", () => {
     expect((await call("POST", "/setup/login/codex")).json()).toMatchObject({
       command: "codex login",
     });
+    expect((await call("POST", "/setup/login/opencode")).json()).toMatchObject({
+      tool: "opencode",
+      command: "opencode auth login",
+    });
     expect((await call("POST", "/setup/login/rm")).status).toBe(400);
     const seen: string[] = [];
     const off = server.services.store.subscribe((events) =>
@@ -222,5 +227,27 @@ describe("api routes", () => {
     expect(
       SecretsStatus.parse((await call("GET", "/secrets")).json()).keys.every((k) => !k.set),
     ).toBe(true);
+  });
+
+  it("searches transcripts behind the install token and validates the query", async () => {
+    const path = `/search/transcripts?q=${encodeURIComponent('"prisma migrate" OR NEAR(')}`;
+    expect((await fetch(`${server.url}/api${path}`)).status).toBe(401);
+    const res = await call("GET", path);
+    expect(res.status).toBe(200);
+    expect(TranscriptSearchResponse.parse(res.json())).toEqual({
+      query: '"prisma migrate" OR NEAR(',
+      hits: [],
+      nextCursor: null,
+    });
+    const filtered = await call(
+      "GET",
+      "/search/transcripts?q=cart%00hook&role=pm&includeArchived=false&cursor=12&limit=5",
+    );
+    expect(filtered.status).toBe(200);
+    expect(TranscriptSearchResponse.parse(filtered.json())).toMatchObject({ query: "cart hook" });
+    expect((await call("GET", "/search/transcripts?q=")).status).toBe(400);
+    expect((await call("GET", "/search/transcripts?q=cart&limit=500")).status).toBe(400);
+    expect((await call("GET", "/search/transcripts?q=cart&cursor=next")).status).toBe(400);
+    expect((await call("GET", "/search/transcripts?q=cart&role=boss")).status).toBe(400);
   });
 });

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   CODEDEN_VERSION,
+  HOME_RUNNER_ID,
   RUNNER_PROTOCOL_VERSION,
   type RunnerCommand,
   type RunnerCommandName,
@@ -21,10 +23,29 @@ import type { Db } from "../db/client";
 import { runnerState } from "../db/schema";
 import { ingestRunnerEvent } from "../events/ingest";
 import type { EventStore } from "../events/store";
+import { journalIdRefusal } from "./identity";
 import { type RunnerLaunchConfig, type RunnerStartTimeouts, startRunnerProcess } from "./launcher";
 import { isProcessAlive, probeRunnerLock, readLiveRunnerLock } from "./lock";
+import { UntrustedRunnerGuard } from "./untrusted";
 
 export interface RunnerClientOptions {
+  /**
+   * The runner's record id (`runners.id`), stamped on its `runner.*` events. Omitted: the home
+   * runner, as in event logs from before several runners existed.
+   */
+  recordId?: string;
+  /**
+   * Names a runner other than the home runner in its errors, e.g. "Runner rn-1 (docker, runner
+   * r-1)". Read when an error happens, so it can carry the journal id learned on connecting.
+   */
+  describe?: () => string;
+  /**
+   * The runner's messages are untrusted input: every runner but the home runner (a sandbox
+   * runner shares its sandbox with an agent that has a shell). Its events and streams count only
+   * for sessions routed to it and ptys the server opened on it, and its journal id must be new
+   * on its first connection and the same on every later one (`identity.ts`, `untrusted.ts`).
+   */
+  untrusted?: boolean;
   home: string;
   lockFile: string;
   db: Db;
@@ -48,6 +69,11 @@ export interface RunnerClientOptions {
   mcpUpstreamUrl?: string;
   /** How long a version-mismatch drain may wait for running turns. Default 5 minutes. */
   drainTimeoutMs?: number;
+  /**
+   * No command gives up sooner than this, whatever deadline its caller set (tests on a busy
+   * machine, where the runner answers slowly). Default: each command's own deadline.
+   */
+  requestTimeoutFloorMs?: number;
   /**
    * Called once a current, non-draining runner is connected and configured (MCP proxy set),
    * e.g. to resume sessions interrupted by a runner restart.
@@ -74,6 +100,9 @@ export class RunnerCommandError extends Error {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Wait `ms`, or less when `signal` aborts first. */
+const pause = (ms: number, signal: AbortSignal) =>
+  delay(ms, undefined, { signal }).catch(() => undefined);
 
 /**
  * Server side of the runner protocol (§4.3): finds or starts the runner, connects,
@@ -82,6 +111,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class RunnerClient {
   private ws: WebSocket | undefined;
   private stopped = false;
+  /** Aborted by `stop()`: cancels the connection attempt in flight (probe, start, handshake). */
+  private abort = new AbortController();
+  /** The connection attempt in flight, if any; `stop()` waits for it to settle. */
+  private attempt: Promise<void> | undefined;
   private reconnectDelay = 250;
   private readonly pending = new Map<string, Pending>();
   private connectedWaiters: Array<() => void> = [];
@@ -97,7 +130,12 @@ export class RunnerClient {
     lastError: null,
   };
 
-  constructor(private readonly opts: RunnerClientOptions) {}
+  /** What an untrusted runner may send beyond its sessions' events; none for the home runner. */
+  private readonly guard: UntrustedRunnerGuard | undefined;
+
+  constructor(private readonly opts: RunnerClientOptions) {
+    this.guard = opts.untrusted ? new UntrustedRunnerGuard(opts.db) : undefined;
+  }
 
   get status(): RunnerConnectionStatus {
     return this.current;
@@ -108,12 +146,15 @@ export class RunnerClient {
     return this.proxyUrl;
   }
 
-  /** Ensure a runner is live and connect. Resolves once the handshake completed. */
+  /**
+   * Ensure a runner is live and connect. Resolves once the handshake completed; rejects with
+   * `runner_unavailable` when `stop()` comes first.
+   */
   async start(): Promise<void> {
     this.stopped = false;
-    const connected = this.waitForConnection();
-    void this.connectLoop();
-    await connected;
+    this.abort = new AbortController();
+    await this.connectLoop();
+    if (this.current.state !== "connected") throw this.unavailable("was stopped while connecting");
   }
 
   /** Resolve when connected (immediately if already). */
@@ -129,24 +170,31 @@ export class RunnerClient {
   ): Promise<RunnerCommandResult<N>> {
     const ws = this.ws;
     if (!ws || this.current.state !== "connected") {
-      throw new RunnerCommandError("runner_unavailable", "Runner is not connected");
+      throw this.unavailable("is not connected");
     }
     const id = randomUUID();
+    const deadlineMs = Math.max(timeoutMs, this.opts.requestTimeoutFloorMs ?? 0);
     const result = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new RunnerCommandError("timeout", `Runner command ${command.name} timed out`));
-      }, timeoutMs);
+      }, deadlineMs);
       this.pending.set(id, { name: command.name, resolve, reject, timer });
     });
+    this.guard?.sending(command as RunnerCommand);
     this.send({ type: "command", id, command: command as RunnerCommand });
     const raw = await result;
     return RunnerCommandResults[command.name as N].parse(raw) as RunnerCommandResult<N>;
   }
 
-  /** Disconnect without stopping the runner (it keeps agents alive across server restarts). */
+  /**
+   * Disconnect without stopping the runner (it keeps agents alive across server restarts). A
+   * connection attempt in flight is cancelled and awaited, so once this resolves the client
+   * never connects, records `runner.connected` or answers commands again.
+   */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.abort.abort();
     const ws = this.ws;
     this.ws = undefined;
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -156,7 +204,8 @@ export class RunnerClient {
         setTimeout(resolve, 1000).unref();
       });
     }
-    this.failPending("Runner client stopped");
+    await this.attempt;
+    this.failPending("client stopped");
   }
 
   /** Ask the runner process to exit, then disconnect. */
@@ -173,26 +222,34 @@ export class RunnerClient {
 
   // ---------------------------------------------------------------- connection
 
-  private async connectLoop(): Promise<void> {
-    while (!this.stopped) {
+  /** Connect, retrying until connected or stopped; the running attempt is kept for `stop()`. */
+  private connectLoop(): Promise<void> {
+    this.attempt = this.runConnectLoop(this.abort.signal);
+    return this.attempt;
+  }
+
+  private async runConnectLoop(signal: AbortSignal): Promise<void> {
+    while (!signal.aborted) {
       try {
-        const lock = await this.ensureRunner();
-        await this.connect(lock);
+        const lock = await this.ensureRunner(signal);
+        await this.connect(lock, signal);
         this.reconnectDelay = 250;
         return; // `close` handler restarts the loop.
       } catch (error) {
+        if (signal.aborted) return; // stopped: whatever failed was cancelled
         const message = error instanceof Error ? error.message : String(error);
         this.setStatus({ ...this.current, state: "disconnected", lastError: message });
         this.opts.log?.(`runner: ${message}; retrying in ${this.reconnectDelay}ms`);
-        await sleep(this.reconnectDelay);
+        await pause(this.reconnectDelay, signal);
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, 5_000);
       }
     }
   }
 
-  private async ensureRunner(): Promise<RunnerLock> {
+  private async ensureRunner(signal: AbortSignal): Promise<RunnerLock> {
     const existing = readLiveRunnerLock(this.opts.lockFile);
-    if (existing && (await probeRunnerLock(existing))) return existing;
+    if (existing && (await probeRunnerLock(existing, undefined, signal))) return existing;
+    signal.throwIfAborted();
     if (existing) {
       this.opts.log?.(`runner: pid ${existing.pid} does not answer; starting a new runner`);
     }
@@ -207,6 +264,7 @@ export class RunnerClient {
       lockFile: this.opts.lockFile,
       stale: existing,
       timeouts: this.opts.startTimeouts,
+      signal,
       onSlow: ({ pid, elapsedMs }) => {
         const s = Math.round(elapsedMs / 1000);
         this.opts.log?.(`runner: pid ${pid} is still starting after ${s} s; waiting for it`);
@@ -216,16 +274,21 @@ export class RunnerClient {
     });
   }
 
-  private connect(lock: RunnerLock): Promise<void> {
+  private connect(lock: RunnerLock, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
     this.runnerPid = lock.pid;
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(`ws://127.0.0.1:${lock.port}/runner`, {
         headers: { authorization: `Bearer ${lock.token}` },
       });
+      // `stop()` during the handshake drops the connection; once connected it closes cleanly.
+      const cancel = () => ws.terminate();
+      signal.addEventListener("abort", cancel, { once: true });
       let settled = false;
       const settle = (error?: Error) => {
         if (settled) return;
         settled = true;
+        signal.removeEventListener("abort", cancel);
         if (error) reject(error);
         else resolve();
       };
@@ -237,9 +300,26 @@ export class RunnerClient {
           serverVersion: CODEDEN_VERSION,
         });
       });
+      // Whether this connection's `welcome` was accepted: events count only after it.
+      let welcomed = false;
       ws.on("message", (data) => {
         try {
-          this.handle(RunnerToServerMessage.parse(JSON.parse(data.toString())), settle);
+          const msg = RunnerToServerMessage.parse(JSON.parse(data.toString()));
+          if (msg.type === "welcome") {
+            // A handshake that completes after `stop()` is discarded, never recorded as connected.
+            if (signal.aborted) return void ws.terminate();
+            if (welcomed) return; // one handshake per connection
+            // Refused: the connect loop shows the reason as the last error and retries.
+            const refused = this.welcomeRefusal(msg);
+            if (refused) {
+              ws.terminate();
+              return settle(new Error(refused));
+            }
+            welcomed = true;
+          } else if ((msg.type === "event" || msg.type === "stream") && !welcomed) {
+            return;
+          }
+          this.handle(msg, settle);
         } catch (error) {
           this.opts.log?.(`runner: bad message: ${(error as Error).message}`);
         }
@@ -254,11 +334,15 @@ export class RunnerClient {
             {
               type: "runner.disconnected",
               sessionId: null,
-              payload: { runnerId: this.runnerId, reason: "connection closed" },
+              payload: {
+                ...this.recordRef(),
+                runnerId: this.runnerId,
+                reason: "connection closed",
+              },
             },
           ]);
         }
-        this.failPending("Runner connection closed");
+        this.failPending("connection closed");
         if (this.current.state !== "incompatible") {
           this.setStatus({ ...this.current, state: "disconnected" });
         }
@@ -290,6 +374,8 @@ export class RunnerClient {
         this.onEvent(msg);
         return;
       case "stream":
+        // An untrusted runner's stream for a pty or session that isn't its own is dropped.
+        if (this.guard && !this.guard.allowsStream(msg.stream, this.runnerId)) return;
         this.opts.onStream?.(msg.stream);
         return;
       case "providers":
@@ -302,6 +388,15 @@ export class RunnerClient {
       case "pong":
         return;
     }
+  }
+
+  /** Why this runner's `welcome` is refused (its journal id isn't its own), or `null`. */
+  private welcomeRefusal(msg: RunnerWelcome): string | null {
+    const recordId = this.opts.recordId ?? HOME_RUNNER_ID;
+    const reason = journalIdRefusal(this.opts.db, recordId, msg.runnerId, !!this.opts.untrusted);
+    if (!reason) return null;
+    const name = this.opts.describe?.() ?? "Runner";
+    return `${name} was refused: ${reason}`;
   }
 
   private onWelcome(msg: RunnerWelcome): void {
@@ -321,6 +416,7 @@ export class RunnerClient {
         type: "runner.connected",
         sessionId: null,
         payload: {
+          ...this.recordRef(),
           runnerId: msg.runnerId,
           version: msg.runnerVersion,
           protocolVersion: msg.protocolVersion,
@@ -380,7 +476,18 @@ export class RunnerClient {
     if (!runnerId) return;
     if (msg.seq > this.lastAckedSeq) {
       try {
-        ingestRunnerEvent(this.opts.db, this.opts.store, runnerId, msg);
+        const guard = this.guard;
+        const { refused } = ingestRunnerEvent(this.opts.db, this.opts.store, runnerId, msg, {
+          recordId: this.opts.recordId,
+          untrusted: !!guard,
+          ownsPty: guard && ((ptyId) => guard.ownsPty(ptyId)),
+        });
+        // Acked like any other, so the runner stops redelivering it, but never stored.
+        if (refused) {
+          this.opts.log?.(`runner: dropped event ${msg.seq} (${msg.event.kind}): ${refused}`);
+        } else if (msg.event.kind === "pty.exited") {
+          guard?.ptyExited(msg.event.ptyId);
+        }
       } catch (error) {
         // Not acked: the runner keeps it journaled and redelivers it after a reconnect.
         this.opts.log?.(`runner: failed to store event ${msg.seq}: ${String(error)}`);
@@ -398,9 +505,23 @@ export class RunnerClient {
   private failPending(reason: string): void {
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.reject(new RunnerCommandError("runner_unavailable", reason));
+      pending.reject(this.unavailable(reason));
       this.pending.delete(id);
     }
+  }
+
+  /**
+   * `runner_unavailable`: "Runner is not connected" for the home runner, "Runner rn-1 (docker,
+   * runner r-1) is not connected" for another one.
+   */
+  private unavailable(what: string): RunnerCommandError {
+    const name = this.opts.describe?.() ?? "Runner";
+    return new RunnerCommandError("runner_unavailable", `${name} ${what}`);
+  }
+
+  /** The record id for this runner's `runner.*` events (none for the home runner's default). */
+  private recordRef(): { id?: string } {
+    return this.opts.recordId ? { id: this.opts.recordId } : {};
   }
 
   private setStatus(status: RunnerConnectionStatus): void {

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { ExecutableLookup } from "@codeden/providers";
@@ -10,6 +10,7 @@ import {
   parseCodexLogin,
   parseGhAuthJson,
   parseGhAuthText,
+  parseOpenCodeAuth,
   parseVersion,
 } from "../src/services/setup/parse";
 import { SetupService, type SetupServiceDeps } from "../src/services/setup/setup-service";
@@ -44,6 +45,21 @@ describe("detection parsers", () => {
     expect(parseClaudeAuth("not json")).toBeNull();
     expect(expiresWithin(auth?.loginExpiresAt ?? null, 3, NOW)).toBe(true);
     expect(expiresWithin("2026-12-01T00:00:00Z", 3, NOW)).toBe(false);
+  });
+
+  it("reads OpenCode's connected providers", () => {
+    expect(parseVersion("opencode v2.2.7")).toBe("2.2.7");
+    expect(
+      parseOpenCodeAuth(
+        JSON.stringify([
+          { id: "anthropic", name: "Anthropic", connections: [{ type: "key", label: "API key" }] },
+          { id: "google", name: "Google", connections: [{ type: "env", name: "GEMINI_API_KEY" }] },
+          { id: "zai", name: "Z.AI", connections: [] },
+        ]),
+      ),
+    ).toEqual({ providers: ["Anthropic", "Google"], authMethod: "api key, environment" });
+    expect(parseOpenCodeAuth("[]")).toEqual({ providers: [], authMethod: null });
+    expect(parseOpenCodeAuth("not json")).toBeNull();
   });
 
   it("reads codex and gh login state without capturing tokens", () => {
@@ -200,6 +216,151 @@ describe("SetupService", () => {
     expect(status.ready).toBe(false);
   });
 
+  it("checks OpenCode: version, providers, the free tier and OpenCode 1", async () => {
+    const run = async (extra: Record<string, Partial<ExecResult>>) => {
+      const calls: string[] = [];
+      const status = await service({ ...extra }, { calls }).status();
+      return { status, check: status.checks.find((c) => c.id === "opencode"), calls };
+    };
+    const connected = await run({
+      "opencode --version": { stdout: "opencode v2.2.7" },
+      "opencode auth list --standalone --format json": {
+        stdout: JSON.stringify([
+          { id: "openai", name: "OpenAI", connections: [{ type: "oauth", label: "OAuth" }] },
+        ]),
+      },
+    });
+    expect(connected.check).toMatchObject({
+      label: "OpenCode",
+      state: "ok",
+      installed: true,
+      version: "2.2.7",
+      loggedIn: true,
+      authMethod: "oauth",
+      account: "OpenAI",
+    });
+    // Ready with only OpenCode signed in; detection never uses the user's background service.
+    expect(connected.status.ready).toBe(true);
+    expect(connected.calls).toContain("opencode auth list --standalone --format json");
+
+    const free = await run({
+      "opencode --version": { stdout: "opencode v2.2.7" },
+      "opencode auth list --standalone --format json": { stdout: "[]" },
+    });
+    expect(free.check).toMatchObject({ state: "warning", loggedIn: true, authMethod: "free" });
+    // Sign in runs the copy that was found, by its full path.
+    expect(free.check?.fix?.command).toBe("/bin/opencode auth login");
+
+    const v1 = await run({ "opencode --version": { stdout: "1.19.5" } });
+    expect(v1.check).toMatchObject({ state: "missing", installed: true, version: "1.19.5" });
+    expect(v1.check?.fix?.command).toBe("npm install -g @opencode/cli");
+
+    const missing = await run({});
+    expect(missing.check).toMatchObject({ state: "missing", installed: false });
+    expect(missing.check?.fix?.command).toBe("npm install -g @opencode/cli");
+  });
+
+  it("checks Cursor: a Cursor-versioned `agent`, its ACP server and its login", async () => {
+    const run = async (extra: Record<string, Partial<ExecResult>>) => {
+      const status = await service({ ...extra }).status();
+      return { status, check: status.checks.find((c) => c.id === "cursor") };
+    };
+    const version = { "agent --version": { stdout: "2026.10.22-abc1234" } };
+    const signedIn = await run({
+      ...version,
+      "agent acp --help": { stdout: "Start the ACP server" },
+      "agent status": { stdout: "✓ Logged in as dev@example.com" },
+    });
+    expect(signedIn.check).toMatchObject({
+      label: "Cursor",
+      state: "ok",
+      version: expect.stringMatching(/^2026\.10\.22/),
+      loggedIn: true,
+      account: "dev@example.com",
+    });
+    expect(signedIn.status.ready).toBe(true);
+
+    const signedOut = await run({
+      ...version,
+      "agent acp --help": { stdout: "Start the ACP server" },
+      "agent status": { stdout: "Not logged in", code: 1 },
+    });
+    expect(signedOut.check).toMatchObject({ state: "missing", loggedIn: false });
+    expect(signedOut.check?.fix).toEqual({ kind: "login", command: "/bin/agent login" });
+
+    const old = await run({
+      ...version,
+      "agent acp --help": { stderr: "error: unknown command 'acp'", code: 1 },
+    });
+    expect(old.check).toMatchObject({ state: "missing", installed: true });
+    expect(old.check?.fix).toEqual({ kind: "upgrade", command: "/bin/agent update" });
+
+    // Another tool called `agent` is not Cursor's.
+    const other = await run({ "agent --version": { stdout: "agent 1.2.3" } });
+    expect(other.check).toMatchObject({ state: "missing", installed: false });
+    expect(other.check?.fix?.command).toBe("curl https://cursor.com/install -fsS | bash");
+  });
+
+  it("checks Gemini CLI: its version and the login in its own settings, never the credentials", async () => {
+    const home = mkdtempSync(join(tmpdir(), "codeden-gemini-home-"));
+    mkdirSync(join(home, ".gemini"));
+    const settings = (selectedType: string) =>
+      writeFileSync(
+        join(home, ".gemini", "settings.json"),
+        JSON.stringify({ security: { auth: { selectedType } } }),
+      );
+    const run = async (version: string | null, env: NodeJS.ProcessEnv = {}) => {
+      const table: Record<string, Partial<ExecResult>> = version
+        ? { "gemini --version": { stdout: version } }
+        : {};
+      const status = await service(table, { userHome: home, env }).status();
+      return { status, check: status.checks.find((c) => c.id === "gemini") };
+    };
+
+    settings("oauth-personal");
+    writeFileSync(
+      join(home, ".gemini", "google_accounts.json"),
+      JSON.stringify({ active: "dev@example.com" }),
+    );
+    writeFileSync(join(home, ".gemini", "oauth_creds.json"), '{"refresh_token":"secret"}');
+    const signedIn = await run("0.68.0");
+    expect(signedIn.check).toMatchObject({
+      label: "Gemini CLI",
+      state: "ok",
+      version: "0.68.0",
+      loggedIn: true,
+      authMethod: "oauth-personal",
+      account: "dev@example.com",
+    });
+    expect(JSON.stringify(signedIn.check)).not.toContain("secret");
+    expect(signedIn.status.ready).toBe(true);
+
+    // An API key login without the key in CodeDen's environment can't be confirmed.
+    settings("gemini-api-key");
+    const unknown = await run("0.68.0");
+    expect(unknown.check).toMatchObject({ state: "warning", loggedIn: null });
+    expect(unknown.check?.fix).toEqual({ kind: "login", command: "/bin/gemini" });
+    expect((await run("0.68.0", { GEMINI_API_KEY: "k" })).check).toMatchObject({
+      state: "ok",
+      authMethod: "gemini-api-key",
+    });
+
+    rmSync(join(home, ".gemini"), { recursive: true });
+    const signedOut = await run("0.69.0-preview.1");
+    expect(signedOut.check).toMatchObject({ state: "missing", installed: true, loggedIn: false });
+
+    const old = await run("0.67.0");
+    expect(old.check).toMatchObject({ state: "missing", installed: true, version: "0.67.0" });
+    expect(old.check?.fix).toEqual({
+      kind: "upgrade",
+      command: "npm install -g @google/gemini-cli@latest",
+    });
+
+    const missing = await run(null);
+    expect(missing.check).toMatchObject({ state: "missing", installed: false });
+    expect(missing.check?.fix?.command).toBe("npm install -g @google/gemini-cli");
+  });
+
   it("persists completion in settings and hands out login commands", () => {
     const setup = service({});
     setup.complete();
@@ -207,6 +368,11 @@ describe("SetupService", () => {
     // Before a check found gh, the bare command is all there is.
     expect(setup.loginCommand("gh")).toMatchObject({
       command: "gh auth login --web --git-protocol https",
+    });
+    expect(setup.loginCommand("opencode")).toEqual({
+      tool: "opencode",
+      command: "opencode auth login",
+      args: ["auth", "login"],
     });
   });
 });

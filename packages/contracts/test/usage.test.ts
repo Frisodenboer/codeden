@@ -76,13 +76,44 @@ describe("usage contracts", () => {
       label: "5-hour",
       status: "warning",
       usedPercent: 91,
+      usedPercentAt: "2026-11-07T09:30:00.000Z",
       resetsAt: "2026-11-07T12:00:00.000Z",
       observedAt: "2026-11-07T10:00:00.000Z",
       stale: false,
     };
     expect(RateLimitWindow.parse(window)).toEqual(window);
-    const session = { sessionId: "s1", totals, billing: "subscription", turns: [] };
+    // A status-only reading: no percentage, so no time for one.
+    const statusOnly = { ...window, status: "ok", usedPercent: null, usedPercentAt: null };
+    expect(RateLimitWindow.parse(statusOnly)).toEqual(statusOnly);
+    const subagent = {
+      itemId: "toolu_1",
+      costUsd: 0.0421,
+      costSource: "estimated",
+      models: [
+        {
+          model: "claude-haiku-5-5",
+          label: "Haiku 5.5",
+          inputTokens: 12,
+          outputTokens: 900,
+          cacheReadTokens: 410_000,
+          cacheWriteTokens: 38_000,
+          reasoningTokens: 0,
+          costUsd: 0.0421,
+          costSource: "estimated",
+        },
+      ],
+    };
+    const session = {
+      sessionId: "s1",
+      totals,
+      billing: "subscription",
+      turns: [],
+      subagents: [subagent],
+    };
     expect(SessionUsage.parse(session)).toEqual(session);
+    // A response from before subagent costs reads as having none.
+    const { subagents: _none, ...older } = session;
+    expect(SessionUsage.parse(older).subagents).toEqual([]);
   });
 
   it("validates report queries", () => {

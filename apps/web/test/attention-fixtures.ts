@@ -20,6 +20,7 @@ export function inboxItem(
     kind,
     status: "open",
     priority: "normal",
+    notify: "needs_you",
     title: `Item ${id}`,
     body: null,
     projectId: "p1",
@@ -55,6 +56,7 @@ export function snapshot(
     automations: [],
     scheduled: [],
     runner: { state: "disabled", runnerId: null, version: null, providers: [], lastError: null },
+    runners: [],
   };
 }
 

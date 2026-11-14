@@ -9,18 +9,25 @@ import {
   SessionStartMeta,
   type ThreadItemsPage,
   type ThreadItemsQuery,
+  type ToolCallItem,
+  type Turn,
   type Usage,
   type UserInput,
   type WorkSummary,
   type WorkspaceRequest,
 } from "@codeden/contracts";
-import { and, asc, desc, eq, gt, inArray, lt, type SQL } from "drizzle-orm";
+import { and, asc, type Column, desc, eq, gt, inArray, lt, or, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../../db/client";
-import { rowToItemRecord, rowToSession } from "../../db/rows";
-import { automationRuns, items, sessions, turns } from "../../db/schema";
+import { rowToItemRecord, rowToSession, rowToTurn } from "../../db/rows";
+import { automationRuns, checkpoints, items, sessions, turns } from "../../db/schema";
+import { turnsOldestFirst } from "../../db/turn-order";
 import type { EventStore } from "../../events/store";
 import { notFound } from "../errors";
 import { ACTIVE_RUN_STATUSES, ACTIVE_SESSION_STATUSES } from "./conflicts";
+import type { ForkStart } from "./fork";
+
+/** A `file_edit` tool call. */
+export type FileEditCall = Extract<ToolCallItem, { toolKind: "file_edit" }>;
 
 /** What a queued session needs to start later (kept with its start metadata). */
 export interface PendingStart {
@@ -29,13 +36,38 @@ export interface PendingStart {
 }
 
 /**
- * Start metadata as stored: the public `SessionStartMeta` plus a pending start, and the PR
- * feedback already sent per PR number (`PrFeedbackService`).
+ * Start metadata as stored: the public `SessionStartMeta` plus a pending start, the PR
+ * feedback already sent per PR number (`PrFeedbackService`) and, for the orchestrator and PMs,
+ * whether their latest turn carries the user's request (`LoopGuard`).
  */
 export type StoredStartMeta = SessionStartMeta & {
   pending?: PendingStart | null;
   prFeedback?: Record<string, { rounds: number; keys: string[] }>;
+  /**
+   * Whether the turn this role session's last accepted delivery started carries the user's
+   * request (false while a delivery is in flight), so a turn that outlives a server restart
+   * keeps it. Absent: never recorded, treated as not the user's.
+   */
+  turnFromUser?: boolean;
+  /** A fork's workspace plan (§9): prepared before any start until the worktree exists. */
+  forkStart?: ForkStart | null;
+  /**
+   * A handoff's brief (§9) until a start delivers it: a first start that fails keeps it, and
+   * the next start sends it first, with the message that starts it.
+   */
+  handoffBrief?: UserInput | null;
 };
+
+/**
+ * A folder as `SessionRepo.inFolder` compares it: forward slashes, no trailing slash, ASCII
+ * lower case (what SQLite's `lower()` does).
+ */
+export function folderKey(folder: string): string {
+  return folder
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
 
 /** Session rows and transcript reads. Every session change goes through the event log. */
 export class SessionRepo {
@@ -107,6 +139,23 @@ export class SessionRepo {
       .where(and(...conditions))
       .orderBy(desc(sessions.createdAt))
       .limit(1000)
+      .all()
+      .map(rowToSession);
+  }
+
+  /**
+   * Every session working in `folder` (its cwd or its worktree), compared without ASCII case,
+   * slash style or a trailing slash. Not capped like `list`: cleanup must see each one.
+   */
+  inFolder(folder: string): Session[] {
+    const target = folderKey(folder);
+    const key = (column: Column) => sql`lower(rtrim(replace(${column}, ${"\\"}, '/'), '/'))`;
+    return this.db
+      .select()
+      .from(sessions)
+      .where(
+        or(sql`${key(sessions.cwd)} = ${target}`, sql`${key(sessions.worktreePath)} = ${target}`),
+      )
       .all()
       .map(rowToSession);
   }
@@ -192,7 +241,7 @@ export class SessionRepo {
       .select()
       .from(turns)
       .where(and(eq(turns.sessionId, sessionId), eq(turns.status, "running")))
-      .orderBy(asc(turns.startedAt))
+      .orderBy(...turnsOldestFirst)
       .all();
     const ended = new Set(running.map((t) => t.id));
     const requests = this.db
@@ -280,6 +329,95 @@ export class SessionRepo {
       hasMoreBefore: newestFirst ? more : first !== undefined && exists(lt(items.position, first)),
       hasMoreAfter: newestFirst ? last !== undefined && exists(gt(items.position, last)) : more,
     };
+  }
+
+  /**
+   * How many turns the session has had, subagent turns included. It only grows (a turn's row is
+   * written when it starts and kept), so two equal counts mean no turn started in between.
+   */
+  turnCount(sessionId: string): number {
+    const row = this.db
+      .select({ n: sql<number>`count(*)` })
+      .from(turns)
+      .where(eq(turns.sessionId, sessionId))
+      .get();
+    return row?.n ?? 0;
+  }
+
+  /** One of the session's turns, or null when it has none with that id. */
+  turn(sessionId: string, turnId: string): Turn | null {
+    const row = this.db
+      .select()
+      .from(turns)
+      .where(and(eq(turns.sessionId, sessionId), eq(turns.id, turnId)))
+      .get();
+    return row ? rowToTurn(row) : null;
+  }
+
+  /** The index of the checkpoint written when a turn ended (§9), or null when there is none. */
+  turnCheckpoint(sessionId: string, turnId: string): number | null {
+    const row = this.db
+      .select({ index: checkpoints.index })
+      .from(checkpoints)
+      .where(and(eq(checkpoints.sessionId, sessionId), eq(checkpoints.turnId, turnId)))
+      .orderBy(desc(checkpoints.index))
+      .limit(1)
+      .get();
+    return row?.index ?? null;
+  }
+
+  /** The ids of the session's root-thread turns, oldest first (by start); turn N is at N - 1. */
+  rootTurnIds(session: Session): string[] {
+    if (!session.rootThreadId) return [];
+    return this.db
+      .select({ id: turns.id })
+      .from(turns)
+      .where(and(eq(turns.sessionId, session.id), eq(turns.threadId, session.rootThreadId)))
+      .orderBy(...turnsOldestFirst)
+      .all()
+      .map((r) => r.id);
+  }
+
+  /**
+   * Root-thread items of the given kinds, in thread order: all of them, or with `newest` only
+   * that many of the latest (still oldest first).
+   */
+  rootItems(session: Session, kinds: Item["kind"][], newest?: number): Item[] {
+    if (!session.rootThreadId) return [];
+    const query = this.db
+      .select({ data: items.data })
+      .from(items)
+      .where(
+        and(
+          eq(items.sessionId, session.id),
+          eq(items.threadId, session.rootThreadId),
+          inArray(items.kind, kinds),
+        ),
+      )
+      .orderBy(newest === undefined ? asc(items.position) : desc(items.position));
+    const rows = (newest === undefined ? query.all() : query.limit(newest).all()).map(
+      (r) => r.data,
+    );
+    return newest === undefined ? rows : rows.reverse();
+  }
+
+  /** Every `file_edit` tool call of the session, subagents' included, oldest first. */
+  fileEdits(sessionId: string): FileEditCall[] {
+    return this.db
+      .select({ data: items.data })
+      .from(items)
+      .where(
+        and(
+          eq(items.sessionId, sessionId),
+          eq(items.kind, "tool_call"),
+          sql`json_extract(${items.data}, '$.toolKind') = 'file_edit'`,
+        ),
+      )
+      .orderBy(asc(items.createdAt), asc(items.position))
+      .all()
+      .flatMap((r) =>
+        r.data.kind === "tool_call" && r.data.toolKind === "file_edit" ? [r.data] : [],
+      );
   }
 
   /** Follow-ups of the latest root-thread turn that produced some (§7.5). */

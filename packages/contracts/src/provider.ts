@@ -20,6 +20,11 @@ export const ProviderCapabilities = z.object({
   subagents: z.boolean(),
   /** The conversation can be rolled back to an earlier turn. */
   rollback: z.boolean(),
+  /**
+   * A conversation can be forked, leaving the original untouched: the runner's `provider.fork`
+   * copies it into a new one (a new resume token), and `SessionOptions.forkFrom` does the same
+   * as a session opens.
+   */
   fork: z.boolean(),
   /** Image attachments are accepted as input. */
   images: z.boolean(),
@@ -147,6 +152,18 @@ export const McpServerConfig = z.discriminatedUnion("transport", [
 ]);
 export type McpServerConfig = z.infer<typeof McpServerConfig>;
 
+/**
+ * CodeDen's own credential files, relative to its data directory (§15): the install token the
+ * local API accepts, the runner lock holding the runner's bearer token, and the remote access
+ * store (password hash and device sessions). An agent that read the tokens could drive CodeDen
+ * itself, so agents never read or write these without the user, at any level (§11.2).
+ */
+export const CODEDEN_CREDENTIAL_FILES = [
+  "install-token",
+  "runner/runner.json",
+  "remote-access.json",
+] as const;
+
 /** Options for `ProviderAdapter.openSession`. */
 export const SessionOptions = z.object({
   /** CodeDen session id. */
@@ -161,9 +178,22 @@ export const SessionOptions = z.object({
   systemPrompt: z.string().optional(),
   /** Provider session/thread id from a previous `resumeToken()`. */
   resumeToken: z.string().optional(),
+  /**
+   * Provider session/thread id of a conversation to fork as the session opens
+   * (`capabilities.fork`): the provider copies it and the session resumes the copy, whose id
+   * `resumeToken()` returns at once; the original is untouched. Ignored when `resumeToken` is
+   * set, which wins. CodeDen's own forks copy the conversation earlier, in the fork request
+   * (`provider.fork`), and so arrive with a `resumeToken`.
+   */
+  forkFrom: z.string().min(1).optional(),
   mcpServers: z.array(McpServerConfig).default([]),
   /** Extra env vars for the agent process (CodeDen secrets are never included). */
   env: z.record(z.string(), z.string()).optional(),
+  /**
+   * False: the runner leaves `CI` out of the agent's environment instead of adding `CI=true`
+   * (the session's project turned it off, `Project.agentCiEnv`, §4.2). Absent means true.
+   */
+  ciEnv: z.boolean().optional(),
   /** Extra directories the agent may read/write. */
   additionalDirectories: z.array(z.string()).default([]),
   /**
@@ -179,6 +209,12 @@ export const SessionOptions = z.object({
    * are denied natively (Claude permission policy, Codex read-only sandbox).
    */
   readOnly: z.boolean().optional(),
+  /**
+   * CodeDen's data directory (§6). Touching its credential files (`CODEDEN_CREDENTIAL_FILES`)
+   * asks at every level and is refused for read-only sessions (§11.2, §15); `$CODEDEN_HOME` in
+   * the agent's commands resolves to it.
+   */
+  codedenHome: z.string().min(1).optional(),
 });
 export type SessionOptions = z.infer<typeof SessionOptions>;
 export type SessionOptionsInit = z.input<typeof SessionOptions>;

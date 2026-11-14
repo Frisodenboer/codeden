@@ -1,4 +1,9 @@
-import { Settings, type SettingsPatch } from "@codeden/contracts";
+import {
+  type MessageSender,
+  Settings,
+  type SettingsPatch,
+  utf8ByteLength,
+} from "@codeden/contracts";
 import type { CodeDenClient } from "../client";
 import { startAmbient } from "./ambient";
 import { mockAutomationsApi } from "./automations";
@@ -10,6 +15,7 @@ import { mockOrchestration } from "./orchestration";
 import { mockProjectApi } from "./projects";
 import { MockQueue } from "./queue";
 import { respond } from "./responses";
+import { mockSearch } from "./search";
 import { workbenchApi } from "./workbench-api";
 import { MockWorld } from "./world";
 
@@ -35,8 +41,8 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
   const queue = new MockQueue(world);
   if (opts.ambient) startAmbient(world);
 
-  const runTurn = (sessionId: string, text: string) => {
-    const script = scriptedTurn(world, sessionId, { text }, () => {
+  const runTurn = (sessionId: string, text: string, from?: MessageSender) => {
+    const script = scriptedTurn(world, sessionId, { text, ...(from ? { from } : {}) }, () => {
       running.delete(sessionId);
       const next = queue.shift(sessionId);
       if (next) runTurn(sessionId, next.input.text);
@@ -44,7 +50,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     running.set(sessionId, script.start());
   };
 
-  const createSession = (projectId: string, prompt: string, workKey: string) => {
+  const createSession = (projectId: string, prompt: string, workKey: string, planMode = false) => {
     const id = uid("s");
     const project = world.snapshot.projects.find((p) => p.id === projectId);
     const session = makeSession({
@@ -56,6 +62,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       model: "opus",
       purpose: prompt.split(/[.\n]/)[0]?.slice(0, 60) ?? "New session",
       workKey,
+      planMode,
       branch: `codeden/${id.slice(2, 10)}`,
       baseBranch: "main",
       worktreePath: `~/.codeden/wt/${project?.slug ?? "project"}/${id.slice(2, 10)}`,
@@ -70,6 +77,7 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
     kind: "mock",
     getSnapshot: () => delay(world.snapshot, 150),
     getSessionSnapshot: (id) => delay(world.sessionSnapshot(id), 120),
+    searchTranscripts: (req) => delay(mockSearch(world, req), 150),
     subscribe: (fromSeq, onMessage) => world.subscribe(fromSeq, onMessage),
     // Agent events arrive on the global stream in the mock, so watches have nothing to add.
     watchSession: () => () => {},
@@ -88,6 +96,15 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
         },
         60,
       ),
+    getToolOutput(sessionId, itemId) {
+      const item = world.item(sessionId, itemId);
+      if (item?.kind !== "tool_call") return Promise.reject(new Error("No such tool call"));
+      const text = item.output?.text ?? "";
+      const totalBytes = utf8ByteLength(text);
+      const truncated = item.output?.truncated ?? false;
+      const outputBytes = Math.max(totalBytes, item.output?.totalBytes ?? totalBytes);
+      return delay({ itemId, text, totalBytes, truncated, outputBytes }, 80);
+    },
 
     async sendMessage(sessionId, input, mode) {
       const active = running.get(sessionId);
@@ -145,7 +162,14 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
           s.workKey === workKey &&
           ["running", "waiting", "starting", "queued"].includes(s.status),
       );
-      if (clash) {
+      // Like the server, a decision settles the conflict (wait and force start at once here).
+      const decision = clash ? input.conflict : undefined;
+      if (decision?.resolution === "skip") return { status: "skipped" };
+      if (decision?.resolution === "join") {
+        await client.sendMessage(decision.sessionId, { text: prompt }, "queue");
+        return { status: "joined", sessionId: decision.sessionId };
+      }
+      if (clash && !decision) {
         return {
           status: "conflict",
           existing: [
@@ -167,13 +191,101 @@ export function createMockClient(opts: MockClientOptions = {}): CodeDenClient {
       }
       return {
         status: "started",
-        sessionId: createSession(projectId, prompt, workKey),
+        sessionId: createSession(projectId, prompt, workKey, input.planMode === true),
       };
     },
     async stopSession(sessionId) {
       queue.clear(sessionId);
       running.get(sessionId)?.cancel();
+      // Like the server: a session that already finished keeps its status.
+      const status = world.snapshot.sessions.find((s) => s.id === sessionId)?.status;
+      if (status === "completed" || status === "failed" || status === "stopped") return;
       world.updateSession(sessionId, { status: "stopped", endedAt: new Date().toISOString() });
+    },
+    async forkSession(sessionId, req) {
+      const source = world.snapshot.sessions.find((s) => s.id === sessionId);
+      if (!source) throw new Error("Session not found");
+      if (running.has(sessionId)) throw new Error("Wait for the running turn to finish");
+      const id = uid("s");
+      const project = world.snapshot.projects.find((p) => p.id === source.projectId);
+      // The named turn's number among the source's own turns, like the server records it.
+      const t = world.transcript(sessionId);
+      const turnNumber = req?.turnId
+        ? (t.threads[t.rootThreadId ?? ""]?.turnIds.indexOf(req.turnId) ?? -1) + 1
+        : 0;
+      const session = makeSession({
+        ...source,
+        id,
+        title: req?.title ?? `${source.title ?? source.purpose} (fork)`,
+        status: "idle",
+        startedBy: { kind: "user" },
+        parentSessionId: null,
+        pr: null,
+        progress: null,
+        result: null,
+        archivedAt: null,
+        worktreeRemovedAt: null,
+        branch: `codeden/${id.slice(2, 10)}`,
+        worktreePath: `~/.codeden/wt/${project?.slug ?? "project"}/${id.slice(2, 10)}`,
+        forkedFrom: {
+          sessionId,
+          checkpoint: null,
+          ...(req?.turnId ? { turnId: req.turnId } : {}),
+          ...(turnNumber > 0 ? { turnNumber } : {}),
+        },
+        rootThreadId: `t-${id.slice(2)}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        endedAt: null,
+      });
+      world.emitDomain({ type: "session.created", sessionId: null, payload: { session } });
+      return delay({ sessionId: id }, 200);
+    },
+    async handoffSession(sessionId, req) {
+      const source = world.snapshot.sessions.find((s) => s.id === sessionId);
+      if (!source) throw new Error("Session not found");
+      if (running.has(sessionId)) throw new Error("Wait for the running turn to finish");
+      const target = world.snapshot.runner.providers.find((p) => p.id === req.provider);
+      if (!target) throw new Error(`Provider ${req.provider} is not available`);
+      const id = uid("s");
+      const project = world.snapshot.projects.find((p) => p.id === source.projectId);
+      const same = target.id === source.provider;
+      const now = new Date().toISOString();
+      const session = makeSession({
+        ...source,
+        id,
+        provider: target.id,
+        model: req.model ?? (same ? source.model : null),
+        effort: req.effort ?? (same ? source.effort : null),
+        title: req.title ?? `${source.title ?? source.purpose} (to ${target.displayName})`,
+        status: "starting",
+        startedBy: { kind: "user" },
+        parentSessionId: null,
+        pr: null,
+        progress: null,
+        result: null,
+        resumeToken: null,
+        archivedAt: null,
+        worktreeRemovedAt: null,
+        branch: `codeden/${id.slice(2, 10)}`,
+        worktreePath: `~/.codeden/wt/${project?.slug ?? "project"}/${id.slice(2, 10)}`,
+        forkedFrom: { sessionId, checkpoint: null, kind: "handoff" },
+        rootThreadId: `t-${id.slice(2)}`,
+        createdAt: now,
+        updatedAt: now,
+        endedAt: null,
+      });
+      world.emitDomain({ type: "session.created", sessionId: null, payload: { session } });
+      const brief = [
+        `You are taking over a coding task from another CodeDen session, "${source.title ?? source.purpose}". You don't have its conversation: this brief is what it did.`,
+        `## The task\n\n${source.purpose}`,
+        "## Where it got to\n\nThe server writes this from the session's transcript.",
+        req.note
+          ? `## What to do next (from the user)\n\n${req.note}`
+          : "## What to do next\n\nContinue the work where it left off.",
+      ].join("\n\n");
+      runTurn(id, brief, "codeden");
+      return delay({ sessionId: id }, 400);
     },
     queue: queue.api({
       running: (sessionId) => running.has(sessionId),

@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { InboxItem } from "@codeden/contracts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -16,7 +18,7 @@ beforeAll(async () => {
     sessionId,
     projectId: h.projectId,
   });
-}, 60_000);
+});
 
 afterAll(async () => {
   await h?.close();
@@ -80,6 +82,8 @@ describe("CodeDen MCP endpoint", () => {
       "browser_click",
       "browser_type",
       "browser_press",
+      "browser_mouse",
+      "browser_dialog",
       "browser_screenshot",
       "browser_logs",
       "browser_wait",
@@ -88,6 +92,11 @@ describe("CodeDen MCP endpoint", () => {
       "add_follow_up",
     ]);
     expect(tools[0]?._meta).toEqual({ "anthropic/alwaysLoad": true });
+    // A flat object schema, so every provider accepts it (no top-level anyOf/oneOf).
+    const mouse = tools.find((t) => t.name === "browser_mouse")?.inputSchema;
+    expect(mouse).toMatchObject({ type: "object", required: ["action", "x", "y"] });
+    expect(mouse).not.toHaveProperty("anyOf");
+    expect(mouse).not.toHaveProperty("oneOf");
     await client.close();
 
     const pmToken = h.server.services.mcpTokens.mint({
@@ -163,6 +172,57 @@ describe("CodeDen MCP endpoint", () => {
     expect(artifacts[0]).toMatchObject({ kind: "image", mediaType: "image/png" });
   });
 
+  it("never stores a secrets file as an artifact (attach_evidence could publish it)", async () => {
+    const cwd = h.server.services.sessionRepo.get(sessionId).cwd;
+    writeFileSync(join(cwd, ".env"), "SECRET=hunter2\n");
+    writeFileSync(join(cwd, "notes.txt"), "notes\n");
+    const client = await connect(token);
+    const before = h.server.services.artifacts.list({ sessionId }).length;
+    for (const args of [
+      { path: ".env" },
+      { path: ".env", name: "config.txt" },
+      { path: "notes.txt", name: "id_rsa" },
+    ]) {
+      const result = await client.callTool({ name: "share_to_chat", arguments: args });
+      expect(result.isError, JSON.stringify(args)).toBe(true);
+      expect(text(result)).toMatch(/secrets file/);
+    }
+    expect(h.server.services.artifacts.list({ sessionId })).toHaveLength(before);
+    expect(
+      text(await client.callTool({ name: "share_to_chat", arguments: { path: "notes.txt" } })),
+    ).toMatch(/Shared notes\.txt/);
+    await client.close();
+  });
+
+  it("checks browser_mouse fields per action, then sends valid calls to the session browser", async () => {
+    const client = await connect(token);
+    const call = (args: Record<string, unknown>) =>
+      client.callTool({ name: "browser_mouse", arguments: args });
+    const refused = [
+      { action: "drag", x: 1, y: 1, toX: 5 }, // no toY
+      { action: "scroll", x: 1, y: 1 }, // no delta
+      { action: "hover", x: 1, y: 1, clickCount: 2 }, // a click field
+      { action: "click", x: -1, y: 1 },
+    ];
+    for (const args of refused) {
+      const result = await call(args);
+      expect(result.isError, JSON.stringify(args)).toBe(true);
+      expect(text(result)).not.toMatch(/No browser for session/);
+    }
+    // A valid call reaches the runner, which has no browser open for this session.
+    const valid = await call({ action: "click", x: 10, y: 20 });
+    expect(valid.isError).toBe(true);
+    expect(text(valid)).toMatch(/No browser for session/);
+    // Typing without a ref is capped; with a ref it is not.
+    const long = await client.callTool({
+      name: "browser_type",
+      arguments: { text: "x".repeat(2_001) },
+    });
+    expect(long.isError).toBe(true);
+    expect(text(long)).toMatch(/at most 2000 characters/);
+    await client.close();
+  });
+
   it("asks the user and returns the answer given within the wait", async () => {
     const client = await connect(token);
     const call = client.callTool({
@@ -213,7 +273,7 @@ describe("CodeDen MCP endpoint", () => {
         : undefined;
     });
     expect(snapshot).toBeTruthy();
-  }, 30_000);
+  });
 
   it("keeps a session's token when a turn fails, so its next turn still has the tools", async () => {
     const failing = await h.startFakeSession();

@@ -1,5 +1,7 @@
+import { providersWith } from "@codeden/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { SlidersHorizontal } from "lucide-react";
+import { HooksList } from "@/components/agents/hooks-list";
 import { McpServers } from "@/components/agents/mcp-servers";
 import { MemoryEditor, SkillsView, SubagentsView } from "@/components/agents/memory-editor";
 import {
@@ -15,13 +17,23 @@ import { PageHeader } from "./page-header";
 
 const GLOBAL = "global";
 
-export type AgentTab = "memory" | "skills" | "subagents" | "mcp";
-const TABS: { id: AgentTab; label: string }[] = [
+export type AgentTab = "memory" | "skills" | "subagents" | "mcp" | "hooks";
+/** The tabs on offer; Hooks only when some provider's native config has hooks. */
+export const AGENT_TABS: { id: AgentTab; label: string }[] = [
   { id: "memory", label: "Memory" },
   { id: "skills", label: "Skills" },
   { id: "subagents", label: "Subagents" },
   { id: "mcp", label: "MCP servers" },
+  ...(providersWith("hooks").length > 0 ? [{ id: "hooks" as const, label: "Hooks" }] : []),
 ];
+
+/**
+ * The tab strip scrolls sideways on phones: a tab that becomes the open one (e.g. from a link
+ * to Hooks) is scrolled into view. A stable ref callback, so it runs only then.
+ */
+function revealTab(el: HTMLButtonElement | null) {
+  el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
 
 /** Agent configuration (§12.4): each provider's native files, edited in place. */
 export function AgentsPage({ tab, projectId }: { tab: AgentTab; projectId: string | null }) {
@@ -67,15 +79,16 @@ export function AgentsPage({ tab, projectId }: { tab: AgentTab; projectId: strin
           </Select>
         }
       />
-      <div className="flex min-h-0 flex-1 flex-col px-6 pt-4 pb-6">
-        <div className="mb-4 flex items-center gap-1 border-b border-border">
-          {TABS.map((t) => (
+      <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 pb-6 sm:px-6">
+        <div className="mb-4 flex shrink-0 items-center gap-1 border-b border-border scroll-thin max-md:overflow-x-auto">
+          {AGENT_TABS.map((t) => (
             <button
               key={t.id}
+              ref={tab === t.id ? revealTab : undefined}
               type="button"
               onClick={() => go({ tab: t.id })}
               className={cn(
-                "-mb-px border-b-2 px-3 py-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground",
+                "-mb-px shrink-0 border-b-2 px-3 py-2 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground",
                 tab === t.id ? "border-primary text-foreground" : "border-transparent",
               )}
             >
@@ -90,6 +103,13 @@ export function AgentsPage({ tab, projectId }: { tab: AgentTab; projectId: strin
           <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
             <div className="mx-auto max-w-4xl">
               <McpServers projectId={scope} />
+            </div>
+          </div>
+        )}
+        {tab === "hooks" && (
+          <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+            <div className="mx-auto max-w-4xl">
+              <HooksList projectId={scope} />
             </div>
           </div>
         )}

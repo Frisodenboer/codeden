@@ -1,11 +1,15 @@
 import type { ItemOf, UserQuestion } from "@codeden/contracts";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VoiceButton } from "@/components/composer/voice-button";
 import { ConflictCard } from "@/components/project/conflict-card";
 import { ApprovalCard } from "@/components/thread/cards/approval-card";
 import { QuestionCard } from "@/components/thread/cards/question-card";
+import { SubagentCard } from "@/components/thread/cards/subagent-card";
 import { WorkGroup } from "@/components/thread/work/work-group";
+import { usageKeys } from "@/components/usage/api";
+import { mockUsageApi } from "@/components/usage/mock-data";
 import { createMockClient } from "@/lib/api/mock";
 import { conflicts } from "@/lib/api/mock/fixtures/sessions";
 import type { WorkEntry } from "@/lib/transcript/timeline";
@@ -48,6 +52,72 @@ describe("ApprovalCard", () => {
   });
 });
 
+describe("ApprovalCard for a plan", () => {
+  const planApproval: ItemOf<"approval_request"> = {
+    id: "ap-plan",
+    kind: "approval_request",
+    status: "in_progress",
+    requestId: "req-plan",
+    action: "plan",
+    title: "Approve the plan and start implementing",
+    options: ["allow_once", "deny"],
+  };
+
+  it("approves the plan", async () => {
+    const client = createMockClient();
+    const respond = vi.spyOn(client, "respond").mockResolvedValue();
+    renderWithClient(<ApprovalCard item={planApproval} sessionId="s1" />, client);
+    expect(screen.getByText("Plan ready")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Always allow/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Approve plan/ }));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith("s1", "req-plan", {
+        kind: "approval",
+        decision: "allow_once",
+      }),
+    );
+  });
+
+  it("keeps planning with feedback", async () => {
+    const client = createMockClient();
+    const respond = vi.spyOn(client, "respond").mockResolvedValue();
+    renderWithClient(<ApprovalCard item={planApproval} sessionId="s1" />, client);
+    fireEvent.click(screen.getByRole("button", { name: /Keep planning/ }));
+    fireEvent.change(screen.getByLabelText("Feedback on the plan"), {
+      target: { value: "Split step 2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Keep planning/ }));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith("s1", "req-plan", {
+        kind: "approval",
+        decision: "deny",
+        message: "Split step 2",
+      }),
+    );
+  });
+
+  it("shows the plan in the inbox and the outcome once answered", () => {
+    renderWithClient(
+      <ApprovalCard item={planApproval} sessionId="s1" compact plan={`## Plan\n\n1. Do x`} />,
+    );
+    expect(screen.getByText("Do x")).toBeTruthy();
+    renderWithClient(
+      <ApprovalCard
+        item={{ ...planApproval, status: "completed", decision: "allow_once" }}
+        sessionId="s1"
+      />,
+    );
+    expect(screen.getByText("Plan approved")).toBeTruthy();
+    renderWithClient(
+      <ApprovalCard
+        item={{ ...planApproval, status: "declined", decision: "deny" }}
+        sessionId="s1"
+      />,
+    );
+    expect(screen.getByText("Kept planning")).toBeTruthy();
+  });
+});
+
 describe("QuestionCard", () => {
   it("collects options and free text, then answers", async () => {
     const client = createMockClient();
@@ -71,6 +141,8 @@ describe("QuestionCard", () => {
     renderWithClient(<QuestionCard item={item} sessionId="s1" />, client);
     const send = screen.getByRole("button", { name: "Send answer" });
     expect((send as HTMLButtonElement).disabled).toBe(true);
+    // The agent's own questions are answered, not dismissed.
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Backoff/ }));
     fireEvent.change(screen.getByPlaceholderText(/your own answer/), {
       target: { value: "Dead-letter it" },
@@ -82,6 +154,43 @@ describe("QuestionCard", () => {
         answers: { a: ["Backoff"], b: ["Dead-letter it"] },
       }),
     );
+  });
+
+  it("lets the user dismiss an MCP server's form without filling it in", async () => {
+    const client = createMockClient();
+    const respond = vi.spyOn(client, "respond").mockResolvedValue();
+    const item: ItemOf<"user_question"> = {
+      id: "q",
+      kind: "user_question",
+      status: "in_progress",
+      requestId: "req-form",
+      mcpServer: "deploy",
+      questions: [
+        {
+          id: "environment",
+          header: "Environment",
+          question: "deploy asks: Where should I deploy?",
+          options: [{ label: "Staging" }, { label: "Production" }],
+          multiSelect: false,
+          allowFreeText: false,
+        },
+        {
+          id: "token",
+          question: "Deploy token",
+          options: [],
+          multiSelect: false,
+          allowFreeText: true,
+        },
+      ],
+    };
+    renderWithClient(<QuestionCard item={item} sessionId="s1" />, client);
+    expect(screen.getByText(/Your answers go to deploy/)).toBeTruthy();
+    // Nothing is filled in, so the only way on is to dismiss it.
+    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(respond).toHaveBeenCalledWith("s1", "req-form", { kind: "cancel" }));
+    expect(respond).toHaveBeenCalledTimes(1);
   });
 
   const LONG_ANSWER =
@@ -236,7 +345,7 @@ describe("WorkGroup", () => {
   ];
 
   it("collapses into a summary and expands on click", () => {
-    renderWithClient(<WorkGroup entries={entries} live={false} />);
+    renderWithClient(<WorkGroup sessionId="s1" entries={entries} live={false} />);
     expect(screen.getByText("Ran 1 command and read 1 file")).toBeTruthy();
     expect(screen.queryByText("src/a.ts")).toBeNull();
     fireEvent.click(screen.getByRole("button", { expanded: false, name: /Ran 1 command/ }));
@@ -259,7 +368,7 @@ describe("WorkGroup", () => {
       output: { text: output, truncated: false },
       durationMs: 12,
     };
-    renderWithClient(<WorkGroup entries={[mcp]} live={false} />);
+    renderWithClient(<WorkGroup sessionId="s1" entries={[mcp]} live={false} />);
     const row = screen.getByRole("button", { name: /codeden: triage_issue/ });
     expect(row.textContent).toContain("Discover the model list");
     expect(row.textContent).not.toContain("projectId");
@@ -279,8 +388,220 @@ describe("WorkGroup", () => {
         command: "pnpm build",
       },
     ];
-    renderWithClient(<WorkGroup entries={live} live />);
+    renderWithClient(<WorkGroup sessionId="s1" entries={live} live />);
     expect(screen.getAllByText("pnpm build").length).toBeGreaterThan(0);
+  });
+});
+
+/** A subagent card whose item the test can replace (`bind` hands out the setter). */
+function LiveSubagentCard({
+  initial,
+  bind,
+}: {
+  initial: ItemOf<"subagent">;
+  bind: (replace: (item: ItemOf<"subagent">) => void) => void;
+}) {
+  const [item, setItem] = useState(initial);
+  bind(setItem);
+  return <SubagentCard item={item} sessionId="s1" />;
+}
+
+describe("SubagentCard", () => {
+  const sub: ItemOf<"subagent"> = {
+    id: "sa",
+    kind: "subagent",
+    status: "completed",
+    childThreadId: "s1:thread-sa",
+    agentType: "Explore",
+    description: "Find the flaky test",
+    summary: "Found it in useCart.test.ts",
+  };
+
+  it("shows a finished subagent's figures beside its summary, in place of the steps", () => {
+    const stats = { totalTokens: 48_213, toolUses: 23, durationMs: 72_000 };
+    renderWithClient(<SubagentCard item={{ ...sub, stats }} sessionId="s1" />);
+    const figures = screen.getByText("· 48.2k tokens · 23 tool calls · 1m 12s");
+    expect(figures.getAttribute("title")).toBe(
+      "48,213 tokens · 23 tool calls · 1m 12s (72,000 ms)",
+    );
+    // Same row as the summary, which truncates first.
+    expect(figures.parentElement).toBe(screen.getByText(sub.summary ?? "").parentElement);
+    expect(figures.className).toContain("shrink-0");
+  });
+
+  it("shows only the figures reported, each exact in the tooltip", () => {
+    renderWithClient(
+      <SubagentCard item={{ ...sub, stats: { durationMs: 4210 } }} sessionId="s1" />,
+    );
+    expect(screen.getByText("· 4.2s").getAttribute("title")).toBe("4.2s (4,210 ms)");
+  });
+
+  it("shows no stats while running or when the provider reported none", () => {
+    const { unmount } = renderWithClient(<SubagentCard item={sub} sessionId="s1" />);
+    expect(screen.queryByText(/tool call/)).toBeNull();
+    unmount();
+    const running = { ...sub, status: "in_progress" as const, stats: { totalTokens: 10 } };
+    renderWithClient(<SubagentCard item={running} sessionId="s1" />);
+    expect(screen.queryByText(/tokens/)).toBeNull();
+  });
+
+  describe("cost", () => {
+    const usage = [
+      {
+        model: "claude-haiku-5-5",
+        inputTokens: 1_200,
+        outputTokens: 300,
+        cacheReadTokens: 40_000,
+        cacheWriteTokens: 15_000,
+      },
+    ];
+    const stats = { totalTokens: 48_213, toolUses: 23, durationMs: 72_000, usage };
+    const priced = (costUsd: number, model = usage[0]) => ({
+      sessionId: "s1",
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        costUsd: 0,
+        estimatedCostUsd: 0,
+        unpricedTurns: 0,
+        turns: 0,
+        sessions: 1,
+        cacheHitRate: null,
+      },
+      billing: "subscription" as const,
+      turns: [],
+      subagents: [
+        {
+          itemId: "sa",
+          costUsd,
+          costSource: "estimated" as const,
+          models: [
+            {
+              ...(model as (typeof usage)[number]),
+              label: "Haiku 5.5",
+              reasoningTokens: 0,
+              costUsd,
+              costSource: "estimated" as const,
+            },
+          ],
+        },
+      ],
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it("leads with what the finished run cost, explained per model in the tooltip", async () => {
+      vi.spyOn(mockUsageApi, "session").mockResolvedValue(priced(0.42));
+      renderWithClient(<SubagentCard item={{ ...sub, stats }} sessionId="s1" />);
+      const figures = await screen.findByText("· ≈ $0.42 · 48.2k tokens · 23 tool calls · 1m 12s");
+      expect(figures.getAttribute("title")).toBe(
+        [
+          "API-equivalent cost (estimated from list prices)",
+          "Haiku 5.5: ≈ $0.42 · 1k input · 300 output · 40k cache reads · 15k cache writes",
+          "48,213 tokens · 23 tool calls · 1m 12s (72,000 ms)",
+        ].join("\n"),
+      );
+    });
+
+    it("fetches the cost again when the card's figures are newer than what was priced", async () => {
+      // Priced before the run's final output counts arrived, then again after.
+      const session = vi
+        .spyOn(mockUsageApi, "session")
+        .mockResolvedValueOnce(priced(0.4, { ...usage[0], outputTokens: 3 } as never))
+        .mockResolvedValue(priced(0.42));
+      renderWithClient(<SubagentCard item={{ ...sub, stats }} sessionId="s1" />);
+      expect(await screen.findByText(/≈ \$0\.42 · 48\.2k tokens/)).toBeTruthy();
+      expect(session).toHaveBeenCalledTimes(2);
+    });
+
+    /** The card with an item the test replaces, as live events replace it. */
+    function liveCard(initial: ItemOf<"subagent">) {
+      let replace: (item: ItemOf<"subagent">) => void = () => {};
+      const rendered = renderWithClient(
+        <LiveSubagentCard
+          initial={initial}
+          bind={(set) => {
+            replace = set;
+          }}
+        />,
+      );
+      return { ...rendered, update: (item: ItemOf<"subagent">) => act(() => replace(item)) };
+    }
+    const withUsage = (over: Partial<(typeof usage)[number]>) => {
+      const entry = { ...(usage[0] as (typeof usage)[number]), ...over };
+      return { item: { ...sub, stats: { ...stats, usage: [entry] } }, entry };
+    };
+
+    it("prices final figures that arrive while an older request is still running", async () => {
+      const early = withUsage({ outputTokens: 1 });
+      const final = withUsage({ outputTokens: 77 });
+      let release: (value: ReturnType<typeof priced>) => void = () => {};
+      const running = new Promise<ReturnType<typeof priced>>((resolve) => {
+        release = resolve;
+      });
+      const session = vi
+        .spyOn(mockUsageApi, "session")
+        .mockResolvedValueOnce(priced(0.01, early.entry))
+        .mockImplementationOnce(() => running)
+        .mockResolvedValue(priced(0.02, final.entry));
+      const { update, queryClient } = liveCard(early.item);
+      expect(await screen.findByText(/≈ \$0\.010 · 48\.2k tokens/)).toBeTruthy();
+
+      // Something else (the session header) fetches the session's usage again...
+      void queryClient.invalidateQueries({ queryKey: usageKeys.session("s1") });
+      await waitFor(() => expect(session).toHaveBeenCalledTimes(2));
+      // ...and the run's final figures arrive before that request returns the old prices.
+      update(final.item);
+      release(priced(0.01, early.entry));
+
+      expect(await screen.findByText(/≈ \$0\.020 · 48\.2k tokens/)).toBeTruthy();
+      expect(session).toHaveBeenCalledTimes(3);
+    });
+
+    it("prices a correction that changes the model but not the token counts", async () => {
+      const haiku = withUsage({ model: "claude-haiku-5-5" });
+      const opus = withUsage({ model: "claude-opus-5-5" });
+      const session = vi
+        .spyOn(mockUsageApi, "session")
+        .mockResolvedValueOnce(priced(0.42, haiku.entry))
+        .mockResolvedValue(priced(1.5, opus.entry));
+      const { update } = liveCard(haiku.item);
+      expect(await screen.findByText(/≈ \$0\.42 · 48\.2k tokens/)).toBeTruthy();
+      update(opus.item);
+      expect(await screen.findByText(/≈ \$1\.50 · 48\.2k tokens/)).toBeTruthy();
+      expect(session).toHaveBeenCalledTimes(2);
+    });
+
+    it("shows no cost while running, nor when nothing could be priced", async () => {
+      const base = priced(0);
+      const [cost] = base.subagents;
+      if (!cost) throw new Error("fixture missing");
+      const session = vi.spyOn(mockUsageApi, "session").mockResolvedValue({
+        ...base,
+        subagents: [
+          {
+            ...cost,
+            costSource: "unpriced",
+            models: cost.models.map((m) => ({ ...m, costSource: "unpriced" as const })),
+          },
+        ],
+      });
+      const running = { ...sub, status: "in_progress" as const, stats };
+      const { unmount } = renderWithClient(<SubagentCard item={running} sessionId="s1" />);
+      expect(screen.queryByText(/\$/)).toBeNull();
+      expect(session).not.toHaveBeenCalled();
+      unmount();
+      renderWithClient(<SubagentCard item={{ ...sub, stats }} sessionId="s1" />);
+      const figures = screen.getByText("· 48.2k tokens · 23 tool calls · 1m 12s");
+      await waitFor(() =>
+        expect(figures.getAttribute("title")).toContain(
+          "Not priced: no price for claude-haiku-5-5",
+        ),
+      );
+      expect(figures.textContent).not.toContain("$");
+    });
   });
 });
 

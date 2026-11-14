@@ -39,7 +39,9 @@ const SOURCE_LABELS: Record<string, string> = {
 const PROVIDER_LABELS: Record<string, string> = {
   claude: "Claude",
   codex: "Codex",
-  opencode: "opencode",
+  opencode: "OpenCode",
+  cursor: "Cursor",
+  gemini: "Gemini CLI",
   fake: "Fake",
 };
 

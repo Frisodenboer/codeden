@@ -1,10 +1,14 @@
-import type { Session } from "@codeden/contracts";
+import type { ForkOrigin, Session } from "@codeden/contracts";
+import { Link } from "@tanstack/react-router";
 import { Brain } from "lucide-react";
 import type { ReactNode } from "react";
 import { ProviderMark } from "@/components/common/bits";
 import { AutonomyBadge } from "@/components/thread/autonomy";
 import { Switch } from "@/components/ui/switch";
-import { ago, compact, statusLabel, usd } from "@/lib/format";
+import { SessionCostText } from "@/components/usage/session-cost";
+import { forkOriginText, isHandoff } from "@/lib/fork-origin";
+import { ago, compact, statusLabel } from "@/lib/format";
+import { useSession } from "@/lib/queries";
 import { useTranscriptsStore } from "@/stores/transcripts";
 import { useVoiceStore } from "@/stores/voice";
 import { LoadedConfig } from "./loaded-config";
@@ -25,15 +29,65 @@ const startedByLabel = {
   automation: "Automation",
 };
 
+/**
+ * The session a fork or a handoff came from, the checkpoint its worktree started at and, for a
+ * fork from a turn ("Fork from here"), where its conversation ends (§9).
+ */
+function ForkedFromRow({ origin }: { origin: ForkOrigin }) {
+  const source = useSession(origin.sessionId);
+  const text = forkOriginText(origin);
+  return (
+    <Row label={isHandoff(origin) ? "Handed off from" : "Forked from"}>
+      <Link
+        to="/sessions/$sessionId"
+        params={{ sessionId: origin.sessionId }}
+        className="underline-offset-2 hover:underline"
+      >
+        {source ? (source.title ?? source.purpose) : origin.sessionId}
+      </Link>
+      <span className="block text-2xs text-muted-foreground">{text.code}</span>
+      {text.conversation && (
+        <span className="block text-2xs text-muted-foreground">{text.conversation}</span>
+      )}
+    </Row>
+  );
+}
+
+/**
+ * How full the context window is, as the provider last reported it in this view, and the
+ * session's cost from the usage ledger. A figure that wasn't reported shows as "—" (§12.6).
+ */
+function ContextWindow({ sessionId }: { sessionId: string }) {
+  const usage = useTranscriptsStore((s) => s.byId[sessionId]?.usage ?? null);
+  const used = usage?.contextTokens;
+  const size = usage?.contextWindow;
+  const pct = used !== undefined && size ? Math.min(100, (used / size) * 100) : null;
+  const reading =
+    used === undefined && size === undefined
+      ? "—"
+      : `${used !== undefined ? compact(used) : "—"} / ${size ? compact(size) : "—"} tokens`;
+  return (
+    <section className="space-y-2">
+      <h3 className="text-2xs font-medium tracking-wider text-muted-foreground uppercase">
+        Context window
+      </h3>
+      {pct !== null && (
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      <div className="flex justify-between gap-3 text-2xs text-muted-foreground tabular-nums">
+        <span title={pct === null ? "Not reported by the provider yet" : undefined}>{reading}</span>
+        <SessionCostText sessionId={sessionId} />
+      </div>
+    </section>
+  );
+}
+
 /** Session metadata, usage and what's loaded into its context (§8.4, §12.4). */
 export function DetailsPanel({ session }: { session: Session }) {
-  const usage = useTranscriptsStore((s) => s.byId[session.id]?.usage ?? null);
   const muted = useVoiceStore((s) => Boolean(s.muted[session.id]));
   const setMuted = useVoiceStore((s) => s.setMuted);
-  const ctxPct =
-    usage?.contextTokens && usage.contextWindow
-      ? (usage.contextTokens / usage.contextWindow) * 100
-      : 34;
 
   return (
     <div className="h-full space-y-5 overflow-y-auto p-4 scroll-thin">
@@ -51,6 +105,7 @@ export function DetailsPanel({ session }: { session: Session }) {
         <Row label="Started by">
           {startedByLabel[session.startedBy.kind]} · {ago(session.createdAt)}
         </Row>
+        {session.forkedFrom && <ForkedFromRow origin={session.forkedFrom} />}
         <Row label="Provider">
           <span className="inline-flex items-center gap-1.5">
             <ProviderMark provider={session.provider} /> {session.provider} ·{" "}
@@ -81,21 +136,7 @@ export function DetailsPanel({ session }: { session: Session }) {
         )}
       </section>
 
-      <section className="space-y-2">
-        <h3 className="text-2xs font-medium tracking-wider text-muted-foreground uppercase">
-          Context window
-        </h3>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-primary" style={{ width: `${ctxPct}%` }} />
-        </div>
-        <div className="flex justify-between text-2xs text-muted-foreground tabular-nums">
-          <span>
-            {usage?.contextTokens ? compact(usage.contextTokens) : "68k"} /{" "}
-            {usage?.contextWindow ? compact(usage.contextWindow) : "200k"} tokens
-          </span>
-          <span>{usage?.costUsd !== undefined ? usd(usage.costUsd) : "$1.84"} this session</span>
-        </div>
-      </section>
+      <ContextWindow sessionId={session.id} />
 
       <LoadedConfig sessionId={session.id} projectId={session.projectId} />
       <div className="flex items-center justify-between gap-3 text-[13px]">

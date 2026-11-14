@@ -1,13 +1,107 @@
-import type { ArchiveSessionResponse, Session } from "@codeden/contracts";
+import type {
+  ArchiveSessionResponse,
+  HandoffSessionRequest,
+  ProviderInfo,
+  Session,
+} from "@codeden/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { useTranscriptsStore } from "@/stores/transcripts";
+import { useUiStore } from "@/stores/ui";
 import { useClient } from "./api";
-import { platform } from "./platform";
+import { copyWithFeedback } from "./copy";
+import { useSnapshotData } from "./queries";
 
 /** Sessions that can be stopped from a menu: ones with a turn running or a question open. */
 export const canStop = (session: Pick<Session, "status">) =>
   session.status === "running" || session.status === "waiting";
+
+const NOT_STARTED = new Set<Session["status"]>(["created", "queued", "starting"]);
+
+/**
+ * Whether the Fork action applies to a session at all: an agent session on a provider that
+ * reports `capabilities.fork` (Principle 5: never the provider's name).
+ */
+export const forkSupported = (session: Session, provider: ProviderInfo | undefined) =>
+  session.role === "agent" && provider?.capabilities.fork === true;
+
+/**
+ * Why a session that supports forking can't be forked right now, or null when it can (the
+ * server checks the same, §9).
+ */
+export function forkBlocked(session: Session): string | null {
+  if (session.status === "waiting") return "Answer what it's waiting on first";
+  if (canStop(session)) return "Wait for the running turn to finish";
+  if (NOT_STARTED.has(session.status)) return "The session hasn't started yet";
+  if (!session.resumeToken) return "No conversation to fork yet";
+  if (!session.branch) return "Only sessions on a git branch can be forked";
+  return null;
+}
+
+/**
+ * Why an agent session can't be handed off right now, or null when it can (the server checks
+ * the same, §9). Unlike a fork it needs no provider capability and no resume token, but it
+ * needs work: `turns` is how many turns the session has had, as the server counts them
+ * (subagents' included); undefined when not known here, and then the server decides.
+ */
+export function handoffBlocked(session: Session, turns: number | undefined): string | null {
+  if (session.status === "waiting") return "Answer what it's waiting on first";
+  if (canStop(session)) return "Wait for the running turn to finish";
+  if (NOT_STARTED.has(session.status)) return "The session hasn't started yet";
+  if (!session.branch) return "Only sessions on a git branch can be handed off";
+  if (turns === 0) return "Nothing to hand off yet";
+  return null;
+}
+
+/**
+ * How many turns a session has had, from its loaded transcript (the session on screen: a
+ * transcript is only kept once its snapshot, every turn included, has loaded); undefined when
+ * it isn't loaded.
+ */
+export function useTurnCount(sessionId: string): number | undefined {
+  return useTranscriptsStore((s) => {
+    const transcript = s.byId[sessionId];
+    return transcript ? Object.keys(transcript.turns).length : undefined;
+  });
+}
+
+/** `handoffBlocked` for a session, with its turn count from the loaded transcript. */
+export function useHandoffBlocked(session: Session): string | null {
+  return handoffBlocked(session, useTurnCount(session.id));
+}
+
+/**
+ * Hand a session off (§9): a new session on the chosen provider with this one's code and a
+ * brief of its work, then open it. Writing the brief can take a moment (the utility model
+ * summarises the work), so a loading toast shows meanwhile.
+ */
+export function useHandoffSession(session: Session) {
+  const client = useClient();
+  const navigate = useNavigate();
+  const providers = useSnapshotData((s) => s.runner.providers, []);
+  return useMutation({
+    mutationFn: (req: HandoffSessionRequest) => client.handoffSession(session.id, req),
+    onMutate: () => ({ toastId: toast.loading("Writing the handoff brief…") }),
+    onSuccess: ({ sessionId }, req, context) => {
+      const name = providers.find((p) => p.id === req.provider)?.displayName ?? req.provider;
+      toast.success(`Continued in a new ${name} session`, {
+        id: context?.toastId,
+        description:
+          "It has this session's code and a brief of the work. This session is unchanged.",
+      });
+      void navigate({ to: "/sessions/$sessionId", params: { sessionId } });
+    },
+    onError: (error, _vars, context) => toast.error(message(error), { id: context?.toastId }),
+  });
+}
+
+/**
+ * Sessions that can be turned into an automation ("Make an automation…"): agent sessions in a
+ * project. PM and orchestrator sessions are conversations, not repeatable tasks.
+ */
+export const canMakeAutomation = (session: Pick<Session, "role" | "projectId">) =>
+  session.role === "agent" && session.projectId !== null;
 
 /** A link to the session in this CodeDen (no token: the browser's cookie signs it in). */
 export const sessionLink = (sessionId: string, origin = window.location.origin) =>
@@ -53,9 +147,48 @@ export function announceArchive(
 }
 
 /**
- * What you can do to a session from its row menu or the thread header's ⋯ menu: open, rename,
- * copy its link, stop, archive (with Undo) and unarchive. Both menus use this, so they show
- * the same toasts.
+ * Fork a session (§9): at its latest moment, or from a finished turn of its own ("Fork from
+ * here"), then open the fork. `canFork` says whether the provider can fork at all, `blocked`
+ * why it can't right now (null when it can).
+ */
+export function useForkSession(session: Session) {
+  const client = useClient();
+  const navigate = useNavigate();
+  // Copying the conversation can take a moment (a provider may start a process for it).
+  const fork = useMutation({
+    mutationFn: (turnId: string | undefined) =>
+      turnId ? client.forkSession(session.id, { turnId }) : client.forkSession(session.id),
+    onMutate: () => ({ toastId: toast.loading("Forking the session…") }),
+    onSuccess: ({ sessionId }, turnId, context) => {
+      toast.success("Forked into a new session", {
+        id: context?.toastId,
+        description: turnId
+          ? "It has the conversation and the code as they were after that turn. The original is unchanged."
+          : "It has the conversation and the code so far. The original is unchanged.",
+      });
+      void navigate({ to: "/sessions/$sessionId", params: { sessionId } });
+    },
+    onError: (error, _vars, context) => toast.error(message(error), { id: context?.toastId }),
+  });
+  const provider = useSnapshotData(
+    (s) => s.runner.providers.find((p) => p.id === session.provider),
+    undefined,
+  );
+  const canFork = forkSupported(session, provider);
+  return {
+    canFork,
+    blocked: canFork ? (fork.isPending ? "Forking…" : forkBlocked(session)) : null,
+    /** A fork is under way (its "Forking the session…" toast is showing). */
+    pending: fork.isPending,
+    /** Fork at the latest moment, or through the end of `turnId`. */
+    fork: (turnId?: string) => fork.mutate(turnId),
+  };
+}
+
+/**
+ * What you can do to a session from its row menu, the thread header's ⋯ menu or the command
+ * palette: open, rename, copy its link, make an automation from it, stop, fork, archive (with
+ * Undo) and unarchive. They all use this, so they show the same toasts.
  */
 export function useSessionActions(session: Session) {
   const client = useClient();
@@ -86,6 +219,9 @@ export function useSessionActions(session: Session) {
     mutationFn: (title: string) => client.updateSession(session.id, { title }),
     onError,
   });
+  const fork = useForkSession(session);
+  const setHandoff = useUiStore((s) => s.setHandoff);
+  const blocked = useHandoffBlocked(session);
 
   return {
     open: () => void navigate({ to: "/sessions/$sessionId", params: { sessionId: session.id } }),
@@ -95,18 +231,35 @@ export function useSessionActions(session: Session) {
       if (next && next !== (session.title ?? session.purpose)) rename.mutate(next);
     },
     copyLink: async () => {
-      try {
-        await platform.writeClipboard(sessionLink(session.id));
-        toast.success("Link copied");
-      } catch (error) {
-        onError(error);
-      }
+      await copyWithFeedback(sessionLink(session.id), "Link copied");
+    },
+    canMakeAutomation: canMakeAutomation(session),
+    /** Open the New automation editor prefilled from this session; nothing is saved yet. */
+    makeAutomation: () => {
+      if (!session.projectId) return;
+      void navigate({
+        to: "/projects/$projectId/automations/new",
+        params: { projectId: session.projectId },
+        search: { session: session.id },
+      });
     },
     canStop: canStop(session),
     stop: () => stop.mutate(),
     archived: Boolean(session.archivedAt),
     archive: () => archive.mutate(false),
     unarchive: () => unarchive.mutate(),
+    /** The provider can fork this session's conversation: show the Fork action. */
+    canFork: fork.canFork,
+    /** Why Fork is disabled right now (null when it can run). */
+    forkBlocked: fork.blocked,
+    fork: () => fork.fork(),
+    /** Agent sessions can be handed off to any provider: show the Hand off action. */
+    canHandoff: session.role === "agent",
+    /** Why Hand off is disabled right now (null when it can run). */
+    handoffBlocked: session.role === "agent" ? blocked : null,
+    /** Open the handoff dialog, with `provider` chosen when given. */
+    handoff: (provider?: string) =>
+      setHandoff({ sessionId: session.id, provider: provider ?? null }),
   };
 }
 

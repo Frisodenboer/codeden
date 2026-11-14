@@ -5,22 +5,43 @@ import {
   type Project,
 } from "@codeden/contracts";
 import { errorMessage } from "../errors";
-import { evaluateChecks, failedChecks, sameChecks } from "./checks";
-import { type FactoryContext, factoryNotice, visionOf } from "./context";
-import type { FactoryPr } from "./github-port";
+import { codeFiles, evaluateChecks, hasTestResults, sameChecks } from "./checks";
+import { kickCi } from "./ci-kick";
+import { type FactoryContext, visionOf } from "./context";
+import { handleFailure } from "./failures";
+import type { FactoryPr, PrEvidence } from "./github-port";
+import { prDecidedOutside, readyForYou } from "./merge";
 import { escalate, failItem, runAudit } from "./outcomes";
-import { isUiFile, mayMerge, pickReviewer } from "./policy";
-import { fixPrompt, REVIEWER_NUDGE, reReviewPrompt, tooLargePrompt } from "./prompts";
-
-const ENDED = new Set(["idle", "interrupted", "completed", "failed", "stopped"]);
+import { isUiFile } from "./policy";
+import { joinQueue, leaveQueue } from "./queue";
+import {
+  advanceConflicting,
+  baseBranchOf,
+  restoreForAudit,
+  settleConflict,
+  trackedHead,
+  trackHead,
+  UPDATE,
+  worktreeSettled,
+} from "./rebase";
+import { adoptAgentPr } from "./rebuild";
+import { recheckOf } from "./recheck";
+import { ensureReviewer, reviewerStalled } from "./reviewer";
+import { mayAutoMerge } from "./trust";
 
 /** Audit results per item and head commit (re-run after a restart is fine). */
 const auditCache = new Map<string, { ok: boolean; detail: string }>();
+/** Evidence found per item and head commit (only what was found; misses are looked up again). */
+const evidenceCache = new Map<string, PrEvidence>();
+
+/** How often a PR that is ready for a person is read from GitHub again (new commits, CI). */
+export const READY_RECHECK_MS = 5 * 60_000;
 
 /**
- * One verification step for an item with a PR (§10.1 step 4-5): gather the inputs, record the
- * merge checks, start or nudge the independent reviewer, then merge, start a fix round, fail
- * or escalate. Returns the (possibly changed) loop.
+ * One verification step for an item with a PR (§10.1, Review and Merge): gather the inputs,
+ * record the merge checks, start or nudge the independent reviewer, then queue it to merge
+ * (auto-merge on, trusted work; `queue.ts` merges) or hand it to the user to merge, start a
+ * revise round, fail or escalate.
  */
 export async function advanceVerifying(
   ctx: FactoryContext,
@@ -29,6 +50,21 @@ export async function advanceVerifying(
   item: FactoryItem,
 ): Promise<FactoryLoop> {
   if (!item.pr) return failItem(ctx, loop, item, "The item has no pull request");
+  item = adoptAgentPr(ctx, project, item);
+  if (!item.pr) return loop;
+  // Ready and waiting for a person: the synced PR says when they merge or close it; GitHub
+  // itself is asked again only every few minutes (new commits, CI, conflicts).
+  if (item.nudges.ready && !mayAutoMerge(item, project.factoryLimits)) {
+    const ref = ctx.github.prRef(project.id, item.pr.number);
+    if (ref && (ref.state === "merged" || ref.state === "closed")) {
+      prDecidedOutside(ctx, item, ref);
+      return loop;
+    }
+    const last = Date.parse(item.nudges.ready_checked ?? item.nudges.ready);
+    if (ctx.now().getTime() - last < READY_RECHECK_MS) return loop;
+    const at = ctx.now().toISOString();
+    ctx.store.updateItem(item.id, (i) => ({ ...i, nudges: { ...i.nudges, ready_checked: at } }));
+  }
   let pr: FactoryPr;
   try {
     pr = await ctx.github.prDetails(project.id, item.pr.number);
@@ -39,43 +75,50 @@ export async function advanceVerifying(
     }));
     return loop;
   }
-  if (pr.ref.state === "merged") {
-    ctx.store.updateItem(item.id, (i) => ({
-      ...i,
-      pr: pr.ref,
-      stage: "merged",
-      note: "Merged outside the factory",
-      mergedAt: i.mergedAt ?? ctx.now().toISOString(),
-      finishedAt: ctx.now().toISOString(),
-    }));
+  if (pr.ref.state === "merged" || pr.ref.state === "closed") {
+    prDecidedOutside(ctx, item, pr.ref);
     return loop;
   }
-  if (pr.ref.state === "closed") return failItem(ctx, loop, item, "The pull request was closed");
+  // What it changes, for overlap-aware scheduling of the queue (`overlap.ts`).
+  ctx.prFiles.set(project.id, pr.ref.number, pr.files);
+  // CI that never started is started again (by its agent, or an integrator that takes the PR
+  // over when the author's session is gone); its clock waits until that happened.
+  const kicking = await kickCi(ctx, project, item, pr);
+  item = ctx.store.item(item.id) ?? item;
 
   const vision = visionOf(project);
   const now = ctx.now();
+  const conflicting = pr.mergeable === "conflicting";
   const builder = item.builderSessionId ? ctx.repo.find(item.builderSessionId)?.session : undefined;
   const worktree = builder?.worktreePath ?? null;
   const auditConfigured = Boolean(loop.tuning.auditCommand && worktree);
-  const auditKey = `${item.id}:${pr.headSha ?? ""}`;
-  if (auditConfigured && worktree && loop.tuning.auditCommand && !auditCache.has(auditKey)) {
-    auditCache.set(auditKey, await runAudit(ctx, loop.tuning.auditCommand, worktree));
+  const headKey = `${item.id}:${pr.headSha ?? ""}`;
+  carryAuditOver(item, pr, headKey);
+  // The audit runs in the builder's settled worktree: not once cleanup removed it, not while
+  // the builder is mid-turn, and not on a head a rebase is about to replace. Until then it is
+  // pending (still required before a merge), never skipped.
+  const auditable = builder !== undefined && worktreeSettled(builder) && !conflicting;
+  if (auditable && worktree && loop.tuning.auditCommand && !auditCache.has(headKey)) {
+    auditCache.set(headKey, await runAudit(ctx, loop.tuning.auditCommand, worktree));
   }
-  const evidence = pr.files.some(isUiFile)
-    ? await ctx.github
-        .hasScreenshotEvidence(project.id, pr.ref.number, item.issue?.number ?? null)
-        .catch(() => false)
-    : null;
-  const since = Date.parse(item.nudges.verifying ?? item.updatedAt);
+  const evidence = await gatherEvidence(ctx, project, item, pr, headKey);
+  // CI gets its time from when this head first appeared, not from when verification began.
+  const nudgesFor = (n: FactoryItem["nudges"], reviewed: boolean) =>
+    settleConflict(trackHead(n, pr, now.toISOString()).nudges, pr, reviewed);
+  const head = trackHead(item.nudges, pr, now.toISOString());
+  const recheck = recheckOf({ ...item, nudges: nudgesFor(item.nudges, Boolean(item.review)) });
   const { checks, outcome } = evaluateChecks({
     pr,
     issueTitle: item.issue?.title ?? item.title,
     review: item.review,
+    recheck: recheck !== null,
     reviewer: item.reviewerProvider,
-    evidence,
-    audit: auditCache.get(auditKey) ?? null,
+    type: item.type,
+    evidence: evidence.screenshots,
+    testOutput: evidence.testOutput,
+    audit: auditCache.get(headKey) ?? null,
     auditConfigured,
-    ciGraceOver: now.getTime() - since > ctx.ciGraceMs,
+    ciTimedOut: !kicking && now.getTime() - Date.parse(head.since) > ctx.ciGraceMs,
     limits: project.factoryLimits,
     tuning: loop.tuning,
     largeChange: item.largeChange ?? null,
@@ -86,259 +129,70 @@ export async function advanceVerifying(
     ...i,
     pr: pr.ref,
     checks: sameChecks(i.checks, checks) ? i.checks : checks,
+    nudges: nudgesFor(i.nudges, Boolean(i.review)),
   }));
 
   if (outcome === "escalate") return escalate(ctx, loop, current, checks);
-  if (outcome === "fail") return handleFailure(ctx, project, loop, current);
+  if (outcome === "fail") {
+    return handleFailure(ctx, project, loop, current, conflicting ? baseBranchOf(project) : null);
+  }
   if (outcome === "pending") {
-    current = await ensureReviewer(ctx, current, vision.text);
+    // Merge conflicts (another merge came first): the PR's agent rebases, then CI runs again.
+    // A review in progress still counts; a new one waits for the rebased head.
+    if (conflicting) return advanceConflicting(ctx, project, loop, current, pr);
+    // The audit is due but cleanup removed the builder's worktree: bring it back first.
+    if (auditConfigured && builder?.worktreeRemovedAt && !auditCache.has(headKey)) {
+      return restoreForAudit(ctx, project, loop, current, builder, pr.headSha);
+    }
+    const reviewed = checks.find((c) => c.name === "review")?.state !== "skipped";
+    if (!reviewed) return loop;
+    current = await ensureReviewer(ctx, project, loop, current, vision.text, pr);
     return reviewerStalled(ctx, project, loop, current);
   }
 
-  // Every check passed: merge, within the limits.
-  if (loop.state === "paused" && current.source !== "revert") {
-    ctx.store.updateItem(current.id, (i) => ({
-      ...i,
-      note: "Checks passed; waiting while the loop is paused",
-    }));
+  // Every check passed: the merge queue merges it in its turn, or a person does.
+  if (!mayAutoMerge(current, project.factoryLimits) || !isFactoryMode(project.autonomyMode)) {
+    current = leaveQueue(ctx, current);
+    await readyForYou(ctx, project, current);
     return loop;
   }
-  if (!isFactoryMode(project.autonomyMode)) {
-    ctx.store.updateItem(current.id, (i) => ({
-      ...i,
-      note: "Checks passed; this mode does not merge automatically",
-    }));
-    return loop;
-  }
-  if (!mayMerge(loop.mergesToday, project.factoryLimits)) {
-    ctx.store.updateItem(current.id, (i) => ({
-      ...i,
-      note: "Checks passed; the daily merge limit is reached",
-    }));
-    return loop;
-  }
-  const title = `${current.title} (#${pr.ref.number})`;
-  const res = await ctx.github
-    .merge(project.id, pr.ref.number, { sha: pr.headSha, title })
-    .catch((error: unknown) => ({ merged: false, sha: null, error: errorMessage(error) }));
-  if (!res.merged) {
-    const why = "error" in res ? res.error : "GitHub did not merge it";
-    ctx.store.updateItem(current.id, (i) => ({ ...i, note: `Merge failed: ${why}` }));
-    return loop;
-  }
-  const at = ctx.now().toISOString();
-  ctx.store.updateItem(current.id, (i) => ({
-    ...i,
-    stage: "watching",
-    pr: { ...pr.ref, state: "merged" },
-    mergeSha: res.sha,
-    mergedAt: at,
-    note: "Merged; watching CI on the default branch",
-  }));
-  if (current.issue && current.source !== "revert") {
-    const passed = checks
-      .filter((c) => c.state === "pass")
-      .map((c) => c.name)
-      .join(", ");
-    await ctx.github
-      .comment(
-        project.id,
-        current.issue.number,
-        `Merged automatically by the CodeBench factory in #${pr.ref.number} after every merge check passed (${passed}).`,
-      )
-      .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
-  }
-  factoryNotice(ctx, {
-    id: `factory.merged:${current.id}`,
-    projectId: project.id,
-    target: "pm",
-    event: "merged",
-    title: `Factory merged #${pr.ref.number}: ${current.title}`,
-    text: `Merged ${pr.ref.url} (${res.sha ?? "unknown sha"}); watching CI on the default branch.`,
-    itemIds: [current.id],
-    wake: false,
-  });
-  return { ...loop, mergesToday: loop.mergesToday + 1, consecutiveFailures: 0 };
-}
-
-/** Start the independent reviewer (another provider when possible), or ask it to look again. */
-async function ensureReviewer(
-  ctx: FactoryContext,
-  item: FactoryItem,
-  vision: string,
-): Promise<FactoryItem> {
-  if (item.review) return item;
-  if (item.reviewerSessionId) {
-    if (!item.nudges.rereview_pending) return item;
-    await ctx.sessions.message(item.reviewerSessionId, reReviewPrompt(item));
-    return ctx.store.updateItem(item.id, (i) => {
-      const { rereview_pending: _p, ...rest } = i.nudges;
-      return { ...i, nudges: { ...rest, rereview_sent: ctx.now().toISOString() } };
-    });
-  }
-  const project = ctx.projects.get(item.projectId);
-  if (ctx.sessions.activeCount(item.projectId) >= project.factoryLimits.maxConcurrentSessions) {
-    return ctx.store.updateItem(item.id, (i) => ({
-      ...i,
-      note: "Waiting for a session slot for the review",
-    }));
-  }
-  const choice = pickReviewer(item.builderProvider, ctx.sessions.providers());
-  // No builder worktree (a revert PR opened through the API): review the PR's head locally.
-  let head: { headBranch: string; baseBranch: string } | null = null;
-  if (!item.builderSessionId && item.pr) {
-    const details = await ctx.github.prDetails(project.id, item.pr.number).catch(() => null);
-    if (details) {
-      head = { headBranch: details.headBranch, baseBranch: project.defaultBranch ?? "main" };
-    }
-  }
-  const res = await ctx.sessions.startReviewer(item, vision, choice.provider, choice.note, head);
-  if (res.status !== "started") {
-    return ctx.store.updateItem(item.id, (i) => ({
-      ...i,
-      note: `Review not started (${res.status})`,
-    }));
-  }
-  return ctx.store.updateItem(item.id, (i) => ({
-    ...i,
-    reviewerSessionId: res.sessionId,
-    reviewerProvider: choice.provider,
-    reviewerNote: choice.note,
-    note: null,
-  }));
-}
-
-/** While checks are pending: nudge a reviewer that ended its turn without a verdict. */
-async function reviewerStalled(
-  ctx: FactoryContext,
-  project: Project,
-  loop: FactoryLoop,
-  item: FactoryItem,
-): Promise<FactoryLoop> {
-  if (item.review || !item.reviewerSessionId || item.nudges.rereview_pending) return loop;
-  const s = ctx.repo.find(item.reviewerSessionId)?.session;
-  if (!s || !ENDED.has(s.status)) return loop;
-  if (s.status === "failed" || s.status === "stopped") {
-    if (item.nudges.reviewer_restarted)
-      return failReview(ctx, project, loop, item, `The reviewer session ${s.status}`);
-    ctx.store.updateItem(item.id, (i) => ({
-      ...i,
-      reviewerSessionId: null,
-      nudges: { ...i.nudges, reviewer_restarted: ctx.now().toISOString() },
-    }));
-    return loop;
-  }
-  const nudged = item.nudges.reviewer;
-  if (!nudged) {
-    const at = ctx.now().toISOString();
-    ctx.store.updateItem(item.id, (i) => ({ ...i, nudges: { ...i.nudges, reviewer: at } }));
-    await ctx.sessions.message(s.id, REVIEWER_NUDGE);
-    return loop;
-  }
-  if (Date.parse(s.updatedAt) > Date.parse(nudged)) {
-    return failReview(ctx, project, loop, item, "The reviewer ended without a verdict");
-  }
+  joinQueue(ctx, current);
   return loop;
 }
 
-function failReview(
-  ctx: FactoryContext,
-  project: Project,
-  loop: FactoryLoop,
-  item: FactoryItem,
-  reason: string,
-): Promise<FactoryLoop> {
-  const at = ctx.now().toISOString();
-  const current = ctx.store.updateItem(item.id, (i) => ({
-    ...i,
-    checks: i.checks.map((c) =>
-      c.name === "review" ? { ...c, state: "fail" as const, detail: reason, at } : c,
-    ),
-  }));
-  return handleFailure(ctx, project, loop, current);
-}
-
-/** Failed checks: one more fix round if allowed, otherwise the item fails (and may pause). */
-async function handleFailure(
-  ctx: FactoryContext,
-  project: Project,
-  loop: FactoryLoop,
-  item: FactoryItem,
-): Promise<FactoryLoop> {
-  const failed = failedChecks(item.checks);
-  // A fix round can't make work smaller without cutting scope: the PM splits it or allows it.
-  if (failed.some((c) => c.name === "size")) return tooLarge(ctx, project, loop, item);
-  const builder = item.builderSessionId ? ctx.repo.find(item.builderSessionId)?.session : undefined;
-  const fixable =
-    item.attempts < loop.tuning.maxFixAttempts &&
-    builder !== undefined &&
-    builder.status !== "failed" &&
-    builder.status !== "stopped" &&
-    item.review?.verdict !== "reject";
-  if (fixable && builder) {
-    const at = ctx.now().toISOString();
-    ctx.store.updateItem(item.id, (i) => ({
-      ...i,
-      stage: "building",
-      attempts: i.attempts + 1,
-      review: null,
-      note: `Fix round ${i.attempts + 1}: ${failed.map((c) => c.name).join(", ")}`,
-      nudges: {
-        ...i.nudges,
-        [`fix_${i.attempts + 1}`]: at,
-        ...(i.reviewerSessionId ? { rereview_pending: at } : {}),
-      },
-    }));
-    await ctx.sessions.message(builder.id, fixPrompt(item, failed));
-    return loop;
-  }
-  const reason =
-    failed.map((c) => `${c.name}: ${c.detail ?? "failed"}`).join("; ") || "Merge checks failed";
-  const next = failItem(ctx, loop, item, reason);
-  if (item.pr) {
-    await ctx.github
-      .comment(
-        project.id,
-        item.pr.number,
-        `The CodeBench factory's merge checks failed, so this PR is left for a human:\n\n${failed.map((c) => `- **${c.name}**: ${c.detail ?? "failed"}`).join("\n")}`,
-      )
-      .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
-  }
-  return next;
-}
-
 /**
- * The size check failed. That isn't a quality failure, so it doesn't count towards pausing
- * the loop, and no fix round runs. The PM is woken to split the work into smaller issues or,
- * when it can't be split, to allow it with `factory_allow_large_change`. The PR stays open.
+ * A head the merge queue made with GitHub's update-branch only merged the default branch in:
+ * the audit result of the head before it still holds (it ran in the builder's worktree).
  */
-async function tooLarge(
+function carryAuditOver(item: FactoryItem, pr: FactoryPr, headKey: string): void {
+  const prev = trackedHead(item);
+  if (!prev || prev === pr.headSha || !item.nudges[`${UPDATE}${prev}`]) return;
+  const was = auditCache.get(`${item.id}:${prev}`);
+  if (was && !auditCache.has(headKey)) auditCache.set(headKey, was);
+}
+
+/** Screenshots (UI changes) and test output (code changes), cached once found. */
+async function gatherEvidence(
   ctx: FactoryContext,
   project: Project,
-  loop: FactoryLoop,
   item: FactoryItem,
-): Promise<FactoryLoop> {
-  const failed = failedChecks(item.checks);
-  const size = failed.find((c) => c.name === "size");
-  const reason = failed.map((c) => `${c.name}: ${c.detail ?? "failed"}`).join("; ");
-  const next = failItem(ctx, loop, item, reason, { countsAsFailure: false, notify: false });
-  factoryNotice(ctx, {
-    id: `factory.too-large:${item.id}:${item.pr?.number ?? ""}`,
-    projectId: item.projectId,
-    target: "pm",
-    event: "failed",
-    title: `Too large to merge automatically: ${item.title}`,
-    text: tooLargePrompt(item, size?.detail ?? "over the size limit", failed),
-    itemIds: [item.id],
-  });
-  if (item.pr) {
-    await ctx.github
-      .comment(
-        project.id,
-        item.pr.number,
-        `This PR is larger than the CodeBench factory's size limit (${size?.detail ?? "over the limit"}), so it isn't merged automatically yet. The project manager will split the work into smaller issues or allow it as one change.`,
-      )
-      .catch((error: unknown) => ctx.log?.(`factory: comment: ${errorMessage(error)}`));
+  pr: FactoryPr,
+  headKey: string,
+): Promise<{ screenshots: boolean | null; testOutput: boolean | null }> {
+  const wantScreens = pr.files.some(isUiFile);
+  const wantTests = codeFiles(pr.files).length > 0 && !hasTestResults(pr.body);
+  if (!wantScreens && !wantTests) return { screenshots: null, testOutput: null };
+  let found = evidenceCache.get(headKey);
+  if (!found || (wantScreens && !found.screenshots) || (wantTests && !found.testOutput)) {
+    const looked = await ctx.github
+      .evidence(project.id, pr.ref.number, item.issue?.number ?? null)
+      .catch(() => null);
+    if (!looked) return { screenshots: null, testOutput: null };
+    found = looked;
+    if (found.screenshots || found.testOutput) evidenceCache.set(headKey, found);
   }
-  return next;
+  return {
+    screenshots: wantScreens ? found.screenshots : null,
+    testOutput: wantTests ? found.testOutput : false,
+  };
 }

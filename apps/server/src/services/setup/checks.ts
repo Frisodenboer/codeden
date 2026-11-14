@@ -1,107 +1,28 @@
-import type { SetupCheck, SetupCommand, SetupToolId } from "@codeden/contracts";
-import { isElectronRuntime, parseOpencodeAuthList } from "@codeden/providers";
-import type { Exec } from "../exec";
-import { type BrowserProbe, detectBrowser } from "./browsers";
+import type { SetupToolId } from "@codeden/contracts";
+import { isElectronRuntime } from "@codeden/providers";
+import { detectBrowser } from "./browsers";
+import { base, type CheckEnv, type CheckResult, installFix, MIN_NODE_MAJOR } from "./check-base";
+import { checkCursor } from "./check-cursor";
+import { checkGemini } from "./check-gemini";
 import {
   expiresWithin,
   parseClaudeAuth,
   parseCodexLogin,
   parseGhAuthJson,
   parseGhAuthText,
+  parseOpenCodeAuth,
   parseVersion,
 } from "./parse";
-import { LOGIN_COMMANDS, type Locate, loginFix, lookupTool, runDetail } from "./tool-lookup";
+import { LOGIN_COMMANDS, loginFix, lookupTool, runDetail } from "./tool-lookup";
 
-export { LOGIN_COMMANDS };
+export type { CheckEnv };
+export { LOGIN_COMMANDS, MIN_NODE_MAJOR };
+
+/** Oldest OpenCode with the v2 server API the adapter uses (OpenCode 1 is a different API). */
+export const OPENCODE_MIN_VERSION = "2.2.0";
 
 /** Days before `loginExpiresAt` at which a Claude login is flagged. */
 export const LOGIN_EXPIRY_WARNING_DAYS = 3;
-
-export const MIN_NODE_MAJOR = 24;
-
-const LABELS: Record<SetupToolId, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  opencode: "opencode",
-  gh: "GitHub CLI",
-  git: "git",
-  browser: "Browser",
-  node: "Node.js",
-};
-
-function installFix(id: SetupToolId, platform: NodeJS.Platform): SetupCommand {
-  switch (id) {
-    case "claude":
-      return { kind: "install", command: "npm install -g @anthropic-ai/claude-code" };
-    case "codex":
-      return { kind: "install", command: "npm install -g @openai/codex" };
-    case "opencode":
-      return { kind: "install", command: "npm install -g opencode-ai" };
-    case "gh":
-      return {
-        kind: "install",
-        command:
-          platform === "win32"
-            ? "winget install --id GitHub.cli"
-            : platform === "darwin"
-              ? "brew install gh"
-              : "See https://github.com/cli/cli#installation",
-        url: "https://cli.github.com",
-      };
-    case "git":
-      return {
-        kind: "install",
-        command:
-          platform === "win32"
-            ? "winget install --id Git.Git"
-            : platform === "darwin"
-              ? "xcode-select --install"
-              : "Install git with your package manager",
-        url: "https://git-scm.com/downloads",
-      };
-    case "browser":
-      return {
-        kind: "install",
-        command: "Install Microsoft Edge or Google Chrome",
-        url: "https://www.google.com/chrome/",
-      };
-    case "node":
-      return {
-        kind: "upgrade",
-        command: `Install Node.js ${MIN_NODE_MAJOR} or newer`,
-        url: "https://nodejs.org",
-      };
-  }
-}
-
-function base(id: SetupToolId): Omit<SetupCheck, "state" | "message" | "durationMs"> {
-  return {
-    id,
-    label: LABELS[id],
-    installed: false,
-    version: null,
-    executablePath: null,
-    loggedIn: null,
-    authMethod: null,
-    account: null,
-    loginExpiresAt: null,
-    fix: null,
-  };
-}
-
-type CheckResult = Omit<SetupCheck, "durationMs">;
-
-export interface CheckEnv {
-  exec: Exec;
-  /** Finds a working copy of claude, codex and gh (PATH, then known install locations). */
-  locate: Locate;
-  /** The shell of the setup terminal, for quoting sign-in commands. */
-  shell: string;
-  platform: NodeJS.Platform;
-  nodeVersion: string;
-  now: number;
-  browserProbe?: Partial<BrowserProbe>;
-}
 
 export async function checkClaude({
   exec,
@@ -195,56 +116,88 @@ ${status.stderr}`,
 }
 
 /**
- * opencode: installed, and at least one stored login (`opencode auth list`, names only; the keys
- * stay in opencode's own store). opencode also reads keys from environment variables, so no
- * stored login is a warning rather than a hard stop.
+ * A working `opencode` (PATH, then its installer's folders), then `opencode auth list` on a
+ * private server (`--standalone`), never the user's background service.
  */
-export async function checkOpencode({
+export async function checkOpenCode({
   exec,
   locate,
   shell,
   platform,
 }: CheckEnv): Promise<CheckResult> {
   const tool = await lookupTool(locate, "opencode", base("opencode"), {
-    message: "opencode is not installed (optional, for GLM and other models)",
+    message: "OpenCode is not installed",
     fix: installFix("opencode", platform),
   });
   if (!tool.found) return tool.result;
+  const found = tool.version;
   const installed = {
     ...base("opencode"),
     ...tool.extra,
     installed: true,
-    version: tool.version,
+    version: found,
     executablePath: tool.path,
   };
-  const list = await exec(tool.path, ["auth", "list"], { timeoutMs: 15_000 });
-  if (list.code !== 0) {
+  if (found && compareVersions(found, "2.0.0") < 0) {
     return {
       ...installed,
-      loggedIn: null,
-      state: "warning",
-      message: "Could not read opencode's logins",
-      detail: runDetail("opencode auth list", list),
+      state: "missing",
+      message: `OpenCode ${found} is OpenCode 1, which CodeDen does not support; install OpenCode 2`,
+      fix: installFix("opencode", platform),
     };
   }
-  const logins = parseOpencodeAuthList(`${list.stdout}\n${list.stderr}`);
-  if (logins.length === 0) {
+  if (found && compareVersions(found, OPENCODE_MIN_VERSION) < 0) {
     return {
       ...installed,
-      loggedIn: false,
       state: "warning",
-      message: "opencode has no stored logins (add one, e.g. Z.AI Coding Plan for GLM)",
-      fix: loginFix("opencode", shell, tool.path),
+      message: `OpenCode ${found} is older than ${OPENCODE_MIN_VERSION}; update it`,
+      fix: { kind: "upgrade", command: "opencode upgrade" },
+    };
+  }
+  const login = loginFix("opencode", shell, tool.path);
+  const list = await exec(tool.path, ["auth", "list", "--standalone", "--format", "json"], {
+    timeoutMs: 15_000,
+  });
+  const auth = list.code === 0 ? parseOpenCodeAuth(list.stdout) : null;
+  if (!auth) {
+    return {
+      ...installed,
+      state: "warning",
+      message: "Could not read OpenCode's providers",
+      detail: runDetail("opencode auth list --standalone --format json", list),
+      fix: login,
+    };
+  }
+  if (!auth.providers.length) {
+    // OpenCode's own free models work without an account.
+    return {
+      ...installed,
+      loggedIn: true,
+      authMethod: "free",
+      state: "warning",
+      message: "Only OpenCode's free models: connect a provider for more",
+      fix: login,
     };
   }
   return {
     ...installed,
     loggedIn: true,
-    authMethod: "api_key",
-    account: logins.join(", "),
+    authMethod: auth.authMethod,
+    account: auth.providers.join(", "),
     state: "ok",
-    message: `Signed in (${logins.join(", ")})`,
+    message: `Connected: ${auth.providers.join(", ")}`,
   };
+}
+
+/** Compare `x.y.z` versions numerically. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);
+  const pb = b.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i += 1) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 export async function checkGh({ exec, locate, shell, platform }: CheckEnv): Promise<CheckResult> {
@@ -376,7 +329,9 @@ export async function checkNode({ nodeVersion, platform }: CheckEnv): Promise<Ch
 export const CHECKS: Record<SetupToolId, (env: CheckEnv) => Promise<CheckResult>> = {
   claude: checkClaude,
   codex: checkCodex,
-  opencode: checkOpencode,
+  opencode: checkOpenCode,
+  cursor: checkCursor,
+  gemini: checkGemini,
   gh: checkGh,
   git: checkGit,
   browser: checkBrowser,

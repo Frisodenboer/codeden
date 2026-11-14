@@ -1,5 +1,8 @@
 import type { Attachment, FileChange, Item, ItemStatus, ToolCallItem } from "@codeden/contracts";
-import { shorten, toJson, toolOutput } from "../util/text";
+import { shorten, toJson, toolOutput, unixToIso } from "../util/text";
+import { type AgentNames, collabToolCall } from "./collab";
+import { saveImageResult } from "./image-result";
+import type { ImageGenerationItem } from "./protocol/ImageGenerationItem";
 import type { UserInput as CodexUserInput, FileUpdateChange, ThreadItem } from "./protocol/v2";
 
 /** Codex item status -> CodeDen item status. */
@@ -114,8 +117,13 @@ function commandItem(item: Extract<ThreadItem, { type: "commandExecution" }>): T
   };
 }
 
-/** Map a Codex `ThreadItem` to a CodeDen item. Returns `undefined` for items CodeDen doesn't show. */
-export function mapThreadItem(item: ThreadItem): Item | undefined {
+const noNames: AgentNames = () => undefined;
+
+/**
+ * Map a Codex `ThreadItem` to a CodeDen item. Returns `undefined` for items CodeDen doesn't show.
+ * `names` gives sub-agents' display names for the titles of calls between agents.
+ */
+export function mapThreadItem(item: ThreadItem, names: AgentNames = noNames): Item | undefined {
   switch (item.type) {
     case "userMessage":
       return {
@@ -188,15 +196,8 @@ export function mapThreadItem(item: ThreadItem): Item | undefined {
         input: toJson(item.arguments),
       };
     case "collabAgentToolCall":
-      return {
-        id: item.id,
-        kind: "tool_call",
-        toolKind: "other",
-        status: itemStatus(item.status),
-        toolName: `agent.${item.tool}`,
-        title: `Agent: ${item.tool}`,
-        input: toJson({ prompt: item.prompt, receiverThreadIds: item.receiverThreadIds }),
-      };
+      // Spawns never get here: the thread mapper turns them into `subagent` items.
+      return collabToolCall(item, itemStatus(item.status), names);
     case "webSearch": {
       const action = item.action;
       const url = action && "url" in action ? (action.url ?? undefined) : undefined;
@@ -222,15 +223,7 @@ export function mapThreadItem(item: ThreadItem): Item | undefined {
         path: item.path,
       };
     case "imageGeneration":
-      return {
-        id: item.id,
-        kind: "tool_call",
-        toolKind: "other",
-        status: "completed",
-        toolName: "image_generation",
-        title: "Generate image",
-        input: toJson(item),
-      };
+      return imageGenerationItem(item);
     case "contextCompaction":
       return {
         id: item.id,
@@ -255,6 +248,52 @@ export function mapThreadItem(item: ThreadItem): Item | undefined {
   }
 }
 
+/**
+ * Codex's built-in image generation. `result` holds the whole image base64-encoded (megabytes),
+ * so it never goes into the item: the image is the file Codex saved (`savedPath`), or a copy
+ * CodeDen writes when Codex saved none, which the server stores as an artifact and shows inline.
+ */
+function imageGenerationItem(item: ImageGenerationItem): ToolCallItem {
+  let failure = imageGenerationFailure(item);
+  let file = item.savedPath;
+  if (!failure && !file && item.status === "completed" && item.result) {
+    const saved = saveImageResult(item.id, item.result);
+    if ("path" in saved) file = saved.path;
+    else failure = saved.error;
+  }
+  const prompt = item.revisedPrompt?.trim();
+  return {
+    id: item.id,
+    kind: "tool_call",
+    toolKind: "other",
+    status: failure ? "failed" : itemStatus(item.status),
+    toolName: "image_generation",
+    title: "Generate image",
+    input: toJson({
+      revisedPrompt: item.revisedPrompt,
+      savedPath: file,
+      transparentBackground: item.transparentBackground,
+    }),
+    ...(failure ? { error: { message: failure } } : {}),
+    ...(!failure && file
+      ? { generatedImages: [{ path: file, ...(prompt ? { caption: prompt } : {}) }] }
+      : {}),
+  };
+}
+
+/** Why an image generation failed, or `undefined` when it didn't. */
+function imageGenerationFailure(item: ImageGenerationItem): string | undefined {
+  if (item.failure?.type === "usageLimitExceeded") {
+    const resets = unixToIso(item.failure.resetsAt);
+    return `Codex image generation limit reached${resets ? ` (resets ${resets})` : ""}`;
+  }
+  if (item.failure || item.status === "failed") return "Codex image generation failed";
+  if (item.status === "completed" && !item.result && !item.savedPath) {
+    return "Codex finished without an image";
+  }
+  return undefined;
+}
+
 function mcpResultText(content: unknown[]): string {
   return content
     .map((c) =>
@@ -267,8 +306,8 @@ function mcpResultText(content: unknown[]): string {
 }
 
 /** The in-progress shape of an item when it starts (status forced to in_progress). */
-export function startedItem(item: ThreadItem): Item | undefined {
-  const mapped = mapThreadItem(item);
+export function startedItem(item: ThreadItem, names: AgentNames = noNames): Item | undefined {
+  const mapped = mapThreadItem(item, names);
   if (!mapped || mapped.kind === "user_message" || mapped.kind === "notice") return mapped;
   return { ...mapped, status: "in_progress" } as Item;
 }

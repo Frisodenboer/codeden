@@ -1,58 +1,61 @@
 import type { ErrorKind } from "@codeden/contracts";
-import type { OcError } from "./types";
+import type { OcError } from "./protocol";
 
-/** A classified opencode error, ready for `ErrorInfo`. */
-export interface ClassifiedError {
-  code: string;
-  message: string;
-  kind: ErrorKind;
-  detail?: string;
-}
+const CONTEXT = /context (window|length)|too long|maximum context|prompt is too long|token limit/i;
+const QUOTA = /quota|usage limit|insufficient|billing|credit|exceeded your/i;
+const TRANSIENT =
+  /overload|unavailable|timeout|timed out|econnreset|connection|network|socket|stream|temporar/i;
+/** An HTTP status OpenCode gave only in the message: "Request failed: 401", "HTTP 403". */
+const STATUS_IN_MESSAGE = /\b(?:request failed|status(?: code)?|http)\W{0,3}([1-5]\d\d)\b/i;
 
 /**
- * Usage or balance limits, as GLM (Z.AI) and others word them: Z.AI uses business codes
- * 1113 (balance), 1308/1310 (usage limit reached) and Chinese messages.
+ * Classify a failed OpenCode turn (§7.3 `ErrorInfo.kind`) from its structured error: the HTTP
+ * status of the model call when there was one (in its own field, or only in the message), its
+ * type and its message. `retryAt` is set for a usage limit when OpenCode said how long to wait.
  */
-const USAGE_LIMIT =
-  /\b(1113|1308|1310)\b|usage limit|quota|insufficient (balance|credit|funds)|balance|credits? (exhausted|ran out)|余额|额度|限额/i;
-const AUTH = /\b(401|403)\b|unauthori[sz]ed|invalid api key|token expired|authentication/i;
-
-/** Classify an opencode message/session error (§7.3 `ErrorInfo.kind`). */
-export function classifyOpencodeError(error: OcError | undefined): ClassifiedError {
-  const name = error?.name ?? "UnknownError";
-  const data = error?.data ?? {};
-  const message = (typeof data.message === "string" && data.message) || name;
-  const body = typeof data.responseBody === "string" ? data.responseBody.slice(0, 2000) : undefined;
-  const text = `${message}\n${body ?? ""}`;
-  const out = (kind: ErrorKind, code = name): ClassifiedError => ({
-    code,
-    message,
-    kind,
-    ...(body ? { detail: body } : {}),
-  });
-  switch (name) {
-    case "ProviderAuthError":
-      return out("auth", "provider_auth");
-    case "ContextOverflowError":
-      return out("context_full", "context_overflow");
-    case "MessageOutputLengthError":
-      return out("fatal", "output_length");
-    case "APIError": {
-      const status = typeof data.statusCode === "number" ? data.statusCode : undefined;
-      if (status === 401 || status === 403) return out("auth", "unauthorized");
-      if (USAGE_LIMIT.test(text)) return out("usage_limit", "usage_limit");
-      if (status === 429 || (status !== undefined && status >= 500) || data.isRetryable)
-        return out("transient", status === 429 ? "rate_limited" : "api_error");
-      return out("fatal", "api_error");
-    }
-    default:
-      if (USAGE_LIMIT.test(text)) return out("usage_limit", "usage_limit");
-      if (AUTH.test(text)) return out("auth", "unauthorized");
-      return out("fatal", name === "UnknownError" ? "unknown_error" : name);
+export function classifyOpenCodeError(
+  error: OcError | undefined,
+  now = Date.now(),
+): { kind: ErrorKind; retryAt?: string } {
+  if (!error) return { kind: "fatal" };
+  const status = error.status ?? Number(STATUS_IN_MESSAGE.exec(error.message)?.[1] ?? 0);
+  const text = `${error.type} ${error.message}`;
+  if (status === 401 || status === 403 || /\bauth|unauthori[sz]ed|api key|credential/i.test(text)) {
+    return { kind: "auth" };
   }
+  if (CONTEXT.test(text)) return { kind: "context_full" };
+  const retryAt =
+    typeof error.retryAfterMs === "number" && error.retryAfterMs > 0
+      ? new Date(now + error.retryAfterMs).toISOString()
+      : undefined;
+  if (status === 429 && QUOTA.test(text)) {
+    return { kind: "usage_limit", ...(retryAt ? { retryAt } : {}) };
+  }
+  if (status === 429 || status >= 500 || TRANSIENT.test(text)) return { kind: "transient" };
+  return { kind: "fatal" };
 }
 
-/** True for the error opencode reports when a turn was aborted. */
-export function isAbortError(error: OcError | undefined): boolean {
-  return error?.name === "MessageAbortedError";
+/** How a CodeDen turn on OpenCode ended. */
+export type TurnOutcome =
+  | { type: "completed" }
+  | { type: "interrupted"; reason?: "user" | "provider" | "runner_restart" }
+  | {
+      type: "failed";
+      message: string;
+      code?: string;
+      detail?: string;
+      kind?: ErrorKind;
+      retryAt?: string;
+    };
+
+/** An OpenCode error as a failed turn outcome. */
+export function failure(error: OcError | undefined): TurnOutcome {
+  const { kind, retryAt } = classifyOpenCodeError(error);
+  return {
+    type: "failed",
+    code: error?.type ? `opencode_${error.type.replace(/[^a-z0-9]+/gi, "_")}` : "turn_failed",
+    message: error?.message || "OpenCode turn failed",
+    kind,
+    ...(retryAt ? { retryAt } : {}),
+  };
 }

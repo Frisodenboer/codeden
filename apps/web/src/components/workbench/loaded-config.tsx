@@ -1,23 +1,31 @@
-import type { AgentConfigFile } from "@codeden/contracts";
+import type { AgentConfigFile, AgentSkill } from "@codeden/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bot, FileText, Plug, Sparkles } from "lucide-react";
+import { Bot, FileText, Plug, Sparkles, Webhook } from "lucide-react";
 import type { ReactNode } from "react";
+import { skillStateLabel, skillStateTitle } from "@/components/agents/skill-state";
 import { useClient } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { hookNotices, hookRows, type LoadedRow } from "./loaded-hooks";
 
-interface Row {
-  key: string;
-  label: string;
-  detail?: string;
-  title?: string;
-}
-
-const fileRow = (f: AgentConfigFile): Row => ({
+const fileRow = (f: AgentConfigFile): LoadedRow => ({
   key: f.absolutePath,
   label: f.kind === "skill" || f.kind === "subagent" ? f.name : f.path,
   detail: `${f.scope}${f.onDemand ? " · on demand" : ""}`,
   title: f.absolutePath,
 });
+
+/** A skill, dimmed and labelled "off" when its provider's setting switches it off. */
+const skillRow = (s: AgentSkill): LoadedRow => {
+  const state = skillStateLabel(s);
+  return {
+    ...fileRow(s.file),
+    label: s.name,
+    detail: state ? `${s.scope} · ${state}` : s.scope,
+    title: `${s.file.absolutePath}\n${skillStateTitle(s)}`,
+    dim: !s.enabled,
+  };
+};
 
 /** What the session's provider loads into its context from its working directory (§12.4). */
 export function LoadedConfig({
@@ -33,6 +41,7 @@ export function LoadedConfig({
     queryFn: () => client.agentConfig.loaded(sessionId),
   });
   const d = loaded.data;
+  const project = projectId ?? "global";
   return (
     <section className="space-y-2" data-testid="loaded-config">
       <div className="flex items-baseline justify-between">
@@ -41,7 +50,7 @@ export function LoadedConfig({
         </h3>
         <Link
           to="/agents"
-          search={{ tab: "memory", project: projectId ?? "global" }}
+          search={{ tab: "memory", project }}
           className="text-3xs text-muted-foreground hover:text-foreground"
         >
           Edit configuration
@@ -65,11 +74,17 @@ export function LoadedConfig({
         icon={<Sparkles />}
         title="Skills"
         loading={loaded.isLoading}
-        rows={(d?.skills ?? []).map((s) => ({
-          ...fileRow(s.file),
-          label: s.name,
-          detail: s.scope,
-        }))}
+        rows={(d?.skills ?? []).map(skillRow)}
+        testId="loaded-skills"
+        action={
+          <Link
+            to="/agents"
+            search={{ tab: "skills", project }}
+            className="text-3xs hover:text-foreground"
+          >
+            Switch skills
+          </Link>
+        }
       />
       <LoadedList
         icon={<Bot />}
@@ -88,6 +103,26 @@ export function LoadedConfig({
           title: m.file,
         }))}
       />
+      {/* Only for providers whose native config has hooks (null otherwise). */}
+      {d?.hooks && (
+        <LoadedList
+          icon={<Webhook />}
+          title="Hooks"
+          loading={false}
+          rows={hookRows(d.hooks)}
+          notices={hookNotices(d.hooks)}
+          testId="loaded-hooks"
+          action={
+            <Link
+              to="/agents"
+              search={{ tab: "hooks", project }}
+              className="text-3xs hover:text-foreground"
+            >
+              Edit hooks
+            </Link>
+          }
+        />
+      )}
     </section>
   );
 }
@@ -97,28 +132,46 @@ function LoadedList({
   title,
   rows,
   loading,
+  notices,
+  action,
+  testId,
 }: {
   icon: ReactNode;
   title: string;
-  rows: Row[];
+  rows: LoadedRow[];
   loading: boolean;
+  /** Warnings shown above the rows. */
+  notices?: ReactNode;
+  /** A link in the header, before the count. */
+  action?: ReactNode;
+  testId?: string;
 }) {
   return (
-    <div className="rounded-lg border border-border">
+    <div className="rounded-lg border border-border" data-testid={testId}>
       <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-2xs text-muted-foreground [&_svg]:size-3.5">
-        {icon} {title} <span className="ml-auto tabular-nums">{loading ? "…" : rows.length}</span>
+        {icon} {title}
+        <span className="ml-auto flex items-baseline gap-2">
+          {action}
+          <span className="tabular-nums">{loading ? "…" : rows.length}</span>
+        </span>
       </div>
+      {notices}
       <div className="px-3 py-1.5">
         {!loading && rows.length === 0 && (
           <div className="py-0.5 text-[11.5px] text-muted-foreground">None</div>
         )}
         {rows.map((r) => (
-          <div key={r.key} className="flex items-baseline gap-2 py-0.5" title={r.title}>
-            <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground/80">
-              {r.label}
-            </span>
-            {r.detail && (
-              <span className="shrink-0 text-3xs text-muted-foreground">{r.detail}</span>
+          <div key={r.key} className={cn("py-0.5", r.dim && "opacity-50")} title={r.title}>
+            <div className="flex items-baseline gap-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground/80">
+                {r.label}
+              </span>
+              {r.detail && (
+                <span className="shrink-0 text-3xs text-muted-foreground">{r.detail}</span>
+              )}
+            </div>
+            {r.sub && (
+              <div className="truncate font-mono text-3xs text-muted-foreground">{r.sub}</div>
             )}
           </div>
         ))}

@@ -50,6 +50,70 @@ describe("browser protocol", () => {
     ).toThrow();
   });
 
+  it("round-trips agent pointer actions and checks their fields", () => {
+    const actions: unknown[] = [
+      { name: "browser.mouse", sessionId: "s1", action: "click", x: 150, y: 150.5 },
+      {
+        name: "browser.mouse",
+        sessionId: "s1",
+        tabId: "t2",
+        action: "click",
+        x: 1,
+        y: 2,
+        button: "right",
+        clickCount: 2,
+        modifiers: ["Shift", "Control"],
+      },
+      { name: "browser.mouse", sessionId: "s1", action: "hover", x: 560, y: 70 },
+      {
+        name: "browser.mouse",
+        sessionId: "s1",
+        action: "drag",
+        x: 520,
+        y: 220,
+        toX: 620,
+        toY: 270,
+        modifiers: ["Alt"],
+      },
+      { name: "browser.mouse", sessionId: "s1", action: "scroll", x: 300, y: 300, deltaY: -400 },
+      { name: "browser.mouse", sessionId: "s1", action: "scroll", x: 0, y: 0, deltaX: 120 },
+    ];
+    for (const action of actions) roundTrip(RunnerCommand, action);
+    roundTrip(RunnerCommandResults["browser.mouse"], {});
+
+    const base = { name: "browser.mouse", sessionId: "s1", x: 10, y: 10 };
+    const refused: unknown[] = [
+      { ...base, action: "drag", toX: 20 }, // no toY
+      { ...base, action: "scroll" }, // no delta
+      { ...base, action: "scroll", deltaX: 0, deltaY: 0 },
+      { ...base, action: "scroll", deltaY: 10_001 },
+      { ...base, action: "hover", clickCount: 2 }, // click-only field
+      { ...base, action: "click", deltaY: 100 }, // scroll-only field
+      { ...base, action: "scroll", deltaY: 100, button: "left" },
+      { ...base, action: "click", toX: 1, toY: 1 },
+      { ...base, action: "click", x: -1 },
+      { ...base, action: "click", clickCount: 4 },
+      { ...base, action: "click", modifiers: ["Super"] },
+      { ...base, action: "tap" },
+    ];
+    for (const value of refused) expect(() => RunnerCommand.parse(value)).toThrow();
+  });
+
+  it("types at the focused element without a ref, up to a cap", () => {
+    roundTrip(RunnerCommand, { name: "browser.type", sessionId: "s1", text: "hi", submit: true });
+    roundTrip(RunnerCommand, { name: "browser.type", sessionId: "s1", text: "x".repeat(2_000) });
+    expect(() =>
+      RunnerCommand.parse({ name: "browser.type", sessionId: "s1", text: "x".repeat(2_001) }),
+    ).toThrow();
+    // A ref still fills, with the long limit.
+    roundTrip(RunnerCommand, {
+      name: "browser.type",
+      sessionId: "s1",
+      ref: "e3",
+      text: "x".repeat(5_000),
+    });
+  });
+
   it("round-trips forwarded input", () => {
     roundTrip(RunnerCommand, {
       name: "browser.input",
@@ -144,6 +208,60 @@ describe("browser protocol", () => {
     });
     roundTrip(RunnerStream, { kind: "browser.tabs", sessionId: "s1", tabs: [tab] });
     roundTrip(RunnerStream, { kind: "browser.tabs", sessionId: "s1", tabs: [], engine: "native" });
+  });
+
+  it("round-trips page dialogs: answers, action results, snapshots and stream data", () => {
+    const dialog = { dialogId: "d0f", tabId: "t1", type: "confirm", message: "Delete this item?" };
+    const prompt = {
+      dialogId: "d1e",
+      tabId: "t2",
+      type: "prompt",
+      message: "New name?",
+      defaultValue: "draft",
+    };
+    const answer = { name: "browser.dialog", sessionId: "s1", dialogId: "d0f" };
+    roundTrip(RunnerCommand, { ...answer, accept: true });
+    roundTrip(RunnerCommand, { ...answer, accept: true, promptText: "Renamed", by: "viewer" });
+    expect(() => RunnerCommand.parse({ ...answer, accept: true, by: "timeout" })).toThrow();
+    expect(() => RunnerCommand.parse(answer)).toThrow();
+    // An answer always names its dialog: never just a tab.
+    expect(() =>
+      RunnerCommand.parse({ name: "browser.dialog", sessionId: "s1", tabId: "t1", accept: true }),
+    ).toThrow();
+    expect(() => RunnerCommand.parse({ ...answer, dialogId: "d 1", accept: true })).toThrow();
+    roundTrip(RunnerCommandResults["browser.dialog"], { dialog: prompt });
+    for (const name of [
+      "browser.click",
+      "browser.type",
+      "browser.press",
+      "browser.mouse",
+    ] as const) {
+      roundTrip(RunnerCommandResults[name], {});
+      roundTrip(RunnerCommandResults[name], { dialog });
+    }
+    roundTrip(RunnerCommandResults["browser.snapshot"], {
+      tabId: "t1",
+      url: "http://localhost:5173/",
+      title: "Items",
+      snapshot: "",
+      truncated: false,
+      dialog,
+    });
+    roundTrip(RunnerCommandResults["browser.tabs.list"], { tabs: [], dialogs: [dialog, prompt] });
+    roundTrip(RunnerStream, { kind: "browser.dialogs", sessionId: "s1", dialogs: [dialog] });
+    roundTrip(RunnerStream, {
+      kind: "browser.dialogs",
+      sessionId: "s1",
+      dialogs: [],
+      closed: { ...dialog, by: "timeout", accepted: false },
+    });
+    expect(() =>
+      RunnerStream.parse({
+        kind: "browser.dialogs",
+        sessionId: "s1",
+        dialogs: [{ ...dialog, type: "print" }],
+      }),
+    ).toThrow();
   });
 
   it("round-trips the native engine: relay opens, hand-off and fixed viewports", () => {

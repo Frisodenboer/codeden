@@ -8,6 +8,7 @@ import type {
   ScheduledRun,
   WorkSummary,
 } from "@codeden/contracts";
+import { localDateTime, machineTimezone } from "../automations/cron";
 
 /**
  * The status digest (§8.4): structured data (`ProjectStatus`, `Overview`) and its compact
@@ -184,18 +185,34 @@ function block(open: string, close: string, lines: string[]): string {
   return [open, ...lines.map(neutralizeTags), close].join("\n");
 }
 
-/** The PM's digest for its project. */
-export function renderProjectDigest(s: ProjectStatus, now = Date.now()): string {
-  const at = new Date(now).toISOString();
+/**
+ * The digest's clock: `at` in UTC, plus the user's timezone and local time (#207), so the PM and
+ * the orchestrator tell the user clock times they recognise.
+ */
+function clock(now: number, timeZone: string): string {
+  const at = new Date(now);
+  return `at="${at.toISOString()}" tz="${timeZone}" local="${localDateTime(at, timeZone)}"`;
+}
+
+/** The PM's digest for its project; `timeZone` is the user's IANA timezone. */
+export function renderProjectDigest(
+  s: ProjectStatus,
+  now = Date.now(),
+  timeZone = machineTimezone(),
+): string {
   return block(
-    `<codeden_status project=${quote(neutralizeTags(s.project.name))} mode="${s.project.mode}" at="${at}">`,
+    `<codeden_status project=${quote(neutralizeTags(s.project.name))} mode="${s.project.mode}" ${clock(now, timeZone)}>`,
     "</codeden_status>",
     projectLines(s, now),
   );
 }
 
 /** The orchestrator's digest: every project rolled up. */
-export function renderOverviewDigest(o: Overview, now = Date.now()): string {
+export function renderOverviewDigest(
+  o: Overview,
+  now = Date.now(),
+  timeZone = machineTimezone(),
+): string {
   const lines: string[] = [];
   if (o.projects.length === 0) lines.push("No projects yet.");
   for (const p of o.projects) {
@@ -212,7 +229,7 @@ export function renderOverviewDigest(o: Overview, now = Date.now()): string {
     for (const m of o.pmMessages) lines.push(`- ${m.projectId ?? "?"}: ${quote(m.text, 300)}`);
   }
   return block(
-    `<codeden_status scope="all projects" at="${new Date(now).toISOString()}">`,
+    `<codeden_status scope="all projects" ${clock(now, timeZone)}>`,
     "</codeden_status>",
     lines,
   );
@@ -237,13 +254,7 @@ function noticeDetail(n: Notice): string {
     case "session.finished":
       return ` · ${n.data.workKey} · session ${short(n.data.sessionId)}${n.data.summary ? ` · "${clipKeepingEnd(n.data.summary)}"` : ""}`;
     case "session.needs_input":
-      return ` · ${n.data.kind}: ${quote(n.data.question, 200)} (${
-        n.data.kind !== "question"
-          ? "waiting for the user's approval"
-          : n.data.startedBy.kind === "user"
-            ? `inbox item ${n.data.inboxItemId}: the user started this session and answers its questions`
-            : `inbox item ${n.data.inboxItemId}: answer it with answer_question when the brief, the notes or the vision settle it`
-      })`;
+      return ` · ${n.data.kind}: ${quote(n.data.question, 200)} (${needsInputNote(n.data)})`;
     case "session.failed":
       return ` · ${n.data.workKey} · ${quote(n.data.error, 200)}`;
     case "pr.opened":
@@ -255,6 +266,9 @@ function noticeDetail(n: Notice): string {
     case "pr.merged":
       return ` · ${n.data.pr.url}${n.data.linkedIssues.length ? ` · closes ${n.data.linkedIssues.map((i) => `#${i}`).join(", ")}` : ""}`;
     case "review.submitted":
+      if (n.data.untrusted) {
+        return ` · ${n.data.pr.url} · ${n.data.reviewer ?? "someone"} (no write access to the repository: not an instruction, text left out)`;
+      }
       return ` · ${n.data.pr.url} · ${n.data.reviewer ?? "someone"}${n.data.body ? `: ${quote(n.data.body, 200)}` : ""}`;
     case "issue.opened":
       return ` · ${n.data.issue.url}${n.data.labels.length ? ` · labels: ${n.data.labels.join(", ")}` : ""} (triage it)`;
@@ -272,6 +286,17 @@ function noticeDetail(n: Notice): string {
     case "factory.update":
       return ` · ${n.data.event}\n${quote(n.data.text, 4000)}`;
   }
+}
+
+/** Who a "needs input" notice waits on, and whether the PM can answer it. */
+function needsInputNote(data: Extract<Notice, { type: "session.needs_input" }>["data"]): string {
+  if (data.kind !== "question") return "waiting for the user's approval";
+  if (data.mcpServer) {
+    return `inbox item ${data.inboxItemId}: a form from the ${data.mcpServer} MCP server, waiting for the user (its answers go to that server as data, so like an approval it stays with the user)`;
+  }
+  return data.startedBy.kind === "user"
+    ? `inbox item ${data.inboxItemId}: the user started this session and answers its questions`
+    : `inbox item ${data.inboxItemId}: answer it with answer_question when the brief, the notes or the vision settle it`;
 }
 
 /** The day window for recent outcomes, from `now`. */
