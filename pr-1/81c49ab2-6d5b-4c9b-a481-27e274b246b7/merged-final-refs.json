@@ -1,0 +1,16 @@
+﻿{
+    "captured":  "2026-11-14T12:24:51.6600607+01:00",
+    "branch":  "codeden/security-and-patch-dependency-batch-81c4",
+    "head":  "a4e53e79a57dfceab2d18e3817485e6af19e8e53",
+    "tree":  "51af0360e724c56d091d9084504763f65e2ba509",
+    "localMain":  "08329a8ea035aed027b4c93a318810c184d8a295",
+    "remote":  [
+                   "a4e53e79a57dfceab2d18e3817485e6af19e8e53\trefs/heads/codeden/security-and-patch-dependency-batch-81c4",
+                   "08329a8ea035aed027b4c93a318810c184d8a295\trefs/heads/main"
+               ],
+    "trackedStatus":  [
+
+                      ],
+    "node":  "v24.22.3",
+    "base":  "08329a8ea035aed027b4c93a318810c184d8a295"
+}

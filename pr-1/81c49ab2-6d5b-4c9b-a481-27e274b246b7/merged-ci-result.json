@@ -1,0 +1,27 @@
+﻿{
+    "status":  "completed",
+    "conclusion":  "success",
+    "headSha":  "a4e53e79a57dfceab2d18e3817485e6af19e8e53",
+    "event":  "workflow_dispatch",
+    "url":  "https://github.com/Frisodenboer/codeden/actions/runs/43589390949",
+    "jobs":  {
+                 "value":  [
+                               {
+                                   "name":  "Detect changes",
+                                   "status":  "completed",
+                                   "conclusion":  "success"
+                               },
+                               {
+                                   "name":  "Build, test and install",
+                                   "status":  "completed",
+                                   "conclusion":  "success"
+                               },
+                               {
+                                   "name":  "CI result",
+                                   "status":  "completed",
+                                   "conclusion":  "success"
+                               }
+                           ],
+                 "Count":  3
+             }
+}
