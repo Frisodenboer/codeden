@@ -1,0 +1,13 @@
+{
+    "captured":  "2026-11-14T12:10:47.4245671+01:00",
+    "branch":  "codeden/security-and-patch-dependency-batch-81c4",
+    "head":  "b47f292e53b0d62540d19a2e54e6c08e9b094dd1",
+    "localMain":  "08329a8ea035aed027b4c93a318810c184d8a295",
+    "remoteMain":  [
+                       "08329a8ea035aed027b4c93a318810c184d8a295\trefs/heads/main"
+                   ],
+    "status":  [
+
+               ],
+    "node":  "v24.22.3"
+}
